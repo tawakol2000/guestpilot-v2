@@ -92,9 +92,15 @@ export function makeWebhooksController(prisma: PrismaClient) {
 
       // G9/G10: Signature verification — require signature when secret is configured
       if (tenant.webhookSecret) {
-        const signature = req.headers['x-hostaway-signature'] as string | undefined;
+        // Try all possible header names Hostaway might use
+        const signature =
+          (req.headers['x-hostaway-signature'] as string | undefined) ||
+          (req.headers['X-Hostaway-Signature'] as string | undefined) ||
+          (req.headers['authorization'] as string | undefined) ||
+          (req.headers['Authorization'] as string | undefined);
+
         if (!signature) {
-          console.log(`[Webhook] [${tenantId}] Missing X-Hostaway-Signature header`);
+          console.log(`[Webhook] [${tenantId}] Missing signature header. All headers:`, Object.keys(req.headers));
           res.status(401).json({ error: 'Missing webhook signature' });
           return;
         }
