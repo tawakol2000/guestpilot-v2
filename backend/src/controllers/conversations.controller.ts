@@ -1,0 +1,570 @@
+import { Response } from 'express';
+import { z } from 'zod';
+import { PrismaClient, ReservationStatus } from '@prisma/client';
+import { AuthenticatedRequest } from '../types';
+import * as hostawayService from '../services/hostaway.service';
+import { cancelPendingAiReply, getPendingReplyForConversation, markFired } from '../services/debounce.service';
+import { generateAndSendAiReply } from '../services/ai.service';
+
+const aiToggleSchema = z.object({
+  aiEnabled: z.boolean(),
+});
+
+export function makeConversationsController(prisma: PrismaClient) {
+  return {
+    async list(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const conversations = await prisma.conversation.findMany({
+          where: {
+            tenantId,
+            reservation: {
+              status: { in: ['CONFIRMED', 'CHECKED_IN', 'INQUIRY'] },
+              checkOut: { gte: today },
+            },
+          },
+          orderBy: { lastMessageAt: 'desc' },
+          take: 100,
+          include: {
+            guest: true,
+            property: true,
+            reservation: true,
+            messages: { orderBy: { sentAt: 'desc' }, take: 1 },
+          },
+        });
+
+        res.json(conversations.map(conv => ({
+          id: conv.id,
+          guestName: conv.guest.name,
+          propertyName: conv.property.name,
+          channel: conv.channel,
+          aiEnabled: conv.reservation.aiEnabled,
+          aiMode: conv.reservation.aiMode,
+          unreadCount: conv.unreadCount,
+          starred: conv.starred,
+          status: conv.status,
+          lastMessage: conv.messages[0]?.content || '',
+          lastMessageRole: conv.messages[0]?.role || null,
+          lastMessageAt: conv.lastMessageAt,
+          reservationStatus: conv.reservation.status,
+          checkIn: conv.reservation.checkIn,
+          checkOut: conv.reservation.checkOut,
+          hostawayConversationId: conv.hostawayConversationId,
+        })));
+      } catch (err) {
+        console.error('[Conversations] list error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async get(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: {
+            guest: true,
+            property: true,
+            reservation: true,
+            messages: { orderBy: { sentAt: 'asc' } },
+          },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        await prisma.conversation.update({ where: { id }, data: { unreadCount: 0 } });
+
+        res.json({
+          id: conversation.id,
+          status: conversation.status,
+          channel: conversation.channel,
+          lastMessageAt: conversation.lastMessageAt,
+          hostawayConversationId: conversation.hostawayConversationId,
+          guest: {
+            id: conversation.guest.id,
+            name: conversation.guest.name,
+            email: conversation.guest.email,
+            phone: conversation.guest.phone,
+            nationality: conversation.guest.nationality,
+          },
+          property: {
+            id: conversation.property.id,
+            name: conversation.property.name,
+            address: conversation.property.address,
+            customKnowledgeBase: conversation.property.customKnowledgeBase,
+          },
+          reservation: {
+            id: conversation.reservation.id,
+            checkIn: conversation.reservation.checkIn,
+            checkOut: conversation.reservation.checkOut,
+            guestCount: conversation.reservation.guestCount,
+            channel: conversation.reservation.channel,
+            status: conversation.reservation.status,
+            aiEnabled: conversation.reservation.aiEnabled,
+            aiMode: conversation.reservation.aiMode,
+          },
+          messages: conversation.messages.map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            channel: m.channel,
+            sentAt: m.sentAt,
+            imageUrls: m.imageUrls,
+          })),
+        });
+      } catch (err) {
+        console.error('[Conversations] get error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async getReservation(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: { guest: true, property: true, reservation: true },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        res.json({
+          reservation: {
+            id: conversation.reservation.id,
+            hostawayReservationId: conversation.reservation.hostawayReservationId,
+            checkIn: conversation.reservation.checkIn,
+            checkOut: conversation.reservation.checkOut,
+            guestCount: conversation.reservation.guestCount,
+            channel: conversation.reservation.channel,
+            status: conversation.reservation.status,
+            aiEnabled: conversation.reservation.aiEnabled,
+            aiMode: conversation.reservation.aiMode,
+            screeningAnswers: conversation.reservation.screeningAnswers,
+          },
+          guest: {
+            id: conversation.guest.id,
+            name: conversation.guest.name,
+            email: conversation.guest.email,
+            phone: conversation.guest.phone,
+            nationality: conversation.guest.nationality,
+          },
+          property: {
+            id: conversation.property.id,
+            name: conversation.property.name,
+            address: conversation.property.address,
+            listingDescription: conversation.property.listingDescription,
+            customKnowledgeBase: conversation.property.customKnowledgeBase,
+          },
+        });
+      } catch (err) {
+        console.error('[Conversations] getReservation error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async aiToggleAll(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const parsed = aiToggleSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: parsed.error.flatten() });
+          return;
+        }
+        await prisma.reservation.updateMany({
+          where: { tenantId },
+          data: { aiEnabled: parsed.data.aiEnabled },
+        });
+        res.json({ ok: true, aiEnabled: parsed.data.aiEnabled });
+      } catch (err) {
+        console.error('[Conversations] aiToggleAll error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async aiToggleProperty(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { propertyId, aiMode } = req.body as { propertyId?: string; aiMode?: string };
+
+        if (!propertyId || typeof propertyId !== 'string') {
+          res.status(400).json({ error: 'propertyId is required' });
+          return;
+        }
+
+        const validModes = ['autopilot', 'copilot', 'off'];
+        if (!aiMode || !validModes.includes(aiMode)) {
+          res.status(400).json({ error: `aiMode must be one of: ${validModes.join(', ')}` });
+          return;
+        }
+
+        // Verify property belongs to tenant
+        const property = await prisma.property.findFirst({
+          where: { id: propertyId, tenantId },
+        });
+        if (!property) {
+          res.status(404).json({ error: 'Property not found' });
+          return;
+        }
+
+        const aiEnabled = aiMode !== 'off';
+
+        const result = await prisma.reservation.updateMany({
+          where: { tenantId, propertyId },
+          data: { aiEnabled, aiMode: aiEnabled ? aiMode : 'autopilot' },
+        });
+
+        res.json({ ok: true, propertyId, aiMode, updated: result.count });
+      } catch (err) {
+        console.error('[Conversations] aiToggleProperty error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async inquiryAction(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const { action } = req.body as { action: 'accept' | 'reject' };
+
+        if (action !== 'accept' && action !== 'reject') {
+          res.status(400).json({ error: 'action must be accept or reject' });
+          return;
+        }
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: { tenant: true, reservation: true },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        if (conversation.reservation.status !== ReservationStatus.INQUIRY) {
+          res.status(400).json({ error: 'Reservation is not an inquiry' });
+          return;
+        }
+
+        const hostawayStatus = action === 'accept' ? 'confirmed' : 'cancelled';
+        try {
+          await hostawayService.updateReservationStatus(
+            conversation.tenant.hostawayAccountId,
+            conversation.tenant.hostawayApiKey,
+            conversation.reservation.hostawayReservationId,
+            hostawayStatus
+          );
+        } catch (hostawayErr: unknown) {
+          const axiosErr = hostawayErr as { response?: { data?: { message?: string }; status?: number } };
+          const msg = axiosErr?.response?.data?.message || 'Hostaway API error';
+          console.error('[Conversations] inquiryAction Hostaway error:', msg);
+          res.status(502).json({ error: msg });
+          return;
+        }
+
+        const newStatus = action === 'accept' ? ReservationStatus.CONFIRMED : ReservationStatus.CANCELLED;
+        await prisma.reservation.update({
+          where: { id: conversation.reservationId },
+          data: { status: newStatus },
+        });
+
+        res.json({ ok: true, status: newStatus });
+      } catch (err) {
+        console.error('[Conversations] inquiryAction error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async sendAiNow(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const pending = await getPendingReplyForConversation(id, prisma);
+        if (!pending) {
+          res.status(404).json({ error: 'No pending AI reply' });
+          return;
+        }
+
+        const { conversation } = pending;
+        if (!conversation?.reservation || !conversation.tenant || !conversation.property || !conversation.guest) {
+          res.status(422).json({ error: 'Incomplete conversation data' });
+          return;
+        }
+
+        // Verify ownership
+        if (conversation.tenantId !== tenantId) {
+          res.status(403).json({ error: 'Forbidden' });
+          return;
+        }
+
+        // Mark fired so the normal poll doesn't double-fire
+        await markFired(pending.id, prisma);
+
+        const { reservation, tenant, property, guest } = conversation;
+        const customKb = (property.customKnowledgeBase as Record<string, unknown> | null) ?? {};
+
+        // Fire immediately (don't await — respond right away)
+        generateAndSendAiReply(
+          {
+            tenantId: tenant.id,
+            conversationId: conversation.id,
+            propertyId: property.id,
+            windowStartedAt: pending.createdAt,
+            hostawayConversationId: conversation.hostawayConversationId,
+            hostawayApiKey: tenant.hostawayApiKey,
+            hostawayAccountId: tenant.hostawayAccountId,
+            guestName: guest.name,
+            checkIn: reservation.checkIn.toISOString().split('T')[0],
+            checkOut: reservation.checkOut.toISOString().split('T')[0],
+            guestCount: reservation.guestCount,
+            reservationStatus: reservation.status,
+            listing: { name: property.name, internalListingName: property.name, address: property.address },
+            customKnowledgeBase: customKb,
+            listingDescription: property.listingDescription,
+          },
+          prisma
+        ).catch(err => console.error(`[sendAiNow] Error for conv ${id}:`, err));
+
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('[Conversations] sendAiNow error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async cancelPendingAi(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const conversation = await prisma.conversation.findFirst({ where: { id, tenantId } });
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        await cancelPendingAiReply(id, prisma);
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('[Conversations] cancelPendingAi error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async setAiMode(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const { aiMode } = req.body as { aiMode: string };
+        if (!['autopilot', 'copilot', 'off'].includes(aiMode)) {
+          res.status(400).json({ error: 'aiMode must be autopilot, copilot, or off' });
+          return;
+        }
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: { reservation: true },
+        });
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+        await prisma.reservation.update({
+          where: { id: conversation.reservationId },
+          data: { aiMode },
+        });
+        res.json({ aiMode });
+      } catch (err) {
+        console.error('[Conversations] setAiMode error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async approveSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const { editedText } = req.body as { editedText?: string };
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: { tenant: true, reservation: true, property: true },
+        });
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        const pendingReply = await prisma.pendingAiReply.findFirst({
+          where: { conversationId: id, fired: false },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (!pendingReply?.suggestion && !editedText) {
+          res.status(404).json({ error: 'No pending suggestion' });
+          return;
+        }
+
+        const messageText = editedText || pendingReply!.suggestion!;
+
+        // Mark pending reply as fired
+        if (pendingReply) {
+          await prisma.pendingAiReply.update({ where: { id: pendingReply.id }, data: { fired: true } });
+        }
+
+        const { hostawayAccountId, hostawayApiKey } = conversation.tenant;
+        const hostawayConvId = conversation.hostawayConversationId;
+
+        // Use the channel of the last received guest message — so WhatsApp replies go via WhatsApp
+        const lastGuestMsg = await prisma.message.findFirst({
+          where: { conversationId: id, role: 'GUEST' },
+          orderBy: { sentAt: 'desc' },
+        });
+        const lastMsgChannel = lastGuestMsg?.channel ?? conversation.channel;
+        const communicationType = lastMsgChannel === 'WHATSAPP' ? 'whatsapp' : 'channel';
+
+        const hostawayService = await import('../services/hostaway.service');
+        await hostawayService.sendMessageToConversation(hostawayAccountId, hostawayApiKey, hostawayConvId, messageText, communicationType);
+
+        const sentAt = new Date();
+        const msg = await prisma.message.create({
+          data: {
+            conversationId: id,
+            tenantId,
+            role: 'AI',
+            content: messageText,
+            sentAt,
+            channel: lastMsgChannel,
+            communicationType,
+          },
+        });
+
+        await prisma.conversation.update({
+          where: { id },
+          data: { lastMessageAt: sentAt },
+        });
+
+        const { broadcastToTenant } = await import('../services/sse.service');
+        broadcastToTenant(tenantId, 'message', {
+          conversationId: id,
+          message: { id: msg.id, role: 'AI', content: messageText, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
+          lastMessageRole: 'AI',
+          lastMessageAt: sentAt.toISOString(),
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('[Conversations] approveSuggestion error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async toggleStar(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const { starred } = req.body as { starred: boolean };
+
+        if (typeof starred !== 'boolean') {
+          res.status(400).json({ error: 'starred must be a boolean' });
+          return;
+        }
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        await prisma.conversation.update({
+          where: { id },
+          data: { starred },
+        });
+
+        res.json({ starred });
+      } catch (err) {
+        console.error('[Conversations] toggleStar error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async resolve(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const { status } = req.body as { status: 'OPEN' | 'RESOLVED' };
+
+        if (status !== 'OPEN' && status !== 'RESOLVED') {
+          res.status(400).json({ error: 'status must be OPEN or RESOLVED' });
+          return;
+        }
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        await prisma.conversation.update({
+          where: { id },
+          data: { status },
+        });
+
+        res.json({ status });
+      } catch (err) {
+        console.error('[Conversations] resolve error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async aiToggle(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const parsed = aiToggleSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: parsed.error.flatten() });
+          return;
+        }
+
+        const conversation = await prisma.conversation.findFirst({
+          where: { id, tenantId },
+          include: { reservation: true },
+        });
+
+        if (!conversation) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        await prisma.reservation.update({
+          where: { id: conversation.reservationId },
+          data: { aiEnabled: parsed.data.aiEnabled },
+        });
+
+        res.json({ aiEnabled: parsed.data.aiEnabled });
+      } catch (err) {
+        console.error('[Conversations] aiToggle error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+  };
+}

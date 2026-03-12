@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.js.map
+*.png
+.DS_Store
+.mcp.json
+.claude/
+.next/
+.playwright-mcp/
+docs/
+tasks/

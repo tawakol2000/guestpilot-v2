@@ -1,0 +1,1889 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History } from 'lucide-react'
+import {
+  apiGetAIConfig,
+  apiUpdateAIConfig,
+  apiTestAiConfig,
+  apiGetAiConfigVersions,
+  apiRevertAiConfigVersion,
+  type AiConfig,
+  type AiPersonaConfig,
+  type AiConfigVersion,
+} from '@/lib/api'
+
+// ─── Design Tokens ────────────────────────────────────────────────────────────
+const T = {
+  bg: { primary: '#FAFAF9', secondary: '#F5F5F4', tertiary: '#E7E5E4' },
+  text: { primary: '#0C0A09', secondary: '#57534E', tertiary: '#A8A29E' },
+  accent: '#1D4ED8',
+  status: { green: '#15803D', red: '#DC2626', amber: '#D97706' },
+  border: { default: '#E7E5E4', strong: '#1C1917' },
+  shadow: {
+    sm: '0 1px 2px rgba(12,10,9,0.04)',
+    md: '0 4px 6px -1px rgba(12,10,9,0.06), 0 2px 4px -2px rgba(12,10,9,0.04)',
+    lg: '0 10px 25px -5px rgba(12,10,9,0.08), 0 4px 10px -5px rgba(12,10,9,0.03)',
+  },
+  font: {
+    sans: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+    mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace",
+  },
+  radius: { sm: 8, md: 12, lg: 16 },
+} as const
+
+// ─── Model options ─────────────────────────────────────────────────────────────
+const MODEL_OPTIONS = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
+  'claude-opus-4-5',
+  'claude-sonnet-4-5',
+  'claude-haiku-4-5',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku-20241022',
+  'claude-3-opus-20240229',
+]
+
+// ─── Persona definitions ──────────────────────────────────────────────────────
+const PERSONAS: { key: keyof Pick<AiConfig, 'guestCoordinator' | 'screeningAI' | 'managerTranslator'>; name: string; accent: string }[] = [
+  { key: 'guestCoordinator',  name: 'Guest Coordinator',  accent: '#1D4ED8' },
+  { key: 'screeningAI',       name: 'Screening AI',       accent: '#15803D' },
+  { key: 'managerTranslator', name: 'Manager Translator', accent: '#D97706' },
+]
+
+// ─── C4: Preset prompt templates ─────────────────────────────────────────────
+const PROMPT_PRESETS = [
+  { name: 'Luxury Property', prompt: 'You are an elegant concierge for a luxury vacation rental. Use refined, professional language. Address guests by name. Offer personalized recommendations for fine dining, premium experiences, and exclusive local attractions. Maintain discretion and attentiveness at all times.' },
+  { name: 'Budget-Friendly', prompt: 'You are a friendly, helpful host for a budget accommodation. Be warm, casual, and efficient. Focus on clear check-in instructions, practical local tips (affordable restaurants, public transport), and quick problem-solving. Keep responses concise.' },
+  { name: 'Family-Friendly', prompt: 'You are a welcoming host for a family-friendly vacation rental. Be warm and helpful. Highlight child-friendly amenities, nearby family activities, parks, and restaurants. Proactively share safety information and tips for traveling with children.' },
+  { name: 'Business Traveler', prompt: 'You are a professional host for business travelers. Be efficient and concise. Focus on WiFi details, workspace setup, nearby coffee shops, restaurants for business meals, and transportation to business districts. Respect their time.' },
+  { name: 'Party/Group Stay', prompt: 'You are a fun, organized host for group stays. Share house rules clearly (noise, parking, max occupancy). Recommend group activities, restaurants with large tables, and nearby entertainment. Be friendly but firm about property rules.' },
+] as const
+
+// ─── Shimmer keyframes (injected once) ───────────────────────────────────────
+const SHIMMER_STYLE_ID = 'configure-ai-shimmer'
+function ensureShimmerStyle(): void {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(SHIMMER_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = SHIMMER_STYLE_ID
+  style.textContent = `
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+// ─── Skeleton loaders ─────────────────────────────────────────────────────────
+function SkeletonCards(): React.ReactElement {
+  useEffect(() => { ensureShimmerStyle() }, [])
+  return (
+    <>
+      {[0, 1, 2].map(i => (
+        <div
+          key={i}
+          style={{
+            height: 80,
+            background: `linear-gradient(90deg, ${T.bg.tertiary} 25%, ${T.bg.secondary} 50%, ${T.bg.tertiary} 75%)`,
+            backgroundSize: '200% 100%',
+            borderRadius: T.radius.lg,
+            marginBottom: 16,
+            animation: 'shimmer 1.8s ease-in-out infinite',
+            boxShadow: T.shadow.sm,
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
+// ─── Stop sequences input ─────────────────────────────────────────────────────
+function StopSequencesInput({
+  sequences,
+  onRemove,
+  onAdd,
+}: {
+  sequences: string[]
+  onRemove: (index: number) => void
+  onAdd: (value: string) => void
+}): React.ReactElement {
+  const [inputValue, setInputValue] = useState('')
+
+  function commit(raw: string): void {
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+    parts.forEach(p => onAdd(p))
+    setInputValue('')
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      commit(inputValue)
+    }
+  }
+
+  function handleBlur(): void {
+    if (inputValue.trim()) {
+      commit(inputValue)
+    }
+  }
+
+  return (
+    <div>
+      {sequences.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {sequences.map((seq, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: T.bg.secondary,
+                border: `1px solid ${T.border.default}`,
+                borderRadius: 999,
+                padding: '3px 10px',
+                fontSize: 12,
+                fontFamily: T.font.mono,
+                color: T.text.primary,
+                boxShadow: T.shadow.sm,
+                transition: 'box-shadow 0.15s ease',
+              }}
+            >
+              {seq}
+              <button
+                onClick={() => onRemove(i)}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = T.status.red }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.text.tertiary }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  lineHeight: 1,
+                  color: T.text.tertiary,
+                  fontSize: 13,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  transition: 'color 0.12s ease',
+                }}
+                aria-label={`Remove stop sequence "${seq}"`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        value={inputValue}
+        onChange={e => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        placeholder="Type and press Enter or comma to add"
+        style={{
+          width: '100%',
+          border: `1px solid ${T.border.default}`,
+          borderRadius: T.radius.sm,
+          padding: '8px 12px',
+          fontSize: 13,
+          fontFamily: T.font.mono,
+          background: T.bg.secondary,
+          color: T.text.primary,
+          outline: 'none',
+          boxSizing: 'border-box',
+          transition: 'box-shadow 0.2s ease, background 0.2s ease',
+        }}
+        onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.background = T.bg.primary }}
+        onBlurCapture={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = T.bg.secondary }}
+      />
+    </div>
+  )
+}
+
+// ─── Persona card ─────────────────────────────────────────────────────────────
+function PersonaCard({
+  personaKey,
+  name,
+  accent,
+  config,
+  onChange,
+}: {
+  personaKey: string
+  name: string
+  accent: string
+  config: AiPersonaConfig
+  onChange: (next: AiPersonaConfig) => void
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      await apiUpdateAIConfig({ [personaKey]: config })
+      showToast('success', 'Saved')
+    } catch (err) {
+      showToast('error', `Error: ${err instanceof Error ? err.message : 'Failed to save'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleStopSeqAdd(value: string): void {
+    const existing = config.stopSequences ?? []
+    if (!existing.includes(value)) {
+      onChange({ ...config, stopSequences: [...existing, value] })
+    }
+  }
+
+  function handleStopSeqRemove(index: number): void {
+    const next = (config.stopSequences ?? []).filter((_, i) => i !== index)
+    onChange({ ...config, stopSequences: next.length ? next : undefined })
+  }
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 600,
+    color: T.text.secondary,
+    marginBottom: 6,
+    fontFamily: T.font.sans,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    border: `1px solid ${T.border.default}`,
+    borderRadius: T.radius.sm,
+    padding: '8px 12px',
+    fontSize: 13,
+    background: T.bg.primary,
+    color: T.text.primary,
+    outline: 'none',
+    fontFamily: T.font.sans,
+    boxSizing: 'border-box',
+    transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+  }
+
+  const fieldStyle: React.CSSProperties = {
+    marginBottom: 20,
+  }
+
+  function handleInputFocus(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>): void {
+    e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`
+    e.currentTarget.style.borderColor = T.accent
+  }
+
+  function handleInputBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>): void {
+    e.currentTarget.style.boxShadow = 'none'
+    e.currentTarget.style.borderColor = T.border.default
+  }
+
+  const cardIndex = PERSONAS.findIndex(p => p.key === personaKey)
+
+  return (
+    <div
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = T.shadow.lg }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = T.shadow.md }}
+      style={{
+        borderRadius: T.radius.lg,
+        border: `1px solid ${T.border.default}`,
+        marginBottom: 16,
+        background: T.bg.primary,
+        overflow: 'hidden',
+        boxShadow: T.shadow.md,
+        animation: 'fadeInUp 0.4s ease-out both',
+        animationDelay: `${cardIndex * 0.08}s`,
+        transition: 'box-shadow 0.25s ease',
+      }}
+    >
+      {/* Top accent stripe */}
+      <div style={{ height: 4, background: accent }} />
+      {/* Header */}
+      <div
+        onClick={() => setExpanded(v => !v)}
+        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = T.bg.secondary }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '14px 20px',
+          cursor: 'pointer',
+          userSelect: 'none',
+          gap: 10,
+          transition: 'background 0.15s ease',
+        }}
+      >
+        <span
+          style={{
+            flex: 1,
+            fontSize: 15,
+            fontWeight: 700,
+            color: T.text.primary,
+            fontFamily: T.font.sans,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {name}
+        </span>
+        <span
+          style={{
+            fontSize: 11,
+            color: T.text.secondary,
+            fontFamily: T.font.mono,
+            marginRight: 8,
+            background: T.bg.secondary,
+            border: `1px solid ${T.border.default}`,
+            borderRadius: 999,
+            padding: '2px 10px',
+            boxShadow: T.shadow.sm,
+          }}
+        >
+          {config.model}
+        </span>
+        {expanded
+          ? <ChevronUp size={16} style={{ color: T.text.secondary, flexShrink: 0 }} />
+          : <ChevronDown size={16} style={{ color: T.text.secondary, flexShrink: 0 }} />
+        }
+      </div>
+
+      {/* Body */}
+      {expanded && (
+        <div
+          style={{
+            padding: 20,
+            borderTop: `1px solid ${T.border.default}`,
+            animation: 'fadeInUp 0.3s ease-out',
+          }}
+        >
+          {/* Model */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Model</label>
+            <select
+              value={config.model}
+              onChange={e => onChange({ ...config, model: e.target.value })}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              style={{
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                padding: '8px 12px',
+                fontSize: 13,
+                background: T.bg.primary,
+                color: T.text.primary,
+                outline: 'none',
+                width: '100%',
+                fontFamily: T.font.sans,
+                cursor: 'pointer',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2357534E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+                paddingRight: 32,
+              }}
+            >
+              {MODEL_OPTIONS.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Temperature */}
+          <div style={fieldStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>Temperature</label>
+              <span
+                style={{
+                  background: T.bg.tertiary,
+                  borderRadius: T.radius.sm,
+                  padding: '2px 10px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: T.font.mono,
+                  color: T.text.primary,
+                  minWidth: 40,
+                  textAlign: 'center',
+                }}
+              >
+                {config.temperature.toFixed(2)}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.temperature}
+              onChange={e => onChange({ ...config, temperature: parseFloat(e.target.value) })}
+              style={{
+                width: '100%',
+                cursor: 'pointer',
+                accentColor: accent,
+                height: 6,
+              }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: 10,
+                color: T.text.tertiary,
+                marginTop: 4,
+                fontFamily: T.font.mono,
+              }}
+            >
+              <span>0.00 Precise</span>
+              <span>1.00 Creative</span>
+            </div>
+          </div>
+
+          {/* Max Tokens */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Max Tokens</label>
+            <input
+              type="number"
+              value={config.maxTokens}
+              onChange={e => {
+                const v = parseInt(e.target.value, 10)
+                if (!isNaN(v)) onChange({ ...config, maxTokens: v })
+              }}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              style={{ ...inputStyle, fontFamily: T.font.mono, width: 160 }}
+            />
+          </div>
+
+          {/* C4: Preset Prompt Templates */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Load Preset Template</label>
+            <select
+              value=""
+              onChange={e => {
+                const preset = PROMPT_PRESETS.find(p => p.name === e.target.value)
+                if (preset) onChange({ ...config, systemPrompt: preset.prompt })
+              }}
+              style={{
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                padding: '8px 12px',
+                fontSize: 13,
+                background: T.bg.primary,
+                color: T.text.tertiary,
+                outline: 'none',
+                width: '100%',
+                fontFamily: T.font.sans,
+                cursor: 'pointer',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2357534E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+                paddingRight: 32,
+              }}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+            >
+              <option value="">Select a preset...</option>
+              {PROMPT_PRESETS.map(p => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+            <p style={{ fontSize: 11, color: T.text.tertiary, margin: '6px 0 0', fontFamily: T.font.sans, lineHeight: 1.4 }}>
+              Choose a pre-built prompt template optimized for common property types.
+            </p>
+          </div>
+
+          {/* System Prompt */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>System Prompt</label>
+            <textarea
+              value={config.systemPrompt}
+              onChange={e => onChange({ ...config, systemPrompt: e.target.value })}
+              spellCheck={false}
+              onFocus={e => {
+                e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`
+                e.currentTarget.style.borderColor = T.accent
+                e.currentTarget.style.background = T.bg.primary
+              }}
+              onBlur={e => {
+                e.currentTarget.style.boxShadow = 'none'
+                e.currentTarget.style.borderColor = T.border.default
+                e.currentTarget.style.background = T.bg.secondary
+              }}
+              style={{
+                width: '100%',
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                padding: '10px 14px',
+                fontSize: 12.5,
+                background: T.bg.secondary,
+                color: T.text.primary,
+                outline: 'none',
+                fontFamily: T.font.mono,
+                minHeight: 120,
+                resize: 'vertical',
+                boxSizing: 'border-box',
+                lineHeight: 1.65,
+                transition: 'box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease',
+              }}
+            />
+          </div>
+
+          {/* Stop Sequences */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Stop Sequences</label>
+            <StopSequencesInput
+              sequences={config.stopSequences ?? []}
+              onRemove={handleStopSeqRemove}
+              onAdd={handleStopSeqAdd}
+            />
+          </div>
+
+          {/* Save row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              onMouseEnter={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = '#2D2926'; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.md } }}
+              onMouseLeave={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = T.border.strong; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.sm } }}
+              style={{
+                background: T.border.strong,
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: T.radius.sm,
+                padding: '9px 24px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.5 : 1,
+                fontFamily: T.font.sans,
+                transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+                boxShadow: T.shadow.sm,
+                letterSpacing: '0.01em',
+              }}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+
+            {toast && (
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: toast.type === 'success' ? T.status.green : T.status.red,
+                  fontFamily: T.font.sans,
+                }}
+              >
+                {toast.message}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+export function ConfigureAiV5(): React.ReactElement {
+  const [config, setConfig] = useState<AiConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [configVersion, setConfigVersion] = useState(0)
+
+  const reloadConfig = useCallback((): void => {
+    apiGetAIConfig()
+      .then(data => {
+        setConfig(data)
+        setConfigVersion(v => v + 1)
+      })
+      .catch(() => { /* ignore reload errors */ })
+  }, [])
+
+  useEffect(() => {
+    apiGetAIConfig()
+      .then(data => {
+        setConfig(data)
+        setLoading(false)
+      })
+      .catch(err => {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load config')
+        setLoading(false)
+      })
+  }, [])
+
+  function updatePersona(key: keyof Pick<AiConfig, 'guestCoordinator' | 'screeningAI' | 'managerTranslator'>, next: AiPersonaConfig): void {
+    setConfig(prev => prev ? { ...prev, [key]: next } : prev)
+  }
+
+  useEffect(() => { ensureShimmerStyle() }, [])
+
+  return (
+    <div
+      style={{
+        height: '100%',
+        overflowY: 'auto',
+        background: T.bg.secondary,
+        padding: 32,
+        fontFamily: T.font.sans,
+      }}
+    >
+      <div style={{ maxWidth: 700, margin: '0 auto' }}>
+        {/* Page heading */}
+        <div style={{ marginBottom: 24, animation: 'fadeInUp 0.4s ease-out both' }}>
+          <h1
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              color: T.text.primary,
+              margin: 0,
+              fontFamily: T.font.sans,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Configure AI
+          </h1>
+          <p
+            style={{
+              fontSize: 13,
+              color: T.text.secondary,
+              margin: '8px 0 0',
+              fontFamily: T.font.sans,
+              lineHeight: 1.5,
+            }}
+          >
+            Adjust model, sampling parameters, system prompt, and stop sequences for each AI persona.
+          </p>
+        </div>
+
+        {/* Load error */}
+        {loadError && (
+          <div
+            style={{
+              background: 'rgba(220,38,38,0.05)',
+              border: '1px solid rgba(220,38,38,0.15)',
+              borderRadius: T.radius.md,
+              padding: '12px 16px',
+              fontSize: 13,
+              color: T.status.red,
+              marginBottom: 20,
+              fontFamily: T.font.sans,
+              boxShadow: T.shadow.sm,
+            }}
+          >
+            Failed to load AI config: {loadError}
+          </div>
+        )}
+
+        {/* Skeleton / content */}
+        {loading ? (
+          <SkeletonCards />
+        ) : config ? (
+          <>
+            {/* General Settings */}
+            <GeneralSettings
+              debounceDelayMs={config.debounceDelayMs ?? 120000}
+              onChange={ms => setConfig(prev => prev ? { ...prev, debounceDelayMs: ms } : prev)}
+            />
+
+            {PERSONAS.map(({ key, name, accent }) => (
+              <PersonaCard
+                key={key}
+                personaKey={key}
+                name={name}
+                accent={accent}
+                config={config[key] as AiPersonaConfig}
+                onChange={next => updatePersona(key, next)}
+              />
+            ))}
+
+            {/* Prompt Playground */}
+            <PromptPlayground config={config} />
+
+            {/* Guardrails */}
+            <GuardrailsEditor
+              guardrails={config.guardrails ?? []}
+              onChange={next => setConfig(prev => prev ? { ...prev, guardrails: next } : prev)}
+            />
+
+            {/* Escalation Settings */}
+            <EscalationSettings
+              escalation={config.escalation ?? { confidenceThreshold: 70, triggerKeywords: [], maxConsecutiveAiReplies: 5 }}
+              onChange={next => setConfig(prev => prev ? { ...prev, escalation: next } : prev)}
+            />
+
+            {/* Version History */}
+            <VersionHistory configVersion={configVersion} onRevert={reloadConfig} />
+          </>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── General Settings ────────────────────────────────────────────────────────
+
+function GeneralSettings({
+  debounceDelayMs,
+  onChange,
+}: {
+  debounceDelayMs: number
+  onChange: (ms: number) => void
+}): React.ReactElement {
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [localSeconds, setLocalSeconds] = useState(Math.round(debounceDelayMs / 1000))
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  async function handleSave(): Promise<void> {
+    const ms = localSeconds * 1000
+    setSaving(true)
+    try {
+      await apiUpdateAIConfig({ debounceDelayMs: ms })
+      onChange(ms)
+      showToast('success', 'Settings saved')
+    } catch {
+      showToast('error', 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cardStyle: React.CSSProperties = {
+    borderRadius: T.radius.lg,
+    border: `1px solid ${T.border.default}`,
+    background: T.bg.primary,
+    marginBottom: 16,
+    boxShadow: T.shadow.md,
+    overflow: 'hidden',
+    animation: 'fadeInUp 0.4s ease-out both',
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: 90,
+    padding: '8px 12px',
+    borderRadius: T.radius.sm,
+    border: `1px solid ${T.border.default}`,
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: T.font.mono,
+    color: T.text.primary,
+    background: T.bg.secondary,
+    outline: 'none',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+  }
+
+  return (
+    <div style={cardStyle}>
+      {/* Header */}
+      <div
+        style={{
+          padding: '16px 20px',
+          borderBottom: `1px solid ${T.border.default}`,
+          background: T.bg.secondary,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: T.radius.sm,
+            background: '#6B728018',
+            border: '1px solid #6B728028',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+          </svg>
+        </div>
+        <div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, letterSpacing: '-0.01em' }}>
+            General Settings
+          </span>
+          <p style={{ fontSize: 12, color: T.text.secondary, margin: '2px 0 0', fontFamily: T.font.sans }}>
+            Global settings that apply across all AI personas
+          </p>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: 20 }}>
+        {/* AI Reply Delay */}
+        <div style={{ marginBottom: 20 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 12,
+              fontWeight: 600,
+              color: T.text.secondary,
+              fontFamily: T.font.sans,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: 6,
+            }}
+          >
+            AI Reply Delay
+          </label>
+          <p style={{ fontSize: 12, color: T.text.tertiary, margin: '0 0 10px', fontFamily: T.font.sans, lineHeight: 1.5 }}>
+            How long to wait after the last guest message before the AI sends a reply. Useful for letting guests send multiple messages before the AI responds.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input
+              type="number"
+              min={5}
+              max={600}
+              step={5}
+              value={localSeconds}
+              onChange={e => setLocalSeconds(Math.max(5, Math.min(600, parseInt(e.target.value, 10) || 5)))}
+              onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.boxShadow = `0 0 0 3px ${T.accent}18` }}
+              onBlur={e => { e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.boxShadow = 'none' }}
+              style={inputStyle}
+            />
+            <span style={{ fontSize: 13, color: T.text.secondary, fontFamily: T.font.sans }}>seconds</span>
+            <div
+              style={{
+                marginLeft: 4,
+                fontSize: 11,
+                color: T.text.tertiary,
+                fontFamily: T.font.sans,
+                background: T.bg.secondary,
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                padding: '4px 10px',
+              }}
+            >
+              {localSeconds < 60
+                ? `${localSeconds}s`
+                : `${Math.floor(localSeconds / 60)}m ${localSeconds % 60 > 0 ? `${localSeconds % 60}s` : ''}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, borderTop: `1px solid ${T.border.default}` }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              marginTop: 14,
+              background: saving ? T.text.tertiary : T.accent,
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: T.radius.sm,
+              padding: '9px 20px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.6 : 1,
+              fontFamily: T.font.sans,
+              transition: 'background 0.2s ease, opacity 0.2s ease',
+              boxShadow: T.shadow.sm,
+            }}
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </button>
+          {toast && (
+            <span
+              style={{
+                marginTop: 14,
+                fontSize: 12,
+                fontWeight: 500,
+                color: toast.type === 'success' ? T.status.green : T.status.red,
+                fontFamily: T.font.sans,
+                animation: 'fadeInUp 0.2s ease-out',
+              }}
+            >
+              {toast.message}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Prompt Playground ───────────────────────────────────────────────────────
+
+function PromptPlayground({ config }: { config: AiConfig }): React.ReactElement {
+  const [selectedPersona, setSelectedPersona] = useState<'guestCoordinator' | 'screeningAI' | 'managerTranslator'>('guestCoordinator')
+  const [userMessage, setUserMessage] = useState('')
+  const [response, setResponse] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [stats, setStats] = useState<{ inputTokens: number; outputTokens: number; durationMs: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const persona = config[selectedPersona]
+
+  const handleTest = async (): Promise<void> => {
+    if (!userMessage.trim() || testing) return
+    setTesting(true)
+    setResponse('')
+    setError(null)
+    setStats(null)
+    try {
+      const result = await apiTestAiConfig({
+        systemPrompt: persona.systemPrompt,
+        userMessage: userMessage.trim(),
+        model: persona.model,
+        temperature: persona.temperature,
+        maxTokens: persona.maxTokens,
+      })
+      setResponse(result.response)
+      setStats({ inputTokens: result.inputTokens, outputTokens: result.outputTokens, durationMs: result.durationMs })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Test failed')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div style={{
+      borderRadius: T.radius.lg,
+      border: `1px solid ${T.border.default}`,
+      background: T.bg.primary,
+      overflow: 'hidden',
+      marginTop: 24,
+      boxShadow: T.shadow.md,
+      animation: 'fadeInUp 0.4s ease-out both',
+      animationDelay: '0.3s',
+    }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #F0F4FF 0%, #EEF2FF 50%, #F5F3FF 100%)',
+        padding: '10px 20px',
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.06em',
+        color: T.accent,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        borderBottom: `1px solid ${T.border.default}`,
+      }}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Play size={11} style={{ color: '#FFFFFF', marginLeft: 1 }} />
+        </div>
+        Prompt Playground
+      </div>
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Persona selector */}
+        <select
+          value={selectedPersona}
+          onChange={e => setSelectedPersona(e.target.value as typeof selectedPersona)}
+          style={{
+            width: '100%', padding: '8px 12px', border: `1px solid ${T.border.default}`,
+            borderRadius: T.radius.sm, fontSize: 13, fontFamily: T.font.sans, color: T.text.primary,
+            background: T.bg.primary, outline: 'none', cursor: 'pointer',
+            transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+            appearance: 'none',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2357534E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 12px center',
+            paddingRight: 32,
+          }}
+          onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.borderColor = T.accent }}
+          onBlur={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = T.border.default }}
+        >
+          <option value="guestCoordinator">Guest Coordinator</option>
+          <option value="screeningAI">Screening AI</option>
+          <option value="managerTranslator">Manager Translator</option>
+        </select>
+
+        {/* User message */}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, color: T.text.secondary, marginBottom: 6 }}>
+            Test Message
+          </div>
+          <textarea
+            placeholder="Type a sample guest message to test the AI response..."
+            value={userMessage}
+            onChange={e => setUserMessage(e.target.value)}
+            rows={3}
+            style={{
+              width: '100%', padding: '10px 14px', border: `1px solid ${T.border.default}`,
+              borderRadius: T.radius.sm, fontSize: 13, fontFamily: T.font.sans, color: T.text.primary,
+              background: T.bg.secondary, outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+              lineHeight: 1.5, transition: 'box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease',
+            }}
+            onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg.primary }}
+            onBlur={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.background = T.bg.secondary }}
+          />
+        </div>
+
+        {/* Test button */}
+        <button
+          onClick={handleTest}
+          disabled={!userMessage.trim() || testing}
+          onMouseEnter={e => { if (userMessage.trim() && !testing) { (e.currentTarget as HTMLButtonElement).style.background = '#1E40AF'; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.md } }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = T.accent; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.sm }}
+          style={{
+            alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 7,
+            padding: '9px 20px', fontSize: 13, fontWeight: 600, borderRadius: T.radius.sm,
+            border: 'none', background: T.accent, color: '#FFFFFF', cursor: !userMessage.trim() || testing ? 'not-allowed' : 'pointer',
+            fontFamily: T.font.sans, opacity: !userMessage.trim() || testing ? 0.5 : 1,
+            transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+            boxShadow: T.shadow.sm,
+          }}
+        >
+          <Play size={13} style={{ marginLeft: 1 }} />
+          {testing ? 'Running...' : 'Run Test'}
+        </button>
+
+        {/* Response */}
+        {response && (
+          <div style={{ animation: 'fadeInUp 0.3s ease-out' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, color: T.text.secondary, marginBottom: 6 }}>
+              AI Response
+            </div>
+            <div style={{
+              background: T.bg.secondary, padding: 16, borderRadius: T.radius.md,
+              fontSize: 13, fontFamily: T.font.sans, color: T.text.primary,
+              lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+              maxHeight: 300, overflowY: 'auto', border: `1px solid ${T.border.default}`,
+            }}>
+              {response}
+            </div>
+            {stats && (
+              <div style={{
+                marginTop: 8, fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary,
+                display: 'flex', gap: 16, padding: '6px 0',
+              }}>
+                <span style={{ background: T.bg.secondary, borderRadius: 4, padding: '1px 8px' }}>{stats.inputTokens} in</span>
+                <span style={{ background: T.bg.secondary, borderRadius: 4, padding: '1px 8px' }}>{stats.outputTokens} out</span>
+                <span style={{ background: T.bg.secondary, borderRadius: 4, padding: '1px 8px' }}>{stats.durationMs}ms</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div style={{
+            background: 'rgba(220,38,38,0.05)', padding: 12, borderRadius: T.radius.sm,
+            fontSize: 12, color: T.status.red, border: '1px solid rgba(220,38,38,0.15)',
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Guardrails Editor (C2) ─────────────────────────────────────────────────
+
+const PLACEHOLDER_RULES = [
+  'Never discuss pricing below the listed rate',
+  'Always escalate legal or liability mentions to the host',
+  'Do not share personal contact information of the host',
+]
+
+function GuardrailsEditor({
+  guardrails,
+  onChange,
+}: {
+  guardrails: string[]
+  onChange: (next: string[]) => void
+}): React.ReactElement {
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  function handleRuleChange(index: number, value: string): void {
+    const next = [...guardrails]
+    next[index] = value
+    onChange(next)
+  }
+
+  function handleRemoveRule(index: number): void {
+    onChange(guardrails.filter((_, i) => i !== index))
+  }
+
+  function handleAddRule(): void {
+    onChange([...guardrails, ''])
+  }
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      const filtered = guardrails.filter(r => r.trim().length > 0)
+      await apiUpdateAIConfig({ guardrails: filtered })
+      onChange(filtered)
+      showToast('success', 'Guardrails saved')
+    } catch (err) {
+      showToast('error', `Error: ${err instanceof Error ? err.message : 'Failed to save'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cardHeaderStyle: React.CSSProperties = {
+    background: T.bg.secondary,
+    padding: '10px 20px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: T.text.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    borderBottom: `1px solid ${T.border.default}`,
+  }
+
+  const isEmpty = guardrails.length === 0
+
+  return (
+    <div style={{
+      borderRadius: T.radius.lg,
+      border: `1px solid ${T.border.default}`,
+      background: T.bg.primary,
+      overflow: 'hidden',
+      marginTop: 24,
+      boxShadow: T.shadow.md,
+      animation: 'fadeInUp 0.4s ease-out both',
+      animationDelay: '0.35s',
+    }}>
+      <div style={cardHeaderStyle}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: T.border.strong, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Shield size={11} style={{ color: '#FFFFFF' }} />
+        </div>
+        Guardrails
+      </div>
+      <div style={{ padding: 20 }}>
+        {isEmpty && (
+          <div style={{
+            fontSize: 12,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+            marginBottom: 16,
+            lineHeight: 1.5,
+            background: T.bg.secondary,
+            padding: 16,
+            borderRadius: T.radius.md,
+            border: `1px dashed ${T.border.default}`,
+          }}>
+            No guardrails configured. Add rules to constrain AI behavior. Examples:
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {PLACEHOLDER_RULES.map((r, i) => (
+                <li key={i} style={{ marginBottom: 4 }}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {guardrails.map((rule, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '8px 0',
+              borderBottom: `1px solid ${T.border.default}`,
+            }}
+          >
+            <span style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: T.text.tertiary,
+              fontFamily: T.font.mono,
+              minWidth: 24,
+              textAlign: 'right',
+              background: T.bg.secondary,
+              borderRadius: 4,
+              padding: '2px 0',
+              display: 'inline-flex',
+              justifyContent: 'center',
+            }}>
+              {i + 1}.
+            </span>
+            <input
+              type="text"
+              value={rule}
+              onChange={e => handleRuleChange(i, e.target.value)}
+              placeholder="Enter a guardrail rule..."
+              style={{
+                flex: 1,
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                padding: '8px 12px',
+                fontSize: 13,
+                background: T.bg.primary,
+                color: T.text.primary,
+                outline: 'none',
+                fontFamily: T.font.sans,
+                boxSizing: 'border-box',
+                transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+              }}
+              onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.borderColor = T.accent }}
+              onBlur={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = T.border.default }}
+            />
+            <button
+              onClick={() => handleRemoveRule(i)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px 6px',
+                lineHeight: 1,
+                color: T.text.tertiary,
+                fontSize: 16,
+                display: 'inline-flex',
+                alignItems: 'center',
+                borderRadius: T.radius.sm,
+                transition: 'color 0.15s ease, background 0.15s ease',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = T.status.red; (e.currentTarget as HTMLButtonElement).style.background = 'rgba(220,38,38,0.06)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.text.tertiary; (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+              aria-label={`Remove rule ${i + 1}`}
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <button
+            onClick={handleAddRule}
+            style={{
+              background: 'none',
+              border: `1px dashed ${T.border.default}`,
+              borderRadius: T.radius.sm,
+              padding: '8px 16px',
+              fontSize: 12,
+              fontWeight: 600,
+              color: T.text.secondary,
+              cursor: 'pointer',
+              fontFamily: T.font.sans,
+              transition: 'border-color 0.15s ease, color 0.15s ease',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.accent; (e.currentTarget as HTMLButtonElement).style.color = T.accent }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.border.default; (e.currentTarget as HTMLButtonElement).style.color = T.text.secondary }}
+          >
+            + Add Rule
+          </button>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            onMouseEnter={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = '#2D2926'; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.md } }}
+            onMouseLeave={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = T.border.strong; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.sm } }}
+            style={{
+              background: T.border.strong,
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: T.radius.sm,
+              padding: '9px 20px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.5 : 1,
+              fontFamily: T.font.sans,
+              transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+              boxShadow: T.shadow.sm,
+            }}
+          >
+            {saving ? 'Saving...' : 'Save Guardrails'}
+          </button>
+
+          {toast && (
+            <span style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: toast.type === 'success' ? T.status.green : T.status.red,
+              fontFamily: T.font.sans,
+              animation: 'fadeInUp 0.2s ease-out',
+            }}>
+              {toast.message}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Escalation Settings (C5) ───────────────────────────────────────────────
+
+function EscalationSettings({
+  escalation,
+  onChange,
+}: {
+  escalation: { confidenceThreshold: number; triggerKeywords: string[]; maxConsecutiveAiReplies: number }
+  onChange: (next: { confidenceThreshold: number; triggerKeywords: string[]; maxConsecutiveAiReplies: number }) => void
+}): React.ReactElement {
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [keywordInput, setKeywordInput] = useState('')
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  function handleAddKeyword(raw: string): void {
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+    const existing = new Set(escalation.triggerKeywords)
+    const added = parts.filter(p => !existing.has(p))
+    if (added.length > 0) {
+      onChange({ ...escalation, triggerKeywords: [...escalation.triggerKeywords, ...added] })
+    }
+    setKeywordInput('')
+  }
+
+  function handleRemoveKeyword(index: number): void {
+    onChange({
+      ...escalation,
+      triggerKeywords: escalation.triggerKeywords.filter((_, i) => i !== index),
+    })
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      handleAddKeyword(keywordInput)
+    }
+  }
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      await apiUpdateAIConfig({ escalation })
+      showToast('success', 'Escalation settings saved')
+    } catch (err) {
+      showToast('error', `Error: ${err instanceof Error ? err.message : 'Failed to save'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cardHeaderStyle: React.CSSProperties = {
+    background: T.bg.secondary,
+    padding: '10px 20px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: T.text.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    borderBottom: `1px solid ${T.border.default}`,
+  }
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 11,
+    fontWeight: 600,
+    color: T.text.secondary,
+    marginBottom: 6,
+    fontFamily: T.font.sans,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase' as const,
+  }
+
+  const fieldStyle: React.CSSProperties = {
+    marginBottom: 20,
+  }
+
+  return (
+    <div style={{
+      borderRadius: T.radius.lg,
+      border: `1px solid ${T.border.default}`,
+      background: T.bg.primary,
+      overflow: 'hidden',
+      marginTop: 24,
+      boxShadow: T.shadow.md,
+      animation: 'fadeInUp 0.4s ease-out both',
+      animationDelay: '0.4s',
+    }}>
+      <div style={cardHeaderStyle}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: T.status.amber, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <AlertTriangle size={11} style={{ color: '#FFFFFF' }} />
+        </div>
+        Escalation Settings
+      </div>
+      <div style={{ padding: 20 }}>
+        {/* Confidence Threshold */}
+        <div style={fieldStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>Confidence Threshold</label>
+            <span style={{
+              background: T.bg.tertiary,
+              borderRadius: T.radius.sm,
+              padding: '2px 10px',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: T.font.mono,
+              color: T.text.primary,
+              minWidth: 42,
+              textAlign: 'center',
+            }}>
+              {escalation.confidenceThreshold}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={escalation.confidenceThreshold}
+            onChange={e => onChange({ ...escalation, confidenceThreshold: parseInt(e.target.value, 10) })}
+            style={{
+              width: '100%',
+              cursor: 'pointer',
+              accentColor: T.status.amber,
+              height: 6,
+            }}
+          />
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: 10,
+            color: T.text.tertiary,
+            marginTop: 4,
+            fontFamily: T.font.mono,
+          }}>
+            <span>0 Always escalate</span>
+            <span>100 Never escalate</span>
+          </div>
+        </div>
+
+        {/* Trigger Keywords */}
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Trigger Keywords</label>
+          {escalation.triggerKeywords.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {escalation.triggerKeywords.map((kw, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: T.bg.secondary,
+                    border: `1px solid ${T.border.default}`,
+                    borderRadius: 999,
+                    padding: '3px 10px',
+                    fontSize: 12,
+                    fontFamily: T.font.sans,
+                    color: T.text.primary,
+                    boxShadow: T.shadow.sm,
+                    transition: 'box-shadow 0.15s ease',
+                  }}
+                >
+                  {kw}
+                  <button
+                    onClick={() => handleRemoveKeyword(i)}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = T.status.red }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.text.tertiary }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                      lineHeight: 1,
+                      color: T.text.tertiary,
+                      fontSize: 13,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      transition: 'color 0.12s ease',
+                    }}
+                    aria-label={`Remove keyword "${kw}"`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={keywordInput}
+            onChange={e => setKeywordInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => { if (keywordInput.trim()) handleAddKeyword(keywordInput) }}
+            placeholder="Type keyword and press Enter (e.g. refund, lawyer, complaint)"
+            style={{
+              width: '100%',
+              border: `1px solid ${T.border.default}`,
+              borderRadius: T.radius.sm,
+              padding: '8px 12px',
+              fontSize: 13,
+              fontFamily: T.font.sans,
+              background: T.bg.secondary,
+              color: T.text.primary,
+              outline: 'none',
+              boxSizing: 'border-box',
+              transition: 'box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease',
+            }}
+            onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg.primary }}
+            onBlurCapture={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.background = T.bg.secondary }}
+          />
+        </div>
+
+        {/* Max Consecutive AI Replies */}
+        <div style={fieldStyle}>
+          <label style={labelStyle}>Max Consecutive AI Replies</label>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={escalation.maxConsecutiveAiReplies}
+            onChange={e => {
+              const v = parseInt(e.target.value, 10)
+              if (!isNaN(v) && v >= 1 && v <= 20) {
+                onChange({ ...escalation, maxConsecutiveAiReplies: v })
+              }
+            }}
+            style={{
+              width: 110,
+              border: `1px solid ${T.border.default}`,
+              borderRadius: T.radius.sm,
+              padding: '8px 12px',
+              fontSize: 14,
+              fontWeight: 600,
+              background: T.bg.primary,
+              color: T.text.primary,
+              outline: 'none',
+              fontFamily: T.font.mono,
+              boxSizing: 'border-box',
+              transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+              textAlign: 'center',
+            }}
+            onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px rgba(29,78,216,0.15)`; e.currentTarget.style.borderColor = T.accent }}
+            onBlur={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = T.border.default }}
+          />
+          <div style={{
+            fontSize: 11,
+            color: T.text.tertiary,
+            marginTop: 6,
+            fontFamily: T.font.sans,
+            lineHeight: 1.4,
+          }}>
+            Escalate to host after this many consecutive AI replies without guest resolution.
+          </div>
+        </div>
+
+        {/* Save */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            onMouseEnter={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = '#2D2926'; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.md } }}
+            onMouseLeave={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = T.border.strong; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.sm } }}
+            style={{
+              background: T.border.strong,
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: T.radius.sm,
+              padding: '9px 20px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.5 : 1,
+              fontFamily: T.font.sans,
+              transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+              boxShadow: T.shadow.sm,
+            }}
+          >
+            {saving ? 'Saving...' : 'Save Escalation Settings'}
+          </button>
+
+          {toast && (
+            <span style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: toast.type === 'success' ? T.status.green : T.status.red,
+              fontFamily: T.font.sans,
+              animation: 'fadeInUp 0.2s ease-out',
+            }}>
+              {toast.message}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Version History (C3) ───────────────────────────────────────────────────
+
+function VersionHistory({
+  configVersion,
+  onRevert,
+}: {
+  configVersion: number
+  onRevert: () => void
+}): React.ReactElement {
+  const [versions, setVersions] = useState<AiConfigVersion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [reverting, setReverting] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2000)
+  }
+
+  useEffect(() => {
+    apiGetAiConfigVersions()
+      .then(data => {
+        setVersions(data.slice(0, 10))
+        setLoading(false)
+      })
+      .catch(() => {
+        setLoading(false)
+      })
+  }, [configVersion])
+
+  async function handleRevert(id: string): Promise<void> {
+    setReverting(id)
+    try {
+      await apiRevertAiConfigVersion(id)
+      showToast('success', 'Reverted successfully')
+      onRevert()
+    } catch (err) {
+      showToast('error', `Error: ${err instanceof Error ? err.message : 'Revert failed'}`)
+    } finally {
+      setReverting(null)
+    }
+  }
+
+  function formatVersionDate(iso: string): string {
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  }
+
+  const cardHeaderStyle: React.CSSProperties = {
+    background: T.bg.secondary,
+    padding: '10px 20px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: T.text.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    borderBottom: `1px solid ${T.border.default}`,
+  }
+
+  return (
+    <div style={{
+      borderRadius: T.radius.lg,
+      border: `1px solid ${T.border.default}`,
+      background: T.bg.primary,
+      overflow: 'hidden',
+      marginTop: 24,
+      marginBottom: 48,
+      boxShadow: T.shadow.md,
+      animation: 'fadeInUp 0.4s ease-out both',
+      animationDelay: '0.45s',
+    }}>
+      <div style={cardHeaderStyle}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          background: T.text.secondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <History size={11} style={{ color: '#FFFFFF' }} />
+        </div>
+        Version History
+      </div>
+      <div style={{ padding: 20 }}>
+        {toast && (
+          <div style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: toast.type === 'success' ? T.status.green : T.status.red,
+            fontFamily: T.font.sans,
+            marginBottom: 12,
+            animation: 'fadeInUp 0.2s ease-out',
+          }}>
+            {toast.message}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{
+            fontSize: 12,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+            padding: '8px 0',
+          }}>
+            Loading versions...
+          </div>
+        ) : versions.length === 0 ? (
+          <div style={{
+            fontSize: 12,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+            background: T.bg.secondary,
+            padding: 16,
+            borderRadius: T.radius.md,
+            border: `1px dashed ${T.border.default}`,
+            lineHeight: 1.5,
+          }}>
+            No version history yet. Versions are created each time you save a config change.
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            {/* Timeline line */}
+            <div style={{
+              position: 'absolute',
+              left: 15,
+              top: 8,
+              bottom: 8,
+              width: 2,
+              background: T.border.default,
+              borderRadius: 1,
+            }} />
+            {versions.map((v, i) => (
+              <div
+                key={v.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '10px 0 10px 36px',
+                  gap: 12,
+                  position: 'relative',
+                }}
+              >
+                {/* Timeline dot */}
+                <div style={{
+                  position: 'absolute',
+                  left: 10,
+                  width: 12,
+                  height: 12,
+                  borderRadius: 999,
+                  background: i === 0 ? T.status.green : T.bg.primary,
+                  border: `2px solid ${i === 0 ? T.status.green : T.border.default}`,
+                  boxShadow: i === 0 ? `0 0 0 3px rgba(21,128,61,0.15)` : 'none',
+                }} />
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fontFamily: T.font.mono,
+                  color: i === 0 ? T.text.primary : T.text.secondary,
+                  minWidth: 36,
+                  background: i === 0 ? T.bg.tertiary : 'transparent',
+                  borderRadius: 4,
+                  padding: '1px 4px',
+                  textAlign: 'center',
+                }}>
+                  v{v.version}
+                </span>
+                <span style={{
+                  flex: 1,
+                  fontSize: 12,
+                  color: T.text.secondary,
+                  fontFamily: T.font.mono,
+                }}>
+                  {formatVersionDate(v.createdAt)}
+                  {v.note && (
+                    <span style={{ color: T.text.tertiary, marginLeft: 8, fontStyle: 'italic', fontFamily: T.font.sans }}>
+                      {v.note}
+                    </span>
+                  )}
+                </span>
+                {i > 0 && (
+                  <button
+                    onClick={() => handleRevert(v.id)}
+                    disabled={reverting === v.id}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = T.bg.tertiary; (e.currentTarget as HTMLButtonElement).style.borderColor = T.text.secondary }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = T.bg.secondary; (e.currentTarget as HTMLButtonElement).style.borderColor = T.border.default }}
+                    style={{
+                      background: T.bg.secondary,
+                      border: `1px solid ${T.border.default}`,
+                      borderRadius: T.radius.sm,
+                      padding: '4px 12px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: T.text.secondary,
+                      cursor: reverting === v.id ? 'not-allowed' : 'pointer',
+                      fontFamily: T.font.sans,
+                      opacity: reverting === v.id ? 0.5 : 1,
+                      transition: 'background 0.15s ease, opacity 0.15s ease, border-color 0.15s ease',
+                    }}
+                  >
+                    {reverting === v.id ? 'Reverting...' : 'Revert'}
+                  </button>
+                )}
+                {i === 0 && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: T.status.green,
+                    fontFamily: T.font.sans,
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.06em',
+                    background: 'rgba(21,128,61,0.08)',
+                    borderRadius: 999,
+                    padding: '2px 10px',
+                  }}>
+                    Current
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

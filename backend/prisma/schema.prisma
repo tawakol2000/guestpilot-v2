@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                    String                @id @default(cuid())
+  email                 String                @unique
+  passwordHash          String
+  hostawayApiKey        String
+  hostawayAccountId     String
+  webhookSecret         String                @default("")
+  plan                  Plan                  @default(FREE)
+  propertyCount         Int                   @default(0)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  lastSyncedAt          DateTime?
+  conversations         Conversation[]
+  guests                Guest[]
+  messages              Message[]
+  pendingReplies        PendingAiReply[]
+  properties            Property[]
+  reservations          Reservation[]
+  tasks                 Task[]
+  messageTemplates      MessageTemplate[]
+  knowledgeSuggestions  KnowledgeSuggestion[]
+  aiApiLogs             AiApiLog[]
+  aiConfigVersions      AiConfigVersion[]
+  automatedMessages     AutomatedMessage[]
+}
+
+model Property {
+  id                   String                @id @default(cuid())
+  tenantId             String
+  hostawayListingId    String
+  name                 String
+  address              String                @default("")
+  listingDescription   String                @default("")
+  customKnowledgeBase  Json                  @default("{}")
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  conversations        Conversation[]
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservations         Reservation[]
+  tasks                Task[]
+  knowledgeSuggestions KnowledgeSuggestion[]
+
+  @@unique([tenantId, hostawayListingId])
+  @@index([tenantId])
+}
+
+model Guest {
+  id              String         @id @default(cuid())
+  tenantId        String
+  hostawayGuestId String
+  name            String
+  email           String         @default("")
+  phone           String         @default("")
+  nationality     String         @default("")
+  createdAt       DateTime       @default(now())
+  conversations   Conversation[]
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservations    Reservation[]
+
+  @@unique([tenantId, hostawayGuestId])
+  @@index([tenantId])
+}
+
+model Reservation {
+  id                    String            @id @default(cuid())
+  tenantId              String
+  propertyId            String
+  guestId               String
+  hostawayReservationId String
+  checkIn               DateTime
+  checkOut              DateTime
+  guestCount            Int               @default(1)
+  channel               Channel           @default(OTHER)
+  status                ReservationStatus @default(CONFIRMED)
+  screeningAnswers      Json              @default("{}")
+  aiEnabled             Boolean           @default(true)
+  aiMode                String            @default("autopilot")
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  conversations         Conversation[]
+  guest                 Guest             @relation(fields: [guestId], references: [id])
+  property              Property          @relation(fields: [propertyId], references: [id])
+  tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, hostawayReservationId])
+  @@index([tenantId])
+  @@index([propertyId])
+}
+
+model Conversation {
+  id                     String                @id @default(cuid())
+  tenantId               String
+  reservationId          String
+  guestId                String
+  propertyId             String
+  channel                Channel               @default(OTHER)
+  status                 ConversationStatus    @default(OPEN)
+  unreadCount            Int                   @default(0)
+  starred                Boolean               @default(false)
+  lastMessageAt          DateTime              @default(now())
+  hostawayConversationId String                @default("")
+  createdAt              DateTime              @default(now())
+  guest                  Guest                 @relation(fields: [guestId], references: [id])
+  property               Property              @relation(fields: [propertyId], references: [id])
+  reservation            Reservation           @relation(fields: [reservationId], references: [id])
+  tenant                 Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages               Message[]
+  pendingReplies         PendingAiReply[]
+  tasks                  Task[]
+  knowledgeSuggestions   KnowledgeSuggestion[]
+
+  @@index([tenantId])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+}
+
+model Message {
+  id                  String        @id @default(cuid())
+  conversationId      String
+  tenantId            String
+  role                MessageRole
+  content             String
+  channel             Channel       @default(OTHER)
+  communicationType   String        @default("")
+  sentAt              DateTime      @default(now())
+  hostawayMessageId   String        @default("")
+  imageUrls           String[]      @default([])
+  conversation        Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rating              MessageRating?
+
+  @@index([conversationId])
+  @@index([tenantId])
+}
+
+model PendingAiReply {
+  id             String       @id @default(cuid())
+  conversationId String
+  tenantId       String
+  scheduledAt    DateTime
+  fired          Boolean      @default(false)
+  suggestion     String?      @db.Text
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([fired, scheduledAt])
+  @@index([conversationId])
+}
+
+model Task {
+  id             String       @id @default(cuid())
+  tenantId       String
+  conversationId String?
+  propertyId     String?
+  title          String
+  note           String?
+  urgency        String
+  type           String       @default("other")
+  status         String       @default("open")
+  source         String       @default("ai")
+  dueDate        DateTime?
+  assignee       String?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  property       Property?    @relation(fields: [propertyId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([conversationId])
+}
+
+model MessageTemplate {
+  id            String   @id @default(cuid())
+  tenantId      String
+  hostawayId    String?
+  name          String
+  body          String   @db.Text
+  enhancedBody  String?  @db.Text
+  triggerType   String?
+  triggerOffset Int?
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, hostawayId])
+  @@index([tenantId])
+}
+
+model KnowledgeSuggestion {
+  id             String        @id @default(cuid())
+  tenantId       String
+  propertyId     String?
+  conversationId String?
+  question       String        @db.Text
+  answer         String        @db.Text
+  status         String        @default("pending")
+  source         String        @default("ai")
+  category       String?
+  usageCount     Int           @default(0)
+  avgConfidence  Float?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property     Property?     @relation(fields: [propertyId], references: [id])
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model MessageRating {
+  id        String   @id @default(cuid())
+  messageId String   @unique
+  rating    String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id])
+}
+
+enum Plan {
+  FREE
+  PRO
+  SCALE
+}
+
+enum Channel {
+  AIRBNB
+  BOOKING
+  DIRECT
+  OTHER
+  WHATSAPP
+}
+
+enum ReservationStatus {
+  INQUIRY
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum ConversationStatus {
+  OPEN
+  RESOLVED
+}
+
+enum MessageRole {
+  GUEST
+  AI
+  HOST
+  AI_PRIVATE
+  MANAGER_PRIVATE
+}
+
+// ─── Automated Messages ──────────────────────────────────────────────────────
+
+model AutomatedMessage {
+  id            String   @id @default(cuid())
+  tenantId      String
+  hostawayId    String?
+  name          String
+  trigger       String   @default("manual")
+  content       String   @db.Text
+  enabled       Boolean  @default(true)
+  timing        String?
+  channel       String?
+  syncedAt      DateTime?
+  lastEditedAt  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, hostawayId])
+  @@index([tenantId])
+}
+
+// ─── AI API Logs (persistent) ────────────────────────────────────────────────
+
+model AiApiLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String?
+  agentName      String   @default("")
+  model          String
+  temperature    Float?
+  maxTokens      Int      @default(4096)
+  systemPrompt   String   @db.Text
+  userContent    String   @db.Text
+  responseText   String   @db.Text
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  costUsd        Float    @default(0)
+  durationMs     Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, agentName])
+}
+
+// ─── AI Config Version History ───────────────────────────────────────────────
+
+model AiConfigVersion {
+  id        String   @id @default(cuid())
+  tenantId  String
+  version   Int
+  config    Json
+  note      String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, version(sort: Desc)])
+}

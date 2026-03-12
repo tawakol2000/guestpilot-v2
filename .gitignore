@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+pnpm-lock.yaml
+package-lock.json
+.pnpm-debug.log*
