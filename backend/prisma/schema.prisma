@@ -31,6 +31,8 @@ model Tenant {
   aiApiLogs             AiApiLog[]
   aiConfigVersions      AiConfigVersion[]
   automatedMessages     AutomatedMessage[]
+  propertyKnowledgeChunks PropertyKnowledgeChunk[]
+  tenantAiConfig          TenantAiConfig?
 }
 
 model Property {
@@ -47,7 +49,8 @@ model Property {
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservations         Reservation[]
   tasks                Task[]
-  knowledgeSuggestions KnowledgeSuggestion[]
+  knowledgeSuggestions    KnowledgeSuggestion[]
+  propertyKnowledgeChunks PropertyKnowledgeChunk[]
 
   @@unique([tenantId, hostawayListingId])
   @@index([tenantId])
@@ -108,6 +111,9 @@ model Conversation {
   starred                Boolean               @default(false)
   lastMessageAt          DateTime              @default(now())
   hostawayConversationId String                @default("")
+  conversationSummary    String?               @db.Text
+  summaryUpdatedAt       DateTime?
+  summaryMessageCount    Int                   @default(0)
   createdAt              DateTime              @default(now())
   guest                  Guest                 @relation(fields: [guestId], references: [id])
   property               Property              @relation(fields: [propertyId], references: [id])
@@ -312,6 +318,47 @@ model AiApiLog {
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([tenantId, agentName])
+}
+
+// ─── Property Knowledge Chunks (pgvector RAG) ────────────────────────────────
+
+model PropertyKnowledgeChunk {
+  id          String   @id @default(cuid())
+  tenantId    String
+  propertyId  String
+  content     String   @db.Text
+  category    String   @default("general")
+  sourceKey   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, propertyId])
+  @@index([propertyId, category])
+}
+
+// ─── Per-Tenant AI Configuration ─────────────────────────────────────────────
+
+model TenantAiConfig {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  agentName            String   @default("Omar")
+  agentPersonality     String   @db.Text @default("")
+  customInstructions   String   @db.Text @default("")
+  model                String   @default("claude-haiku-4-5-20251001")
+  temperature          Float    @default(0.25)
+  maxTokens            Int      @default(1024)
+  debounceDelayMs      Int      @default(30000)
+  aiEnabled            Boolean  @default(true)
+  screeningEnabled     Boolean  @default(true)
+  ragEnabled           Boolean  @default(true)
+  memorySummaryEnabled Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 // ─── AI Config Version History ───────────────────────────────────────────────

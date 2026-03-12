@@ -132,7 +132,7 @@ export async function runImport(
     if (listing.specialInstruction) kb.specialInstruction = listing.specialInstruction;
     if (listing.keyPickup) kb.keyPickup = listing.keyPickup;
 
-    await prisma.property.upsert({
+    const property = await prisma.property.upsert({
       where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: String(listing.id) } },
       create: {
         tenantId,
@@ -150,6 +150,12 @@ export async function runImport(
       },
     });
     result.properties++;
+
+    // RAG: ingest property knowledge chunks — failure never breaks import
+    import('../services/rag.service').then(({ ingestPropertyKnowledge }) => {
+      ingestPropertyKnowledge(tenantId, property.id, property, prisma)
+        .catch((err: Error) => console.error('[Import] RAG ingestion failed (non-fatal):', err));
+    }).catch(() => {/* RAG module not available */});
   }
 
   // ── 1b. Sync automated message templates from Hostaway ─────────────────────

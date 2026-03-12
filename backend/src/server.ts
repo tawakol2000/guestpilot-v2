@@ -3,6 +3,9 @@ import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { startAiDebounceJob } from './jobs/aiDebounce.job';
 import { setAiServicePrisma } from './services/ai.service';
+import { startAiReplyWorker } from './workers/aiReply.worker';
+import { closeQueue } from './services/queue.service';
+import { flushObservability } from './services/observability.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -25,8 +28,11 @@ async function main() {
 
   const app = createApp(prisma);
 
-  // Start background job
+  // Start background jobs
   const jobTimer = startAiDebounceJob(prisma);
+
+  // Start BullMQ worker (graceful no-op if REDIS_URL missing)
+  const aiReplyWorker = startAiReplyWorker(prisma);
 
   const server = app.listen(PORT, () => {
     console.log(`[Server] GuestPilot backend running on port ${PORT}`);
@@ -37,6 +43,9 @@ async function main() {
   const shutdown = async () => {
     console.log('[Server] Shutting down...');
     clearInterval(jobTimer);
+    if (aiReplyWorker) await aiReplyWorker.close();
+    await closeQueue();
+    await flushObservability();
     server.close(async () => {
       await prisma.$disconnect();
       console.log('[Server] Shutdown complete');

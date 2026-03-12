@@ -12,6 +12,10 @@ import * as hostawayService from './hostaway.service';
 import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
+import { traceAiCall } from './observability.service';
+import { retrieveRelevantKnowledge } from './rag.service';
+import { buildTieredContext, formatConversationContext } from './memory.service';
+import { getTenantAiConfig } from './tenant-config.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -123,18 +127,27 @@ async function createMessage(
   };
 
   try {
+    // Upgrade 8: Use prompt caching for system prompt (reduces cost ~70% on repeated calls)
+    const createParams: any = {
+      model,
+      max_tokens: maxTokens,
+      ...(options?.topK !== undefined ? { top_k: options.topK } : {}),
+      ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
+      ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...(options?.stopSequences?.length ? { stop_sequences: options.stopSequences } : {}),
+      system: [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
+    };
+    const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
     const response = await withRetry(() =>
-      anthropic.messages.create({
-        model,
-        max_tokens: maxTokens,
-        ...(options?.topK !== undefined ? { top_k: options.topK } : {}),
-        ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
-        ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options?.stopSequences?.length ? { stop_sequences: options.stopSequences } : {}),
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
-      })
-    );
+      (anthropic.messages.create as any)(createParams, createOpts)
+    ) as Anthropic.Message;
 
     const textBlock = response.content.find(b => b.type === 'text');
     const responseText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
@@ -144,6 +157,9 @@ async function createMessage(
     logEntry.inputTokens = response.usage?.input_tokens ?? 0;
     logEntry.outputTokens = response.usage?.output_tokens ?? 0;
     logEntry.durationMs = Date.now() - startMs;
+
+    const cacheCreationTokens = (response.usage as any)?.cache_creation_input_tokens ?? 0;
+    const cacheReadTokens = (response.usage as any)?.cache_read_input_tokens ?? 0;
 
     // Push to ring buffer
     aiApiLog.unshift(logEntry);
@@ -171,7 +187,29 @@ async function createMessage(
       }).catch(e => console.error('[AI-LOG] DB persist error:', e));
     }
 
-    console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
+    // Upgrade 1: Langfuse observability — fire-and-forget
+    if (options?.tenantId && options?.conversationId) {
+      traceAiCall({
+        tenantId: options.tenantId,
+        conversationId: options.conversationId,
+        agentName: options.agentName || 'unknown',
+        model,
+        inputTokens: logEntry.inputTokens,
+        outputTokens: logEntry.outputTokens,
+        costUsd,
+        durationMs: logEntry.durationMs,
+        responseText,
+        escalated: false,
+        cacheCreationTokens,
+        cacheReadTokens,
+      });
+    }
+
+    if (cacheReadTokens > 0) {
+      console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | cache: ${cacheReadTokens}r/${cacheCreationTokens}w | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
+    } else {
+      console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
+    }
 
     return responseText;
   } catch (err) {
@@ -179,6 +217,23 @@ async function createMessage(
     logEntry.error = err instanceof Error ? err.message : String(err);
     aiApiLog.unshift(logEntry);
     if (aiApiLog.length > AI_LOG_MAX) aiApiLog.length = AI_LOG_MAX;
+
+    // Upgrade 1: Trace errors too
+    if (options?.tenantId && options?.conversationId) {
+      traceAiCall({
+        tenantId: options.tenantId,
+        conversationId: options.conversationId,
+        agentName: options.agentName || 'unknown',
+        model,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        durationMs: logEntry.durationMs,
+        responseText: '',
+        escalated: false,
+        error: logEntry.error,
+      });
+    }
 
     // Persist error to DB
     if (_prismaRef && options?.tenantId) {
@@ -250,6 +305,10 @@ const OMAR_SYSTEM_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residenc
 You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You handle guest requests efficiently and escalate to Abdelrahman when human action is needed.
 
 Before responding, always reason through the request internally: analyze what the guest needs, check if it's covered by your SOPs or property info, assess whether escalation is needed, and only then draft your response.
+
+---
+
+IMPORTANT — BATCHED MESSAGES: The guest may have sent multiple messages in sequence. All messages are presented together for context. Treat them as a single continuous conversation, not separate requests. Read all messages before responding. Address everything the guest mentioned in one natural, coherent reply. Do not number your responses or say "regarding your first message". Just respond naturally.
 
 ---
 
@@ -762,6 +821,7 @@ Your response:
 
 // ─── Context builder helpers ──────────────────────────────────────────────────
 
+// Upgrade 5a: Grounded property info — AI only answers from verified data
 function buildPropertyInfo(
   guestName: string,
   checkIn: string,
@@ -780,34 +840,66 @@ function buildPropertyInfo(
     wifiUsername?: string;
     wifiPassword?: string;
   },
-  customKb?: Record<string, unknown>
+  customKb?: Record<string, unknown>,
+  retrievedChunks?: Array<{ content: string; category: string }>
 ): string {
-  const unitName = listing.internalListingName || listing.name || 'Unknown';
-  const address = [listing.address, listing.city].filter(Boolean).join(', ');
+  let info = `## PROPERTY DATA — AUTHORITATIVE SOURCE
+CRITICAL INSTRUCTION: You MUST only answer questions using data explicitly listed in this section.
+If a guest asks about something not listed here, respond with "Let me check on that for you" and set escalate to true.
+NEVER use general hotel, apartment, or hospitality knowledge to fill information gaps. If it is not listed below, it does not exist.
 
-  let info = `-Guest name: ${guestName}
--Check-in Date: ${checkIn}
--Check-out Date: ${checkOut}
--Number of Guests: ${guestCount}
+### RESERVATION DETAILS
+Guest Name: ${guestName}
+Check-in: ${checkIn}
+Check-out: ${checkOut}
+Number of Guests: ${guestCount}
 
-
-Unit Number: ${unitName}
-Person Capacity: ${listing.personCapacity || 'N/A'}
-Property type: ${listing.roomType || 'N/A'}
-Number of bedrooms: ${listing.bedroomsNumber || 'N/A'}
-Bedroom types:
-Number of bathrooms: ${listing.bathroomsNumber || 'N/A'}
-Address: ${address}
-Door code: ${listing.doorSecurityCode || 'N/A'}
-Wifi name: ${listing.wifiUsername || 'N/A'}
-Wifi Password: ${listing.wifiPassword || 'N/A'}
+### ACCESS & CONNECTIVITY
 `;
 
-  // Append custom knowledge base fields if present
-  if (customKb && Object.keys(customKb).length > 0) {
-    info += '\n--- Additional Property Info ---\n';
+  if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
+    info += `Door Code: ${listing.doorSecurityCode}\n`;
+  }
+  if (listing.wifiUsername && listing.wifiUsername !== 'N/A') {
+    info += `WiFi Network Name: ${listing.wifiUsername}\n`;
+  }
+  if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
+    info += `WiFi Password: ${listing.wifiPassword}\n`;
+  }
+
+  info += `
+### AVAILABLE AMENITIES — COMPLETE LIST
+The following is the COMPLETE and EXHAUSTIVE list of available amenities.
+Anything NOT on this list does not exist at this property. Do not suggest,
+confirm, or imply the availability of any item not listed here.
+• Baby crib — available free on request
+• Extra bed — available free on request
+• Hair dryer — available free on request
+• Kitchen blender — available free on request
+• Kids dinnerware set — available free on request
+• Espresso machine — available free on request
+• Extra towels — available free on request
+• Extra pillows — available free on request
+• Extra blankets — available free on request
+• Hangers — available free on request
+• Cleaning service — $20 per session, available 10am–5pm only (working hours)
+`;
+
+  if (customKb && typeof customKb === 'object' && Object.keys(customKb).length > 0) {
+    info += '\n### PROPERTY-SPECIFIC INFORMATION\n';
     for (const [key, val] of Object.entries(customKb)) {
-      if (val) info += `${key}: ${val}\n`;
+      const strVal = String(val ?? '').trim();
+      if (strVal && strVal !== 'N/A' && strVal !== 'null') {
+        info += `${key}: ${strVal}\n`;
+      }
+    }
+  }
+
+  if (retrievedChunks && retrievedChunks.length > 0) {
+    info += '\n### VERIFIED PROPERTY KNOWLEDGE (from knowledge base search)\n';
+    info += "The following was retrieved from the property's verified knowledge base based on the guest's current question:\n";
+    for (const chunk of retrievedChunks) {
+      info += `[${chunk.category}] ${chunk.content}\n`;
     }
   }
 
@@ -965,19 +1057,43 @@ export async function generateAndSendAiReply(
   console.log(`[AI] [${conversationId}] Generating AI reply...`);
 
   try {
-    // Fetch message history from local DB (not Hostaway API)
+    // Upgrade 6d: Fetch per-tenant AI configuration (cached, 5min TTL)
+    const tenantConfig = await getTenantAiConfig(tenantId, prisma).catch(() => null);
+
+    // Fetch ALL message history from local DB (not Hostaway API)
     const aiCfg = getAiConfig();
-    const historyCount = aiCfg.messageHistoryCount ?? 20;
     const dbMessages = await prisma.message.findMany({
       where: { conversationId },
-      orderBy: { sentAt: 'desc' },
-      take: historyCount,
+      orderBy: { sentAt: 'asc' },
     });
-    // Exclude [MANAGER] private messages from AI context
-    const allMsgs = dbMessages.reverse().filter(m => !m.content.startsWith('[MANAGER]'));
-    const historyText = allMsgs
-      .map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`)
-      .join('\n');
+    // Exclude manager private messages from AI context
+    const allMsgs = dbMessages.filter(
+      m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'
+    );
+
+    // Upgrade 4: Tiered memory — summary for old messages + verbatim recent 10
+    let historyText: string;
+    if (tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10) {
+      const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+      if (conversation) {
+        const tiered = await buildTieredContext({
+          conversationId,
+          messages: allMsgs,
+          conversation,
+          prisma,
+          anthropicClient: anthropic,
+        }).catch(() => ({
+          recentMessagesText: allMsgs.slice(-10).map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n'),
+          summaryText: null,
+          totalMessageCount: allMsgs.length,
+        }));
+        historyText = formatConversationContext(tiered);
+      } else {
+        historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
+      }
+    } else {
+      historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
+    }
 
     // Current messages = only GUEST messages received during this debounce window
     // Apply 10s buffer back from windowStartedAt to account for Hostaway timestamp vs server time skew
@@ -1021,13 +1137,22 @@ export async function generateAndSendAiReply(
       : 'No additional Q&A available.';
 
     const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
+
+    // Upgrade 5c: RAG — retrieve relevant property knowledge for this query
+    const ragQuery = currentMsgs.map((m: { content: string }) => m.content).join(' ');
+    const retrievedChunks =
+      tenantConfig?.ragEnabled !== false && context.propertyId
+        ? await retrieveRelevantKnowledge(tenantId, context.propertyId, ragQuery, prisma).catch(() => [])
+        : [];
+
     const propertyInfo = buildPropertyInfo(
       context.guestName,
       context.checkIn,
       context.checkOut,
       context.guestCount,
       context.listing,
-      context.customKnowledgeBase
+      context.customKnowledgeBase,
+      retrievedChunks
     );
 
     // Check for image attachments in current window messages (from DB imageUrls field)
@@ -1036,6 +1161,23 @@ export async function generateAndSendAiReply(
     const isInquiry = context.reservationStatus === 'INQUIRY';
     const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
+
+    // Upgrade 6d: Overlay tenant-specific settings onto persona config
+    const effectiveModel = tenantConfig?.model || personaCfg.model;
+    const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
+    const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
+    const effectiveAgentName = tenantConfig?.agentName || agentName;
+
+    let effectiveSystemPrompt = personaCfg.systemPrompt;
+    // Replace agent name in system prompt if customized
+    if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
+      effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
+    }
+    // Append custom instructions if configured
+    if (tenantConfig?.customInstructions) {
+      effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
+    }
+
     let guestMessage = '';
 
     const templateVars = {
@@ -1051,14 +1193,14 @@ export async function generateAndSendAiReply(
       // Text-only branch
       const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
 
-      const rawResponse = await createMessage(personaCfg.systemPrompt, userContent, {
-        model: personaCfg.model,
-        temperature: personaCfg.temperature,
-        maxTokens: personaCfg.maxTokens,
+      const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
+        model: effectiveModel,
+        temperature: effectiveTemperature,
+        maxTokens: effectiveMaxTokens,
         ...(personaCfg.topK !== undefined ? { topK: personaCfg.topK } : {}),
         ...(personaCfg.topP !== undefined ? { topP: personaCfg.topP } : {}),
         ...(personaCfg.stopSequences?.length ? { stopSequences: personaCfg.stopSequences } : {}),
-        agentName,
+        agentName: effectiveAgentName,
         tenantId,
         conversationId,
       });
@@ -1133,16 +1275,16 @@ export async function generateAndSendAiReply(
         });
       }
 
-      const imageSystemPrompt = injectImageHandling(personaCfg.systemPrompt);
+      const imageSystemPrompt = injectImageHandling(effectiveSystemPrompt);
 
       const rawResponse = await createMessage(imageSystemPrompt, imageContent, {
-        model: personaCfg.model,
-        temperature: personaCfg.temperature,
-        maxTokens: personaCfg.maxTokens,
+        model: effectiveModel,
+        temperature: effectiveTemperature,
+        maxTokens: effectiveMaxTokens,
         ...(personaCfg.topK !== undefined ? { topK: personaCfg.topK } : {}),
         ...(personaCfg.topP !== undefined ? { topP: personaCfg.topP } : {}),
         ...(personaCfg.stopSequences?.length ? { stopSequences: personaCfg.stopSequences } : {}),
-        agentName,
+        agentName: effectiveAgentName,
         tenantId,
         conversationId,
       });

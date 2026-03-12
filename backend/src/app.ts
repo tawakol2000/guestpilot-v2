@@ -13,6 +13,7 @@ import { templatesRouter } from './routes/templates';
 import { analyticsRouter } from './routes/analytics';
 import { knowledgeRouter } from './routes/knowledge';
 import { automatedMessagesRouter } from './routes/automated-messages';
+import { tenantConfigRouter } from './routes/tenant-config';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { registerSSEClient } from './services/sse.service';
@@ -51,6 +52,23 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/analytics', analyticsRouter(prisma));
   app.use('/api/knowledge', knowledgeRouter(prisma));
   app.use('/api/automated-messages', automatedMessagesRouter(prisma));
+  app.use('/api/tenant-config', tenantConfigRouter(prisma));
+
+  // Property knowledge reindex endpoint
+  app.post('/api/properties/:id/reindex-knowledge', authMiddleware as any, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const propertyId = req.params.id as string;
+      const property = await prisma.property.findFirst({ where: { id: propertyId, tenantId } });
+      if (!property) { res.status(404).json({ error: 'Property not found' }); return; }
+      const { ingestPropertyKnowledge } = await import('./services/rag.service');
+      const chunks = await ingestPropertyKnowledge(tenantId, propertyId, property, prisma);
+      res.json({ ok: true, chunks });
+    } catch (err) {
+      console.error('[Properties] Reindex knowledge failed:', err);
+      res.status(500).json({ error: 'Reindex failed' });
+    }
+  });
 
   // Message rating endpoint
   const knowledgeCtrl = makeKnowledgeController(prisma);

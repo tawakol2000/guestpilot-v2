@@ -7,6 +7,7 @@
 import { PrismaClient } from '@prisma/client';
 import { getAiConfig } from './ai-config.service';
 import { broadcastToTenant } from './sse.service';
+import { addAiReplyJob, removeAiReplyJob } from './queue.service';
 
 const POLL_INTERVAL_MS = 30 * 1000; // job polls every 30s — added to expectedAt for accurate countdown
 
@@ -40,6 +41,11 @@ export async function scheduleAiReply(
 
   // Broadcast typing indicator to browser
   broadcastToTenant(tenantId, 'ai_typing', { conversationId, expectedAt: expectedAt.toISOString() });
+
+  // Also enqueue in BullMQ (if Redis available) — fire-and-forget, never breaks DB debounce
+  addAiReplyJob(conversationId, tenantId, delay).catch(err =>
+    console.warn('[Debounce] BullMQ enqueue failed (non-fatal):', err)
+  );
 }
 
 export async function cancelPendingAiReply(
@@ -59,6 +65,11 @@ export async function cancelPendingAiReply(
   if (existing) {
     broadcastToTenant(existing.tenantId, 'ai_typing_clear', { conversationId });
   }
+
+  // Also cancel BullMQ job if Redis available
+  removeAiReplyJob(conversationId).catch(err =>
+    console.warn('[Debounce] BullMQ cancel failed (non-fatal):', err)
+  );
 }
 
 export async function getDuePendingReplies(prisma: PrismaClient) {
