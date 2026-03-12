@@ -7,7 +7,6 @@
  */
 
 import { Request, Response } from 'express';
-import crypto from 'crypto';
 import { PrismaClient, MessageRole, Channel, ReservationStatus } from '@prisma/client';
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
 import { broadcastToTenant } from '../services/sse.service';
@@ -95,15 +94,12 @@ export function makeWebhooksController(prisma: PrismaClient) {
       if (tenant.webhookSecret) {
         const signature = req.headers['x-hostaway-signature'] as string | undefined;
         if (!signature) {
+          console.log(`[Webhook] [${tenantId}] Missing X-Hostaway-Signature header`);
           res.status(401).json({ error: 'Missing webhook signature' });
           return;
         }
-        const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body));
-        const expected = crypto
-          .createHmac('sha256', tenant.webhookSecret)
-          .update(rawBody)
-          .digest('hex');
-        if (signature !== expected) {
+        if (signature !== tenant.webhookSecret) {
+          console.log(`[Webhook] [${tenantId}] Invalid signature — received: "${signature?.substring(0, 8)}..." expected: "${tenant.webhookSecret.substring(0, 8)}..."`);
           res.status(401).json({ error: 'Invalid webhook signature' });
           return;
         }

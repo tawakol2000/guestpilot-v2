@@ -100,5 +100,29 @@ export function makeAuthController(prisma: PrismaClient) {
         res.status(500).json({ error: 'Internal server error' });
       }
     },
+
+    async getSettings(req: Request, res: Response): Promise<void> {
+      try {
+        const tenantId = (req as any).user?.tenantId;
+        if (!tenantId) {
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
+        }
+
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        if (!tenant) {
+          res.status(404).json({ error: 'Tenant not found' });
+          return;
+        }
+
+        res.json({
+          webhookUrl: webhookUrl(tenant.id),
+          webhookSecret: tenant.webhookSecret,
+        });
+      } catch (err) {
+        console.error('[Auth] getSettings error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
   };
 }

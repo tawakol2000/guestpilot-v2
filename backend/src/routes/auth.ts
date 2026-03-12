@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { makeAuthController } from '../controllers/auth.controller';
+import { authMiddleware } from '../middleware/auth';
 
 export function authRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -8,6 +9,7 @@ export function authRouter(prisma: PrismaClient): Router {
 
   router.post('/signup', (req, res) => ctrl.signup(req, res));
   router.post('/login', (req, res) => ctrl.login(req, res));
+  router.get('/settings', authMiddleware as any, (req, res) => ctrl.getSettings(req, res));
 
   return router;
 }
