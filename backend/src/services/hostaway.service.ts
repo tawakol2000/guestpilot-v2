@@ -165,14 +165,17 @@ export async function sendMessageToConversation(
   body: string,
   communicationType = 'channel'
 ): Promise<unknown> {
-  // DRY_RUN=true → only allow sends to Abdelrahman Tawakol's test conversation
-  if (process.env.DRY_RUN === 'true') {
-    const SAFE_CONV = '40570028';
-    if (String(conversationId) !== SAFE_CONV) {
-      console.log(`[DRY_RUN] Blocked send to conv ${conversationId} — only ${SAFE_CONV} allowed. Message: "${body.substring(0, 120)}"`);
+  // DRY_RUN env var controls outbound message filtering:
+  //   DRY_RUN=false (or unset)        → send to anyone
+  //   DRY_RUN="40570028,12345678"     → only allow listed conversation IDs
+  const dryRun = process.env.DRY_RUN?.trim();
+  if (dryRun && dryRun.toLowerCase() !== 'false') {
+    const allowed = dryRun.split(',').map(id => id.trim());
+    if (!allowed.includes(String(conversationId))) {
+      console.log(`[DRY_RUN] Blocked send to conv ${conversationId} — allowed: [${allowed.join(', ')}]. Message: "${body.substring(0, 120)}"`);
       return { dryRun: true, blocked: true };
     }
-    console.log(`[DRY_RUN] Allowing send to safe conv ${SAFE_CONV}`);
+    console.log(`[DRY_RUN] Allowing send to conv ${conversationId}`);
   }
   console.log(`[Hostaway] Sending to conv ${conversationId} (${communicationType}): "${body.substring(0, 80)}"`);
   const client = await getClient(accountId, apiKey);
