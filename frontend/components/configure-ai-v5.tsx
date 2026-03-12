@@ -8,9 +8,12 @@ import {
   apiTestAiConfig,
   apiGetAiConfigVersions,
   apiRevertAiConfigVersion,
+  apiGetTenantAiConfig,
+  apiUpdateTenantAiConfig,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
+  type TenantAiConfig,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -609,6 +612,7 @@ function PersonaCard({
 // ─── Main export ──────────────────────────────────────────────────────────────
 export function ConfigureAiV5(): React.ReactElement {
   const [config, setConfig] = useState<AiConfig | null>(null)
+  const [tenantConfig, setTenantConfig] = useState<TenantAiConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [configVersion, setConfigVersion] = useState(0)
@@ -623,9 +627,10 @@ export function ConfigureAiV5(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    apiGetAIConfig()
-      .then(data => {
-        setConfig(data)
+    Promise.all([apiGetAIConfig(), apiGetTenantAiConfig()])
+      .then(([aiData, tenantData]) => {
+        setConfig(aiData)
+        setTenantConfig(tenantData)
         setLoading(false)
       })
       .catch(err => {
@@ -674,7 +679,7 @@ export function ConfigureAiV5(): React.ReactElement {
               lineHeight: 1.5,
             }}
           >
-            Adjust model, sampling parameters, system prompt, and stop sequences for each AI persona.
+            Configure your AI agent — name, model, behaviour, and advanced features like RAG knowledge search and memory summaries. Persona-level prompts are managed below.
           </p>
         </div>
 
@@ -702,12 +707,15 @@ export function ConfigureAiV5(): React.ReactElement {
           <SkeletonCards />
         ) : config ? (
           <>
-            {/* General Settings */}
-            <GeneralSettings
-              debounceDelayMs={config.debounceDelayMs ?? 120000}
-              onChange={ms => setConfig(prev => prev ? { ...prev, debounceDelayMs: ms } : prev)}
-            />
+            {/* Tenant AI Config — agent name, model, toggles */}
+            {tenantConfig && (
+              <TenantConfigSection
+                config={tenantConfig}
+                onChange={setTenantConfig}
+              />
+            )}
 
+            {/* Legacy persona cards */}
             {PERSONAS.map(({ key, name, accent }) => (
               <PersonaCard
                 key={key}
@@ -738,6 +746,232 @@ export function ConfigureAiV5(): React.ReactElement {
             <VersionHistory configVersion={configVersion} onRevert={reloadConfig} />
           </>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tenant Config Section ────────────────────────────────────────────────────
+
+function TenantConfigSection({
+  config,
+  onChange,
+}: {
+  config: TenantAiConfig
+  onChange: (c: TenantAiConfig) => void
+}): React.ReactElement {
+  const [local, setLocal] = useState<TenantAiConfig>(config)
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  useEffect(() => { setLocal(config) }, [config])
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      const updated = await apiUpdateTenantAiConfig({
+        agentName: local.agentName,
+        model: local.model,
+        temperature: local.temperature,
+        maxTokens: local.maxTokens,
+        debounceDelayMs: local.debounceDelayMs,
+        customInstructions: local.customInstructions,
+        ragEnabled: local.ragEnabled,
+        memorySummariesEnabled: local.memorySummariesEnabled,
+      })
+      onChange(updated)
+      showToast('success', 'AI settings saved')
+    } catch {
+      showToast('error', 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cardStyle: React.CSSProperties = {
+    borderRadius: T.radius.lg,
+    border: `1px solid ${T.border.default}`,
+    background: T.bg.primary,
+    marginBottom: 16,
+    boxShadow: T.shadow.md,
+    overflow: 'hidden',
+    animation: 'fadeInUp 0.4s ease-out both',
+  }
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 600,
+    color: T.text.secondary,
+    fontFamily: T.font.sans,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: 6,
+  }
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: T.radius.sm,
+    border: `1px solid ${T.border.default}`,
+    fontSize: 13,
+    fontFamily: T.font.mono,
+    color: T.text.primary,
+    background: T.bg.secondary,
+    outline: 'none',
+    boxSizing: 'border-box',
+  }
+  const toggleRow = (label: string, sub: string, value: boolean, key: keyof TenantAiConfig): React.ReactElement => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${T.border.default}` }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>{label}</div>
+        <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginTop: 2 }}>{sub}</div>
+      </div>
+      <button
+        onClick={() => setLocal(prev => ({ ...prev, [key]: !prev[key as keyof TenantAiConfig] }))}
+        style={{
+          width: 44, height: 24, borderRadius: 12,
+          background: value ? T.accent : T.bg.tertiary,
+          border: 'none', cursor: 'pointer', position: 'relative',
+          transition: 'background 0.2s', flexShrink: 0,
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 3, left: value ? 23 : 3,
+          width: 18, height: 18, borderRadius: 9,
+          background: '#fff', transition: 'left 0.2s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+        }} />
+      </button>
+    </div>
+  )
+
+  return (
+    <div style={cardStyle}>
+      {/* Header */}
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border.default}`, background: T.bg.secondary, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 30, height: 30, borderRadius: T.radius.sm, background: '#1D4ED818', border: '1px solid #1D4ED828', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z"/>
+            <circle cx="12" cy="9" r="2.5"/>
+          </svg>
+        </div>
+        <div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, letterSpacing: '-0.01em' }}>
+            AI Agent Settings
+          </span>
+          <p style={{ fontSize: 12, color: T.text.secondary, margin: '2px 0 0', fontFamily: T.font.sans }}>
+            Agent name, model, response behaviour, and advanced features
+          </p>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: 20 }}>
+        {/* Row: agent name + model */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label style={labelStyle}>Agent Name</label>
+            <input
+              style={inputStyle}
+              value={local.agentName}
+              maxLength={50}
+              onChange={e => setLocal(prev => ({ ...prev, agentName: e.target.value }))}
+              placeholder="Omar"
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Model</label>
+            <select
+              style={{ ...inputStyle, cursor: 'pointer' }}
+              value={local.model}
+              onChange={e => setLocal(prev => ({ ...prev, model: e.target.value }))}
+            >
+              {MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Row: temperature + maxTokens + debounce */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label style={labelStyle}>Temperature</label>
+            <input
+              style={inputStyle}
+              type="number" min={0} max={1} step={0.05}
+              value={local.temperature}
+              onChange={e => setLocal(prev => ({ ...prev, temperature: parseFloat(e.target.value) || 0 }))}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Max Tokens</label>
+            <input
+              style={inputStyle}
+              type="number" min={50} max={8000}
+              value={local.maxTokens}
+              onChange={e => setLocal(prev => ({ ...prev, maxTokens: parseInt(e.target.value) || 1024 }))}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Reply Delay (s)</label>
+            <input
+              style={inputStyle}
+              type="number" min={5} max={600}
+              value={Math.round(local.debounceDelayMs / 1000)}
+              onChange={e => setLocal(prev => ({ ...prev, debounceDelayMs: (parseInt(e.target.value) || 30) * 1000 }))}
+            />
+          </div>
+        </div>
+
+        {/* Custom instructions */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Custom Instructions</label>
+          <textarea
+            style={{ ...inputStyle, height: 80, resize: 'vertical', lineHeight: 1.5 }}
+            value={local.customInstructions}
+            maxLength={2000}
+            onChange={e => setLocal(prev => ({ ...prev, customInstructions: e.target.value }))}
+            placeholder="Additional instructions for the AI agent (e.g. always reply in Spanish, sign off as the property manager, etc.)"
+          />
+          <div style={{ fontSize: 11, color: T.text.tertiary, textAlign: 'right', marginTop: 4, fontFamily: T.font.mono }}>
+            {local.customInstructions.length} / 2000
+          </div>
+        </div>
+
+        {/* Feature toggles */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Features</label>
+          {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
+          <div style={{ borderBottom: 'none' }}>
+            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummariesEnabled, 'memorySummariesEnabled')}
+          </div>
+        </div>
+
+        {/* Save */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: '8px 20px', borderRadius: T.radius.sm,
+              background: saving ? T.bg.tertiary : T.accent,
+              color: saving ? T.text.secondary : '#fff',
+              border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: T.font.sans,
+              transition: 'background 0.2s',
+            }}
+          >
+            {saving ? 'Saving…' : 'Save Settings'}
+          </button>
+          {toast && (
+            <span style={{ fontSize: 13, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>
+              {toast.message}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )

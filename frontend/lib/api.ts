@@ -340,6 +340,36 @@ export async function apiRevertAiConfigVersion(id: string): Promise<AiConfig> {
   })
 }
 
+export interface TenantAiConfig {
+  id: string
+  tenantId: string
+  agentName: string
+  model: string
+  temperature: number
+  maxTokens: number
+  debounceDelayMs: number
+  customInstructions: string
+  ragEnabled: boolean
+  memorySummariesEnabled: boolean
+}
+
+export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
+  return apiFetch<TenantAiConfig>('/api/tenant-config')
+}
+
+export async function apiUpdateTenantAiConfig(updates: Partial<Omit<TenantAiConfig, 'id' | 'tenantId'>>): Promise<TenantAiConfig> {
+  return apiFetch<TenantAiConfig>('/api/tenant-config', {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function apiReindexPropertyKnowledge(propertyId: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/properties/${propertyId}/reindex-knowledge`, {
+    method: 'POST',
+  })
+}
+
 export async function apiTranslateMessage(
   conversationId: string,
   content: string
