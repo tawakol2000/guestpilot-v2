@@ -49,7 +49,7 @@ export default function LoginPage() {
           <div className="flex items-center justify-center gap-2.5 mb-2">
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-lg font-bold"
-              style={{ background: 'var(--terracotta, #D97B4F)' }}
+              style={{ background: '#1D4ED8' }}
             >
               G
             </div>
@@ -109,7 +109,7 @@ export default function LoginPage() {
                   border: '1.5px solid transparent',
                   color: '#1A1109',
                 }}
-                onFocus={e => (e.target.style.borderColor = '#D97B4F')}
+                onFocus={e => (e.target.style.borderColor = '#1D4ED8')}
                 onBlur={e => (e.target.style.borderColor = 'transparent')}
               />
             </div>
@@ -129,7 +129,7 @@ export default function LoginPage() {
                   border: '1.5px solid transparent',
                   color: '#1A1109',
                 }}
-                onFocus={e => (e.target.style.borderColor = '#D97B4F')}
+                onFocus={e => (e.target.style.borderColor = '#1D4ED8')}
                 onBlur={e => (e.target.style.borderColor = 'transparent')}
               />
             </div>
@@ -157,7 +157,7 @@ export default function LoginPage() {
                       border: '1.5px solid transparent',
                       color: '#1A1109',
                     }}
-                    onFocus={e => (e.target.style.borderColor = '#D97B4F')}
+                    onFocus={e => (e.target.style.borderColor = '#1D4ED8')}
                     onBlur={e => (e.target.style.borderColor = 'transparent')}
                   />
                 </div>
@@ -176,7 +176,7 @@ export default function LoginPage() {
                       border: '1.5px solid transparent',
                       color: '#1A1109',
                     }}
-                    onFocus={e => (e.target.style.borderColor = '#D97B4F')}
+                    onFocus={e => (e.target.style.borderColor = '#1D4ED8')}
                     onBlur={e => (e.target.style.borderColor = 'transparent')}
                   />
                 </div>
@@ -196,7 +196,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-opacity mt-1"
-              style={{ background: '#D97B4F', opacity: loading ? 0.6 : 1 }}
+              style={{ background: '#1D4ED8', opacity: loading ? 0.6 : 1 }}
             >
               {loading
                 ? 'Please wait...'
