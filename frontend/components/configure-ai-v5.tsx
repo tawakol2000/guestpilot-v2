@@ -957,35 +957,33 @@ function RagChunksSection(): React.ReactElement {
                 <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: T.accent, background: 'rgba(29,78,216,0.08)', borderRadius: 4, padding: '1px 6px', fontFamily: T.font.sans, whiteSpace: 'nowrap' as const }}>
                   {chunk.category}
                 </span>
-                {logsAnalyzed > 0 && (
-                  stat ? (
-                    <span style={{
-                      fontSize: 10,
-                      fontFamily: 'var(--font-mono, monospace)',
-                      color: stat.hitCount >= 5 ? '#15803D' : stat.hitCount >= 1 ? '#D97706' : T.text.tertiary,
-                      background: stat.hitCount >= 5 ? 'rgba(21,128,61,0.07)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.07)' : T.bg.tertiary,
-                      border: `1px solid ${stat.hitCount >= 5 ? 'rgba(21,128,61,0.15)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.15)' : T.border.default}`,
-                      borderRadius: 999,
-                      padding: '1px 7px',
-                      whiteSpace: 'nowrap' as const,
-                    }}>
-                      {stat.hitCount} hit{stat.hitCount !== 1 ? 's' : ''} · {stat.avgSimilarity.toFixed(2)}
-                    </span>
-                  ) : (
-                    <span style={{
-                      fontSize: 10,
-                      fontFamily: 'var(--font-mono, monospace)',
-                      color: '#DC2626',
-                      background: 'rgba(220,38,38,0.06)',
-                      border: '1px solid rgba(220,38,38,0.15)',
-                      borderRadius: 999,
-                      padding: '1px 7px',
-                      whiteSpace: 'nowrap' as const,
-                    }}>
-                      never retrieved
-                    </span>
-                  )
-                )}
+                {stat ? (
+                  <span style={{
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono, monospace)',
+                    color: stat.hitCount >= 5 ? '#15803D' : stat.hitCount >= 1 ? '#D97706' : T.text.tertiary,
+                    background: stat.hitCount >= 5 ? 'rgba(21,128,61,0.07)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.07)' : T.bg.tertiary,
+                    border: `1px solid ${stat.hitCount >= 5 ? 'rgba(21,128,61,0.15)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.15)' : T.border.default}`,
+                    borderRadius: 999,
+                    padding: '1px 7px',
+                    whiteSpace: 'nowrap' as const,
+                  }}>
+                    {stat.hitCount} hit{stat.hitCount !== 1 ? 's' : ''} · {stat.avgSimilarity.toFixed(2)}
+                  </span>
+                ) : logsAnalyzed > 0 ? (
+                  <span style={{
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono, monospace)',
+                    color: '#DC2626',
+                    background: 'rgba(220,38,38,0.06)',
+                    border: '1px solid rgba(220,38,38,0.15)',
+                    borderRadius: 999,
+                    padding: '1px 7px',
+                    whiteSpace: 'nowrap' as const,
+                  }}>
+                    never retrieved
+                  </span>
+                ) : null}
               </div>
               <div
                 style={{

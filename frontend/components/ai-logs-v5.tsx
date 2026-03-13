@@ -506,17 +506,23 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           </ContentBlock>
 
           {/* Retrieved Context */}
-          {displayEntry.ragContext !== undefined && (
+          {(() => {
+            const rc = displayEntry.ragContext as any
+            const hasChunks = rc && typeof rc === 'object' && rc.totalRetrieved > 0
+            const label = hasChunks
+              ? `Retrieved Context (${rc.totalRetrieved} chunk${rc.totalRetrieved !== 1 ? 's' : ''} · ${rc.durationMs}ms)`
+              : 'Retrieved Context'
+            return (
             <ContentBlock
-              label={displayEntry.ragContext && displayEntry.ragContext.totalRetrieved > 0
-                ? `Retrieved Context (${displayEntry.ragContext.totalRetrieved} chunk${displayEntry.ragContext.totalRetrieved !== 1 ? 's' : ''} · ${displayEntry.ragContext.durationMs}ms)`
-                : 'Retrieved Context'}
+              label={label}
               labelColor="#6D28D9"
-              defaultExpanded={false}
+              defaultExpanded={true}
             >
-              {(!displayEntry.ragContext || displayEntry.ragContext.totalRetrieved === 0) ? (
+              {!hasChunks ? (
                 <div style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary, padding: '6px 0' }}>
-                  No context retrieved
+                  {rc === undefined || rc === null
+                    ? 'No RAG data — log predates observability or RAG is disabled'
+                    : 'No context retrieved'}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -532,9 +538,9 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
                     }}
                   >
                     <span style={{ color: T.text.tertiary }}>query: </span>
-                    {displayEntry.ragContext.query}
+                    {rc.query}
                   </div>
-                  {displayEntry.ragContext.chunks.map((chunk, ci) => {
+                  {rc.chunks.map((chunk: any, ci: number) => {
                     const catPrefix = chunk.category.split('-')[0]
                     const catColor =
                       chunk.category.startsWith('sop') ? '#7C3AED' :
@@ -650,7 +656,8 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
                 </div>
               )}
             </ContentBlock>
-          )}
+            )
+          })()}
 
           {/* Error */}
           {hasError && (
