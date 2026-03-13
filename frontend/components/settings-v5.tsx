@@ -1420,6 +1420,8 @@ function PropertyAiCard({
   const [hovered, setHovered] = useState(false)
   const cfg = modeConfig[mode]
 
+  useEffect(() => { setMode(property.aiMode as AiMode) }, [property.aiMode])
+
   async function handleClick(): Promise<void> {
     const next = nextMode(mode)
     setLoading(true)
