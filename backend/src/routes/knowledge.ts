@@ -22,6 +22,45 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // GET /api/knowledge/chunk-stats — aggregate retrieval stats per sourceKey from AiApiLog.ragContext
+  router.get('/chunk-stats', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const logs = await prisma.aiApiLog.findMany({
+        where: { tenantId, NOT: { ragContext: undefined } },
+        select: { ragContext: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+
+      const stats: Record<string, { hitCount: number; totalSimilarity: number; lastSeenAt: string }> = {};
+      for (const log of logs) {
+        const ctx = log.ragContext as any;
+        if (!ctx?.chunks) continue;
+        for (const chunk of ctx.chunks) {
+          const key = chunk.sourceKey || chunk.category || 'unknown';
+          if (!stats[key]) stats[key] = { hitCount: 0, totalSimilarity: 0, lastSeenAt: '' };
+          stats[key].hitCount++;
+          stats[key].totalSimilarity += chunk.similarity ?? 0;
+          const ts = log.createdAt.toISOString();
+          if (!stats[key].lastSeenAt || ts > stats[key].lastSeenAt) stats[key].lastSeenAt = ts;
+        }
+      }
+
+      const result = Object.entries(stats).map(([sourceKey, s]) => ({
+        sourceKey,
+        hitCount: s.hitCount,
+        avgSimilarity: Math.round((s.totalSimilarity / s.hitCount) * 100) / 100,
+        lastSeenAt: s.lastSeenAt,
+      }));
+
+      res.json({ stats: result, logsAnalyzed: logs.length });
+    } catch (err) {
+      console.error('[Knowledge] chunk-stats failed:', err);
+      res.status(500).json({ error: 'Failed to fetch chunk stats' });
+    }
+  });
+
   // GET /api/knowledge/chunks?propertyId=xxx — view ingested RAG vector chunks (no embedding)
   router.get('/chunks', async (req: any, res) => {
     try {

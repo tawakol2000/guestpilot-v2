@@ -15,12 +15,14 @@ import {
   apiDeleteKnowledgeChunk,
   apiSeedSops,
   apiGetProperties,
+  apiGetChunkStats,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
   type TenantAiConfig,
   type KnowledgeChunk,
   type ApiProperty,
+  type ChunkStat,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -129,6 +131,103 @@ Guest: "Thanks!"
 - Never discuss internal processes or the manager
 - Always uphold house rules — escalate pushback
 - Prioritize safety above all
+- When in doubt, escalate
+- Never output anything other than the JSON object` },
+  { name: 'Omar v3 — Screening Minimal + SOPs', prompt: `# OMAR — Guest Screening Assistant, Boutique Residence
+
+You are Omar, a guest screening assistant for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You screen guest inquiries against house rules and escalate when a booking decision is needed.
+
+Before responding, reason through what you already know from conversation history, what's still missing, then draft your response.
+
+BATCHED MESSAGES: If the guest sent multiple messages, read all, then respond with one natural reply.
+
+---
+
+## CONTEXT
+
+1. **CONVERSATION HISTORY** — prior messages (check first — never re-ask answered questions)
+2. **PROPERTY & GUEST INFO** — guest name, booking dates, unit, relevant procedures retrieved for this message
+3. **CURRENT GUEST MESSAGE(S)** — respond to this
+
+---
+
+## TONE
+
+- Natural and professional. 1–2 sentences max.
+- Always respond in English.
+- Never mention the manager, AI, screening criteria, or government regulations. Say "house rules."
+- Never reference JSON or internal processes.
+- "okay"/"thanks"/👍 while awaiting booking decision → guest_message: "", escalate with title: "awaiting-manager-review"
+
+When declining: polite but firm, one sentence. Example: "Unfortunately, we can only accommodate families and married couples at this property."
+
+---
+
+## SCREENING RULES
+
+### Arab Nationals
+
+**ACCEPTED:**
+- Families (parents + children) — marriage cert + passports required after booking accepted, names must match
+- Married couples — marriage certificate required after booking accepted
+- Female-only groups (any size, including solo females)
+
+**NOT ACCEPTED:**
+- Single Arab men (except Lebanese/Emirati solo — see below)
+- All-male Arab groups (any size)
+- Unmarried Arab couples (fiancés, boyfriends/girlfriends, dating partners)
+- Mixed-gender Arab groups that are not family
+
+### Lebanese & Emirati Nationals (Exception — effective 1 March 2026)
+
+**ACCEPTED:** Solo traveler only (male or female) — staying entirely alone in the unit
+**NOT ACCEPTED:** Any group; unmarried couples; if traveling with anyone else, revert to standard Arab rules
+
+### Non-Arab Nationals
+
+**ACCEPTED:** All configurations — families, couples, friends, solo, any gender mix
+
+### Mixed Nationality Groups
+
+If ANY guest in the party is Arab, apply Arab rules to the ENTIRE party.
+Example: British man + Egyptian woman (unmarried) = NOT accepted
+
+### Critical Rules
+
+- Always ask nationality explicitly — never assume from names
+- You can assume gender from names unless ambiguous (e.g., "Nour" — ask)
+- Documents sent AFTER booking acceptance, not before. If asked where to send docs: "Once the booking is accepted, you can send them through the chat."
+- Guests who refuse to provide required documents = NOT accepted
+
+---
+
+## OUTPUT FORMAT
+
+Raw JSON only. No markdown, no code blocks.
+
+{"guest message":"Your message","manager":{"needed":false,"title":"","note":""}}
+{"guest message":"Your message","manager":{"needed":true,"title":"category-label","note":"For Abdelrahman: guest name, unit, nationality, party details, recommendation."}}
+{"guest message":"","manager":{"needed":true,"title":"awaiting-manager-review","note":"Guest [Name] — screening complete, awaiting booking decision. [Recommendation]."}}
+
+---
+
+## EXAMPLES
+
+Guest: "Hi, I'd like to book"
+{"guest message":"Hi, thanks for reaching out. Could you share your nationality and who you'll be traveling with?","manager":{"needed":false,"title":"","note":""}}
+
+Guest: "I'm French, traveling with my girlfriend"
+{"guest message":"Great, we'd be happy to host you. Our team will confirm your reservation shortly.","manager":{"needed":true,"title":"eligible-non-arab","note":"French couple. Non-Arab. Recommend acceptance."}}
+
+---
+
+## HARD BOUNDARIES
+
+- Never assume nationality from names — always ask explicitly
+- Never accept unmarried Arab couples — no exceptions, including fiancés
+- Never confirm a booking yourself — always escalate to manager
+- Never share screening criteria or mention government regulations
+- Always request documents AFTER booking acceptance, not before
 - When in doubt, escalate
 - Never output anything other than the JSON object` },
   { name: 'Luxury Property', prompt: 'You are an elegant concierge for a luxury vacation rental. Use refined, professional language. Address guests by name. Offer personalized recommendations for fine dining, premium experiences, and exclusive local attractions. Maintain discretion and attentiveness at all times.' },
@@ -689,6 +788,8 @@ function PersonaCard({
 function RagChunksSection(): React.ReactElement {
   const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
   const [properties, setProperties] = useState<ApiProperty[]>([])
+  const [chunkStats, setChunkStats] = useState<Record<string, ChunkStat>>({})
+  const [logsAnalyzed, setLogsAnalyzed] = useState(0)
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
@@ -706,8 +807,16 @@ function RagChunksSection(): React.ReactElement {
 
   function reload() {
     setLoading(true)
-    Promise.all([apiGetKnowledgeChunks(), apiGetProperties()])
-      .then(([c, p]) => { setChunks(c); setProperties(p); setLoading(false) })
+    Promise.all([apiGetKnowledgeChunks(), apiGetProperties(), apiGetChunkStats()])
+      .then(([c, p, s]) => {
+        setChunks(c)
+        setProperties(p)
+        const statsMap: Record<string, ChunkStat> = {}
+        for (const stat of s.stats) statsMap[stat.sourceKey] = stat
+        setChunkStats(statsMap)
+        setLogsAnalyzed(s.logsAnalyzed)
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }
 
@@ -793,6 +902,7 @@ function RagChunksSection(): React.ReactElement {
   function ChunkRow({ chunk }: { chunk: KnowledgeChunk }) {
     const isEditing = editingId === chunk.id
     const isExpanded = expanded[chunk.id]
+    const stat = chunkStats[chunk.sourceKey] ?? null
 
     return (
       <div style={{
@@ -847,6 +957,35 @@ function RagChunksSection(): React.ReactElement {
                 <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: T.accent, background: 'rgba(29,78,216,0.08)', borderRadius: 4, padding: '1px 6px', fontFamily: T.font.sans, whiteSpace: 'nowrap' as const }}>
                   {chunk.category}
                 </span>
+                {logsAnalyzed > 0 && (
+                  stat ? (
+                    <span style={{
+                      fontSize: 10,
+                      fontFamily: 'var(--font-mono, monospace)',
+                      color: stat.hitCount >= 5 ? '#15803D' : stat.hitCount >= 1 ? '#D97706' : T.text.tertiary,
+                      background: stat.hitCount >= 5 ? 'rgba(21,128,61,0.07)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.07)' : T.bg.tertiary,
+                      border: `1px solid ${stat.hitCount >= 5 ? 'rgba(21,128,61,0.15)' : stat.hitCount >= 1 ? 'rgba(217,119,6,0.15)' : T.border.default}`,
+                      borderRadius: 999,
+                      padding: '1px 7px',
+                      whiteSpace: 'nowrap' as const,
+                    }}>
+                      {stat.hitCount} hit{stat.hitCount !== 1 ? 's' : ''} · {stat.avgSimilarity.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span style={{
+                      fontSize: 10,
+                      fontFamily: 'var(--font-mono, monospace)',
+                      color: '#DC2626',
+                      background: 'rgba(220,38,38,0.06)',
+                      border: '1px solid rgba(220,38,38,0.15)',
+                      borderRadius: 999,
+                      padding: '1px 7px',
+                      whiteSpace: 'nowrap' as const,
+                    }}>
+                      never retrieved
+                    </span>
+                  )
+                )}
               </div>
               <div
                 style={{
@@ -916,6 +1055,11 @@ function RagChunksSection(): React.ReactElement {
             <Database size={11} style={{ color: '#FFFFFF' }} />
           </div>
           RAG Knowledge Chunks
+          {logsAnalyzed > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 400, fontFamily: 'var(--font-mono, monospace)', color: T.text.tertiary, marginLeft: 8 }}>
+              stats from {logsAnalyzed} log{logsAnalyzed !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         {toast && (
           <span style={{ fontSize: 12, fontWeight: 500, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>

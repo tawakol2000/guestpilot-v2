@@ -465,6 +465,17 @@ export async function apiGetKnowledgeChunks(propertyId?: string): Promise<Knowle
   return apiFetch<KnowledgeChunk[]>(`/api/knowledge/chunks${qs}`)
 }
 
+export interface ChunkStat {
+  sourceKey: string
+  hitCount: number
+  avgSimilarity: number
+  lastSeenAt: string
+}
+
+export async function apiGetChunkStats(): Promise<{ stats: ChunkStat[]; logsAnalyzed: number }> {
+  return apiFetch('/api/knowledge/chunk-stats')
+}
+
 export async function apiTestAiConfig(data: { systemPrompt: string; userMessage: string; model?: string; temperature?: number; maxTokens?: number }): Promise<{ response: string; inputTokens: number; outputTokens: number; durationMs: number; model: string }> {
   return apiFetch('/api/ai-config/test', {
     method: 'POST',
