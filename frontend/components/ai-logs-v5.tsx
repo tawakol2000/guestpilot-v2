@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronRight, ChevronDown, RefreshCw, Search, X, Zap, Clock, DollarSign, Activity } from 'lucide-react'
-import { apiGetAiLogs, type AiApiLogEntry } from '@/lib/api'
+import { ChevronRight, ChevronDown, RefreshCw, Search, X, Zap, Clock, DollarSign, Activity, Copy, Check } from 'lucide-react'
+import { apiGetAiLogs, apiGetAiLogDetail, type AiApiLogEntry } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -192,13 +192,62 @@ function ContentBlock({ label, children, labelColor, defaultExpanded }: {
   )
 }
 
+// ─── Scrollable Text Box ──────────────────────────────────────────────────────
+function TextBox({ content, maxHeight = 200 }: { content: string; maxHeight?: number }): React.ReactElement {
+  return (
+    <div
+      style={{
+        background: T.bg.secondary,
+        padding: 12,
+        borderRadius: T.radius.sm,
+        fontSize: 11,
+        fontFamily: T.font.mono,
+        color: T.text.primary,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        lineHeight: 1.5,
+        border: `1px solid ${T.border.default}`,
+        maxHeight,
+        overflowY: 'auto',
+      }}
+    >
+      {content}
+    </div>
+  )
+}
+
 // ─── Log Card ─────────────────────────────────────────────────────────────────
 function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState(false)
+  const [detail, setDetail] = useState<AiApiLogEntry | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [copied, setCopied] = useState(false)
   const hasError = !!entry.error
   const preview = entry.responseText.slice(0, 80)
-  const firstBlock = entry.contentBlocks[0]
+
+  // Fetch full detail on first expand
+  useEffect(() => {
+    if (!expanded || detail || loadingDetail) return
+    setLoadingDetail(true)
+    apiGetAiLogDetail(entry.id)
+      .then(d => setDetail(d))
+      .catch(() => {/* silently fall back to list data */})
+      .finally(() => setLoadingDetail(false))
+  }, [expanded, entry.id, detail, loadingDetail])
+
+  const displayEntry = detail ?? entry
+  const systemPrompt = detail?.systemPromptFull ?? displayEntry.systemPromptPreview
+  const blocks = displayEntry.contentBlocks
+  const firstBlock = blocks[0]
+
+  const copyRawJson = () => {
+    const raw = JSON.stringify(displayEntry, null, 2)
+    navigator.clipboard.writeText(raw).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   return (
     <div
@@ -381,72 +430,44 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
             animation: 'fadeInUp 0.2s ease-out both',
           }}
         >
-          {/* System Prompt */}
-          <ContentBlock label="System Prompt">
-            <div
-              style={{
-                background: T.bg.secondary,
-                padding: 12,
-                borderRadius: T.radius.sm,
-                fontSize: 11,
-                fontFamily: T.font.mono,
-                color: T.text.primary,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                lineHeight: 1.5,
-                border: `1px solid ${T.border.default}`,
-              }}
-            >
-              {entry.systemPromptPreview}
+          {loadingDetail && (
+            <div style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+              Loading full data…
             </div>
+          )}
+
+          {/* System Prompt */}
+          <ContentBlock label={`System Prompt${detail ? '' : ' (preview)'}`}>
+            <TextBox content={systemPrompt} maxHeight={300} />
+            {!detail && (
+              <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 4 }}>
+                {entry.systemPromptLength.toLocaleString()} chars total — loading full…
+              </div>
+            )}
           </ContentBlock>
 
-          {/* User Message */}
+          {/* User Message — first content block */}
           {firstBlock && (
             <ContentBlock label="User Message">
-              <div
-                style={{
-                  background: T.bg.secondary,
-                  padding: 12,
-                  borderRadius: T.radius.sm,
-                  fontSize: 11,
-                  fontFamily: T.font.mono,
-                  color: T.text.primary,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  lineHeight: 1.5,
-                  border: `1px solid ${T.border.default}`,
-                }}
-              >
-                {firstBlock.textPreview ?? `[${firstBlock.type}]`}
-              </div>
+              <TextBox content={firstBlock.textPreview ?? `[${firstBlock.type}]`} maxHeight={200} />
+              {firstBlock.textLength && firstBlock.textLength > (firstBlock.textPreview?.length ?? 0) && (
+                <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 4 }}>
+                  {firstBlock.textLength.toLocaleString()} chars total
+                </div>
+              )}
             </ContentBlock>
           )}
 
           {/* Additional Content Blocks */}
-          {entry.contentBlocks.length > 1 && (
-            <ContentBlock label={`Content Blocks (${entry.contentBlocks.length})`} defaultExpanded={false}>
+          {blocks.length > 1 && (
+            <ContentBlock label={`Additional Blocks (${blocks.length - 1})`} defaultExpanded={false}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {entry.contentBlocks.slice(1).map((block, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      background: T.bg.secondary,
-                      padding: 10,
-                      borderRadius: T.radius.sm,
-                      fontSize: 11,
-                      fontFamily: T.font.mono,
-                      color: T.text.primary,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      lineHeight: 1.5,
-                      border: `1px solid ${T.border.default}`,
-                    }}
-                  >
-                    <span style={{ color: T.text.tertiary, fontSize: 10, fontWeight: 500 }}>[{block.type}]</span>
-                    {block.textPreview && (
-                      <div style={{ marginTop: 4 }}>{block.textPreview}</div>
-                    )}
+                {blocks.slice(1).map((block, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 4 }}>
+                      [{block.type}] {block.textLength ? `${block.textLength.toLocaleString()} chars` : ''}
+                    </div>
+                    <TextBox content={block.textPreview ?? `[${block.type}]`} maxHeight={150} />
                   </div>
                 ))}
               </div>
@@ -455,24 +476,7 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
 
           {/* Response */}
           <ContentBlock label="Response">
-            <div
-              style={{
-                background: T.bg.secondary,
-                padding: 12,
-                borderRadius: T.radius.sm,
-                fontSize: 11,
-                fontFamily: T.font.mono,
-                color: T.text.primary,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                maxHeight: 240,
-                overflowY: 'auto',
-                lineHeight: 1.5,
-                border: `1px solid ${T.border.default}`,
-              }}
-            >
-              {entry.responseText}
-            </div>
+            <TextBox content={displayEntry.responseText} maxHeight={280} />
           </ContentBlock>
 
           {/* Error */}
@@ -490,52 +494,70 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
                   wordBreak: 'break-word',
                   lineHeight: 1.5,
                   border: `1px solid rgba(220,38,38,0.12)`,
+                  maxHeight: 150,
+                  overflowY: 'auto',
                 }}
               >
-                {entry.error}
+                {displayEntry.error}
               </div>
             </ContentBlock>
           )}
 
-          {/* Meta row */}
+          {/* Meta row + Raw JSON button */}
           <div
             style={{
               display: 'flex',
               gap: 16,
               flexWrap: 'wrap',
+              alignItems: 'center',
               paddingTop: 8,
               borderTop: `1px solid ${T.border.default}`,
             }}
           >
-            {entry.temperature != null && (
+            {displayEntry.temperature != null && (
               <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                temp: {entry.temperature}
+                temp: {displayEntry.temperature}
               </span>
             )}
             <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-              max_tokens: {entry.maxTokens.toLocaleString()}
-            </span>
-            {entry.topP != null && (
-              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                top_p: {entry.topP}
-              </span>
-            )}
-            {entry.topK != null && (
-              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                top_k: {entry.topK}
-              </span>
-            )}
-            <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-              sys_prompt_len: {entry.systemPromptLength.toLocaleString()}
+              max_tokens: {displayEntry.maxTokens.toLocaleString()}
             </span>
             <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-              response_len: {entry.responseLength.toLocaleString()}
+              sys_prompt_len: {displayEntry.systemPromptLength.toLocaleString()}
             </span>
-            {entry.conversationId && (
+            <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+              response_len: {displayEntry.responseLength.toLocaleString()}
+            </span>
+            {displayEntry.conversationId && (
               <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.accent }}>
-                conv: {entry.conversationId.slice(0, 8)}...
+                conv: {displayEntry.conversationId.slice(0, 8)}…
               </span>
             )}
+
+            {/* Raw JSON copy button */}
+            <button
+              onClick={e => { e.stopPropagation(); copyRawJson() }}
+              style={{
+                marginLeft: 'auto',
+                height: 26,
+                padding: '0 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 10,
+                fontWeight: 600,
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                background: copied ? '#F0FDF4' : T.bg.primary,
+                color: copied ? T.status.green : T.text.secondary,
+                cursor: 'pointer',
+                fontFamily: T.font.sans,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {copied ? <Check size={10} /> : <Copy size={10} />}
+              {copied ? 'Copied!' : 'Copy JSON'}
+            </button>
           </div>
         </div>
       )}

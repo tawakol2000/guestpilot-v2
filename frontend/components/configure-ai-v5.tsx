@@ -782,7 +782,7 @@ function TenantConfigSection({
         debounceDelayMs: local.debounceDelayMs,
         customInstructions: local.customInstructions,
         ragEnabled: local.ragEnabled,
-        memorySummariesEnabled: local.memorySummariesEnabled,
+        memorySummaryEnabled: local.memorySummaryEnabled,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -946,7 +946,7 @@ function TenantConfigSection({
           <label style={labelStyle}>Features</label>
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
           <div style={{ borderBottom: 'none' }}>
-            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummariesEnabled, 'memorySummariesEnabled')}
+            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           </div>
         </div>
 

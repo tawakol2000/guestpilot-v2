@@ -65,6 +65,16 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         return;
       }
 
+      // Atomically mark PendingAiReply as fired — prevents double-firing with poll job
+      const claim = await prisma.pendingAiReply.updateMany({
+        where: { conversationId, fired: false },
+        data: { fired: true },
+      });
+      if (claim.count === 0) {
+        console.log(`[Worker] PendingAiReply for ${conversationId} already fired by poll — skipping`);
+        return;
+      }
+
       const { property, guest, tenant } = reservation;
       const customKb = property.customKnowledgeBase as Record<string, string> | null;
 

@@ -30,7 +30,13 @@ export function tenantConfigRouter(prisma: PrismaClient): Router {
   router.put('/', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const config = await updateTenantAiConfig(tenantId, req.body, prisma);
+      // Normalize legacy plural field name sent by frontend
+      const body = { ...req.body };
+      if ('memorySummariesEnabled' in body && !('memorySummaryEnabled' in body)) {
+        body.memorySummaryEnabled = body.memorySummariesEnabled;
+        delete body.memorySummariesEnabled;
+      }
+      const config = await updateTenantAiConfig(tenantId, body, prisma);
       res.json(config);
     } catch (err: any) {
       if (err.field) {

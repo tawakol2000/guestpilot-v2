@@ -19,12 +19,14 @@ import {
   apiToggleAIAll,
   apiToggleAIProperty,
   apiGetPropertiesAiStatus,
+  apiGetKnowledgeChunks,
   type PropertyAiStatus,
   apiDeleteAllData,
   type ImportProgress,
   type ApiProperty,
   type ApiMessageTemplate,
   type ApiKnowledgeSuggestion,
+  type KnowledgeChunk,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -1632,6 +1634,120 @@ function DangerZoneSection({ onImportComplete }: { onImportComplete: () => void 
   )
 }
 
+// ─── RAG Chunks Viewer ────────────────────────────────────────────────────────
+function RagChunksSection(): React.ReactElement {
+  const [open, setOpen] = useState(false)
+  const [properties, setProperties] = useState<ApiProperty[]>([])
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('')
+  const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
+  const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    apiGetProperties().then(props => {
+      setProperties(props)
+      if (props.length > 0 && !selectedPropertyId) setSelectedPropertyId(props[0].id)
+    }).catch(() => {})
+  }, [open, selectedPropertyId])
+
+  useEffect(() => {
+    if (!selectedPropertyId) return
+    setLoading(true)
+    apiGetKnowledgeChunks(selectedPropertyId)
+      .then(setChunks)
+      .catch(() => setChunks([]))
+      .finally(() => setLoading(false))
+  }, [selectedPropertyId])
+
+  const filtered = search
+    ? chunks.filter(c => c.content.toLowerCase().includes(search.toLowerCase()) || c.sourceKey.toLowerCase().includes(search.toLowerCase()))
+    : chunks
+
+  const categoryColors: Record<string, string> = {
+    checkin: '#1D4ED8', amenities: '#15803D', rules: '#DC2626',
+    parking: '#D97706', wifi: '#7C3AED', maintenance: '#0891B2',
+    booking: '#DB2777', general: '#57534E',
+  }
+
+  return (
+    <div style={{ background: T.bg.primary, borderRadius: T.radius.md, border: `1px solid ${T.border.default}`, marginBottom: 16, overflow: 'hidden' }}>
+      <div
+        onClick={() => setOpen(v => !v)}
+        style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text.primary }}>RAG Knowledge Chunks</div>
+          <div style={{ fontSize: 12, color: T.text.tertiary, marginTop: 2 }}>View what was indexed from your properties for AI retrieval</div>
+        </div>
+        {open ? <ChevronDown size={16} color={T.text.tertiary} /> : <ChevronRight size={16} color={T.text.tertiary} />}
+      </div>
+
+      {open && (
+        <div style={{ borderTop: `1px solid ${T.border.default}`, padding: '16px 20px' }}>
+          {/* Property selector + search */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+            <select
+              value={selectedPropertyId}
+              onChange={e => setSelectedPropertyId(e.target.value)}
+              style={{ flex: 1, height: 34, padding: '0 10px', fontSize: 12, border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, background: T.bg.primary, color: T.text.primary, outline: 'none' }}
+            >
+              {properties.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <input
+              placeholder="Search chunks…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ width: 180, height: 34, padding: '0 10px', fontSize: 12, border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, background: T.bg.primary, color: T.text.primary, outline: 'none' }}
+            />
+          </div>
+
+          {/* Stats */}
+          <div style={{ fontSize: 11, color: T.text.tertiary, marginBottom: 10 }}>
+            {loading ? 'Loading…' : `${filtered.length} of ${chunks.length} chunks`}
+          </div>
+
+          {/* Chunk list */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 480, overflowY: 'auto' }}>
+            {filtered.length === 0 && !loading && (
+              <div style={{ fontSize: 12, color: T.text.tertiary, textAlign: 'center', padding: '20px 0' }}>
+                No chunks found. Run Import Data or use Reindex Knowledge on a property.
+              </div>
+            )}
+            {filtered.map(chunk => (
+              <div
+                key={chunk.id}
+                style={{ background: T.bg.secondary, border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, padding: '10px 12px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+                    color: '#fff', background: categoryColors[chunk.category] ?? '#57534E',
+                    padding: '2px 7px', borderRadius: 99,
+                  }}>
+                    {chunk.category}
+                  </span>
+                  <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: 'monospace' }}>
+                    {chunk.sourceKey || 'no-key'}
+                  </span>
+                  <span style={{ fontSize: 10, color: T.text.tertiary, marginLeft: 'auto' }}>
+                    {new Date(chunk.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: T.text.primary, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {chunk.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Root export ──────────────────────────────────────────────────────────────
 export function SettingsV5({ onImportComplete }: { onImportComplete: () => void }): React.ReactElement {
   useEffect(() => {
@@ -1660,6 +1776,7 @@ export function SettingsV5({ onImportComplete }: { onImportComplete: () => void 
         <PropertiesSection />
         <MessageTemplatesSection />
         <KnowledgeBaseSection />
+        <RagChunksSection />
         <AIToggleSection onImportComplete={onImportComplete} />
         <DangerZoneSection onImportComplete={onImportComplete} />
       </div>

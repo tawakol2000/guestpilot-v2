@@ -350,7 +350,7 @@ export interface TenantAiConfig {
   debounceDelayMs: number
   customInstructions: string
   ragEnabled: boolean
-  memorySummariesEnabled: boolean
+  memorySummaryEnabled: boolean
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
@@ -410,6 +410,7 @@ export interface AiApiLogEntry {
   topK?: number
   topP?: number
   systemPromptPreview: string
+  systemPromptFull?: string
   systemPromptLength: number
   contentBlocks: { type: string; textPreview?: string; textLength?: number }[]
   responseText: string
@@ -420,6 +421,15 @@ export interface AiApiLogEntry {
   durationMs: number
   conversationId?: string
   error?: string
+}
+
+export interface KnowledgeChunk {
+  id: string
+  propertyId: string
+  content: string
+  category: string
+  sourceKey: string
+  createdAt: string
 }
 
 export interface AiLogsResponse {
@@ -442,6 +452,11 @@ export async function apiGetAiLogs(params?: { agent?: string; model?: string; se
 
 export async function apiGetAiLogDetail(id: string): Promise<AiApiLogEntry> {
   return apiFetch<AiApiLogEntry>(`/api/ai-logs/${id}`)
+}
+
+export async function apiGetKnowledgeChunks(propertyId?: string): Promise<KnowledgeChunk[]> {
+  const qs = propertyId ? `?propertyId=${encodeURIComponent(propertyId)}` : ''
+  return apiFetch<KnowledgeChunk[]>(`/api/knowledge/chunks${qs}`)
 }
 
 export async function apiTestAiConfig(data: { systemPrompt: string; userMessage: string; model?: string; temperature?: number; maxTokens?: number }): Promise<{ response: string; inputTokens: number; outputTokens: number; durationMs: number; model: string }> {

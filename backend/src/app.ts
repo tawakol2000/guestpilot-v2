@@ -76,6 +76,19 @@ export function createApp(prisma: PrismaClient) {
     knowledgeCtrl.rateMessage(req, res);
   });
 
+  // ── AI logs helper ────────────────────────────────────────────────────────
+  const normaliseBlocks = (raw: unknown): { type: string; textPreview?: string; textLength?: number }[] => {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((b: any) => {
+      const text: string | undefined = typeof b.text === 'string' ? b.text : undefined;
+      return {
+        type: b.type || 'text',
+        textPreview: text ? text.substring(0, 500) : b.textPreview,
+        textLength: text !== undefined ? text.length : b.textLength,
+      };
+    });
+  };
+
   // ── AI API Logs — persistent DB + in-memory fallback ─────────────────────
   app.get('/api/ai-logs', authMiddleware as any, async (req: any, res) => {
     try {
@@ -112,9 +125,9 @@ export function createApp(prisma: PrismaClient) {
         model: l.model,
         temperature: l.temperature,
         maxTokens: l.maxTokens,
-        systemPromptPreview: l.systemPrompt.substring(0, 200),
+        systemPromptPreview: l.systemPrompt.substring(0, 1000),
         systemPromptLength: l.systemPrompt.length,
-        contentBlocks: (() => { try { return JSON.parse(l.userContent); } catch { return []; } })(),
+        contentBlocks: (() => { try { return normaliseBlocks(JSON.parse(l.userContent)); } catch { return []; } })(),
         responseText: l.responseText,
         responseLength: l.responseText.length,
         inputTokens: l.inputTokens,
@@ -151,10 +164,10 @@ export function createApp(prisma: PrismaClient) {
         model: log.model,
         temperature: log.temperature,
         maxTokens: log.maxTokens,
-        systemPromptPreview: log.systemPrompt.substring(0, 200),
+        systemPromptPreview: log.systemPrompt.substring(0, 1000),
         systemPromptFull: log.systemPrompt,
         systemPromptLength: log.systemPrompt.length,
-        contentBlocks: (() => { try { return JSON.parse(log.userContent); } catch { return []; } })(),
+        contentBlocks: (() => { try { return normaliseBlocks(JSON.parse(log.userContent)); } catch { return []; } })(),
         responseText: log.responseText,
         responseLength: log.responseText.length,
         inputTokens: log.inputTokens,
