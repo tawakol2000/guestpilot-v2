@@ -152,6 +152,7 @@ async function createMessage(
       messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
     };
     const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
+    console.log('[CLAUDE-RAW]', JSON.stringify(createParams));
     const response = await withRetry(() =>
       (anthropic.messages.create as any)(createParams, createOpts)
     ) as Anthropic.Message;
