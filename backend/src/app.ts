@@ -136,6 +136,7 @@ export function createApp(prisma: PrismaClient) {
         durationMs: l.durationMs,
         conversationId: l.conversationId,
         error: l.error,
+        ragContext: l.ragContext ?? null,
       }));
 
       res.json({ logs: formatted, total, limit, offset });
@@ -176,6 +177,7 @@ export function createApp(prisma: PrismaClient) {
         durationMs: log.durationMs,
         conversationId: log.conversationId,
         error: log.error,
+        ragContext: log.ragContext ?? null,
       });
     } catch (err) {
       console.error('[AI-Logs] DB query failed:', err);

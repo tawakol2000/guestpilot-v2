@@ -86,6 +86,12 @@ export interface AiApiLogEntry {
   outputTokens: number;
   durationMs: number;
   error?: string;
+  ragContext?: {
+    query: string;
+    chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>;
+    totalRetrieved: number;
+    durationMs: number;
+  } | null;
 }
 
 const AI_LOG_MAX = 50;
@@ -98,7 +104,7 @@ export function getAiApiLog(): AiApiLogEntry[] {
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number } }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'claude-haiku-4-5-20251001';
@@ -124,6 +130,7 @@ async function createMessage(
     inputTokens: 0,
     outputTokens: 0,
     durationMs: 0,
+    ragContext: options?.ragContext ?? null,
   };
 
   try {
@@ -183,6 +190,7 @@ async function createMessage(
           outputTokens: logEntry.outputTokens,
           costUsd,
           durationMs: logEntry.durationMs,
+          ragContext: options.ragContext ?? undefined,
         },
       }).catch(e => console.error('[AI-LOG] DB persist error:', e));
     }
@@ -202,6 +210,9 @@ async function createMessage(
         escalated: false,
         cacheCreationTokens,
         cacheReadTokens,
+        ragChunks: options.ragContext?.chunks,
+        ragDurationMs: options.ragContext?.durationMs,
+        ragQuery: options.ragContext?.query,
       });
     }
 
@@ -232,6 +243,9 @@ async function createMessage(
         responseText: '',
         escalated: false,
         error: logEntry.error,
+        ragChunks: options.ragContext?.chunks,
+        ragDurationMs: options.ragContext?.durationMs,
+        ragQuery: options.ragContext?.query,
       });
     }
 
@@ -253,6 +267,7 @@ async function createMessage(
           costUsd: 0,
           durationMs: logEntry.durationMs,
           error: logEntry.error,
+          ragContext: options.ragContext ?? undefined,
         },
       }).catch(e => console.error('[AI-LOG] DB persist error:', e));
     }
@@ -1162,10 +1177,28 @@ export async function generateAndSendAiReply(
 
     // Upgrade 5c: RAG — retrieve relevant property knowledge for this query
     const ragQuery = currentMsgs.map((m: { content: string }) => m.content).join(' ');
+    const ragStart = Date.now();
     const retrievedChunks =
       tenantConfig?.ragEnabled !== false && context.propertyId
-        ? await retrieveRelevantKnowledge(tenantId, context.propertyId, ragQuery, prisma).catch(() => [])
+        ? await retrieveRelevantKnowledge(
+            tenantId, context.propertyId, ragQuery, prisma, 8,
+            context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator'
+          ).catch(() => [])
         : [];
+    const ragDurationMs = Date.now() - ragStart;
+
+    const ragContext = {
+      query: ragQuery,
+      chunks: retrievedChunks.map((c: any) => ({
+        content: c.content.substring(0, 200),
+        category: c.category,
+        similarity: c.similarity,
+        sourceKey: c.sourceKey || '',
+        isGlobal: !c.propertyId,
+      })),
+      totalRetrieved: retrievedChunks.length,
+      durationMs: ragDurationMs,
+    };
 
     const propertyInfo = buildPropertyInfo(
       context.guestName,
@@ -1225,6 +1258,7 @@ export async function generateAndSendAiReply(
         agentName: effectiveAgentName,
         tenantId,
         conversationId,
+        ragContext,
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
@@ -1309,6 +1343,7 @@ export async function generateAndSendAiReply(
         agentName: effectiveAgentName,
         tenantId,
         conversationId,
+        ragContext,
       });
 
       try {

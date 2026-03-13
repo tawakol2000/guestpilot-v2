@@ -312,6 +312,7 @@ model AiApiLog {
   costUsd        Float    @default(0)
   durationMs     Int      @default(0)
   error          String?
+  ragContext     Json?
   createdAt      DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

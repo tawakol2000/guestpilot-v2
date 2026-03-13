@@ -421,6 +421,12 @@ export interface AiApiLogEntry {
   durationMs: number
   conversationId?: string
   error?: string
+  ragContext?: {
+    query: string
+    chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>
+    totalRetrieved: number
+    durationMs: number
+  } | null
 }
 
 export interface KnowledgeChunk {

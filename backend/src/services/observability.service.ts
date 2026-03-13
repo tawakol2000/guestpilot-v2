@@ -19,6 +19,9 @@ export interface TraceParams {
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
   error?: string;
+  ragChunks?: Array<{ content: string; category: string; similarity: number }>;
+  ragDurationMs?: number;
+  ragQuery?: string;
 }
 
 let _client: Langfuse | null = null;
@@ -62,6 +65,18 @@ export function traceAiCall(params: TraceParams): void {
         escalated: params.escalated,
       },
     });
+    if (params.ragChunks && params.ragChunks.length > 0) {
+      trace.span({
+        name: 'rag-retrieval',
+        metadata: {
+          query: params.ragQuery,
+          chunksRetrieved: params.ragChunks.length,
+          topScore: Math.max(...params.ragChunks.map(c => c.similarity)),
+          chunks: params.ragChunks.slice(0, 5),
+          durationMs: params.ragDurationMs,
+        },
+      });
+    }
     trace.generation({
       name: params.agentName,
       model: params.model,

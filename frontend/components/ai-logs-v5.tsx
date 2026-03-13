@@ -383,6 +383,40 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           }
         </span>
 
+        {/* RAG chunk count pill */}
+        {entry.ragContext != null ? (
+          entry.ragContext.totalRetrieved > 0 ? (
+            <span
+              style={{
+                background: 'rgba(109,40,217,0.08)',
+                color: '#6D28D9',
+                border: '1px solid rgba(109,40,217,0.15)',
+                borderRadius: 999,
+                fontSize: 10,
+                padding: '2px 7px',
+                fontFamily: T.font.mono,
+                fontWeight: 500,
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {entry.ragContext.totalRetrieved} chunk{entry.ragContext.totalRetrieved !== 1 ? 's' : ''}
+            </span>
+          ) : (
+            <span
+              style={{
+                color: T.text.tertiary,
+                fontSize: 10,
+                fontFamily: T.font.mono,
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              no RAG
+            </span>
+          )
+        ) : null}
+
         {/* Response preview */}
         <span
           style={{
@@ -470,6 +504,153 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           <ContentBlock label="Response">
             <TextBox content={displayEntry.responseText} maxHeight={280} />
           </ContentBlock>
+
+          {/* Retrieved Context */}
+          {displayEntry.ragContext !== undefined && (
+            <ContentBlock
+              label={displayEntry.ragContext && displayEntry.ragContext.totalRetrieved > 0
+                ? `Retrieved Context (${displayEntry.ragContext.totalRetrieved} chunk${displayEntry.ragContext.totalRetrieved !== 1 ? 's' : ''} · ${displayEntry.ragContext.durationMs}ms)`
+                : 'Retrieved Context'}
+              labelColor="#6D28D9"
+              defaultExpanded={false}
+            >
+              {(!displayEntry.ragContext || displayEntry.ragContext.totalRetrieved === 0) ? (
+                <div style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary, padding: '6px 0' }}>
+                  No context retrieved
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {/* Query row */}
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontFamily: T.font.mono,
+                      color: T.text.secondary,
+                      padding: '4px 0 8px',
+                      borderBottom: `1px solid ${T.border.default}`,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <span style={{ color: T.text.tertiary }}>query: </span>
+                    {displayEntry.ragContext.query}
+                  </div>
+                  {displayEntry.ragContext.chunks.map((chunk, ci) => {
+                    const catPrefix = chunk.category.split('-')[0]
+                    const catColor =
+                      chunk.category.startsWith('sop') ? '#7C3AED' :
+                      chunk.category === 'access' ? '#1D4ED8' :
+                      chunk.category === 'general' ? '#57534E' :
+                      '#D97706'
+                    const scoreColor =
+                      chunk.similarity >= 0.75 ? '#15803D' :
+                      chunk.similarity >= 0.5 ? '#D97706' :
+                      '#DC2626'
+                    return (
+                      <div
+                        key={ci}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'auto auto 80px auto 1fr auto',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '5px 8px',
+                          borderRadius: T.radius.sm,
+                          background: ci % 2 === 0 ? T.bg.secondary : 'transparent',
+                          fontSize: 11,
+                        }}
+                      >
+                        {/* Category badge */}
+                        <span
+                          style={{
+                            background: `${catColor}12`,
+                            color: catColor,
+                            border: `1px solid ${catColor}20`,
+                            borderRadius: 999,
+                            fontSize: 9,
+                            padding: '1px 6px',
+                            fontFamily: T.font.sans,
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {catPrefix}
+                        </span>
+                        {/* Source key */}
+                        <span
+                          style={{
+                            fontFamily: T.font.mono,
+                            fontSize: 10,
+                            color: T.text.secondary,
+                            maxWidth: 120,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {chunk.sourceKey || chunk.category}
+                        </span>
+                        {/* Similarity bar */}
+                        <div
+                          style={{
+                            height: 4,
+                            background: T.border.default,
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${Math.round(chunk.similarity * 100)}%`,
+                              height: '100%',
+                              background: scoreColor,
+                              borderRadius: 2,
+                            }}
+                          />
+                        </div>
+                        {/* Score */}
+                        <span
+                          style={{
+                            fontFamily: T.font.mono,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: scoreColor,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {chunk.similarity.toFixed(2)}
+                        </span>
+                        {/* Content preview */}
+                        <span
+                          style={{
+                            fontFamily: T.font.mono,
+                            fontSize: 10,
+                            color: T.text.tertiary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {chunk.content.slice(0, 80)}
+                        </span>
+                        {/* Global/Property tag */}
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontFamily: T.font.sans,
+                            fontWeight: 500,
+                            color: chunk.isGlobal ? '#7C3AED' : T.text.tertiary,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {chunk.isGlobal ? 'SOP' : 'prop'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </ContentBlock>
+          )}
 
           {/* Error */}
           {hasError && (
