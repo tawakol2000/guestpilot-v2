@@ -65,13 +65,20 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         return;
       }
 
-      // Atomically mark PendingAiReply as fired — prevents double-firing with poll job
-      const claim = await prisma.pendingAiReply.updateMany({
+      // Fetch PendingAiReply to get window start time, then atomically mark fired
+      const pending = await prisma.pendingAiReply.findFirst({
         where: { conversationId, fired: false },
+      });
+      if (!pending) {
+        console.log(`[Worker] PendingAiReply for ${conversationId} already fired by poll — skipping`);
+        return;
+      }
+      const claimed = await prisma.pendingAiReply.updateMany({
+        where: { id: pending.id, fired: false },
         data: { fired: true },
       });
-      if (claim.count === 0) {
-        console.log(`[Worker] PendingAiReply for ${conversationId} already fired by poll — skipping`);
+      if (claimed.count === 0) {
+        console.log(`[Worker] PendingAiReply for ${conversationId} claimed by poll between find/update — skipping`);
         return;
       }
 
@@ -82,6 +89,7 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         tenantId,
         conversationId,
         propertyId: property.id,
+        windowStartedAt: pending.createdAt,
         hostawayConversationId: conversation.hostawayConversationId,
         hostawayApiKey: tenant.hostawayApiKey,
         hostawayAccountId: tenant.hostawayAccountId,
