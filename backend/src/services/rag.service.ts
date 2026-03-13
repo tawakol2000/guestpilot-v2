@@ -197,9 +197,9 @@ export async function retrieveRelevantKnowledge(
       `;
     }
 
-    return results
-      .filter(r => Number(r.similarity) > 0.5)
-      .map(r => ({
+    const filtered = results.filter(r => Number(r.similarity) > 0.5);
+    console.log(`[RAG] retrieved ${filtered.length}/${results.length} chunks for query "${query.substring(0, 60)}" — ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(2)})`).join(', ') || 'none'}`);
+    return filtered.map(r => ({
         content: r.content,
         category: r.category,
         similarity: Number(r.similarity),
