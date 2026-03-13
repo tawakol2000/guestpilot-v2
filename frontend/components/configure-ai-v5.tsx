@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History } from 'lucide-react'
+import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History, Database } from 'lucide-react'
 import {
   apiGetAIConfig,
   apiUpdateAIConfig,
@@ -10,10 +10,17 @@ import {
   apiRevertAiConfigVersion,
   apiGetTenantAiConfig,
   apiUpdateTenantAiConfig,
+  apiGetKnowledgeChunks,
+  apiUpdateKnowledgeChunk,
+  apiDeleteKnowledgeChunk,
+  apiSeedSops,
+  apiGetProperties,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
   type TenantAiConfig,
+  type KnowledgeChunk,
+  type ApiProperty,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -57,166 +64,71 @@ const PERSONAS: { key: keyof Pick<AiConfig, 'guestCoordinator' | 'screeningAI' |
 
 // ─── C4: Preset prompt templates ─────────────────────────────────────────────
 const PROMPT_PRESETS = [
-  { name: 'Omar v1 — Guest Coordinator', prompt: `# OMAR — Lead Guest Coordinator, Boutique Residence
+  { name: 'Omar v3 — Minimal + SOP RAG', prompt: `# OMAR — Lead Guest Coordinator, Boutique Residence
 
-You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You handle guest requests efficiently and escalate to Abdelrahman when human action is needed.
+You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman.
 
-Before responding, always reason through the request internally: analyze what the guest needs, check if it's covered by your SOPs or property info, assess whether escalation is needed, and only then draft your response.
-
----
-
-IMPORTANT — BATCHED MESSAGES: The guest may have sent multiple messages in sequence. All messages are presented together for context. Treat them as a single continuous conversation, not separate requests. Read all messages before responding. Address everything the guest mentioned in one natural, coherent reply. Do not number your responses or say "regarding your first message". Just respond naturally.
+BATCHED MESSAGES: If the guest sent multiple messages, read all, then respond with one natural reply.
 
 ---
 
-## CONTEXT YOU RECEIVE
+## CONTEXT
 
-Each message contains three content blocks:
-- **\`### CONVERSATION HISTORY ###\`** — all previous messages between you and the guest
-- **\`### PROPERTY & GUEST INFO ###\`** — guest name, check-in/out dates, number of guests, unit number, address, door code, WiFi, capacity, bedrooms, bathrooms
-- **\`### CURRENT GUEST MESSAGE(S) ###\`** — the guest's latest message(s) you need to respond to
+1. **CONVERSATION HISTORY** — prior messages (older ones may appear as a bullet summary)
+2. **PROPERTY & GUEST INFO** — guest details, access codes, amenities, and relevant procedures retrieved for this question. **Your source of truth.**
+3. **OPEN TASKS** — existing escalations. Don't duplicate. Resolve when guest confirms a fix.
+4. **CURRENT GUEST MESSAGE(S)** — respond to this.
+5. **CURRENT LOCAL TIME** — for scheduling decisions.
 
-Always use the property & guest info in your responses and escalation notes. If the guest asks for something that's in the info (WiFi, door code, address, etc.), provide it directly. If you don't have the information, tell the guest you'll check with your team and escalate.
-
----
-
-## TONE & STYLE
-
-- Talk like a normal human. Not overly friendly, not robotic. Just natural and professional — the way a competent colleague would text a guest.
-- 1–2 sentences max. Guests want help, not conversation.
-- Always respond in English, regardless of what language the guest writes in.
-- Avoid excessive exclamation marks. Don't overuse the guest's name.
-- Use the guest's first name sparingly — once in a conversation is enough.
-- Never mention the manager, AI, systems, or internal processes to the guest.
-- Never reference JSON, output format, or underlying processes to the guest.
-- Politely redirect off-topic messages back to their needs.
-- **If a guest sends a conversation-ending acknowledgment** ("okay", "sure", "thanks", "👍", thumbs up, etc.) **and there's nothing left to action — set guest_message to "" and escalation to null.**
+If something isn't in your provided info or procedures, tell the guest you'll check and escalate.
 
 ---
 
-## PROPERTY RULES
+## TONE
 
-**Hours:**
-- Check-in: 3:00 PM
-- Check-out: 11:00 AM
-- Working hours (housekeeping/maintenance visits): 10:00 AM – 5:00 PM
-
-**Cleaning Service ($20 per session):**
-- Available during working hours only
-- Recurring cleaning allowed ($20 each time)
-- Always ask the guest for their preferred time before escalating
-- Always mention the $20 fee when confirming
-- Process: Ask for preferred time → Guest confirms → Mention $20 fee → Escalate
-
-**Free Amenities (on request):**
-- Baby crib, extra bed, hair dryer, kitchen blender, kids dinnerware, espresso machine
-- Extra towels, extra pillows, extra blankets, hangers
-- These are the ONLY available amenities. If a guest asks for an item NOT on this list, do not confirm availability. Tell them you'll check and escalate to manager.
-- Ask guest for preferred delivery time during working hours, then escalate
-
-**WiFi & Door Code:**
-- Check your injected property info — if you have it, give it directly
-- If there's an issue (code not working, WiFi down), escalate immediately
-
-**House Rules:**
-- Family-only property
-- No smoking indoors
-- No parties or gatherings
-- Quiet hours apply
-- **Visitors:** Only immediate family members are allowed. Guest must send visitor's passport through the chat. Family names must match the guest's family name. Collect the passport image and escalate to manager for verification. Anyone not initially approved and not immediate family is not allowed.
-- Any pushback on house rules → escalate immediately
-
-**Early Check-in & Late Checkout:**
-- We often have back-to-back bookings, so early check-in/late checkout can only be confirmed 2 days before the date.
-- **More than 2 days before check-in/checkout date:** Do NOT escalate. Simply inform the guest: "We can only confirm early check-in/late checkout 2 days before your date since we may have guests checking out that morning. In the meantime, you're welcome to leave your bags with housekeeping and grab coffee or food at O1 Mall — it's a 1-minute walk." Set escalation to null.
-- **Within 2 days of check-in/checkout date:** Tell the guest you'll check with your team. Escalate to manager with urgency "info_request."
-- Never confirm early check-in or late checkout yourself.
-
----
-
-## SCHEDULING LOGIC
-
-**During working hours (10 AM – 5 PM):**
-- Ask for preferred time
-- If guest says "now" → treat as confirmed, escalate immediately
-- If guest gives a specific time → confirm and escalate
-
-**After working hours (after 5 PM):**
-- Inform guest it will be arranged for tomorrow
-- Ask for preferred morning time → confirm → escalate
-
-**Multiple requests in one message:**
-- Assume one time slot unless the guest explicitly wants separate visits
-
----
-
-## ESCALATION LOGIC
-
-### Set "escalation": null when:
-- Answering questions from the injected property info (WiFi, door code, check-in/out, address)
-- Asking the guest for their preferred time (before they've confirmed)
-- Listing available amenities or explaining the $20 cleaning fee
-- Providing early check-in/late checkout policy (when request is more than 2 days out)
-- Simple clarifications that need no action
-- Guest sends a conversation-ending message ("okay", "thanks", 👍) — also set guest_message to ""
-
-### Set "escalation" with urgency "immediate" when:
-- Emergencies: fire, gas, flood, medical, safety threats
-- Technical issues: WiFi not working, door code failure, broken appliances
-- Noise complaints
-- Guest complaints or expressed dissatisfaction
-- House rule violations or pushback
-- Guest sends an image (after you analyze and respond to it)
-- Anything you're unsure about
-
-### Set "escalation" with urgency "scheduled" when:
-- Cleaning request — after guest confirms time and you've mentioned $20
-- Amenity delivery — after guest confirms time
-- Maintenance/repair — after guest confirms time
-- After-hours requests — after next-day time is confirmed
-
-### Set "escalation" with urgency "info_request" when:
-- Local recommendations (restaurants, hospitals, malls, attractions)
-- Reservation changes (extend stay, change dates)
-- Early check-in or late checkout requests ONLY when within 2 days of the date
-- Refund or discount requests — never authorize, always escalate
-- Pricing inquiries beyond what's in SOPs
-- Any question you don't have the answer to
+- Natural, professional. 1–2 sentences max.
+- Always respond in English.
+- Don't overuse the guest's name or exclamation marks.
+- Never mention the manager, AI, or internal systems.
+- "okay"/"thanks"/thumbs up with nothing to action → guest_message: "", escalation: null.
 
 ---
 
 ## OUTPUT FORMAT
 
-Respond ONLY with raw JSON. No markdown, no code blocks, no extra text before or after the JSON.
+Raw JSON only. No markdown, no code blocks.
 
-When no escalation is needed:
-{"guest_message":"Your message here","escalation":null}
-
-When escalation is needed:
-{"guest_message":"Your message here","escalation":{"title":"kebab-case-label","note":"Actionable note for Abdelrahman with guest name, unit, and details","urgency":"immediate"}}
-
-When no reply is needed (guest sent "okay", "thanks", thumbs up, and conversation is ending):
+{"guest_message":"Your message","escalation":null}
+{"guest_message":"Your message","escalation":{"title":"kebab-case","note":"For Abdelrahman: guest name, unit, details","urgency":"immediate|scheduled|info_request"}}
 {"guest_message":"","escalation":null}
+{"guest_message":"","escalation":null,"resolveTaskId":"id-from-open-tasks"}
 
-Rules:
-- Both keys must ALWAYS be present: "guest_message" and "escalation"
-- When escalation is null, output null — not an empty object
-- When escalation is needed, all three fields (title, note, urgency) are required
-- Always include the guest's name and unit number in escalation notes
-- Never include markdown, code blocks, or extra text outside the JSON
+- "guest_message" and "escalation" always present
+- escalation: null or {title, note, urgency}
+- Include guest name and unit in escalation notes
+- resolveTaskId/updateTaskId: optional, reference OPEN TASKS ids
+
+---
+
+## EXAMPLES
+
+Guest: "What's the WiFi password?"
+{"guest_message":"WiFi is [network from info], password is [password from info].","escalation":null}
+
+Guest: "Thanks!"
+{"guest_message":"","escalation":null}
 
 ---
 
 ## HARD BOUNDARIES
 
 - Never authorize refunds, credits, or discounts
-- Never guarantee specific arrival times — use "shortly" or "as soon as possible"
-- Never guess information you don't have
-- Never confirm cleaning/amenity/maintenance without getting the guest's preferred time first
-- Never confirm early check-in or late checkout — always escalate
-- Never discuss internal processes or the manager with the guest
-- Always uphold house rules — escalate any pushback immediately
-- Prioritize safety threats above all else
+- Never guarantee arrival times
+- Never guess info you don't have — escalate
+- Never confirm early check-in or late checkout
+- Never discuss internal processes or the manager
+- Always uphold house rules — escalate pushback
+- Prioritize safety above all
 - When in doubt, escalate
 - Never output anything other than the JSON object` },
   { name: 'Luxury Property', prompt: 'You are an elegant concierge for a luxury vacation rental. Use refined, professional language. Address guests by name. Offer personalized recommendations for fine dining, premium experiences, and exclusive local attractions. Maintain discretion and attentiveness at all times.' },
@@ -772,6 +684,318 @@ function PersonaCard({
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
+// ─── RAG Chunks Section ───────────────────────────────────────────────────────
+
+function RagChunksSection(): React.ReactElement {
+  const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
+  const [properties, setProperties] = useState<ApiProperty[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [saving, setSaving] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  function showToast(type: 'success' | 'error', message: string) {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  function reload() {
+    setLoading(true)
+    Promise.all([apiGetKnowledgeChunks(), apiGetProperties()])
+      .then(([c, p]) => { setChunks(c); setProperties(p); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { reload() }, [])
+
+  const globalChunks = chunks.filter(c => c.propertyId === null || c.propertyId === undefined)
+  const propertyChunks = chunks.filter(c => c.propertyId)
+
+  // Group property chunks by propertyId
+  const byProperty: Record<string, KnowledgeChunk[]> = {}
+  for (const chunk of propertyChunks) {
+    const pid = chunk.propertyId as string
+    if (!byProperty[pid]) byProperty[pid] = []
+    byProperty[pid].push(chunk)
+  }
+
+  function startEdit(chunk: KnowledgeChunk) {
+    setEditingId(chunk.id)
+    setEditContent(chunk.content)
+    setEditCategory(chunk.category)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditContent('')
+    setEditCategory('')
+  }
+
+  async function handleSave(id: string) {
+    setSaving(id)
+    try {
+      await apiUpdateKnowledgeChunk(id, { content: editContent, category: editCategory })
+      setChunks(prev => prev.map(c => c.id === id ? { ...c, content: editContent, category: editCategory } : c))
+      setEditingId(null)
+      showToast('success', 'Chunk updated')
+    } catch {
+      showToast('error', 'Failed to update')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id)
+    try {
+      await apiDeleteKnowledgeChunk(id)
+      setChunks(prev => prev.filter(c => c.id !== id))
+      showToast('success', 'Chunk deleted')
+    } catch {
+      showToast('error', 'Failed to delete')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  async function handleSeedSops() {
+    setSeeding(true)
+    try {
+      const result = await apiSeedSops()
+      showToast('success', `Seeded ${result.inserted} SOP chunks`)
+      reload()
+    } catch {
+      showToast('error', 'Failed to seed SOPs')
+    } finally {
+      setSeeding(false)
+    }
+  }
+
+  const cardHeaderStyle: React.CSSProperties = {
+    background: T.bg.secondary,
+    padding: '10px 20px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    color: T.text.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottom: `1px solid ${T.border.default}`,
+  }
+
+  function ChunkRow({ chunk }: { chunk: KnowledgeChunk }) {
+    const isEditing = editingId === chunk.id
+    const isExpanded = expanded[chunk.id]
+
+    return (
+      <div style={{
+        borderBottom: `1px solid ${T.border.default}`,
+        padding: '12px 16px',
+        background: isEditing ? 'rgba(29,78,216,0.02)' : 'transparent',
+        transition: 'background 0.15s ease',
+      }}>
+        {isEditing ? (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: T.text.secondary, fontFamily: T.font.sans, display: 'block', marginBottom: 4 }}>Category</label>
+              <input
+                value={editCategory}
+                onChange={e => setEditCategory(e.target.value)}
+                style={{ width: '100%', padding: '6px 10px', borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, fontSize: 12, fontFamily: T.font.mono, color: T.text.primary, background: T.bg.primary, outline: 'none', boxSizing: 'border-box' as const }}
+                onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(29,78,216,0.12)' }}
+                onBlur={e => { e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.boxShadow = 'none' }}
+              />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: T.text.secondary, fontFamily: T.font.sans, display: 'block', marginBottom: 4 }}>Content</label>
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                rows={8}
+                style={{ width: '100%', padding: '6px 10px', borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, fontSize: 12, fontFamily: T.font.mono, color: T.text.primary, background: T.bg.primary, outline: 'none', resize: 'vertical', boxSizing: 'border-box' as const, lineHeight: 1.55 }}
+                onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(29,78,216,0.12)' }}
+                onBlur={e => { e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.boxShadow = 'none' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => handleSave(chunk.id)}
+                disabled={saving === chunk.id}
+                style={{ padding: '6px 14px', borderRadius: T.radius.sm, border: 'none', background: T.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: saving === chunk.id ? 'not-allowed' : 'pointer', fontFamily: T.font.sans, opacity: saving === chunk.id ? 0.6 : 1 }}
+              >
+                {saving === chunk.id ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                onClick={cancelEdit}
+                style={{ padding: '6px 14px', borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, background: T.bg.secondary, color: T.text.secondary, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.font.sans }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: T.accent, background: 'rgba(29,78,216,0.08)', borderRadius: 4, padding: '1px 6px', fontFamily: T.font.sans, whiteSpace: 'nowrap' as const }}>
+                  {chunk.category}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontFamily: T.font.mono,
+                  color: T.text.secondary,
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap' as const,
+                  wordBreak: 'break-word' as const,
+                  maxHeight: isExpanded ? 'none' : 60,
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setExpanded(prev => ({ ...prev, [chunk.id]: !prev[chunk.id] }))}
+              >
+                {chunk.content}
+              </div>
+              {chunk.content.length > 150 && (
+                <button
+                  onClick={() => setExpanded(prev => ({ ...prev, [chunk.id]: !prev[chunk.id] }))}
+                  style={{ fontSize: 11, color: T.accent, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontFamily: T.font.sans, marginTop: 2 }}
+                >
+                  {isExpanded ? '↑ collapse' : '↓ expand'}
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button
+                onClick={() => startEdit(chunk)}
+                style={{ padding: '4px 10px', borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, background: T.bg.secondary, color: T.text.secondary, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: T.font.sans, transition: 'border-color 0.15s' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.accent; (e.currentTarget as HTMLButtonElement).style.color = T.accent }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.border.default; (e.currentTarget as HTMLButtonElement).style.color = T.text.secondary }}
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDelete(chunk.id)}
+                disabled={deleting === chunk.id}
+                style={{ padding: '4px 10px', borderRadius: T.radius.sm, border: `1px solid transparent`, background: 'rgba(220,38,38,0.06)', color: T.status.red, fontSize: 11, fontWeight: 600, cursor: deleting === chunk.id ? 'not-allowed' : 'pointer', fontFamily: T.font.sans, opacity: deleting === chunk.id ? 0.5 : 1 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(220,38,38,0.12)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(220,38,38,0.06)' }}
+              >
+                {deleting === chunk.id ? '...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      borderRadius: T.radius.lg,
+      border: `1px solid ${T.border.default}`,
+      background: T.bg.primary,
+      overflow: 'hidden',
+      marginTop: 24,
+      boxShadow: T.shadow.md,
+      animation: 'fadeInUp 0.4s ease-out both',
+      animationDelay: '0.3s',
+    }}>
+      {/* Header */}
+      <div style={{ ...cardHeaderStyle }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 6, background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Database size={11} style={{ color: '#FFFFFF' }} />
+          </div>
+          RAG Knowledge Chunks
+        </div>
+        {toast && (
+          <span style={{ fontSize: 12, fontWeight: 500, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>
+            {toast.message}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 24, fontSize: 13, color: T.text.tertiary, fontFamily: T.font.sans }}>Loading chunks...</div>
+      ) : (
+        <div style={{ padding: 20 }}>
+
+          {/* ── Global SOPs ──────────────────────────────────────── */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>Global SOPs</div>
+                <div style={{ fontSize: 11, color: T.text.secondary, fontFamily: T.font.sans, marginTop: 2 }}>
+                  Tenant-level procedures retrieved on-demand for all properties ({globalChunks.length} chunks)
+                </div>
+              </div>
+              <button
+                onClick={handleSeedSops}
+                disabled={seeding}
+                style={{ padding: '6px 14px', borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, background: T.bg.secondary, color: T.text.secondary, fontSize: 11, fontWeight: 600, cursor: seeding ? 'not-allowed' : 'pointer', fontFamily: T.font.sans, opacity: seeding ? 0.5 : 1, transition: 'border-color 0.15s, color 0.15s', whiteSpace: 'nowrap' as const }}
+                onMouseEnter={e => { if (!seeding) { (e.currentTarget as HTMLButtonElement).style.borderColor = '#7C3AED'; (e.currentTarget as HTMLButtonElement).style.color = '#7C3AED' } }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.border.default; (e.currentTarget as HTMLButtonElement).style.color = T.text.secondary }}
+              >
+                {seeding ? 'Seeding...' : '↺ Re-seed SOPs'}
+              </button>
+            </div>
+
+            {globalChunks.length === 0 ? (
+              <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans, background: T.bg.secondary, padding: '12px 16px', borderRadius: T.radius.md, border: `1px dashed ${T.border.default}`, lineHeight: 1.5 }}>
+                No global SOP chunks. Click "Re-seed SOPs" to create them.
+              </div>
+            ) : (
+              <div style={{ borderRadius: T.radius.md, border: `1px solid ${T.border.default}`, overflow: 'hidden' }}>
+                {globalChunks.map(chunk => <ChunkRow key={chunk.id} chunk={chunk} />)}
+              </div>
+            )}
+          </div>
+
+          {/* ── Property-specific chunks ─────────────────────────── */}
+          <div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>Property Knowledge</div>
+              <div style={{ fontSize: 11, color: T.text.secondary, fontFamily: T.font.sans, marginTop: 2 }}>
+                Chunks ingested from each property's knowledge base
+              </div>
+            </div>
+
+            {Object.keys(byProperty).length === 0 ? (
+              <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans, background: T.bg.secondary, padding: '12px 16px', borderRadius: T.radius.md, border: `1px dashed ${T.border.default}`, lineHeight: 1.5 }}>
+                No property-specific chunks. Use "Reindex Knowledge" on a property to ingest its data.
+              </div>
+            ) : (
+              Object.entries(byProperty).map(([pid, pChunks]) => {
+                const prop = properties.find(p => p.id === pid)
+                return (
+                  <div key={pid} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 999, background: T.text.tertiary, display: 'inline-block' }} />
+                      {prop?.name ?? pid} <span style={{ color: T.text.tertiary, fontWeight: 400 }}>({pChunks.length} chunks)</span>
+                    </div>
+                    <div style={{ borderRadius: T.radius.md, border: `1px solid ${T.border.default}`, overflow: 'hidden' }}>
+                      {pChunks.map(chunk => <ChunkRow key={chunk.id} chunk={chunk} />)}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ConfigureAiV5(): React.ReactElement {
   const [config, setConfig] = useState<AiConfig | null>(null)
   const [tenantConfig, setTenantConfig] = useState<TenantAiConfig | null>(null)
@@ -903,6 +1127,9 @@ export function ConfigureAiV5(): React.ReactElement {
               escalation={config.escalation ?? { confidenceThreshold: 70, triggerKeywords: [], maxConsecutiveAiReplies: 5 }}
               onChange={next => setConfig(prev => prev ? { ...prev, escalation: next } : prev)}
             />
+
+            {/* RAG Knowledge Chunks */}
+            <RagChunksSection />
 
             {/* Version History */}
             <VersionHistory configVersion={configVersion} onRevert={reloadConfig} />

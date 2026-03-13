@@ -325,15 +325,15 @@ model AiApiLog {
 model PropertyKnowledgeChunk {
   id          String   @id @default(cuid())
   tenantId    String
-  propertyId  String
+  propertyId  String?
   content     String   @db.Text
   category    String   @default("general")
   sourceKey   String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, propertyId])
   @@index([propertyId, category])

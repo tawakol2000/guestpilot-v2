@@ -425,7 +425,7 @@ export interface AiApiLogEntry {
 
 export interface KnowledgeChunk {
   id: string
-  propertyId: string
+  propertyId: string | null
   content: string
   category: string
   sourceKey: string
@@ -742,4 +742,22 @@ export async function apiToggleAutomatedMessage(id: string): Promise<ApiAutomate
 
 export async function apiDeleteAutomatedMessage(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/api/automated-messages/${id}`, { method: 'DELETE' })
+}
+
+export async function apiUpdateKnowledgeChunk(
+  id: string,
+  data: { content?: string; category?: string }
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/knowledge/chunks/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiDeleteKnowledgeChunk(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/api/knowledge/chunks/${id}`, { method: 'DELETE' })
+}
+
+export async function apiSeedSops(): Promise<{ ok: boolean; inserted: number }> {
+  return apiFetch<{ ok: boolean; inserted: number }>('/api/knowledge/seed-sops', { method: 'POST' })
 }
