@@ -82,7 +82,6 @@ LANGFUSE_HOST          # https://cloud.langfuse.com
 4. Follow existing TypeScript patterns (`AuthenticatedRequest` type, service factory pattern)
 5. Always run `npx prisma generate` after schema changes
 6. Always verify `npm run build` passes before committing
-7. **Do not touch `frontend/`** on the `advanced-ai` branch
 
 ## Coding Patterns
 - Services are initialized with `prisma` client passed as parameter
