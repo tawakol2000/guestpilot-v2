@@ -142,8 +142,9 @@ export async function retrieveRelevantKnowledge(
   propertyId: string,
   query: string,
   prisma: PrismaClient,
-  topK = 8
-): Promise<Array<{ content: string; category: string; similarity: number }>> {
+  topK = 8,
+  agentType?: 'guestCoordinator' | 'screeningAI'
+): Promise<Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>> {
   try {
     if (!(await isPgvectorAvailable(prisma))) return [];
     const embedding = await embedText(query);
@@ -151,18 +152,50 @@ export async function retrieveRelevantKnowledge(
 
     const embeddingStr = `[${embedding.join(',')}]`;
 
-    const results = await prisma.$queryRaw<
-      Array<{ id: string; content: string; category: string; similarity: number }>
-    >`
-      SELECT id, content, category,
-        1 - (embedding <=> ${embeddingStr}::vector) as similarity
-      FROM "PropertyKnowledgeChunk"
-      WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
-        AND "tenantId" = ${tenantId}
-        AND embedding IS NOT NULL
-      ORDER BY embedding <=> ${embeddingStr}::vector
-      LIMIT ${topK}
-    `;
+    let results: Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
+
+    if (agentType === 'guestCoordinator') {
+      results = await prisma.$queryRaw<
+        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
+      >`
+        SELECT id, content, category, "sourceKey", "propertyId",
+          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+        FROM "PropertyKnowledgeChunk"
+        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
+          AND "tenantId" = ${tenantId}
+          AND embedding IS NOT NULL
+          AND category NOT LIKE 'sop-screening-%'
+        ORDER BY embedding <=> ${embeddingStr}::vector
+        LIMIT ${topK}
+      `;
+    } else if (agentType === 'screeningAI') {
+      results = await prisma.$queryRaw<
+        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
+      >`
+        SELECT id, content, category, "sourceKey", "propertyId",
+          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+        FROM "PropertyKnowledgeChunk"
+        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
+          AND "tenantId" = ${tenantId}
+          AND embedding IS NOT NULL
+          AND category NOT IN ('sop-service-requests', 'sop-maintenance', 'sop-house-rules', 'sop-checkin-checkout', 'sop-escalation')
+        ORDER BY embedding <=> ${embeddingStr}::vector
+        LIMIT ${topK}
+      `;
+    } else {
+      results = await prisma.$queryRaw<
+        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
+      >`
+        SELECT id, content, category, "sourceKey", "propertyId",
+          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+        FROM "PropertyKnowledgeChunk"
+        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
+          AND "tenantId" = ${tenantId}
+          AND embedding IS NOT NULL
+        ORDER BY embedding <=> ${embeddingStr}::vector
+        LIMIT ${topK}
+      `;
+    }
 
     return results
       .filter(r => Number(r.similarity) > 0.5)
@@ -170,6 +203,8 @@ export async function retrieveRelevantKnowledge(
         content: r.content,
         category: r.category,
         similarity: Number(r.similarity),
+        sourceKey: r.sourceKey,
+        propertyId: r.propertyId,
       }));
   } catch (err) {
     console.error('[RAG] retrieveRelevantKnowledge failed:', err);
@@ -328,6 +363,135 @@ Guest: "Can you recommend a restaurant?"
 
 Guest: "I want a discount"
 {"guest_message":"I'll pass that along to the team.","escalation":{"title":"discount-request","note":"Guest [Name] in [Unit] requesting discount. Needs manager decision.","urgency":"info_request"}}`,
+  },
+  {
+    category: 'sop-screening-workflow',
+    sourceKey: 'sop-screening-workflow',
+    content: `## SCREENING WORKFLOW
+
+**Step 1:** Check conversation history — what do you already know? Never re-ask.
+
+**Step 2:** If missing, gather in order:
+1. Nationality — "Could you share your nationality?" (groups: "What are the nationalities of everyone in your party?")
+2. Party composition — "Who will you be traveling with?"
+3. Relationship (only for Arab couples) — "Are you married?"
+
+Ask naturally. Don't fire all questions at once — infer what you can from context first.
+
+**Step 3:** Once you have nationality + party composition, apply screening rules.
+
+**Step 4:** Respond to guest + escalate as appropriate.
+
+**Examples:**
+
+Guest: "I want to book for 2 nights"
+{"guest message":"Thanks for reaching out! Could you share your nationality and who you'll be traveling with?","manager":{"needed":false,"title":"","note":""}}
+
+Guest: "I'm Egyptian, it's just me" (male name — Mohamed)
+{"guest message":"Thanks. Just to confirm — will you be staying alone?","manager":{"needed":false,"title":"","note":""}}
+
+Guest: "Yes, just me"
+{"guest message":"Unfortunately, we're only able to host families or married couples at this property.","manager":{"needed":true,"title":"violation-arab-single-male","note":"Egyptian male, solo traveler. Violates house rules. Recommend rejection."}}`,
+  },
+  {
+    category: 'sop-screening-escalation',
+    sourceKey: 'sop-screening-escalation',
+    content: `## SCREENING ESCALATION TITLES
+
+**Set "needed": false** — still gathering info or answering basic questions.
+
+**Set "needed": true** — use exact title below:
+
+### ELIGIBLE — Recommend Acceptance:
+- Non-Arab guest(s), any configuration → title: "eligible-non-arab"
+- Arab female-only group or solo female → title: "eligible-arab-females"
+- Arab family (cert + passports requested) → title: "eligible-arab-family-pending-docs"
+- Arab married couple (cert requested) → title: "eligible-arab-couple-pending-cert"
+- Lebanese or Emirati solo traveler → title: "eligible-lebanese-emirati-single"
+
+### NOT ELIGIBLE — Recommend Rejection:
+- Single Arab male → title: "violation-arab-single-male"
+- All-male Arab group → title: "violation-arab-male-group"
+- Unmarried Arab couple → title: "violation-arab-unmarried-couple"
+- Mixed-gender Arab group (not family) → title: "violation-arab-mixed-group"
+- Mixed nationality unmarried couple → title: "violation-mixed-unmarried-couple"
+- Guest refuses/cannot provide required documents → title: "violation-no-documents"
+
+### REQUIRES MANAGER:
+- Guest argues or pushes back on rules → title: "escalation-guest-dispute"
+- Guest asks about visitors → title: "visitor-policy-informed"
+- Ambiguous or unclear situation → title: "escalation-unclear"
+- Question beyond your knowledge → title: "escalation-unknown-answer"
+- Conversation-ending message awaiting decision → title: "awaiting-manager-review"
+
+**Note field:** Always include guest name, unit, nationality, party details, and your recommendation.
+
+**Example:**
+
+Guest (Egyptian married couple):
+{"guest message":"We'd be happy to host you. Once the booking is accepted, please send your marriage certificate through the chat.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Egyptian married couple. Eligible. Marriage cert requested after acceptance. Recommend acceptance."}}`,
+  },
+  {
+    category: 'sop-screening-property-info',
+    sourceKey: 'sop-screening-property-info',
+    content: `## PROPERTY INFO FOR SCREENING
+
+**Hours:**
+- Check-in: 3:00 PM | Check-out: 11:00 AM
+
+**Free Amenities (on request):**
+- Baby crib, extra bed, hair dryer, kitchen blender, kids dinnerware, espresso machine
+- Extra towels, extra pillows, extra blankets, hangers
+- These are the ONLY available amenities. If a guest asks for an item NOT on this list → "Let me check on that" → escalate.
+
+**House Rules (shareable with guest):**
+- Family-only property
+- No outside visitors at any time
+- No smoking indoors
+- No parties or gatherings
+- Quiet hours apply
+
+**You CANNOT answer — escalate to manager:**
+- Pricing questions or discounts
+- Availability changes or date modifications
+- Refund or cancellation policy questions
+- Location/neighborhood recommendations
+- Special requests beyond listed amenities
+- Anything you're unsure about
+
+**Examples:**
+
+Guest: "What time is check-in?"
+{"guest message":"Check-in is at 3:00 PM and check-out is at 11:00 AM.","manager":{"needed":false,"title":"","note":""}}
+
+Guest: "Do you have a crib for my baby?"
+{"guest message":"Yes, we have a baby crib available on request — just let us know and we'll have it ready for you.","manager":{"needed":false,"title":"","note":""}}
+
+Guest: "Can you give me a discount?"
+{"guest message":"I'll pass that along to the team.","manager":{"needed":true,"title":"escalation-unknown-answer","note":"Guest requesting a discount. Needs manager decision."}}`,
+  },
+  {
+    category: 'sop-screening-image-handling',
+    sourceKey: 'sop-screening-image-handling',
+    content: `## IMAGE HANDLING DURING SCREENING
+
+During screening, guests cannot send documents before booking is accepted.
+
+If an image comes through:
+1. Check if it's a marriage certificate, passport, or ID.
+2. If it's a document → tell guest you've received it and escalate for manager verification.
+3. If unclear or unrelated → escalate: "Guest sent an image that requires manager review."
+
+If guest asks where/how to send documents:
+"Once the booking is accepted, you'll be able to send the documents through the chat."
+
+**Examples:**
+
+Guest sends image (looks like marriage certificate):
+{"guest message":"Got it, thank you. I'll pass this to the team for review.","manager":{"needed":true,"title":"escalation-unclear","note":"Guest sent what appears to be a marriage certificate. Requires manager verification."}}
+
+Guest: "Where should I send my marriage certificate?"
+{"guest message":"Once the booking is accepted, you'll be able to send the documents through the chat.","manager":{"needed":false,"title":"","note":""}}`,
   },
 ];
 
