@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronRight, ChevronDown, RefreshCw, Search, X, Zap, Clock, DollarSign, Activity, Copy, Check } from 'lucide-react'
+import { ChevronRight, ChevronDown, RefreshCw, Search, X, Zap, Clock, DollarSign, Activity } from 'lucide-react'
 import { apiGetAiLogs, apiGetAiLogDetail, type AiApiLogEntry } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
   const [hovered, setHovered] = useState(false)
   const [detail, setDetail] = useState<AiApiLogEntry | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
   const hasError = !!entry.error
   const preview = entry.responseText.slice(0, 80)
 
@@ -240,14 +240,6 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
   const systemPrompt = detail?.systemPromptFull ?? displayEntry.systemPromptPreview
   const blocks = displayEntry.contentBlocks
   const firstBlock = blocks[0]
-
-  const copyRawJson = () => {
-    const raw = JSON.stringify(displayEntry, null, 2)
-    navigator.clipboard.writeText(raw).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
 
   return (
     <div
@@ -534,9 +526,9 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
               </span>
             )}
 
-            {/* Raw JSON copy button */}
+            {/* Raw JSON toggle button */}
             <button
-              onClick={e => { e.stopPropagation(); copyRawJson() }}
+              onClick={e => { e.stopPropagation(); setShowRaw(v => !v) }}
               style={{
                 marginLeft: 'auto',
                 height: 26,
@@ -546,19 +538,46 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
                 gap: 5,
                 fontSize: 10,
                 fontWeight: 600,
-                border: `1px solid ${T.border.default}`,
+                border: `1px solid ${showRaw ? T.border.strong : T.border.default}`,
                 borderRadius: T.radius.sm,
-                background: copied ? '#F0FDF4' : T.bg.primary,
-                color: copied ? T.status.green : T.text.secondary,
+                background: showRaw ? T.border.strong : T.bg.primary,
+                color: showRaw ? '#fff' : T.text.secondary,
                 cursor: 'pointer',
                 fontFamily: T.font.sans,
                 transition: 'all 0.15s ease',
               }}
             >
-              {copied ? <Check size={10} /> : <Copy size={10} />}
-              {copied ? 'Copied!' : 'Copy JSON'}
+              {'{ }'} {showRaw ? 'Hide JSON' : 'Raw JSON'}
             </button>
           </div>
+
+          {/* Inline Raw JSON panel */}
+          {showRaw && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.text.tertiary, marginBottom: 6 }}>
+                Raw JSON
+              </div>
+              <pre
+                style={{
+                  background: '#0C0A09',
+                  color: '#A8A29E',
+                  padding: 14,
+                  borderRadius: T.radius.sm,
+                  fontSize: 10,
+                  fontFamily: T.font.mono,
+                  lineHeight: 1.6,
+                  overflowY: 'auto',
+                  overflowX: 'auto',
+                  maxHeight: 400,
+                  whiteSpace: 'pre',
+                  margin: 0,
+                  border: `1px solid ${T.border.strong}`,
+                }}
+              >
+                {JSON.stringify(displayEntry, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>
