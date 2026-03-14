@@ -916,6 +916,21 @@ Number of Guests: ${guestCount}
     info += `WiFi Password: ${listing.wifiPassword}\n`;
   }
 
+  info += `
+### FREE AMENITIES (available on request)
+• Extra towels
+• Extra pillows
+• Extra blankets
+• Hangers
+• Baby crib
+• Extra bed
+• Hair dryer
+• Kitchen blender
+• Kids dinnerware set
+• Espresso machine
+• Cleaning service — $20 per session, 10am–5pm only
+Items NOT on this list → "Let me check" → escalate.
+`;
 
   if (retrievedChunks && retrievedChunks.length > 0) {
     info += '\n### RELEVANT PROCEDURES & KNOWLEDGE\n';
