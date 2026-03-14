@@ -22,6 +22,12 @@ export interface TraceParams {
   ragChunks?: Array<{ content: string; category: string; similarity: number }>;
   ragDurationMs?: number;
   ragQuery?: string;
+  // Context metadata
+  openTaskCount?: number;
+  totalMessages?: number;
+  memorySummarized?: boolean;
+  hasImage?: boolean;
+  ragEnabled?: boolean;
 }
 
 let _client: Langfuse | null = null;
@@ -63,6 +69,11 @@ export function traceAiCall(params: TraceParams): void {
         tenantId: params.tenantId,
         conversationId: params.conversationId,
         escalated: params.escalated,
+        openTaskCount: params.openTaskCount ?? 0,
+        totalMessages: params.totalMessages ?? 0,
+        memorySummarized: params.memorySummarized ?? false,
+        hasImage: params.hasImage ?? false,
+        ragEnabled: params.ragEnabled ?? true,
       },
     });
     if (params.ragChunks && params.ragChunks.length > 0) {
@@ -97,6 +108,46 @@ export function traceAiCall(params: TraceParams): void {
     });
   } catch (err) {
     console.warn('[Observability] Trace failed (non-fatal):', err);
+  }
+}
+
+/** Log escalation outcome as a Langfuse event on the conversation session */
+export function traceEscalation(params: {
+  tenantId: string;
+  conversationId: string;
+  agentName: string;
+  escalationType: string;
+  escalationUrgency: string;
+  escalationNote: string;
+  taskResolved?: string;
+  taskUpdated?: string;
+}): void {
+  const lf = getClient();
+  if (!lf) return;
+  try {
+    const trace = lf.trace({
+      name: `escalation-${params.agentName}`,
+      userId: params.tenantId,
+      sessionId: params.conversationId,
+      metadata: {
+        tenantId: params.tenantId,
+        conversationId: params.conversationId,
+        escalationType: params.escalationType,
+        escalationUrgency: params.escalationUrgency,
+        escalationNote: params.escalationNote.substring(0, 500),
+        taskResolved: params.taskResolved || null,
+        taskUpdated: params.taskUpdated || null,
+      },
+    });
+    trace.event({
+      name: 'escalation',
+      metadata: {
+        type: params.escalationType,
+        urgency: params.escalationUrgency,
+      },
+    });
+  } catch (err) {
+    console.warn('[Observability] Escalation trace failed (non-fatal):', err);
   }
 }
 

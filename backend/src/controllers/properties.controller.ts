@@ -22,6 +22,7 @@ export function makePropertiesController(prisma: PrismaClient) {
           name: p.name,
           address: p.address,
           listingDescription: p.listingDescription,
+          customKnowledgeBase: p.customKnowledgeBase,
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         })));

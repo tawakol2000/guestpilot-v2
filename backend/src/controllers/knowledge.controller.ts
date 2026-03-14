@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
 import { AuthenticatedRequest } from '../types';
+import { appendLearnedAnswer } from '../services/rag.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -69,6 +70,16 @@ export function makeKnowledgeController(prisma: PrismaClient) {
             ...(category !== undefined ? { category } : {}),
           },
         });
+
+        // When a suggestion is approved and has a propertyId, append to learned-answers chunk
+        if (status === 'approved' && (suggestion.propertyId || propertyId)) {
+          const targetPropertyId = suggestion.propertyId || propertyId;
+          if (targetPropertyId && suggestion.question && suggestion.answer) {
+            appendLearnedAnswer(tenantId, targetPropertyId, suggestion.question, suggestion.answer, prisma)
+              .catch(err => console.error('[Knowledge] Failed to append learned answer:', err));
+          }
+        }
+
         res.json(suggestion);
       } catch (err) {
         console.error('[Knowledge] update error:', err);

@@ -123,6 +123,11 @@ export async function runImport(
     const address = [listing.address, listing.city].filter(Boolean).join(', ');
 
     const kb: Record<string, string | number> = {};
+    if (listing.internalListingName) kb.internalListingName = listing.internalListingName;
+    if (listing.personCapacity) kb.personCapacity = listing.personCapacity;
+    if (listing.roomType) kb.roomType = listing.roomType;
+    if (listing.bedroomsNumber) kb.bedroomsNumber = listing.bedroomsNumber;
+    if (listing.bathroomsNumber) kb.bathroomsNumber = listing.bathroomsNumber;
     if (listing.doorSecurityCode) kb.doorCode = listing.doorSecurityCode;
     if (listing.wifiUsername) kb.wifiName = listing.wifiUsername;
     if (listing.wifiPassword) kb.wifiPassword = listing.wifiPassword;
@@ -131,6 +136,10 @@ export async function runImport(
     if (listing.houseRules) kb.houseRules = listing.houseRules;
     if (listing.specialInstruction) kb.specialInstruction = listing.specialInstruction;
     if (listing.keyPickup) kb.keyPickup = listing.keyPickup;
+    if (listing.amenities) kb.amenities = Array.isArray(listing.amenities) ? (listing.amenities as string[]).join(', ') : String(listing.amenities);
+    if (listing.cleaningFee) kb.cleaningFee = String(listing.cleaningFee);
+    if (listing.squareMeters) kb.squareMeters = String(listing.squareMeters);
+    if (listing.bedTypes) kb.bedTypes = Array.isArray(listing.bedTypes) ? (listing.bedTypes as string[]).join(', ') : String(listing.bedTypes);
 
     const property = await prisma.property.upsert({
       where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: String(listing.id) } },

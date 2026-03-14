@@ -34,61 +34,77 @@ async function isPgvectorAvailable(prisma: PrismaClient): Promise<boolean> {
   return _pgvectorAvailable;
 }
 
-function inferCategory(key: string): string {
-  const k = key.toLowerCase();
-  if (/wifi|password|network|internet/.test(k)) return 'access';
-  if (/door|code|entry|key|lock/.test(k)) return 'access';
-  if (/clean|cleaning|housekeeping/.test(k)) return 'service';
-  if (/check.?in|check.?out|arrival|departure/.test(k)) return 'policy';
-  if (/pool|gym|amenity|parking|spa/.test(k)) return 'amenity';
-  if (/contact|phone|emergency|support/.test(k)) return 'contact';
-  return 'general';
-}
+// ─── Key label mapping for clean property-info chunk ────────────────────────
+const KEY_LABELS: Record<string, string> = {
+  internalListingName: 'Unit Number',
+  personCapacity: 'Person Capacity',
+  roomType: 'Property Type',
+  bedroomsNumber: 'Number of Bedrooms',
+  bathroomsNumber: 'Number of Bathrooms',
+  doorCode: 'Door Code',
+  wifiName: 'WiFi Name',
+  wifiPassword: 'WiFi Password',
+  checkInTime: 'Check-in Time',
+  checkOutTime: 'Check-out Time',
+  houseRules: 'House Rules',
+  specialInstruction: 'Special Instructions',
+  keyPickup: 'Key Pickup',
+  amenities: 'Amenities',
+  cleaningFee: 'Cleaning Fee',
+  squareMeters: 'Size (sqm)',
+  bedTypes: 'Bed Types',
+};
 
 export async function ingestPropertyKnowledge(
   tenantId: string,
   propertyId: string,
-  property: { customKnowledgeBase?: unknown; listingDescription?: string },
+  property: { customKnowledgeBase?: unknown; listingDescription?: string; name?: string; address?: string },
   prisma: PrismaClient
 ): Promise<number> {
-  // 1. Delete all existing chunks for this property (clean slate)
+  // 1. Delete existing property-info and property-description chunks (preserve learned-answers)
   await prisma.$executeRaw`
     DELETE FROM "PropertyKnowledgeChunk"
-    WHERE "propertyId" = ${propertyId} AND "tenantId" = ${tenantId}
+    WHERE "propertyId" = ${propertyId}
+      AND "tenantId" = ${tenantId}
+      AND category IN ('property-info', 'property-description')
   `;
 
   const chunks: { content: string; category: string; sourceKey: string }[] = [];
 
-  // 2a. Build chunks from customKnowledgeBase key-value pairs
+  // 2a. Build property-info chunk: clean key-value format
   const customKb = property.customKnowledgeBase as Record<string, unknown> | null;
   if (customKb && typeof customKb === 'object') {
+    const lines: string[] = [];
+    if (property.address) lines.push(`Address: ${property.address}`);
     for (const [key, val] of Object.entries(customKb)) {
       const strVal = String(val ?? '').trim();
       if (!strVal || strVal === 'N/A' || strVal === 'null') continue;
+      const label = KEY_LABELS[key] || key;
+      lines.push(`${label}: ${strVal}`);
+    }
+    if (lines.length > 0) {
       chunks.push({
-        content: `Q: What is the ${key}?\nA: ${strVal}`,
-        category: inferCategory(key),
-        sourceKey: key,
+        content: lines.join('\n'),
+        category: 'property-info',
+        sourceKey: 'property-info',
       });
     }
   }
 
-  // 2b. Chunk listingDescription by paragraph
-  if (property.listingDescription) {
-    const paragraphs = property.listingDescription
-      .split(/\n\n|\.\n/)
-      .map((p: string) => p.trim())
-      .filter((p: string) => p.length >= 50);
-    for (const para of paragraphs) {
-      chunks.push({ content: para, category: 'description', sourceKey: 'listing_description' });
-    }
+  // 2b. Build property-description chunk: full listing description as one chunk
+  if (property.listingDescription && property.listingDescription.trim().length > 0) {
+    chunks.push({
+      content: property.listingDescription.trim(),
+      category: 'property-description',
+      sourceKey: 'property-description',
+    });
   }
 
   if (chunks.length === 0) return 0;
 
   const vectorEnabled = await isPgvectorAvailable(prisma);
 
-  // 3. Embed all chunks in batches (only if vector column exists)
+  // 3. Embed all chunks (only if vector column exists)
   let embeddings: number[][] = [];
   if (vectorEnabled) {
     try {
@@ -135,6 +151,95 @@ export async function ingestPropertyKnowledge(
 
   console.log(`[RAG] Ingested ${inserted}/${chunks.length} chunks for property ${propertyId}`);
   return inserted;
+}
+
+// ─── Learned Answers — append Q&A from manager approvals ────────────────────
+
+export async function appendLearnedAnswer(
+  tenantId: string,
+  propertyId: string,
+  question: string,
+  answer: string,
+  prisma: PrismaClient
+): Promise<void> {
+  const newLine = `Q: ${question}\nA: ${answer}`;
+
+  // Find existing learned-answers chunk for this property
+  const existing = await prisma.$queryRaw<
+    Array<{ id: string; content: string }>
+  >`
+    SELECT id, content FROM "PropertyKnowledgeChunk"
+    WHERE "propertyId" = ${propertyId}
+      AND "tenantId" = ${tenantId}
+      AND category = 'learned-answers'
+    LIMIT 1
+  `;
+
+  const vectorEnabled = await isPgvectorAvailable(prisma);
+
+  if (existing.length > 0) {
+    // Append to existing chunk
+    const updatedContent = existing[0].content + '\n\n' + newLine;
+    if (vectorEnabled) {
+      try {
+        const embedding = await embedText(updatedContent);
+        if (embedding && embedding.length > 0) {
+          const embeddingStr = `[${embedding.join(',')}]`;
+          await prisma.$executeRaw`
+            UPDATE "PropertyKnowledgeChunk"
+            SET content = ${updatedContent}, embedding = ${embeddingStr}::vector, "updatedAt" = now()
+            WHERE id = ${existing[0].id} AND "tenantId" = ${tenantId}
+          `;
+          console.log(`[RAG] Updated learned-answers chunk for property ${propertyId}`);
+          return;
+        }
+      } catch (err) {
+        console.warn('[RAG] Failed to embed learned-answers update:', err);
+      }
+    }
+    // Fallback: update without embedding
+    await prisma.$executeRaw`
+      UPDATE "PropertyKnowledgeChunk"
+      SET content = ${updatedContent}, "updatedAt" = now()
+      WHERE id = ${existing[0].id} AND "tenantId" = ${tenantId}
+    `;
+    console.log(`[RAG] Updated learned-answers chunk (no embedding) for property ${propertyId}`);
+  } else {
+    // Create new learned-answers chunk
+    const id = generateId();
+    if (vectorEnabled) {
+      try {
+        const embedding = await embedText(newLine);
+        if (embedding && embedding.length > 0) {
+          const embeddingStr = `[${embedding.join(',')}]`;
+          await prisma.$executeRaw`
+            INSERT INTO "PropertyKnowledgeChunk"
+              (id, "tenantId", "propertyId", content, category, "sourceKey", embedding, "createdAt", "updatedAt")
+            VALUES (
+              ${id}, ${tenantId}, ${propertyId},
+              ${newLine}, 'learned-answers', 'learned-answers',
+              ${embeddingStr}::vector, now(), now()
+            )
+          `;
+          console.log(`[RAG] Created learned-answers chunk for property ${propertyId}`);
+          return;
+        }
+      } catch (err) {
+        console.warn('[RAG] Failed to embed new learned-answers:', err);
+      }
+    }
+    // Fallback: insert without embedding
+    await prisma.$executeRaw`
+      INSERT INTO "PropertyKnowledgeChunk"
+        (id, "tenantId", "propertyId", content, category, "sourceKey", "createdAt", "updatedAt")
+      VALUES (
+        ${id}, ${tenantId}, ${propertyId},
+        ${newLine}, 'learned-answers', 'learned-answers',
+        now(), now()
+      )
+    `;
+    console.log(`[RAG] Created learned-answers chunk (no embedding) for property ${propertyId}`);
+  }
 }
 
 export async function retrieveRelevantKnowledge(

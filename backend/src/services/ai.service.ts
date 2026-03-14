@@ -12,7 +12,7 @@ import * as hostawayService from './hostaway.service';
 import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
-import { traceAiCall } from './observability.service';
+import { traceAiCall, traceEscalation } from './observability.service';
 import { retrieveRelevantKnowledge } from './rag.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
@@ -104,7 +104,7 @@ export function getAiApiLog(): AiApiLogEntry[] {
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number } }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'claude-haiku-4-5-20251001';
@@ -152,7 +152,6 @@ async function createMessage(
       messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
     };
     const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
-    console.log('[CLAUDE-RAW]', JSON.stringify(createParams));
     const response = await withRetry(() =>
       (anthropic.messages.create as any)(createParams, createOpts)
     ) as Anthropic.Message;
@@ -214,6 +213,11 @@ async function createMessage(
         ragChunks: options.ragContext?.chunks,
         ragDurationMs: options.ragContext?.durationMs,
         ragQuery: options.ragContext?.query,
+        openTaskCount: options.openTaskCount,
+        totalMessages: options.totalMessages,
+        memorySummarized: options.memorySummarized,
+        hasImage: options.hasImage,
+        ragEnabled: options.ragEnabled,
       });
     }
 
@@ -878,7 +882,6 @@ function buildPropertyInfo(
     wifiUsername?: string;
     wifiPassword?: string;
   },
-  customKb?: Record<string, unknown>,
   retrievedChunks?: Array<{ content: string; category: string }>
 ): string {
   let info = `## PROPERTY DATA — AUTHORITATIVE SOURCE
@@ -905,33 +908,6 @@ Number of Guests: ${guestCount}
     info += `WiFi Password: ${listing.wifiPassword}\n`;
   }
 
-  info += `
-### AVAILABLE AMENITIES — COMPLETE LIST
-The following is the COMPLETE and EXHAUSTIVE list of available amenities.
-Anything NOT on this list does not exist at this property. Do not suggest,
-confirm, or imply the availability of any item not listed here.
-• Baby crib — available free on request
-• Extra bed — available free on request
-• Hair dryer — available free on request
-• Kitchen blender — available free on request
-• Kids dinnerware set — available free on request
-• Espresso machine — available free on request
-• Extra towels — available free on request
-• Extra pillows — available free on request
-• Extra blankets — available free on request
-• Hangers — available free on request
-• Cleaning service — $20 per session, available 10am–5pm only (working hours)
-`;
-
-  if (customKb && typeof customKb === 'object' && Object.keys(customKb).length > 0) {
-    info += '\n### PROPERTY-SPECIFIC INFORMATION\n';
-    for (const [key, val] of Object.entries(customKb)) {
-      const strVal = String(val ?? '').trim();
-      if (strVal && strVal !== 'N/A' && strVal !== 'null') {
-        info += `${key}: ${strVal}\n`;
-      }
-    }
-  }
 
   if (retrievedChunks && retrievedChunks.length > 0) {
     info += '\n### RELEVANT PROCEDURES & KNOWLEDGE\n';
@@ -1207,7 +1183,6 @@ export async function generateAndSendAiReply(
       context.checkOut,
       context.guestCount,
       context.listing,
-      context.customKnowledgeBase,
       retrievedChunks
     );
 
@@ -1260,6 +1235,11 @@ export async function generateAndSendAiReply(
         tenantId,
         conversationId,
         ragContext,
+        openTaskCount: openTasks.length,
+        totalMessages: allMsgs.length,
+        memorySummarized: tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10,
+        hasImage: false,
+        ragEnabled: tenantConfig?.ragEnabled !== false,
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
@@ -1274,6 +1254,11 @@ export async function generateAndSendAiReply(
           // Handle screening escalation
           if (parsed.manager?.needed) {
             await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'info_request');
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: parsed.manager.title, escalationUrgency: 'info_request',
+              escalationNote: parsed.manager.note,
+            });
           }
         } else {
           const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
@@ -1290,12 +1275,26 @@ export async function generateAndSendAiReply(
               parsed.escalation.title, parsed.escalation.note, parsed.escalation.urgency,
               parsed.updateTaskId, parsed.resolveTaskId
             );
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: parsed.escalation.title, escalationUrgency: parsed.escalation.urgency,
+              escalationNote: parsed.escalation.note,
+              taskResolved: parsed.resolveTaskId || undefined,
+              taskUpdated: parsed.updateTaskId || undefined,
+            });
           } else if (parsed.resolveTaskId || parsed.updateTaskId) {
             await handleEscalation(
               prisma, tenantId, conversationId, context.propertyId,
               '', '', 'immediate',
               parsed.updateTaskId, parsed.resolveTaskId
             );
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: 'task-update', escalationUrgency: 'immediate',
+              escalationNote: '',
+              taskResolved: parsed.resolveTaskId || undefined,
+              taskUpdated: parsed.updateTaskId || undefined,
+            });
           }
         }
       } catch {
@@ -1345,6 +1344,11 @@ export async function generateAndSendAiReply(
         tenantId,
         conversationId,
         ragContext,
+        openTaskCount: openTasks.length,
+        totalMessages: allMsgs.length,
+        memorySummarized: tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10,
+        hasImage: true,
+        ragEnabled: tenantConfig?.ragEnabled !== false,
       });
 
       try {
@@ -1356,6 +1360,11 @@ export async function generateAndSendAiReply(
           guestMessage = parsed['guest message'] || '';
           if (parsed.manager?.needed) {
             await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'info_request');
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: parsed.manager.title, escalationUrgency: 'info_request',
+              escalationNote: parsed.manager.note,
+            });
           }
         } else {
           const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
@@ -1371,12 +1380,26 @@ export async function generateAndSendAiReply(
               parsed.escalation.title, parsed.escalation.note, parsed.escalation.urgency,
               parsed.updateTaskId, parsed.resolveTaskId
             );
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: parsed.escalation.title, escalationUrgency: parsed.escalation.urgency,
+              escalationNote: parsed.escalation.note,
+              taskResolved: parsed.resolveTaskId || undefined,
+              taskUpdated: parsed.updateTaskId || undefined,
+            });
           } else if (parsed.resolveTaskId || parsed.updateTaskId) {
             await handleEscalation(
               prisma, tenantId, conversationId, context.propertyId,
               '', '', 'immediate',
               parsed.updateTaskId, parsed.resolveTaskId
             );
+            traceEscalation({
+              tenantId, conversationId, agentName: effectiveAgentName,
+              escalationType: 'task-update', escalationUrgency: 'immediate',
+              escalationNote: '',
+              taskResolved: parsed.resolveTaskId || undefined,
+              taskUpdated: parsed.updateTaskId || undefined,
+            });
           }
         }
       } catch {

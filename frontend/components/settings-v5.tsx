@@ -20,6 +20,7 @@ import {
   apiToggleAIProperty,
   apiGetPropertiesAiStatus,
   apiGetKnowledgeChunks,
+  apiResyncProperty,
   type PropertyAiStatus,
   apiDeleteAllData,
   type ImportProgress,
@@ -373,7 +374,29 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
 }
 
 // ─── Section B: Properties ────────────────────────────────────────────────────
-function PropertyKbEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
+
+// Key label mapping matching the backend
+const KB_LABELS: Record<string, string> = {
+  internalListingName: 'Unit Number',
+  personCapacity: 'Person Capacity',
+  roomType: 'Property Type',
+  bedroomsNumber: 'Bedrooms',
+  bathroomsNumber: 'Bathrooms',
+  doorCode: 'Door Code',
+  wifiName: 'WiFi Name',
+  wifiPassword: 'WiFi Password',
+  checkInTime: 'Check-in Time',
+  checkOutTime: 'Check-out Time',
+  houseRules: 'House Rules',
+  specialInstruction: 'Special Instructions',
+  keyPickup: 'Key Pickup',
+  amenities: 'Amenities',
+  cleaningFee: 'Cleaning Fee',
+  squareMeters: 'Size (sqm)',
+  bedTypes: 'Bed Types',
+}
+
+function PropertyInfoEditor({ prop, onSaved }: { prop: ApiProperty; onSaved: (updated: ApiProperty) => void }): React.ReactElement {
   const [rows, setRows] = useState<Array<{ key: string; value: string }>>(() => {
     const kb = prop.customKnowledgeBase ?? {}
     const entries = Object.entries(kb as Record<string, unknown>)
@@ -406,6 +429,7 @@ function PropertyKbEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
         if (row.key.trim()) obj[row.key.trim()] = row.value
       }
       await apiUpdateKnowledgeBase(prop.id, obj)
+      onSaved({ ...prop, customKnowledgeBase: obj })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
@@ -429,7 +453,10 @@ function PropertyKbEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
   }
 
   return (
-    <div style={{ padding: '12px 16px 16px', borderTop: `1px solid ${T.border.default}` }}>
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
+        Property Info
+      </div>
       {rows.map((row, i) => (
         <div
           key={i}
@@ -445,9 +472,10 @@ function PropertyKbEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
         >
           <input
             placeholder="Key"
-            value={row.key}
+            value={KB_LABELS[row.key] || row.key}
             onChange={e => handleRowChange(i, 'key', e.target.value)}
             style={{ ...inputStyle, width: '30%', fontWeight: 600 }}
+            title={row.key}
           />
           <input
             placeholder="Value"
@@ -505,8 +533,129 @@ function PropertyKbEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
   )
 }
 
-function PropertyCard({ prop, isOpen, onToggle }: { prop: ApiProperty; isOpen: boolean; onToggle: () => void }): React.ReactElement {
+function PropertyDescriptionEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
+  const [desc, setDesc] = useState(prop.listingDescription || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const saveBtnHover = useHover()
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      // Description is read-only from Hostaway sync — use resync to update
+      // This textarea is for viewing; edits would need a custom endpoint
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
+        Property Description
+      </div>
+      <textarea
+        value={desc}
+        onChange={e => setDesc(e.target.value)}
+        readOnly
+        style={{
+          width: '100%',
+          minHeight: 80,
+          fontSize: 12,
+          padding: '8px 10px',
+          border: `1px solid ${T.border.default}`,
+          borderRadius: T.radius.sm,
+          background: T.bg.secondary,
+          color: T.text.primary,
+          fontFamily: T.font.sans,
+          outline: 'none',
+          resize: 'vertical',
+          boxSizing: 'border-box',
+        }}
+      />
+      <div style={{ fontSize: 11, color: T.text.tertiary, marginTop: 4 }}>
+        Synced from Hostaway. Use "Re-sync" to update.
+      </div>
+    </div>
+  )
+}
+
+function LearnedAnswersViewer({ propertyId }: { propertyId: string }): React.ReactElement {
+  const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiGetKnowledgeChunks(propertyId).then(all => {
+      setChunks(all.filter(c => c.category === 'learned-answers'))
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [propertyId])
+
+  const qaLines = chunks.length > 0
+    ? chunks[0].content.split(/\n\n/).filter(l => l.trim())
+    : []
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
+        Learned Answers
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans }}>Loading...</div>
+      ) : qaLines.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans }}>
+          No learned answers yet. Approve knowledge suggestions to build this up.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {qaLines.map((qa, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 12,
+                padding: '6px 10px',
+                background: T.bg.secondary,
+                borderRadius: T.radius.sm,
+                fontFamily: T.font.sans,
+                color: T.text.primary,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {qa}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PropertyCard({ prop, isOpen, onToggle, onUpdate }: { prop: ApiProperty; isOpen: boolean; onToggle: () => void; onUpdate: (p: ApiProperty) => void }): React.ReactElement {
   const hover = useHover()
+  const resyncHover = useHover()
+  const [resyncing, setResyncing] = useState(false)
+  const [resyncMsg, setResyncMsg] = useState('')
+
+  async function handleResync(): Promise<void> {
+    setResyncing(true)
+    setResyncMsg('')
+    try {
+      const result = await apiResyncProperty(prop.id)
+      onUpdate(result.property)
+      setResyncMsg(`Synced (${result.chunks} chunks)`)
+      setTimeout(() => setResyncMsg(''), 3000)
+    } catch (err) {
+      console.error(err)
+      setResyncMsg('Sync failed')
+      setTimeout(() => setResyncMsg(''), 3000)
+    } finally {
+      setResyncing(false)
+    }
+  }
 
   return (
     <div
@@ -551,7 +700,35 @@ function PropertyCard({ prop, isOpen, onToggle }: { prop: ApiProperty; isOpen: b
           <ChevronRight size={14} color={T.text.tertiary} />
         )}
       </button>
-      {isOpen && <PropertyKbEditor prop={prop} />}
+      {isOpen && (
+        <div style={{ padding: '12px 16px 16px', borderTop: `1px solid ${T.border.default}`, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              style={{
+                ...btnGhost,
+                height: 28,
+                padding: '0 12px',
+                fontSize: 11,
+                opacity: resyncing ? 0.5 : resyncHover.hovered ? 0.85 : 1,
+                cursor: resyncing ? 'not-allowed' : 'pointer',
+              }}
+              disabled={resyncing}
+              onClick={handleResync}
+              {...resyncHover.handlers}
+            >
+              {resyncing ? 'Syncing…' : 'Re-sync from Hostaway'}
+            </button>
+            {resyncMsg && (
+              <span style={{ fontSize: 12, color: resyncMsg.includes('failed') ? T.status.red : T.status.green, fontFamily: T.font.sans }}>
+                {resyncMsg}
+              </span>
+            )}
+          </div>
+          <PropertyInfoEditor prop={prop} onSaved={onUpdate} />
+          <PropertyDescriptionEditor prop={prop} />
+          <LearnedAnswersViewer propertyId={prop.id} />
+        </div>
+      )}
     </div>
   )
 }
@@ -559,6 +736,10 @@ function PropertyCard({ prop, isOpen, onToggle }: { prop: ApiProperty; isOpen: b
 function PropertiesSection(): React.ReactElement {
   const [properties, setProperties] = useState<ApiProperty[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
+
+  function handlePropertyUpdate(updated: ApiProperty): void {
+    setProperties(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
 
   useEffect(() => {
     apiGetProperties().then(setProperties).catch(() => {})
@@ -584,6 +765,7 @@ function PropertiesSection(): React.ReactElement {
                 prop={prop}
                 isOpen={expanded === prop.id}
                 onToggle={() => toggleExpand(prop.id)}
+                onUpdate={handlePropertyUpdate}
               />
             ))}
           </div>

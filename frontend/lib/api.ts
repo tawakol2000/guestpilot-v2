@@ -370,6 +370,12 @@ export async function apiReindexPropertyKnowledge(propertyId: string): Promise<{
   })
 }
 
+export async function apiResyncProperty(propertyId: string): Promise<{ ok: boolean; chunks: number; property: ApiProperty }> {
+  return apiFetch<{ ok: boolean; chunks: number; property: ApiProperty }>(`/api/properties/${propertyId}/resync`, {
+    method: 'POST',
+  })
+}
+
 export async function apiTranslateMessage(
   conversationId: string,
   content: string
