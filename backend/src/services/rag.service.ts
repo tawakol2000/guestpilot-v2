@@ -61,22 +61,23 @@ export async function ingestPropertyKnowledge(
   property: { customKnowledgeBase?: unknown; listingDescription?: string; name?: string; address?: string },
   prisma: PrismaClient
 ): Promise<number> {
-  // 1. Delete existing property-info and property-description chunks (preserve learned-answers)
+  // 1. Delete existing property chunks (preserve learned-answers)
   await prisma.$executeRaw`
     DELETE FROM "PropertyKnowledgeChunk"
     WHERE "propertyId" = ${propertyId}
       AND "tenantId" = ${tenantId}
-      AND category IN ('property-info', 'property-description')
+      AND category IN ('property-info', 'property-description', 'property-amenities')
   `;
 
   const chunks: { content: string; category: string; sourceKey: string }[] = [];
 
-  // 2a. Build property-info chunk: clean key-value format
+  // 2a. Build property-info chunk: clean key-value format (excludes amenities — separate chunk)
   const customKb = property.customKnowledgeBase as Record<string, unknown> | null;
   if (customKb && typeof customKb === 'object') {
     const lines: string[] = [];
     if (property.address) lines.push(`Address: ${property.address}`);
     for (const [key, val] of Object.entries(customKb)) {
+      if (key === 'amenities') continue; // amenities go in their own chunk
       const strVal = String(val ?? '').trim();
       if (!strVal || strVal === 'N/A' || strVal === 'null') continue;
       const label = KEY_LABELS[key] || key;
@@ -87,6 +88,18 @@ export async function ingestPropertyKnowledge(
         content: lines.join('\n'),
         category: 'property-info',
         sourceKey: 'property-info',
+      });
+    }
+
+    // 2a-ii. Build property-amenities chunk: dedicated for amenity queries
+    const amenitiesVal = String(customKb.amenities ?? '').trim();
+    if (amenitiesVal && amenitiesVal !== 'N/A' && amenitiesVal !== 'null') {
+      const amenitiesList = amenitiesVal.split(',').map((a: string) => a.trim()).filter(Boolean);
+      const amenitiesContent = `## Available Amenities & Services\nThe following amenities are available at this property:\n${amenitiesList.map((a: string) => `• ${a}`).join('\n')}\n\nItems NOT on this list may not be available — check with manager before confirming.`;
+      chunks.push({
+        content: amenitiesContent,
+        category: 'property-amenities',
+        sourceKey: 'property-amenities',
       });
     }
   }
@@ -335,8 +348,8 @@ const SOP_CHUNKS = [
 - Mention fee on confirmation, NOT on first ask.
 
 **Free Amenities:**
-- Full list is in PROPERTY & GUEST INFO. Only confirm items listed there.
-- Item NOT on list → "Let me check" → escalate as "info_request"
+- Check the property amenities list in RELEVANT PROCEDURES & KNOWLEDGE for available items.
+- Only confirm items explicitly listed. Item NOT on list → "Let me check" → escalate as "info_request"
 - Ask for delivery time during working hours → escalate as "scheduled"
 
 **Scheduling:**
