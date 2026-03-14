@@ -110,17 +110,18 @@ export async function classifyMessage(query: string): Promise<{
   labels: string[];
   method: string;
   topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
+  neighbors: Array<{ labels: string[]; similarity: number }>;
   tokensUsed: number;
   topSimilarity: number;
 }> {
   if (!_initialized || _exampleEmbeddings.length === 0) {
-    return { labels: [], method: 'classifier_not_initialized', topK: [], tokensUsed: 0, topSimilarity: 0 };
+    return { labels: [], method: 'classifier_not_initialized', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
   // Embed the query
   const queryEmbedding = await embedText(query);
   if (!queryEmbedding || queryEmbedding.length === 0) {
-    return { labels: [], method: 'embedding_failed', topK: [], tokensUsed: 0, topSimilarity: 0 };
+    return { labels: [], method: 'embedding_failed', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
   // Compute cosine similarity with all training examples
@@ -142,10 +143,12 @@ export async function classifyMessage(query: string): Promise<{
 
   const topSimilarity = topK.length > 0 ? topK[0].similarity : 0;
 
+  const neighbors = topKDetails.map(n => ({ labels: n.labels, similarity: n.similarity }));
+
   // Step 1: Contextual gate
   const best = topK[0];
   if (best && _examples[best.index].labels.length === 0 && best.similarity > CONTEXTUAL_THRESHOLD) {
-    return { labels: [], method: 'contextual_match', topK: topKDetails, tokensUsed: 0, topSimilarity };
+    return { labels: [], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
   }
 
   // Step 2: Weighted voting
@@ -173,7 +176,7 @@ export async function classifyMessage(query: string): Promise<{
   // Step 4: Apply token budget
   const { labels, tokensUsed } = applyTokenBudget(candidateLabels);
 
-  return { labels, method: 'knn_vote', topK: topKDetails, tokensUsed, topSimilarity };
+  return { labels, method: 'knn_vote', topK: topKDetails, neighbors, tokensUsed, topSimilarity };
 }
 
 /**

@@ -107,7 +107,28 @@ export interface JudgeInput {
   classifierLabels: string[];
   classifierMethod: string;
   classifierTopSim: number;
+  neighbors: Array<{ labels: string[]; similarity: number }>;
   aiResponse: string;
+}
+
+/**
+ * Returns true if every winning label appears in at least 2 of the 3 nearest
+ * neighbors. When this is true, the classifier voted with majority agreement
+ * and the judge is not needed even at low similarity.
+ * Empty labels → false (uncertain, run judge).
+ * No neighbors → false (no data, run judge).
+ */
+function hasMajorityNeighborSupport(
+  labels: string[],
+  neighbors: Array<{ labels: string[]; similarity: number }>,
+): boolean {
+  if (labels.length === 0) return false;
+  if (neighbors.length === 0) return false;
+  for (const label of labels) {
+    const supportCount = neighbors.filter(n => n.labels.includes(label)).length;
+    if (supportCount < 2) return false;
+  }
+  return true;
 }
 
 // Claude Haiku 4.5 pricing (per token)
@@ -133,8 +154,14 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
     // Load per-tenant thresholds (cached)
     const thresholds = await getThresholds(input.tenantId, prisma);
 
-    // Skip evaluation for high-confidence results — the classifier is almost certainly right
+    // Skip if topSim is above the judge threshold — trusted result
     if (input.classifierTopSim >= thresholds.judgeThreshold) {
+      return;
+    }
+
+    // Skip if all winning labels have majority support (≥2/3 neighbors agree) —
+    // the classifier is consistent even at lower similarity, no judge needed
+    if (hasMajorityNeighborSupport(input.classifierLabels, input.neighbors)) {
       return;
     }
 

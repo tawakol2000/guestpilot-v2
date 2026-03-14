@@ -19,9 +19,14 @@ function generateId(): string {
 let _pgvectorAvailable: boolean | null = null;
 
 // Last classifier result — stashed for judge service evaluation
-let _lastClassifierResult: { method: string; labels: string[]; topSimilarity: number } | null = null;
+let _lastClassifierResult: {
+  method: string;
+  labels: string[];
+  topSimilarity: number;
+  neighbors: Array<{ labels: string[]; similarity: number }>;
+} | null = null;
 
-export function getLastClassifierResult(): { method: string; labels: string[]; topSimilarity: number } | null {
+export function getLastClassifierResult(): typeof _lastClassifierResult {
   return _lastClassifierResult;
 }
 
@@ -321,6 +326,7 @@ export async function retrieveRelevantKnowledge(
         method: classifierResult.method,
         labels: classifierResult.labels,
         topSimilarity: classifierResult.topSimilarity,
+        neighbors: classifierResult.neighbors,
       };
       console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method})`);
 

@@ -1492,6 +1492,7 @@ export async function generateAndSendAiReply(
           classifierLabels: classifierMeta.labels,
           classifierMethod: classifierMeta.method,
           classifierTopSim: classifierMeta.topSimilarity,
+          neighbors: classifierMeta.neighbors,
           aiResponse: guestMessage,
         }, prisma).catch(err =>
           console.warn('[AI] Judge evaluation failed (non-fatal):', err)
