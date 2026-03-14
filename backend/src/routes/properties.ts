@@ -59,7 +59,16 @@ export function propertiesRouter(prisma: PrismaClient): Router {
       if (listing.houseRules) kb.houseRules = listing.houseRules;
       if (listing.specialInstruction) kb.specialInstruction = listing.specialInstruction;
       if (listing.keyPickup) kb.keyPickup = listing.keyPickup;
-      if (listing.amenities) kb.amenities = Array.isArray(listing.amenities) ? (listing.amenities as string[]).join(', ') : String(listing.amenities);
+      // Amenities: Hostaway returns as array of objects or strings
+      const rawAmenities = listing.amenities ?? (listing as any).listingAmenities;
+      if (rawAmenities) {
+        if (Array.isArray(rawAmenities)) {
+          const names = rawAmenities.map((a: any) => typeof a === 'string' ? a : (a.amenityName || a.name || a.title || JSON.stringify(a))).filter(Boolean);
+          if (names.length > 0) kb.amenities = names.join(', ');
+        } else {
+          kb.amenities = String(rawAmenities);
+        }
+      }
       if (listing.cleaningFee) kb.cleaningFee = String(listing.cleaningFee);
       if (listing.squareMeters) kb.squareMeters = String(listing.squareMeters);
       if (listing.bedTypes) kb.bedTypes = Array.isArray(listing.bedTypes) ? (listing.bedTypes as string[]).join(', ') : String(listing.bedTypes);

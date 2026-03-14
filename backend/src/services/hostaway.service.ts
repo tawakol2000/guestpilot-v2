@@ -55,7 +55,8 @@ export async function listListings(
   apiKey: string
 ): Promise<{ result: HostawayListing[] }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get('/v1/listings?limit=100&fields=id,name,internalListingName,personCapacity,roomType,bedroomsNumber,bathroomsNumber,address,city,doorSecurityCode,wifiUsername,wifiPassword,description,checkInTimeStart,checkOutTime,houseRules,specialInstruction,keyPickup,amenities,bedTypes,cleaningFee,squareMeters');
+  // No fields filter — fetch all listing data including amenities, bedTypes, etc.
+  const res = await client.get('/v1/listings?limit=100');
   return res.data;
 }
 
