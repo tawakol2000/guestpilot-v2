@@ -202,11 +202,16 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     try {
       const tenantId = req.tenantId as string;
 
-      const [total, correct, incorrect, autoFixed] = await Promise.all([
+      const [total, correct, incorrect, autoFixed, costAgg] = await Promise.all([
         prisma.classifierEvaluation.count({ where: { tenantId } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
         prisma.classifierEvaluation.count({ where: { tenantId, autoFixed: true } }),
+        prisma.classifierEvaluation.aggregate({
+          where: { tenantId },
+          _sum: { judgeCost: true, judgeInputTokens: true, judgeOutputTokens: true },
+          _avg: { judgeCost: true },
+        }),
       ]);
 
       const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
@@ -217,6 +222,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         incorrect,
         autoFixed,
         accuracyPercent: accuracy,
+        totalJudgeCost:    Math.round((costAgg._sum.judgeCost    ?? 0) * 1_000_000) / 1_000_000,
+        avgJudgeCost:      Math.round((costAgg._avg.judgeCost    ?? 0) * 1_000_000) / 1_000_000,
+        totalInputTokens:  costAgg._sum.judgeInputTokens  ?? 0,
+        totalOutputTokens: costAgg._sum.judgeOutputTokens ?? 0,
       });
     } catch (err) {
       console.error('[Knowledge] evaluation-stats failed:', err);

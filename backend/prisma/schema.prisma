@@ -396,6 +396,9 @@ model ClassifierEvaluation {
   judgeConfidence     String   @default("high")
   judgeReasoning      String   @db.Text @default("")
   autoFixed           Boolean  @default(false)
+  judgeInputTokens    Int      @default(0)
+  judgeOutputTokens   Int      @default(0)
+  judgeCost           Float    @default(0)
   createdAt           DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

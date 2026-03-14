@@ -816,6 +816,10 @@ export async function apiGetEvaluationStats(): Promise<{
   incorrect: number
   autoFixed: number
   accuracyPercent: number
+  totalJudgeCost: number
+  avgJudgeCost: number
+  totalInputTokens: number
+  totalOutputTokens: number
 }> {
   return apiFetch('/api/knowledge/evaluation-stats')
 }

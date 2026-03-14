@@ -85,11 +85,18 @@ export interface JudgeInput {
   aiResponse: string;
 }
 
+// Claude Haiku 4.5 pricing (per token)
+const HAIKU_INPUT_COST  = 0.80  / 1_000_000; // $0.80 per million
+const HAIKU_OUTPUT_COST = 4.00  / 1_000_000; // $4.00 per million
+
 export interface JudgeResult {
   retrievalCorrect: boolean;
   correctLabels: string[];
   confidence: 'high' | 'medium' | 'low';
   reasoning: string;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
 }
 
 /**
@@ -115,6 +122,9 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
         retrievalCorrect: judgeResult.retrievalCorrect,
         judgeConfidence: judgeResult.confidence,
         judgeReasoning: judgeResult.reasoning,
+        judgeInputTokens: judgeResult.inputTokens,
+        judgeOutputTokens: judgeResult.outputTokens,
+        judgeCost: judgeResult.cost,
         autoFixed: false,
       },
     }).catch(err => console.warn('[Judge] Failed to save evaluation:', err));
@@ -186,6 +196,10 @@ Was the retrieval correct? If not, what should have been retrieved?`;
     const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const parsed = JSON.parse(cleaned);
 
+    const inputTokens  = response.usage?.input_tokens  ?? 0;
+    const outputTokens = response.usage?.output_tokens ?? 0;
+    const cost = inputTokens * HAIKU_INPUT_COST + outputTokens * HAIKU_OUTPUT_COST;
+
     const result: JudgeResult = {
       retrievalCorrect: parsed.retrieval_correct === true,
       correctLabels: Array.isArray(parsed.correct_labels)
@@ -193,6 +207,9 @@ Was the retrieval correct? If not, what should have been retrieved?`;
         : [],
       confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium',
       reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+      inputTokens,
+      outputTokens,
+      cost,
     };
 
     return result;

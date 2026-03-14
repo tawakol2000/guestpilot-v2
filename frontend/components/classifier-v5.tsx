@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw, Search, X, Activity, CheckCircle, AlertTriangle, Wrench,
-  ChevronRight, Plus, Trash2, Play, Brain, Zap,
+  ChevronRight, Plus, Trash2, Play, Brain, Zap, DollarSign,
 } from 'lucide-react'
 import {
   apiGetClassifierStatus,
@@ -78,6 +78,13 @@ function labelColor(l: string) { return LABEL_COLORS[l] ?? '#57534E' }
 // ─── Sim color ────────────────────────────────────────────────────────────────
 function simColor(s: number) {
   return s >= 0.8 ? T.status.green : s >= 0.6 ? T.status.amber : T.status.red
+}
+
+function fmtCost(usd: number): string {
+  if (usd === 0) return '$0.00'
+  if (usd < 0.001) return `$${(usd * 1000).toFixed(3)}m` // sub-cent: show in milli-dollars
+  if (usd < 0.01) return `$${usd.toFixed(4)}`
+  return `$${usd.toFixed(3)}`
 }
 
 function fmtTime(iso: string) {
@@ -813,6 +820,7 @@ export function ClassifierV5(): React.ReactElement {
   } | null>(null)
   const [evalStats, setEvalStats] = useState<{
     total: number; correct: number; incorrect: number; autoFixed: number; accuracyPercent: number
+    totalJudgeCost: number; avgJudgeCost: number; totalInputTokens: number; totalOutputTokens: number
   } | null>(null)
 
   useEffect(() => { ensureStyles() }, [])
@@ -880,6 +888,14 @@ export function ClassifierV5(): React.ReactElement {
             label="Auto-Fixed"
             value={evalStats ? String(evalStats.autoFixed) : '—'}
             sub={evalStats?.autoFixed ? 'examples added' : undefined}
+          />
+          <MetricCard
+            icon={<DollarSign size={16} color={T.text.secondary} />}
+            label="Judge Cost"
+            value={evalStats ? fmtCost(evalStats.totalJudgeCost) : '—'}
+            sub={evalStats?.total
+              ? `avg ${fmtCost(evalStats.avgJudgeCost)}/eval · ${((evalStats.totalInputTokens + evalStats.totalOutputTokens) / 1000).toFixed(1)}k tok`
+              : 'haiku-4-5'}
           />
         </div>
 
