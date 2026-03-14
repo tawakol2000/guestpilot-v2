@@ -16,7 +16,6 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { retrieveRelevantKnowledge } from './rag.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
-import { BAKED_IN_SOPS_TEXT } from '../config/baked-in-sops';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -1217,12 +1216,6 @@ export async function generateAndSendAiReply(
     // Append custom instructions if configured
     if (tenantConfig?.customInstructions) {
       effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
-    }
-
-    // Bake scheduling, house-rules, and escalation procedures into the prompt
-    // These 4 SOP chunks (270 tokens) are always present for guestCoordinator
-    if (!isInquiry) {
-      effectiveSystemPrompt += '\n' + BAKED_IN_SOPS_TEXT;
     }
 
     let guestMessage = '';
