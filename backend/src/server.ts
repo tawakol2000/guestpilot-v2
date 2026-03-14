@@ -6,6 +6,7 @@ import { setAiServicePrisma } from './services/ai.service';
 import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
+import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -38,6 +39,27 @@ async function main() {
     console.log(`[Server] GuestPilot backend running on port ${PORT}`);
     console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
   });
+
+  // Background: re-embed all RAG chunks on startup (ensures embeddings match current model)
+  (async () => {
+    try {
+      const tenants = await prisma.tenant.findMany({ select: { id: true } });
+      for (const tenant of tenants) {
+        // Re-seed SOP chunks with fresh embeddings
+        const sopCount = await seedTenantSops(tenant.id, prisma);
+        console.log(`[Startup] Re-embedded ${sopCount} SOP chunks for tenant ${tenant.id}`);
+
+        // Re-embed property chunks
+        const properties = await prisma.property.findMany({ where: { tenantId: tenant.id } });
+        for (const prop of properties) {
+          await ingestPropertyKnowledge(tenant.id, prop.id, prop, prisma);
+        }
+        console.log(`[Startup] Re-embedded ${properties.length} property chunk sets for tenant ${tenant.id}`);
+      }
+    } catch (err) {
+      console.warn('[Startup] Background re-embed failed (non-fatal):', err);
+    }
+  })();
 
   // Graceful shutdown
   const shutdown = async () => {
