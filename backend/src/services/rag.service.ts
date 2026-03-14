@@ -335,27 +335,24 @@ export async function retrieveRelevantKnowledge(
 // ─── SOP Seeding — tenant-level procedure chunks ──────────────────────────────
 
 const SOP_CHUNKS = [
+  // ─── Service: Cleaning ──────────────────────────────────────────────────────
   {
-    category: 'sop-service-requests',
-    sourceKey: 'sop-service-requests',
-    content: `## SERVICE REQUESTS & SCHEDULING — Cleaning, Amenities, Deliveries
+    category: 'sop-cleaning',
+    sourceKey: 'sop-cleaning',
+    content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
 
-**Working hours:** 10:00 AM – 5:00 PM (housekeeping/maintenance)
+## CLEANING REQUESTS
 
-**Cleaning ($20/session):**
-- Working hours only. Recurring OK ($20 each).
-- Flow: Ask preferred time → Guest confirms → Mention $20 fee → Escalate as "scheduled"
-- Mention fee on confirmation, NOT on first ask.
+Cleaning costs $20 per session. Available during working hours only (10am–5pm). Recurring cleaning is OK ($20 each session).
 
-**Free Amenities:**
-- Check the property amenities list in RELEVANT PROCEDURES & KNOWLEDGE for available items.
-- Only confirm items explicitly listed. Item NOT on list → "Let me check" → escalate as "info_request"
-- Ask for delivery time during working hours → escalate as "scheduled"
+**Flow:**
+1. Ask guest for preferred time (between 10am–5pm)
+2. Guest confirms time → mention the $20 fee
+3. Escalate as "scheduled" with time and fee confirmed
 
-**Scheduling:**
-- During working hours: Ask preferred time. "Now" → confirmed, escalate immediately. Specific time → confirm and escalate.
-- After hours (after 5 PM): Arrange for tomorrow. Ask for preferred time between 10am–5pm → confirm → escalate.
-- Multiple requests: Assume one time slot unless guest explicitly wants separate visits.
+Mention the fee on confirmation, NOT on the first ask.
+
+**After hours (after 5 PM):** Arrange for tomorrow. Ask for preferred time between 10am–5pm.
 
 **Examples:**
 
@@ -366,19 +363,51 @@ Guest: "Around 1pm"
 {"guest_message":"Got it, housekeeping at 1pm. Just so you know, cleaning is $20 per session.","escalation":{"title":"cleaning-scheduled","note":"Guest [Name] in [Unit] — cleaning at 1pm. $20 confirmed.","urgency":"scheduled"}}
 
 Guest: "Can someone clean?" (8pm)
-{"guest_message":"I can arrange cleaning for tomorrow. What time works between 10am and 5pm?","escalation":null}
+{"guest_message":"I can arrange cleaning for tomorrow. What time works between 10am and 5pm?","escalation":null}`,
+  },
+  // ─── Service: Amenity Requests ──────────────────────────────────────────────
+  {
+    category: 'sop-amenity-request',
+    sourceKey: 'sop-amenity-request',
+    content: `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
+
+## AMENITY REQUESTS
+
+Check the property amenities list for available items. Only confirm items explicitly listed there.
+- Item on the amenities list → confirm availability, ask for delivery time during working hours (10am–5pm), then escalate as "scheduled"
+- Item NOT on the list → say "Let me check on that" → escalate as "info_request"
+
+**Examples:**
+
+Guest: "Can I get extra towels?"
+{"guest_message":"Of course, I'll arrange that for you. What time works between 10am and 5pm?","escalation":null}
 
 Guest: "Do you have a phone charger?"
 {"guest_message":"Let me check on that and get back to you.","escalation":{"title":"amenity-unlisted","note":"Guest [Name] in [Unit] asking for phone charger. Not on standard list.","urgency":"info_request"}}`,
   },
+  // ─── Service: Scheduling ────────────────────────────────────────────────────
+  {
+    category: 'sop-scheduling',
+    sourceKey: 'sop-scheduling',
+    content: `Guest wants to schedule something, asks about available times, working hours, or when housekeeping/maintenance can come.
+
+## SCHEDULING — Working Hours & Time Preferences
+
+**Working hours:** 10:00 AM – 5:00 PM (housekeeping and maintenance)
+
+- During working hours: Ask preferred time. "Now" → confirmed, escalate immediately. Specific time → confirm and escalate.
+- After hours (after 5 PM): Arrange for tomorrow. Ask for preferred time between 10am–5pm → confirm → escalate.
+- Multiple requests in one message: Assume one time slot unless guest explicitly wants separate visits.`,
+  },
+  // ─── Maintenance ────────────────────────────────────────────────────────────
   {
     category: 'sop-maintenance',
     sourceKey: 'sop-maintenance',
-    content: `## MAINTENANCE & TECHNICAL ISSUES
+    content: `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue.
 
-**WiFi & Door Code:** Details in PROPERTY & GUEST INFO — give directly. Problem? → escalate immediately.
+## MAINTENANCE & TECHNICAL ISSUES
 
-**Broken/malfunctioning items:** Acknowledge, assure someone will look into it, escalate immediately.
+Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it, and escalate immediately.
 
 **All maintenance/technical issues → urgency: "immediate"**
 
@@ -390,28 +419,61 @@ Guest: "There's no hot water"
 Guest: "The AC isn't cooling"
 {"guest_message":"Sorry about that, I'll have someone check it right away.","escalation":{"title":"maintenance-ac","note":"Guest [Name] in [Unit] — AC not cooling. Needs maintenance.","urgency":"immediate"}}
 
+Guest: "There is a leak" / "Water is leaking"
+{"guest_message":"I'm sorry about that. I'm escalating this to maintenance right away. Can you let me know where the leak is?","escalation":{"title":"maintenance-leak","note":"Guest [Name] in [Unit] — water leak reported. Needs immediate attention.","urgency":"immediate"}}
+
 OPEN TASKS: [abc123] maintenance-no-hot-water (immediate)
 Guest: "Hot water is working now, thanks!"
 {"guest_message":"","escalation":null,"resolveTaskId":"abc123"}`,
   },
+  // ─── WiFi & Door Code ──────────────────────────────────────────────────────
+  {
+    category: 'sop-wifi-doorcode',
+    sourceKey: 'sop-wifi-doorcode',
+    content: `Guest asks about WiFi password, WiFi network name, internet connection, door code, entry code, lock code, how to get in, or can't open the door.
+
+## WIFI & DOOR CODE
+
+WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Give them directly.
+
+If there's a **problem** (WiFi not working, code not working, can't connect, locked out) → escalate immediately.
+
+**Examples:**
+
+Guest: "What's the WiFi password?"
+{"guest_message":"WiFi network is [name from info], password is [password from info].","escalation":null}
+
+Guest: "The door code isn't working"
+{"guest_message":"Sorry about that, let me get someone to help right away.","escalation":{"title":"door-code-issue","note":"Guest [Name] in [Unit] — door code not working. Needs immediate help.","urgency":"immediate"}}`,
+  },
+  // ─── House Rules ────────────────────────────────────────────────────────────
   {
     category: 'sop-house-rules',
     sourceKey: 'sop-house-rules',
-    content: `## HOUSE RULES
+    content: `Guest asks about rules, smoking, parties, gatherings, noise, or quiet hours.
 
-- Family-only property
+## HOUSE RULES
+
+- Family-only property — no non-family visitors at any time
 - No smoking indoors
 - No parties or gatherings
 - Quiet hours apply
 
-**Visitor Policy:**
-- ONLY immediate family members allowed
-- Guest must send visitor's passport through chat
-- Family names must match guest's family name
-- Collect passport image → escalate for verification
-- Non-family visitors = NOT allowed
+**Any pushback on rules → escalate immediately**`,
+  },
+  // ─── Visitor Policy ─────────────────────────────────────────────────────────
+  {
+    category: 'sop-visitor-policy',
+    sourceKey: 'sop-visitor-policy',
+    content: `Guest wants to invite someone over, have a friend visit, bring a visitor, asks about visitor rules, or asks if someone can come to the apartment.
 
-**Any pushback on rules → escalate immediately**
+## VISITOR POLICY
+
+- ONLY immediate family members allowed as visitors
+- Guest must send visitor's passport through the chat
+- Family names must match guest's family name
+- Collect passport image → escalate for manager verification
+- Non-family visitors (friends, colleagues, etc.) = NOT allowed
 
 **Examples:**
 
@@ -421,60 +483,96 @@ Guest: "Can my friend come over for dinner?"
 Guest: "That's unfair, it's just one friend"
 {"guest_message":"I understand, but this is a strict policy we need to follow. I'll pass your feedback along.","escalation":{"title":"house-rule-pushback","note":"Guest [Name] in [Unit] pushing back on visitor policy. Wants non-family friend. Needs manager.","urgency":"immediate"}}`,
   },
+  // ─── Early Check-in ─────────────────────────────────────────────────────────
   {
-    category: 'sop-checkin-checkout',
-    sourceKey: 'sop-checkin-checkout',
-    content: `## EARLY CHECK-IN & LATE CHECKOUT
+    category: 'sop-early-checkin',
+    sourceKey: 'sop-early-checkin',
+    content: `Guest asks for early check-in, arriving early, wants to check in before 3pm, or asks if they can come earlier.
 
-Check-in: 3:00 PM | Check-out: 11:00 AM
-Back-to-back bookings mean early/late can only be confirmed 2 days before.
+## EARLY CHECK-IN
 
-**>2 days before:** Do NOT escalate. Tell guest:
-"We can only confirm 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
+Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
 
-**Within 2 days:** Tell guest you'll check → escalate as "info_request"
+**More than 2 days before check-in:** Do NOT escalate. Tell guest:
+"We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
 
-**Never confirm early check-in or late checkout yourself.**
+**Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
+
+**Never confirm early check-in yourself.**
 
 **Examples:**
 
-Guest: "Can I check in at noon?" (check-in far away)
+Guest: "Can I check in at noon?" (check-in is far away)
 {"guest_message":"We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab something at O1 Mall — it's a 1-minute walk.","escalation":null}
 
 Guest: "I arrive tomorrow at 10am, early check-in?" (within 2 days)
 {"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"early-checkin","note":"Guest [Name] in [Unit] — early check-in tomorrow 10am. Within 2-day window.","urgency":"info_request"}}`,
   },
+  // ─── Late Checkout ──────────────────────────────────────────────────────────
   {
-    category: 'sop-escalation',
-    sourceKey: 'sop-escalation',
-    content: `## ESCALATION GUIDE — When & How to Escalate
+    category: 'sop-late-checkout',
+    sourceKey: 'sop-late-checkout',
+    content: `Guest asks for late checkout, wants to leave later, stay longer on checkout day, check out after 11am, or extend their stay on the last day.
 
-**escalation: null** — No manager action:
-- Answering from PROPERTY & GUEST INFO
-- Asking guest for time preference (before confirmation)
-- Explaining fees or policies
-- Early check-in/checkout >2 days out
-- Conversation-ending messages → also guest_message: ""
+## LATE CHECKOUT
 
-**urgency: "immediate"** — Needs attention NOW:
+Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
+
+**More than 2 days before checkout:** Do NOT escalate. Tell guest the same 2-day rule.
+
+**Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
+
+**Never confirm late checkout yourself.**
+
+**Example:**
+
+Guest: "Can I check out at 2pm instead of 11?"
+{"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"late-checkout","note":"Guest [Name] in [Unit] — wants late checkout at 2pm. Needs manager approval.","urgency":"info_request"}}`,
+  },
+  // ─── Escalation: Immediate ──────────────────────────────────────────────────
+  {
+    category: 'sop-escalation-immediate',
+    sourceKey: 'sop-escalation-immediate',
+    content: `Something urgent happens — emergency, fire, gas, flood, medical, safety concern, guest is upset, noise complaint, or you're unsure how to respond.
+
+## ESCALATION — urgency: "immediate"
+
+Use "immediate" when the situation needs manager attention NOW:
 - Emergencies (fire, gas, flood, medical, safety)
-- Technical issues (WiFi down, door code, broken items)
-- Noise complaints, guest dissatisfaction
-- House rule violations or pushback
-- Guest sends image
-- Anything you're unsure about
+- Technical/maintenance issues (WiFi, door code, broken items, leaks)
+- Noise complaints or guest dissatisfaction
+- House rule violations or guest pushback
+- Guest sends an image that needs review
+- Anything you're unsure about — when in doubt, escalate`,
+  },
+  // ─── Escalation: Scheduled ──────────────────────────────────────────────────
+  {
+    category: 'sop-escalation-scheduled',
+    sourceKey: 'sop-escalation-scheduled',
+    content: `Cleaning, amenity delivery, or maintenance has been confirmed with a specific time.
 
-**urgency: "scheduled"** — Action at a specific time:
-- Cleaning after time + $20 confirmed
-- Amenity/maintenance after time confirmed
-- After-hours next-day arrangements
+## ESCALATION — urgency: "scheduled"
 
-**urgency: "info_request"** — Manager provides info:
-- Local recommendations
-- Reservation changes
-- Early check-in/checkout within 2 days
-- Refund/discount requests (NEVER authorize yourself)
-- Any question you can't answer
+Use "scheduled" when action is needed at a specific time:
+- Cleaning after time and $20 fee confirmed
+- Amenity delivery after time confirmed
+- Maintenance visit at a confirmed time
+- After-hours arrangements confirmed for the next day`,
+  },
+  // ─── Escalation: Info Request ───────────────────────────────────────────────
+  {
+    category: 'sop-escalation-info',
+    sourceKey: 'sop-escalation-info',
+    content: `Guest asks something you can't answer — local recommendations, restaurants, pricing, discounts, refunds, reservation changes, or availability.
+
+## ESCALATION — urgency: "info_request"
+
+Use "info_request" when the manager needs to provide information:
+- Local recommendations (restaurants, shops, activities)
+- Reservation changes (dates, guest count)
+- Early check-in/late checkout within 2-day window
+- Refund or discount requests (NEVER authorize yourself)
+- Any question not covered by your knowledge
 
 **Examples:**
 
