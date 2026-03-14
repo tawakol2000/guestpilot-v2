@@ -72,6 +72,7 @@ import { TasksV5 } from '@/components/tasks-v5'
 import { SettingsV5 } from '@/components/settings-v5'
 import { ConfigureAiV5 } from '@/components/configure-ai-v5'
 import { AiLogsV5 } from '@/components/ai-logs-v5'
+import { ClassifierV5 } from '@/components/classifier-v5'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -93,7 +94,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today'
 
 interface Message {
@@ -1825,6 +1826,7 @@ export default function InboxV5() {
             { id: 'tasks', label: 'Tasks' },
             { id: 'settings', label: 'Settings' },
             { id: 'configure', label: 'Configure AI' },
+            { id: 'classifier', label: 'Classifier' },
             { id: 'logs', label: 'AI Logs' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3414,6 +3416,11 @@ export default function InboxV5() {
       {navTab === 'configure' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ConfigureAiV5 />
+        </div>
+      )}
+      {navTab === 'classifier' && (
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <ClassifierV5 />
         </div>
       )}
       {navTab === 'logs' && (

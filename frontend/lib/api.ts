@@ -784,3 +784,115 @@ export async function apiDeleteKnowledgeChunk(id: string): Promise<void> {
 export async function apiSeedSops(): Promise<{ ok: boolean; inserted: number }> {
   return apiFetch<{ ok: boolean; inserted: number }>('/api/knowledge/seed-sops', { method: 'POST' })
 }
+
+// ─── Classifier & Judge ───────────────────────────────────────────────────────
+
+export async function apiGetClassifierStatus(): Promise<{
+  initialized: boolean
+  exampleCount: number
+  initDurationMs: number
+  sopChunkCount: number
+  bakedInCount: number
+}> {
+  return apiFetch('/api/knowledge/classifier-status')
+}
+
+export async function apiTestClassify(message: string): Promise<{
+  labels: string[]
+  method: string
+  topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>
+  tokensUsed: number
+  topSimilarity: number
+}> {
+  return apiFetch('/api/knowledge/test-classify', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  })
+}
+
+export async function apiGetEvaluationStats(): Promise<{
+  total: number
+  correct: number
+  incorrect: number
+  autoFixed: number
+  accuracyPercent: number
+}> {
+  return apiFetch('/api/knowledge/evaluation-stats')
+}
+
+export interface ClassifierEvaluation {
+  id: string
+  tenantId: string
+  conversationId: string | null
+  guestMessage: string
+  classifierLabels: string[]
+  classifierMethod: string
+  classifierTopSim: number
+  judgeCorrectLabels: string[]
+  retrievalCorrect: boolean
+  judgeConfidence: string
+  judgeReasoning: string
+  autoFixed: boolean
+  createdAt: string
+}
+
+export async function apiGetEvaluations(params?: {
+  limit?: number
+  offset?: number
+  correct?: boolean
+}): Promise<{
+  evaluations: ClassifierEvaluation[]
+  total: number
+  limit: number
+  offset: number
+}> {
+  const qs = new URLSearchParams()
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  if (params?.correct !== undefined) qs.set('correct', String(params.correct))
+  const qsStr = qs.toString()
+  return apiFetch(`/api/knowledge/evaluations${qsStr ? '?' + qsStr : ''}`)
+}
+
+export interface ClassifierExampleItem {
+  id: string
+  text: string
+  labels: string[]
+  source: string
+  active: boolean
+  createdAt: string
+}
+
+export async function apiGetClassifierExamples(params?: {
+  limit?: number
+  offset?: number
+  source?: string
+}): Promise<{
+  examples: ClassifierExampleItem[]
+  total: number
+}> {
+  const qs = new URLSearchParams()
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  if (params?.source) qs.set('source', params.source)
+  const qsStr = qs.toString()
+  return apiFetch(`/api/knowledge/classifier-examples${qsStr ? '?' + qsStr : ''}`)
+}
+
+export async function apiAddClassifierExample(data: {
+  text: string
+  labels: string[]
+}): Promise<{ ok: boolean }> {
+  return apiFetch('/api/knowledge/classifier-examples', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiDeleteClassifierExample(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/knowledge/classifier-examples/${id}`, { method: 'DELETE' })
+}
+
+export async function apiReinitializeClassifier(): Promise<{ ok: boolean; exampleCount: number }> {
+  return apiFetch('/api/knowledge/classifier-reinitialize', { method: 'POST' })
+}

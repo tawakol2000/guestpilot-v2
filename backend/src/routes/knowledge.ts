@@ -3,7 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier } from '../services/classifier.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier } from '../services/classifier.service';
+import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -220,6 +221,104 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] evaluation-stats failed:', err);
       res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+  });
+
+  // GET /api/knowledge/classifier-examples — paginated list of DB examples
+  router.get('/classifier-examples', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { limit: limitStr, offset: offsetStr, source } = req.query as Record<string, string | undefined>;
+      const limit = Math.min(parseInt(limitStr || '100', 10), 500);
+      const offset = parseInt(offsetStr || '0', 10);
+
+      const where: Record<string, unknown> = { tenantId, active: true };
+      if (source) where.source = source;
+
+      const [examples, total] = await Promise.all([
+        prisma.classifierExample.findMany({
+          where: where as any,
+          orderBy: { createdAt: 'asc' },
+          take: limit,
+          skip: offset,
+          select: { id: true, text: true, labels: true, source: true, active: true, createdAt: true },
+        }),
+        prisma.classifierExample.count({ where: where as any }),
+      ]);
+
+      res.json({ examples, total });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples query failed:', err);
+      res.status(500).json({ error: 'Failed to fetch classifier examples' });
+    }
+  });
+
+  // POST /api/knowledge/classifier-examples — add a manual training example
+  router.post('/classifier-examples', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { text, labels } = req.body as { text?: string; labels?: string[] };
+
+      if (!text || !text.trim()) {
+        res.status(400).json({ error: 'text is required' });
+        return;
+      }
+      if (!Array.isArray(labels)) {
+        res.status(400).json({ error: 'labels must be an array' });
+        return;
+      }
+
+      const existing = await getExampleByText(tenantId, text.trim(), prisma);
+      if (existing) {
+        res.status(409).json({ error: 'Example with this text already exists' });
+        return;
+      }
+
+      const created = await addExample(tenantId, text.trim(), labels, 'manual', prisma);
+      res.json({ ok: true, id: created.id });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples create failed:', err);
+      res.status(500).json({ error: 'Failed to create classifier example' });
+    }
+  });
+
+  // DELETE /api/knowledge/classifier-examples/:id — soft-delete (set active=false)
+  router.delete('/classifier-examples/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params as { id: string };
+
+      const existing = await prisma.classifierExample.findFirst({
+        where: { id, tenantId },
+        select: { id: true },
+      });
+      if (!existing) {
+        res.status(404).json({ error: 'Example not found' });
+        return;
+      }
+
+      await prisma.classifierExample.update({
+        where: { id },
+        data: { active: false },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples delete failed:', err);
+      res.status(500).json({ error: 'Failed to delete classifier example' });
+    }
+  });
+
+  // POST /api/knowledge/classifier-reinitialize — force re-embed all examples
+  router.post('/classifier-reinitialize', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      await reinitializeClassifier(tenantId, prisma);
+      const status = getClassifierStatus();
+      res.json({ ok: true, exampleCount: status.exampleCount });
+    } catch (err) {
+      console.error('[Knowledge] classifier-reinitialize failed:', err);
+      res.status(500).json({ error: 'Failed to reinitialize classifier' });
     }
   });
 
