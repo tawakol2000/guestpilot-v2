@@ -8,6 +8,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch } from './embeddings.service';
+import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier } from './classifier.service';
 
 function generateId(): string {
   // Simple cuid-like ID without external dependency
@@ -255,6 +256,48 @@ export async function appendLearnedAnswer(
   }
 }
 
+async function retrievePropertyChunks(
+  tenantId: string,
+  propertyId: string,
+  query: string,
+  prisma: PrismaClient,
+  topK = 3
+): Promise<Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>> {
+  try {
+    if (!(await isPgvectorAvailable(prisma))) return [];
+    const embedding = await embedText(query);
+    if (!embedding || embedding.length === 0) return [];
+
+    const embeddingStr = `[${embedding.join(',')}]`;
+    const results = await prisma.$queryRaw<
+      Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
+    >`
+      SELECT id, content, category, "sourceKey", "propertyId",
+        1 - (embedding <=> ${embeddingStr}::vector) as similarity
+      FROM "PropertyKnowledgeChunk"
+      WHERE "propertyId" = ${propertyId}
+        AND "tenantId" = ${tenantId}
+        AND embedding IS NOT NULL
+        AND category IN ('property-info', 'property-description', 'property-amenities', 'learned-answers')
+      ORDER BY embedding <=> ${embeddingStr}::vector
+      LIMIT ${topK}
+    `;
+
+    return results
+      .filter(r => Number(r.similarity) > 0.25)
+      .map(r => ({
+        content: r.content,
+        category: r.category,
+        similarity: Number(r.similarity),
+        sourceKey: r.sourceKey,
+        propertyId: r.propertyId,
+      }));
+  } catch (err) {
+    console.error('[RAG] retrievePropertyChunks failed:', err);
+    return [];
+  }
+}
+
 export async function retrieveRelevantKnowledge(
   tenantId: string,
   propertyId: string,
@@ -263,6 +306,38 @@ export async function retrieveRelevantKnowledge(
   topK = 8,
   agentType?: 'guestCoordinator' | 'screeningAI'
 ): Promise<Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>> {
+  // For guestCoordinator: use KNN classifier for SOPs + pgvector for property chunks only
+  if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
+    try {
+      const classifierResult = await classifyMessage(query);
+      console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method})`);
+
+      // Look up SOP content from in-memory map
+      const sopChunks = classifierResult.labels
+        .map(label => {
+          const content = getSopContent(label);
+          return content ? {
+            content,
+            category: label,
+            similarity: 1.0,
+            sourceKey: label,
+            propertyId: null as string | null,
+          } : null;
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
+
+      // Also get property-specific chunks via pgvector
+      const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
+
+      const combined = [...sopChunks, ...propertyChunks];
+      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks`);
+      return combined;
+    } catch (err) {
+      console.warn('[RAG] Classifier failed, falling back to pgvector:', err);
+      // Fall through to existing pgvector logic below
+    }
+  }
+
   try {
     if (!(await isPgvectorAvailable(prisma))) return [];
     const embedding = await embedText(query);
@@ -315,10 +390,16 @@ export async function retrieveRelevantKnowledge(
       `;
     }
 
-    // Log ALL results with scores so we can diagnose retrieval quality
-    console.log(`[RAG] raw results for "${query.substring(0, 60)}": ${results.map(r => `${r.sourceKey}[${r.category}](${Number(r.similarity).toFixed(3)})`).join(', ') || 'empty'}`);
-    const filtered = results.filter(r => Number(r.similarity) > 0.2);
-    console.log(`[RAG] retrieved ${filtered.length}/${results.length} above threshold`);
+    // Log ALL results with scores for diagnostics
+    console.log(`[RAG] raw results for "${query.substring(0, 60)}": ${results.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'empty'}`);
+
+    // Filter: minimum 0.25 similarity, cap at top 3 to prevent token bloat
+    const MAX_CHUNKS = 3;
+    const MIN_SIMILARITY = 0.25;
+    const filtered = results
+      .filter(r => Number(r.similarity) > MIN_SIMILARITY)
+      .slice(0, MAX_CHUNKS);
+    console.log(`[RAG] retrieved ${filtered.length} chunks (threshold ${MIN_SIMILARITY}, max ${MAX_CHUNKS}): ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'none'}`);
     return filtered.map(r => ({
         content: r.content,
         category: r.category,
@@ -403,7 +484,7 @@ Guest: "Do you have a phone charger?"
   {
     category: 'sop-maintenance',
     sourceKey: 'sop-maintenance',
-    content: `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue.
+    content: `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
 
 ## MAINTENANCE & TECHNICAL ISSUES
 
@@ -776,5 +857,11 @@ export async function seedTenantSops(
   }
 
   console.log(`[RAG] Seeded ${inserted}/${SOP_CHUNKS.length} SOP chunks for tenant ${tenantId}`);
+
+  // Trigger classifier initialization (non-blocking)
+  initializeClassifier().catch(err =>
+    console.warn('[RAG] Classifier init failed (non-fatal):', err)
+  );
+
   return inserted;
 }

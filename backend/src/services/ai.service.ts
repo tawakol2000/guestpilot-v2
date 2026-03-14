@@ -16,6 +16,7 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { retrieveRelevantKnowledge } from './rag.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
+import { BAKED_IN_SOPS_TEXT } from '../config/baked-in-sops';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -91,6 +92,7 @@ export interface AiApiLogEntry {
     chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>;
     totalRetrieved: number;
     durationMs: number;
+    classifierUsed?: boolean;
   } | null;
 }
 
@@ -104,7 +106,7 @@ export function getAiApiLog(): AiApiLogEntry[] {
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; classifierUsed?: boolean }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'claude-haiku-4-5-20251001';
@@ -1182,6 +1184,7 @@ export async function generateAndSendAiReply(
       })),
       totalRetrieved: retrievedChunks.length,
       durationMs: ragDurationMs,
+      classifierUsed: context.reservationStatus !== 'INQUIRY',
     };
 
     const propertyInfo = buildPropertyInfo(
@@ -1214,6 +1217,12 @@ export async function generateAndSendAiReply(
     // Append custom instructions if configured
     if (tenantConfig?.customInstructions) {
       effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
+    }
+
+    // Bake scheduling, house-rules, and escalation procedures into the prompt
+    // These 4 SOP chunks (270 tokens) are always present for guestCoordinator
+    if (!isInquiry) {
+      effectiveSystemPrompt += '\n' + BAKED_IN_SOPS_TEXT;
     }
 
     let guestMessage = '';

@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops } from '../services/rag.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier } from '../services/classifier.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -19,6 +20,39 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] seed-sops failed:', err);
       res.status(500).json({ error: 'Failed to seed SOPs' });
+    }
+  });
+
+  // GET /api/knowledge/classifier-status — KNN classifier health check
+  router.get('/classifier-status', async (req: any, res) => {
+    try {
+      const status = getClassifierStatus();
+      res.json(status);
+    } catch (err) {
+      console.error('[Knowledge] classifier-status failed:', err);
+      res.status(500).json({ error: 'Failed to get classifier status' });
+    }
+  });
+
+  // POST /api/knowledge/test-classify — test the classifier with a message
+  router.post('/test-classify', async (req: any, res) => {
+    try {
+      const { message } = req.body as { message?: string };
+      if (!message || !message.trim()) {
+        res.status(400).json({ error: 'message is required' });
+        return;
+      }
+
+      if (!isClassifierInitialized()) {
+        // Try to initialize on demand
+        await initializeClassifier();
+      }
+
+      const result = await classifyMessage(message.trim());
+      res.json(result);
+    } catch (err) {
+      console.error('[Knowledge] test-classify failed:', err);
+      res.status(500).json({ error: 'Classification failed' });
     }
   });
 

@@ -7,6 +7,7 @@ import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
+import { initializeClassifier } from './services/classifier.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -55,6 +56,14 @@ async function main() {
           await ingestPropertyKnowledge(tenant.id, prop.id, prop, prisma);
         }
         console.log(`[Startup] Re-embedded ${properties.length} property chunk sets for tenant ${tenant.id}`);
+      }
+
+      // Initialize the KNN classifier for SOP routing
+      try {
+        await initializeClassifier();
+        console.log('[Startup] KNN classifier initialized');
+      } catch (err) {
+        console.warn('[Startup] KNN classifier init failed (non-fatal):', err);
       }
     } catch (err) {
       console.warn('[Startup] Background re-embed failed (non-fatal):', err);
