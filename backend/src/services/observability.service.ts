@@ -64,10 +64,19 @@ export function traceAiCall(params: TraceParams): void {
   const lf = getClient();
   if (!lf) return;
   try {
+    const traceInput = params.systemPrompt
+      ? [
+          { role: 'system', content: params.systemPrompt.substring(0, 3000) },
+          { role: 'user', content: params.userContentPreview || '(content blocks)' },
+        ]
+      : params.userContentPreview || `[${params.inputTokens} input tokens]`;
+    const traceOutput = params.error ? `ERROR: ${params.error}` : params.responseText;
     const trace = lf.trace({
       name: `ai-reply-${params.agentName}`,
       userId: params.tenantId,
       sessionId: params.conversationId,
+      input: traceInput,
+      output: traceOutput,
       metadata: {
         tenantId: params.tenantId,
         conversationId: params.conversationId,
@@ -94,13 +103,8 @@ export function traceAiCall(params: TraceParams): void {
     trace.generation({
       name: params.agentName,
       model: params.model,
-      input: params.systemPrompt
-        ? [
-            { role: 'system', content: params.systemPrompt.substring(0, 3000) },
-            { role: 'user', content: params.userContentPreview || '(content blocks)' },
-          ]
-        : params.userContentPreview || `[${params.inputTokens} input tokens]`,
-      output: params.error ? `ERROR: ${params.error}` : params.responseText,
+      input: traceInput,
+      output: traceOutput,
       usage: {
         input: params.inputTokens,
         output: params.outputTokens,
