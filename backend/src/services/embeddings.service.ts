@@ -1,6 +1,5 @@
 /**
- * OpenAI embeddings service — text-embedding-3-large (reduced to 1536 dimensions from 3072).
- * Better quality than text-embedding-3-small at the same vector size.
+ * OpenAI embeddings service — text-embedding-3-small (1536 dimensions, native).
  * Used ONLY for vector similarity search (RAG). Never for AI responses.
  * Gracefully disabled when OPENAI_API_KEY is missing.
  */
@@ -48,9 +47,8 @@ export async function embedText(text: string): Promise<number[]> {
 
   try {
     const res = await client.embeddings.create({
-      model: 'text-embedding-3-large',
+      model: 'text-embedding-3-small',
       input: text,
-      dimensions: 1536,
     });
     const embedding = res.data[0].embedding;
     if (text.length <= 1000) {
@@ -74,10 +72,9 @@ export async function embedBatch(texts: string[]): Promise<number[][]> {
     const batch = texts.slice(i, i + BATCH_SIZE);
     try {
       const res = await client.embeddings.create({
-        model: 'text-embedding-3-large',
+        model: 'text-embedding-3-small',
         input: batch,
-        dimensions: 1536,
-      });
+        });
       res.data.forEach((item, idx) => {
         results[i + idx] = item.embedding;
       });
