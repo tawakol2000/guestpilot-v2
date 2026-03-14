@@ -12,6 +12,10 @@ import { reinitializeClassifier } from './classifier.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Only run the judge when classifier confidence is below this threshold.
+// High-similarity results (>= 0.75) are trusted without verification.
+const JUDGE_CONFIDENCE_THRESHOLD = 0.75;
+
 // Rate limit: max auto-fixes per hour per tenant
 const _fixCounts = new Map<string, { count: number; resetAt: number }>();
 const MAX_FIXES_PER_HOUR = 10;
@@ -105,6 +109,11 @@ export interface JudgeResult {
  */
 export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient): Promise<void> {
   try {
+    // Skip evaluation for high-confidence results — the classifier is almost certainly right
+    if (input.classifierTopSim >= JUDGE_CONFIDENCE_THRESHOLD) {
+      return;
+    }
+
     // Step 1: Call the judge
     const judgeResult = await callJudge(input);
     if (!judgeResult) return; // Judge failed, silently bail
