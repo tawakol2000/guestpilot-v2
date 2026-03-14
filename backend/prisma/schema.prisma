@@ -358,6 +358,8 @@ model TenantAiConfig {
   screeningEnabled     Boolean  @default(true)
   ragEnabled           Boolean  @default(true)
   memorySummaryEnabled Boolean  @default(true)
+  judgeThreshold       Float    @default(0.75)
+  autoFixThreshold     Float    @default(0.70)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

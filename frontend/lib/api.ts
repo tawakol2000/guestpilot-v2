@@ -820,8 +820,28 @@ export async function apiGetEvaluationStats(): Promise<{
   avgJudgeCost: number
   totalInputTokens: number
   totalOutputTokens: number
+  avgSimRecent: number | null
+  avgSimPrev: number | null
+  recentSimCount: number
 }> {
   return apiFetch('/api/knowledge/evaluation-stats')
+}
+
+export async function apiGetClassifierThresholds(): Promise<{
+  judgeThreshold: number
+  autoFixThreshold: number
+}> {
+  return apiFetch('/api/knowledge/classifier-thresholds')
+}
+
+export async function apiSetClassifierThresholds(data: {
+  judgeThreshold: number
+  autoFixThreshold: number
+}): Promise<{ ok: boolean; judgeThreshold: number; autoFixThreshold: number }> {
+  return apiFetch('/api/knowledge/classifier-thresholds', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
 }
 
 export interface ClassifierEvaluation {

@@ -5,6 +5,7 @@ import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops } from '../services/rag.service';
 import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
+import { invalidateThresholdCache } from '../services/judge.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -202,7 +203,7 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     try {
       const tenantId = req.tenantId as string;
 
-      const [total, correct, incorrect, autoFixed, costAgg] = await Promise.all([
+      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows] = await Promise.all([
         prisma.classifierEvaluation.count({ where: { tenantId } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
@@ -212,9 +213,31 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
           _sum: { judgeCost: true, judgeInputTokens: true, judgeOutputTokens: true },
           _avg: { judgeCost: true },
         }),
+        // Last 30 evaluations — for recent avg sim
+        prisma.classifierEvaluation.findMany({
+          where: { tenantId },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+          select: { classifierTopSim: true },
+        }),
+        // Previous 30 — for trend comparison
+        prisma.classifierEvaluation.findMany({
+          where: { tenantId },
+          orderBy: { createdAt: 'desc' },
+          skip: 30,
+          take: 30,
+          select: { classifierTopSim: true },
+        }),
       ]);
 
       const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
+
+      const avgSimRecent = recentSimRows.length > 0
+        ? Math.round((recentSimRows.reduce((s, r) => s + r.classifierTopSim, 0) / recentSimRows.length) * 1000) / 1000
+        : null;
+      const avgSimPrev = prevSimRows.length > 0
+        ? Math.round((prevSimRows.reduce((s, r) => s + r.classifierTopSim, 0) / prevSimRows.length) * 1000) / 1000
+        : null;
 
       res.json({
         total,
@@ -226,10 +249,64 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         avgJudgeCost:      Math.round((costAgg._avg.judgeCost    ?? 0) * 1_000_000) / 1_000_000,
         totalInputTokens:  costAgg._sum.judgeInputTokens  ?? 0,
         totalOutputTokens: costAgg._sum.judgeOutputTokens ?? 0,
+        avgSimRecent,
+        avgSimPrev,
+        recentSimCount: recentSimRows.length,
       });
     } catch (err) {
       console.error('[Knowledge] evaluation-stats failed:', err);
       res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+  });
+
+  // GET /api/knowledge/classifier-thresholds — current per-tenant thresholds
+  router.get('/classifier-thresholds', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const cfg = await prisma.tenantAiConfig.findUnique({
+        where: { tenantId },
+        select: { judgeThreshold: true, autoFixThreshold: true },
+      });
+      res.json({
+        judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
+        autoFixThreshold: cfg?.autoFixThreshold ?? 0.70,
+      });
+    } catch (err) {
+      console.error('[Knowledge] classifier-thresholds GET failed:', err);
+      res.status(500).json({ error: 'Failed to fetch thresholds' });
+    }
+  });
+
+  // POST /api/knowledge/classifier-thresholds — update thresholds
+  router.post('/classifier-thresholds', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { judgeThreshold, autoFixThreshold } = req.body as { judgeThreshold?: number; autoFixThreshold?: number };
+
+      if (typeof judgeThreshold !== 'number' || judgeThreshold < 0.3 || judgeThreshold > 1.0) {
+        res.status(400).json({ error: 'judgeThreshold must be between 0.3 and 1.0' });
+        return;
+      }
+      if (typeof autoFixThreshold !== 'number' || autoFixThreshold < 0.2 || autoFixThreshold > 0.95) {
+        res.status(400).json({ error: 'autoFixThreshold must be between 0.2 and 0.95' });
+        return;
+      }
+      if (autoFixThreshold >= judgeThreshold) {
+        res.status(400).json({ error: 'autoFixThreshold must be less than judgeThreshold' });
+        return;
+      }
+
+      await prisma.tenantAiConfig.upsert({
+        where: { tenantId },
+        update: { judgeThreshold, autoFixThreshold },
+        create: { tenantId, judgeThreshold, autoFixThreshold },
+      });
+
+      invalidateThresholdCache(tenantId);
+      res.json({ ok: true, judgeThreshold, autoFixThreshold });
+    } catch (err) {
+      console.error('[Knowledge] classifier-thresholds POST failed:', err);
+      res.status(500).json({ error: 'Failed to save thresholds' });
     }
   });
 

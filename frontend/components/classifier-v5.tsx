@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw, Search, X, Activity, CheckCircle, AlertTriangle, Wrench,
-  ChevronRight, Plus, Trash2, Play, Brain, Zap, DollarSign,
+  ChevronRight, Plus, Trash2, Play, Brain, DollarSign, TrendingUp, TrendingDown,
+  Settings2, Save, Minus,
 } from 'lucide-react'
 import {
   apiGetClassifierStatus,
@@ -14,6 +15,8 @@ import {
   apiAddClassifierExample,
   apiDeleteClassifierExample,
   apiReinitializeClassifier,
+  apiGetClassifierThresholds,
+  apiSetClassifierThresholds,
   type ClassifierEvaluation,
   type ClassifierExampleItem,
 } from '@/lib/api'
@@ -139,7 +142,7 @@ function MetricCard({ icon, label, value, sub, valueColor }: {
 }) {
   return (
     <div style={{
-      flex: 1, minWidth: 0,
+      flex: 1, minWidth: 150,
       background: T.bg.primary, border: `1px solid ${T.border.default}`,
       borderRadius: T.radius.md, padding: '14px 18px',
       boxShadow: T.shadow.sm, display: 'flex', alignItems: 'center', gap: 14,
@@ -811,6 +814,176 @@ function TrainingExamplesSection() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Threshold Settings Card
+// ═════════════════════════════════════════════════════════════════════════════
+function ThresholdSettings() {
+  const [judgeVal,   setJudgeVal]   = useState(0.75)
+  const [autoFixVal, setAutoFixVal] = useState(0.70)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  useEffect(() => {
+    apiGetClassifierThresholds()
+      .then(d => { setJudgeVal(d.judgeThreshold); setAutoFixVal(d.autoFixThreshold); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const dirty = loaded  // always show save once loaded
+  const autoFixErr = autoFixVal >= judgeVal
+
+  async function save() {
+    if (autoFixErr || saving) return
+    setSaving(true); setSavedMsg('')
+    try {
+      await apiSetClassifierThresholds({ judgeThreshold: judgeVal, autoFixThreshold: autoFixVal })
+      setSavedMsg('Saved')
+      setTimeout(() => setSavedMsg(''), 3000)
+    } catch (e: any) {
+      setSavedMsg(e.message || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function SliderRow({
+    label, hint, value, onChange, min, max, step, color,
+  }: {
+    label: string; hint: string; value: number; onChange: (v: number) => void
+    min: number; max: number; step: number; color: string
+  }) {
+    const pct = ((value - min) / (max - min)) * 100
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>{label}</span>
+            <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.sans, marginLeft: 8 }}>{hint}</span>
+          </div>
+          <span style={{
+            fontSize: 13, fontWeight: 800, fontFamily: T.font.mono, color,
+            minWidth: 36, textAlign: 'right',
+          }}>{value.toFixed(2)}</span>
+        </div>
+        <div style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center' }}>
+          {/* Track */}
+          <div style={{
+            position: 'absolute', left: 0, right: 0, height: 4,
+            borderRadius: 2, background: T.bg.tertiary, overflow: 'hidden',
+          }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
+          </div>
+          {/* Native input */}
+          <input
+            type="range" min={min} max={max} step={step} value={value}
+            onChange={e => onChange(parseFloat(e.target.value))}
+            style={{
+              position: 'absolute', left: 0, right: 0, width: '100%',
+              height: 20, opacity: 0, cursor: 'pointer', margin: 0,
+            }}
+          />
+          {/* Thumb overlay */}
+          <div style={{
+            position: 'absolute',
+            left: `calc(${pct}% - 8px)`,
+            width: 16, height: 16, borderRadius: '50%',
+            background: '#fff', border: `2px solid ${color}`,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+            pointerEvents: 'none',
+          }} />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<Settings2 size={14} color={T.text.secondary} />}
+        title="Thresholds"
+        sub="configure when the judge runs and when it auto-fixes"
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {savedMsg && (
+              <span style={{
+                fontSize: 10, fontFamily: T.font.mono,
+                color: savedMsg === 'Saved' ? T.status.green : T.status.red,
+              }}>{savedMsg}</span>
+            )}
+            <button onClick={save} disabled={saving || autoFixErr} style={{
+              height: 28, padding: '0 12px',
+              display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 11, fontWeight: 600,
+              border: `1px solid ${autoFixErr ? T.border.default : T.border.strong}`,
+              borderRadius: T.radius.sm,
+              background: autoFixErr ? T.bg.secondary : T.border.strong,
+              color: autoFixErr ? T.text.tertiary : '#fff',
+              cursor: saving || autoFixErr ? 'default' : 'pointer',
+              fontFamily: T.font.sans, opacity: saving ? 0.6 : 1,
+              transition: 'all 0.15s',
+            }}>
+              {saving
+                ? <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Save size={11} />}
+              Save
+            </button>
+          </div>
+        }
+      />
+
+      <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <SliderRow
+          label="Judge threshold"
+          hint="— run LLM judge below this"
+          value={judgeVal}
+          onChange={v => { setJudgeVal(v); if (v <= autoFixVal) setAutoFixVal(Math.round((v - 0.05) * 100) / 100) }}
+          min={0.40} max={0.99} step={0.01}
+          color={T.status.amber}
+        />
+        <SliderRow
+          label="Auto-fix threshold"
+          hint="— auto-add training example below this"
+          value={autoFixVal}
+          onChange={v => setAutoFixVal(v)}
+          min={0.20} max={0.94} step={0.01}
+          color={T.status.red}
+        />
+
+        {/* Visual range legend */}
+        <div style={{
+          display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
+          overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 2,
+        }}>
+          {[
+            { label: 'auto-fix', color: `${T.status.red}22`, textColor: T.status.red, pct: autoFixVal * 100 },
+            { label: 'judge only', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (judgeVal - autoFixVal) * 100 },
+            { label: 'trusted — skip', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - judgeVal) * 100 },
+          ].map(seg => (
+            <div key={seg.label} style={{
+              width: `${seg.pct}%`, background: seg.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', minWidth: 0,
+            }}>
+              {seg.pct > 8 && (
+                <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
+                  {seg.label}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {autoFixErr && (
+          <div style={{ fontSize: 10, color: T.status.red, fontFamily: T.font.mono }}>
+            Auto-fix threshold must be less than judge threshold
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Main Export
 // ═════════════════════════════════════════════════════════════════════════════
 export function ClassifierV5(): React.ReactElement {
@@ -821,6 +994,7 @@ export function ClassifierV5(): React.ReactElement {
   const [evalStats, setEvalStats] = useState<{
     total: number; correct: number; incorrect: number; autoFixed: number; accuracyPercent: number
     totalJudgeCost: number; avgJudgeCost: number; totalInputTokens: number; totalOutputTokens: number
+    avgSimRecent: number | null; avgSimPrev: number | null; recentSimCount: number
   } | null>(null)
 
   useEffect(() => { ensureStyles() }, [])
@@ -863,7 +1037,7 @@ export function ClassifierV5(): React.ReactElement {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '20px 20px 32px' }}>
 
         {/* Stats bar */}
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <MetricCard
             icon={<Brain size={16} color={T.text.secondary} />}
             label="Training Examples"
@@ -897,6 +1071,27 @@ export function ClassifierV5(): React.ReactElement {
               ? `avg ${fmtCost(evalStats.avgJudgeCost)}/eval · ${((evalStats.totalInputTokens + evalStats.totalOutputTokens) / 1000).toFixed(1)}k tok`
               : 'haiku-4-5'}
           />
+          {(() => {
+            const sim = evalStats?.avgSimRecent ?? null
+            const prev = evalStats?.avgSimPrev ?? null
+            const delta = sim !== null && prev !== null ? Math.round((sim - prev) * 1000) / 1000 : null
+            const trendColor = delta === null ? undefined : delta > 0 ? T.status.green : delta < 0 ? T.status.red : T.text.tertiary
+            const TrendIcon = delta !== null && delta > 0 ? TrendingUp : delta !== null && delta < 0 ? TrendingDown : Minus
+            const n = evalStats?.recentSimCount ?? 0
+            return (
+              <MetricCard
+                icon={<TrendIcon size={16} color={trendColor ?? T.text.secondary} />}
+                label="Avg Confidence"
+                value={sim !== null ? sim.toFixed(2) : '—'}
+                valueColor={sim !== null ? simColor(sim) : undefined}
+                sub={
+                  sim === null ? 'judged evals' :
+                  delta !== null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} vs prev ${n < 30 ? `${n} evals` : '30'}` :
+                  `last ${n} eval${n !== 1 ? 's' : ''}`
+                }
+              />
+            )
+          })()}
         </div>
 
         {/* Status pill */}
@@ -915,6 +1110,7 @@ export function ClassifierV5(): React.ReactElement {
           </div>
         )}
 
+        <ThresholdSettings />
         <LiveTestSection />
         <EvaluationLogSection />
         <TrainingExamplesSection />

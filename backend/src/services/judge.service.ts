@@ -12,9 +12,30 @@ import { reinitializeClassifier } from './classifier.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Only run the judge when classifier confidence is below this threshold.
-// High-similarity results (>= 0.75) are trusted without verification.
-const JUDGE_CONFIDENCE_THRESHOLD = 0.75;
+// Per-tenant threshold cache (5-min TTL) — avoids a DB hit on every message
+const _thresholdCache = new Map<string, { judgeThreshold: number; autoFixThreshold: number; expiresAt: number }>();
+
+async function getThresholds(tenantId: string, prisma: PrismaClient): Promise<{ judgeThreshold: number; autoFixThreshold: number }> {
+  const cached = _thresholdCache.get(tenantId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return { judgeThreshold: cached.judgeThreshold, autoFixThreshold: cached.autoFixThreshold };
+  }
+  const cfg = await prisma.tenantAiConfig.findUnique({
+    where: { tenantId },
+    select: { judgeThreshold: true, autoFixThreshold: true },
+  });
+  const result = {
+    judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
+    autoFixThreshold: cfg?.autoFixThreshold ?? 0.70,
+  };
+  _thresholdCache.set(tenantId, { ...result, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return result;
+}
+
+/** Call after saving new thresholds so the next message picks them up immediately. */
+export function invalidateThresholdCache(tenantId: string): void {
+  _thresholdCache.delete(tenantId);
+}
 
 // Rate limit: max auto-fixes per hour per tenant
 const _fixCounts = new Map<string, { count: number; resetAt: number }>();
@@ -109,8 +130,11 @@ export interface JudgeResult {
  */
 export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient): Promise<void> {
   try {
+    // Load per-tenant thresholds (cached)
+    const thresholds = await getThresholds(input.tenantId, prisma);
+
     // Skip evaluation for high-confidence results — the classifier is almost certainly right
-    if (input.classifierTopSim >= JUDGE_CONFIDENCE_THRESHOLD) {
+    if (input.classifierTopSim >= thresholds.judgeThreshold) {
       return;
     }
 
@@ -141,7 +165,7 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
     // Step 3: Decide whether to auto-fix
     if (
       !judgeResult.retrievalCorrect &&
-      input.classifierTopSim < 0.7 &&
+      input.classifierTopSim < thresholds.autoFixThreshold &&
       canAutoFix(input.tenantId)
     ) {
       // Verify the labels are valid
