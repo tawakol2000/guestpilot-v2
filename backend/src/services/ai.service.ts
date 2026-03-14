@@ -13,7 +13,8 @@ import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
-import { retrieveRelevantKnowledge } from './rag.service';
+import { retrieveRelevantKnowledge, getLastClassifierResult } from './rag.service';
+import { evaluateAndImprove } from './judge.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
 
@@ -1478,6 +1479,25 @@ export async function generateAndSendAiReply(
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });
+
+    // Fire-and-forget: LLM-as-judge evaluation + self-improvement
+    // NEVER awaited — runs in background after response is already sent
+    if (!isInquiry) {
+      const classifierMeta = getLastClassifierResult();
+      if (classifierMeta) {
+        evaluateAndImprove({
+          tenantId,
+          conversationId,
+          guestMessage: ragQuery,
+          classifierLabels: classifierMeta.labels,
+          classifierMethod: classifierMeta.method,
+          classifierTopSim: classifierMeta.topSimilarity,
+          aiResponse: guestMessage,
+        }, prisma).catch(err =>
+          console.warn('[AI] Judge evaluation failed (non-fatal):', err)
+        );
+      }
+    }
 
     console.log(`[AI] [${conversationId}] Done`);
   } catch (err) {

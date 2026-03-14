@@ -167,6 +167,62 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // GET /api/knowledge/evaluations — paginated evaluation log
+  router.get('/evaluations', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { limit: limitStr, offset: offsetStr, correct } = req.query as Record<string, string | undefined>;
+      const limit = Math.min(parseInt(limitStr || '50', 10), 200);
+      const offset = parseInt(offsetStr || '0', 10);
+
+      const where: Record<string, unknown> = { tenantId };
+      if (correct === 'true') where.retrievalCorrect = true;
+      if (correct === 'false') where.retrievalCorrect = false;
+
+      const [evals, total] = await Promise.all([
+        prisma.classifierEvaluation.findMany({
+          where: where as any,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+        }),
+        prisma.classifierEvaluation.count({ where: where as any }),
+      ]);
+
+      res.json({ evaluations: evals, total, limit, offset });
+    } catch (err) {
+      console.error('[Knowledge] evaluations query failed:', err);
+      res.status(500).json({ error: 'Failed to fetch evaluations' });
+    }
+  });
+
+  // GET /api/knowledge/evaluation-stats — aggregate metrics
+  router.get('/evaluation-stats', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+
+      const [total, correct, incorrect, autoFixed] = await Promise.all([
+        prisma.classifierEvaluation.count({ where: { tenantId } }),
+        prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
+        prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
+        prisma.classifierEvaluation.count({ where: { tenantId, autoFixed: true } }),
+      ]);
+
+      const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
+
+      res.json({
+        total,
+        correct,
+        incorrect,
+        autoFixed,
+        accuracyPercent: accuracy,
+      });
+    } catch (err) {
+      console.error('[Knowledge] evaluation-stats failed:', err);
+      res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+  });
+
   router.get('/', ((req, res) => ctrl.list(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/', ((req, res) => ctrl.create(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/detect-gaps', ((req, res) => ctrl.detectGaps(req as unknown as AuthenticatedRequest, res)) as RequestHandler);

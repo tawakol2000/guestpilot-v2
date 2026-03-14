@@ -14,6 +14,7 @@
  * Deterministic: same input always produces same output
  */
 
+import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch } from './embeddings.service';
 import {
   TRAINING_EXAMPLES,
@@ -110,15 +111,16 @@ export async function classifyMessage(query: string): Promise<{
   method: string;
   topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
   tokensUsed: number;
+  topSimilarity: number;
 }> {
   if (!_initialized || _exampleEmbeddings.length === 0) {
-    return { labels: [], method: 'classifier_not_initialized', topK: [], tokensUsed: 0 };
+    return { labels: [], method: 'classifier_not_initialized', topK: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
   // Embed the query
   const queryEmbedding = await embedText(query);
   if (!queryEmbedding || queryEmbedding.length === 0) {
-    return { labels: [], method: 'embedding_failed', topK: [], tokensUsed: 0 };
+    return { labels: [], method: 'embedding_failed', topK: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
   // Compute cosine similarity with all training examples
@@ -138,10 +140,12 @@ export async function classifyMessage(query: string): Promise<{
     labels: _examples[index].labels,
   }));
 
+  const topSimilarity = topK.length > 0 ? topK[0].similarity : 0;
+
   // Step 1: Contextual gate
   const best = topK[0];
   if (best && _examples[best.index].labels.length === 0 && best.similarity > CONTEXTUAL_THRESHOLD) {
-    return { labels: [], method: 'contextual_match', topK: topKDetails, tokensUsed: 0 };
+    return { labels: [], method: 'contextual_match', topK: topKDetails, tokensUsed: 0, topSimilarity };
   }
 
   // Step 2: Weighted voting
@@ -169,7 +173,7 @@ export async function classifyMessage(query: string): Promise<{
   // Step 4: Apply token budget
   const { labels, tokensUsed } = applyTokenBudget(candidateLabels);
 
-  return { labels, method: 'knn_vote', topK: topKDetails, tokensUsed };
+  return { labels, method: 'knn_vote', topK: topKDetails, tokensUsed, topSimilarity };
 }
 
 /**
@@ -205,4 +209,43 @@ function applyTokenBudget(labels: string[]): { labels: string[]; tokensUsed: num
     }
   }
   return { labels: result, tokensUsed: tokens };
+}
+
+/**
+ * Force reload: merge base TRAINING_EXAMPLES with DB examples, re-embed all.
+ * Called after the judge adds a new training example.
+ */
+export async function reinitializeClassifier(tenantId: string, prisma: PrismaClient): Promise<void> {
+  // Dynamic import to avoid circular dependency
+  const { getActiveExamples } = await import('./classifier-store.service');
+
+  const startMs = Date.now();
+  try {
+    const dbExamples = await getActiveExamples(tenantId, prisma);
+
+    // Merge: base hardcoded examples + DB-added examples (deduplicated by text)
+    const baseExamples = TRAINING_EXAMPLES.map(ex => ({
+      text: ex.text,
+      labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
+    }));
+
+    const baseTexts = new Set(baseExamples.map(e => e.text));
+    const newExamples = dbExamples
+      .map(ex => ({
+        text: ex.text,
+        labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
+      }))
+      .filter(e => !baseTexts.has(e.text));
+
+    _examples = [...baseExamples, ...newExamples];
+
+    const texts = _examples.map(e => e.text);
+    _exampleEmbeddings = await embedBatch(texts);
+
+    _initDurationMs = Date.now() - startMs;
+    _initialized = true;
+    console.log(`[Classifier] Re-initialized: ${_examples.length} examples (${newExamples.length} from DB), ${_initDurationMs}ms`);
+  } catch (err) {
+    console.error('[Classifier] Re-initialization failed:', err);
+  }
 }

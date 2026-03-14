@@ -18,6 +18,13 @@ function generateId(): string {
 // Cache pgvector availability per process lifetime
 let _pgvectorAvailable: boolean | null = null;
 
+// Last classifier result — stashed for judge service evaluation
+let _lastClassifierResult: { method: string; labels: string[]; topSimilarity: number } | null = null;
+
+export function getLastClassifierResult(): { method: string; labels: string[]; topSimilarity: number } | null {
+  return _lastClassifierResult;
+}
+
 async function isPgvectorAvailable(prisma: PrismaClient): Promise<boolean> {
   if (_pgvectorAvailable !== null) return _pgvectorAvailable;
   try {
@@ -310,6 +317,11 @@ export async function retrieveRelevantKnowledge(
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
     try {
       const classifierResult = await classifyMessage(query);
+      _lastClassifierResult = {
+        method: classifierResult.method,
+        labels: classifierResult.labels,
+        topSimilarity: classifierResult.topSimilarity,
+      };
       console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method})`);
 
       // Look up SOP content from in-memory map

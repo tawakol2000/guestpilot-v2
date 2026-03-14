@@ -33,6 +33,8 @@ model Tenant {
   automatedMessages     AutomatedMessage[]
   propertyKnowledgeChunks PropertyKnowledgeChunk[]
   tenantAiConfig          TenantAiConfig?
+  classifierExamples      ClassifierExample[]
+  classifierEvaluations   ClassifierEvaluation[]
 }
 
 model Property {
@@ -360,6 +362,47 @@ model TenantAiConfig {
   updatedAt            DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ─── KNN Classifier Examples (DB-backed, grows via llm-judge) ────────────────
+
+model ClassifierExample {
+  id        String   @id @default(cuid())
+  tenantId  String
+  text      String   @db.Text
+  labels    String[] @default([])
+  active    Boolean  @default(true)
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, active])
+}
+
+// ─── LLM-as-Judge Classifier Evaluations ─────────────────────────────────────
+
+model ClassifierEvaluation {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  conversationId      String?
+  guestMessage        String   @db.Text
+  classifierLabels    String[] @default([])
+  classifierMethod    String   @default("")
+  classifierTopSim    Float    @default(0)
+  judgeCorrectLabels  String[] @default([])
+  retrievalCorrect    Boolean  @default(true)
+  judgeConfidence     String   @default("high")
+  judgeReasoning      String   @db.Text @default("")
+  autoFixed           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, retrievalCorrect])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, autoFixed])
 }
 
 // ─── AI Config Version History ───────────────────────────────────────────────
