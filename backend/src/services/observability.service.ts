@@ -28,6 +28,9 @@ export interface TraceParams {
   memorySummarized?: boolean;
   hasImage?: boolean;
   ragEnabled?: boolean;
+  // Prompt content for Langfuse input/output display
+  systemPrompt?: string;
+  userContentPreview?: string;
 }
 
 let _client: Langfuse | null = null;
@@ -91,8 +94,13 @@ export function traceAiCall(params: TraceParams): void {
     trace.generation({
       name: params.agentName,
       model: params.model,
-      input: { tokens: params.inputTokens },
-      output: params.error ? undefined : params.responseText.substring(0, 1000),
+      input: params.systemPrompt
+        ? [
+            { role: 'system', content: params.systemPrompt.substring(0, 3000) },
+            { role: 'user', content: params.userContentPreview || '(content blocks)' },
+          ]
+        : params.userContentPreview || `[${params.inputTokens} input tokens]`,
+      output: params.error ? `ERROR: ${params.error}` : params.responseText,
       usage: {
         input: params.inputTokens,
         output: params.outputTokens,

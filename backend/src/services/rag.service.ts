@@ -302,8 +302,10 @@ export async function retrieveRelevantKnowledge(
       `;
     }
 
+    // Log ALL results with scores so we can diagnose retrieval quality
+    console.log(`[RAG] raw results for "${query.substring(0, 60)}": ${results.map(r => `${r.sourceKey}[${r.category}](${Number(r.similarity).toFixed(3)})`).join(', ') || 'empty'}`);
     const filtered = results.filter(r => Number(r.similarity) > 0.5);
-    console.log(`[RAG] retrieved ${filtered.length}/${results.length} chunks for query "${query.substring(0, 60)}" — ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(2)})`).join(', ') || 'none'}`);
+    console.log(`[RAG] retrieved ${filtered.length}/${results.length} above threshold`);
     return filtered.map(r => ({
         content: r.content,
         category: r.category,

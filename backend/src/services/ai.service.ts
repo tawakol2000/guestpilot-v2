@@ -152,6 +152,7 @@ async function createMessage(
       messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
     };
     const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
+    console.log('[CLAUDE-RAW]', JSON.stringify(createParams));
     const response = await withRetry(() =>
       (anthropic.messages.create as any)(createParams, createOpts)
     ) as Anthropic.Message;
@@ -197,6 +198,11 @@ async function createMessage(
 
     // Upgrade 1: Langfuse observability — fire-and-forget
     if (options?.tenantId && options?.conversationId) {
+      // Build a preview of user content blocks for Langfuse input display
+      const userContentPreview = userContent
+        .map(b => b.type === 'text' ? (b as { type: 'text'; text: string }).text.substring(0, 500) : `[${b.type}]`)
+        .join('\n---\n')
+        .substring(0, 3000);
       traceAiCall({
         tenantId: options.tenantId,
         conversationId: options.conversationId,
@@ -218,6 +224,8 @@ async function createMessage(
         memorySummarized: options.memorySummarized,
         hasImage: options.hasImage,
         ragEnabled: options.ragEnabled,
+        systemPrompt,
+        userContentPreview,
       });
     }
 
