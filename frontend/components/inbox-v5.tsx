@@ -1239,6 +1239,32 @@ export default function InboxV5() {
         }
       })
 
+      es.addEventListener('reservation_created', () => {
+        // New reservation arrived — refresh the conversation list so it appears immediately
+        apiGetConversations()
+          .then(data => {
+            const mapped = data.map(summaryToConversation)
+            setConversations(prev =>
+              mapped.map(newConv => {
+                const existing = prev.find(p => p.id === newConv.id)
+                if (existing && fetchedDetails.current.has(newConv.id)) {
+                  return {
+                    ...existing,
+                    aiOn: newConv.aiOn,
+                    aiMode: newConv.aiMode,
+                    lastMessage: newConv.lastMessage,
+                    lastMessageSender: newConv.lastMessageSender,
+                    timestamp: newConv.timestamp,
+                    unreadCount: newConv.unreadCount,
+                  }
+                }
+                return newConv
+              })
+            )
+          })
+          .catch(err => console.error('[SSE] reservation_created list refresh failed:', err))
+      })
+
       es.addEventListener('reservation_updated', (e: MessageEvent) => {
         const data = JSON.parse(e.data) as {
           reservationId: string
