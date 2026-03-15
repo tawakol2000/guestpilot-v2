@@ -20,7 +20,6 @@ export function makeConversationsController(prisma: PrismaClient) {
             tenantId,
           },
           orderBy: { lastMessageAt: 'desc' },
-          take: 100,
           include: {
             guest: true,
             property: true,
