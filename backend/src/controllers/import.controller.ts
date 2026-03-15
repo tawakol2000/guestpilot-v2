@@ -25,6 +25,8 @@ export function makeImportController(prisma: PrismaClient) {
         }
 
         const listingsOnly = req.query?.listingsOnly === 'true';
+        const preserveLearnedAnswers = req.query?.preserveLearnedAnswers === 'true';
+        const preservePropertyChunks = req.query?.preservePropertyChunks === 'true';
         resetProgress(tenantId);
         setProgress(tenantId, { phase: 'deleting', message: 'Starting…' });
 
@@ -35,7 +37,7 @@ export function makeImportController(prisma: PrismaClient) {
           tenant.hostawayApiKey,
           tenant.plan,
           prisma,
-          listingsOnly
+          { listingsOnly, preserveLearnedAnswers, preservePropertyChunks }
         ).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : 'Import failed';
           setProgress(tenantId, { phase: 'error', message: msg, error: msg });

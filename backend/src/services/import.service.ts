@@ -4,7 +4,7 @@
  * Fully idempotent — safe to run multiple times.
  */
 
-import { PrismaClient, Channel, ReservationStatus, MessageRole } from '@prisma/client';
+import { PrismaClient, Prisma, Channel, ReservationStatus, MessageRole } from '@prisma/client';
 import * as hostawayService from './hostaway.service';
 import { ImportResult } from '../types';
 import { setProgress } from './progress.service';
@@ -82,15 +82,26 @@ export async function deleteAllData(tenantId: string, prisma: PrismaClient): Pro
   await prisma.property.deleteMany({ where: { tenantId } });
 }
 
+export interface ImportOptions {
+  listingsOnly?: boolean;
+  preserveLearnedAnswers?: boolean;
+  preservePropertyChunks?: boolean;
+}
+
 export async function runImport(
   tenantId: string,
   hostawayAccountId: string,
   hostawayApiKey: string,
   plan: string,
   prisma: PrismaClient,
-  listingsOnly = false,
+  listingsOnlyOrOpts: boolean | ImportOptions = false,
   onProgress?: ProgressFn
 ): Promise<ImportResult> {
+  // Support both old boolean signature and new options object
+  const opts: ImportOptions = typeof listingsOnlyOrOpts === 'boolean'
+    ? { listingsOnly: listingsOnlyOrOpts }
+    : listingsOnlyOrOpts;
+  const listingsOnly = opts.listingsOnly ?? false;
   const report = (update: Parameters<ProgressFn>[0]) => {
     setProgress(tenantId, update as Parameters<typeof setProgress>[1]);
     onProgress?.(update);
@@ -105,7 +116,35 @@ export async function runImport(
     return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`;
   }
 
-  // ── 0. Delete existing data for clean slate ────────────────────────────────
+  // ── 0. Preserve selected RAG chunks before delete ──────────────────────────
+  let savedChunks: Array<{ content: string; category: string; sourceKey: string; propertyHostawayId: string | null }> = [];
+  if (opts.preserveLearnedAnswers || opts.preservePropertyChunks) {
+    const categories: string[] = [];
+    if (opts.preserveLearnedAnswers) categories.push('learned-answers');
+    if (opts.preservePropertyChunks) categories.push('property-info', 'property-description', 'property-amenities');
+    if (categories.length > 0) {
+      // Fetch chunks with their property's hostawayListingId so we can re-link after import
+      const chunks = await prisma.$queryRaw<Array<{
+        content: string; category: string; sourceKey: string; hostawayListingId: string | null;
+      }>>`
+        SELECT c.content, c.category, c."sourceKey", p."hostawayListingId"
+        FROM "PropertyKnowledgeChunk" c
+        LEFT JOIN "Property" p ON c."propertyId" = p.id
+        WHERE c."tenantId" = ${tenantId}
+          AND c."propertyId" IS NOT NULL
+          AND c.category IN (${Prisma.join(categories)})
+      `;
+      savedChunks = chunks.map(c => ({
+        content: c.content,
+        category: c.category,
+        sourceKey: c.sourceKey,
+        propertyHostawayId: c.hostawayListingId,
+      }));
+      console.log(`[Import] Preserved ${savedChunks.length} RAG chunks (${categories.join(', ')})`);
+    }
+  }
+
+  // ── 0b. Delete existing data for clean slate ──────────────────────────────
   report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
   await deleteAllData(tenantId, prisma);
 
@@ -196,6 +235,30 @@ export async function runImport(
     console.log(`[Import] [${tenantId}] Synced ${automatedMsgs.length} automated message templates`);
   } catch (err) {
     console.warn(`[Import] [${tenantId}] Could not sync automated messages:`, err);
+  }
+
+  // ── 1c. Restore preserved RAG chunks ────────────────────────────────────────
+  if (savedChunks.length > 0) {
+    let restored = 0;
+    for (const chunk of savedChunks) {
+      if (!chunk.propertyHostawayId) continue;
+      const prop = await prisma.property.findUnique({
+        where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: chunk.propertyHostawayId } },
+      });
+      if (!prop) continue;
+      try {
+        const id = `ck${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
+        await prisma.$executeRaw`
+          INSERT INTO "PropertyKnowledgeChunk"
+            (id, "tenantId", "propertyId", content, category, "sourceKey", "createdAt", "updatedAt")
+          VALUES (${id}, ${tenantId}, ${prop.id}, ${chunk.content}, ${chunk.category}, ${chunk.sourceKey}, now(), now())
+        `;
+        restored++;
+      } catch (err) {
+        console.warn(`[Import] Failed to restore chunk ${chunk.category} for listing ${chunk.propertyHostawayId}:`, err);
+      }
+    }
+    console.log(`[Import] [${tenantId}] Restored ${restored}/${savedChunks.length} preserved RAG chunks`);
   }
 
   if (listingsOnly) {

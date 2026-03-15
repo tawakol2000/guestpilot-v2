@@ -269,9 +269,14 @@ export interface ImportProgress {
   lastSyncedAt: string | null
 }
 
-export async function apiRunImport(listingsOnly = false): Promise<{ started: boolean }> {
-  const url = listingsOnly ? '/api/import?listingsOnly=true' : '/api/import'
-  return apiFetch<{ started: boolean }>(url, { method: 'POST' })
+export async function apiRunImport(opts: { listingsOnly?: boolean; preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean } | boolean = false): Promise<{ started: boolean }> {
+  const o = typeof opts === 'boolean' ? { listingsOnly: opts } : opts
+  const qs = new URLSearchParams()
+  if (o.listingsOnly) qs.set('listingsOnly', 'true')
+  if (o.preserveLearnedAnswers) qs.set('preserveLearnedAnswers', 'true')
+  if (o.preservePropertyChunks) qs.set('preservePropertyChunks', 'true')
+  const qsStr = qs.toString()
+  return apiFetch<{ started: boolean }>(`/api/import${qsStr ? '?' + qsStr : ''}`, { method: 'POST' })
 }
 
 export async function apiGetImportProgress(): Promise<ImportProgress> {

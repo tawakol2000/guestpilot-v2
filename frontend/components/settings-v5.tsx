@@ -220,6 +220,9 @@ function SavedFeedback({ visible }: { visible: boolean }): React.ReactElement | 
 // ─── Section A: Data Sync ─────────────────────────────────────────────────────
 function DataSyncSection({ onImportComplete }: { onImportComplete: () => void }): React.ReactElement {
   const [progress, setProgress] = useState<ImportProgress | null>(null)
+  const [showSyncModal, setShowSyncModal] = useState(false)
+  const [preserveLearnedAnswers, setPreserveLearnedAnswers] = useState(true)
+  const [preservePropertyChunks, setPreservePropertyChunks] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const syncBtnHover = useHover()
   const propBtnHover = useHover()
@@ -266,7 +269,8 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function runSync(listingsOnly: boolean): Promise<void> {
+  async function runSync(listingsOnly: boolean, opts?: { preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean }): Promise<void> {
+    setShowSyncModal(false)
     setProgress((prev) => ({
       phase: 'deleting',
       total: 0,
@@ -275,7 +279,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
       lastSyncedAt: prev?.lastSyncedAt ?? null,
     }))
     try {
-      await apiRunImport(listingsOnly)
+      await apiRunImport({ listingsOnly, ...opts })
       startPolling()
     } catch (err) {
       setProgress((prev) => ({
@@ -350,7 +354,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
               cursor: isSyncing ? 'not-allowed' : 'pointer',
             }}
             disabled={isSyncing}
-            onClick={() => runSync(false)}
+            onClick={() => setShowSyncModal(true)}
             {...syncBtnHover.handlers}
           >
             Sync from Hostaway
@@ -370,6 +374,53 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
           </button>
         </div>
       </div>
+
+      {/* Sync confirmation modal */}
+      {showSyncModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setShowSyncModal(false)}>
+          <div
+            style={{
+              background: T.bg.primary, borderRadius: T.radius.lg, padding: 24, width: 400,
+              boxShadow: T.shadow.lg, fontFamily: T.font.sans,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, marginBottom: 4 }}>
+              Full Sync from Hostaway
+            </div>
+            <div style={{ fontSize: 12, color: T.text.secondary, marginBottom: 16 }}>
+              This will delete all conversations, reservations, and messages, then re-import everything. Select what to preserve:
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 13, color: T.text.primary, cursor: 'pointer' }}>
+              <input type="checkbox" checked={preserveLearnedAnswers} onChange={e => setPreserveLearnedAnswers(e.target.checked)} />
+              Preserve Learned Answers
+              <span style={{ fontSize: 11, color: T.text.tertiary }}>(Q&A from manager approvals)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: T.text.primary, cursor: 'pointer' }}>
+              <input type="checkbox" checked={preservePropertyChunks} onChange={e => setPreservePropertyChunks(e.target.checked)} />
+              Preserve Property RAG Chunks
+              <span style={{ fontSize: 11, color: T.text.tertiary }}>(info, description, amenities)</span>
+            </label>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                style={{ ...btnGhost, height: 32, padding: '0 14px', fontSize: 12 }}
+                onClick={() => setShowSyncModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                style={{ ...btnPrimary, height: 32, padding: '0 14px', fontSize: 12 }}
+                onClick={() => runSync(false, { preserveLearnedAnswers, preservePropertyChunks })}
+              >
+                Start Sync
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
