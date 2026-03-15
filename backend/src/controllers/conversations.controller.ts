@@ -15,15 +15,9 @@ export function makeConversationsController(prisma: PrismaClient) {
     async list(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
         const conversations = await prisma.conversation.findMany({
           where: {
             tenantId,
-            reservation: {
-              status: { in: ['CONFIRMED', 'CHECKED_IN', 'INQUIRY'] },
-              checkOut: { gte: today },
-            },
           },
           orderBy: { lastMessageAt: 'desc' },
           take: 100,
