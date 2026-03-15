@@ -1239,6 +1239,40 @@ export default function InboxV5() {
         }
       })
 
+      es.addEventListener('reservation_updated', (e: MessageEvent) => {
+        const data = JSON.parse(e.data) as {
+          reservationId: string
+          conversationIds?: string[]
+          status?: string
+        }
+        const ids = data.conversationIds ?? []
+
+        // Invalidate the detail cache so next selection triggers a fresh fetch
+        ids.forEach(id => fetchedDetails.current.delete(id))
+
+        // Update reservationStatus in the sidebar list immediately from SSE payload
+        if (data.status) {
+          setConversations(prev =>
+            prev.map(c => ids.includes(c.id) ? { ...c, reservationStatus: data.status! } : c)
+          )
+        }
+
+        // Re-fetch full detail for the currently selected conversation if it's affected
+        const currentId = selectedIdRef.current
+        if (currentId && ids.includes(currentId)) {
+          setLoadingDetail(true)
+          apiGetConversation(currentId)
+            .then(detail => {
+              fetchedDetails.current.add(currentId)
+              setConversations(prev =>
+                prev.map(c => (c.id === currentId ? mergeDetail(c, detail) : c))
+              )
+            })
+            .catch(err => console.error('[SSE] reservation_updated re-fetch failed:', err))
+            .finally(() => setLoadingDetail(false))
+        }
+      })
+
       es.onerror = () => {
         if (destroyed) return
         es?.close()

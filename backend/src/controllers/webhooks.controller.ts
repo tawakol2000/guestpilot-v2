@@ -394,11 +394,14 @@ async function handleReservationUpdated(
     },
   });
 
+  // Always fetch convs — needed for SSE broadcast and (conditionally) AI reply cancellation
+  const convs = await prisma.conversation.findMany({
+    where: { reservationId: reservation.id },
+    select: { id: true },
+  });
+
   // G4: Cancel pending AI replies on cancellation/checkout
   if (isCancelledOrCheckedOut) {
-    const convs = await prisma.conversation.findMany({
-      where: { reservationId: reservation.id },
-    });
     for (const c of convs) {
       await cancelPendingAiReply(c.id, prisma);
     }
@@ -419,6 +422,7 @@ async function handleReservationUpdated(
   // G8: SSE broadcast
   broadcastToTenant(tenantId, 'reservation_updated', {
     reservationId: reservation.id,
+    conversationIds: convs.map(c => c.id),
     status: newStatus,
   });
 
