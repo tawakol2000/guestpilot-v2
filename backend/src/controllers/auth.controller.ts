@@ -101,6 +101,33 @@ export function makeAuthController(prisma: PrismaClient) {
       }
     },
 
+    async changePassword(req: Request, res: Response): Promise<void> {
+      try {
+        const tenantId = (req as any).user?.tenantId;
+        if (!tenantId) {
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
+        }
+
+        const { newPassword } = req.body as { newPassword?: string };
+        if (!newPassword || newPassword.length < 8) {
+          res.status(400).json({ error: 'Password must be at least 8 characters' });
+          return;
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { passwordHash },
+        });
+
+        res.json({ ok: true });
+      } catch (err) {
+        console.error('[Auth] changePassword error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     async getSettings(req: Request, res: Response): Promise<void> {
       try {
         const tenantId = (req as any).user?.tenantId;

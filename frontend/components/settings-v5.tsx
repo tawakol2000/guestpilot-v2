@@ -23,6 +23,7 @@ import {
   apiResyncProperty,
   type PropertyAiStatus,
   apiDeleteAllData,
+  apiChangePassword,
   type ImportProgress,
   type ApiProperty,
   type ApiMessageTemplate,
@@ -1761,7 +1762,146 @@ function AIToggleSection({ onImportComplete }: { onImportComplete: () => void })
   )
 }
 
-// ─── Section F: Danger Zone ───────────────────────────────────────────────────
+// ─── Section F: Change Password ───────────────────────────────────────────────
+function ChangePasswordSection(): React.ReactElement {
+  const [newPassword, setNewPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const mismatch = confirm.length > 0 && newPassword !== confirm
+  const tooShort = newPassword.length > 0 && newPassword.length < 8
+  const canSubmit = newPassword.length >= 8 && newPassword === confirm && !loading
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    setLoading(true)
+    setMsg(null)
+    try {
+      await apiChangePassword(newPassword)
+      setMsg({ text: 'Password updated successfully', ok: true })
+      setNewPassword('')
+      setConfirm('')
+    } catch (err: any) {
+      setMsg({ text: err.message || 'Failed to update password', ok: false })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const inputStyle = (focused: boolean, error?: boolean): React.CSSProperties => ({
+    width: '100%',
+    height: 36,
+    padding: '0 36px 0 12px',
+    fontSize: 13,
+    fontFamily: T.font.sans,
+    color: T.text.primary,
+    background: T.bg.primary,
+    border: `1px solid ${error ? T.status.red : focused ? T.accent : T.border.default}`,
+    borderRadius: T.radius.sm,
+    outline: 'none',
+    boxSizing: 'border-box',
+    transition: 'border-color 0.15s',
+    boxShadow: focused && !error ? '0 0 0 3px rgba(29,78,216,0.08)' : 'none',
+  })
+
+  return (
+    <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.28s' }}>
+      <div style={cardHeaderStyle}>Change Password</div>
+      <div style={cardBodyStyle}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 340 }}>
+          <PasswordField
+            label="New password"
+            value={newPassword}
+            onChange={setNewPassword}
+            show={showNew}
+            onToggleShow={() => setShowNew(v => !v)}
+            error={tooShort ? 'At least 8 characters' : undefined}
+            inputStyle={inputStyle}
+          />
+          <PasswordField
+            label="Confirm password"
+            value={confirm}
+            onChange={setConfirm}
+            show={showConfirm}
+            onToggleShow={() => setShowConfirm(v => !v)}
+            error={mismatch ? "Passwords don't match" : undefined}
+            inputStyle={inputStyle}
+          />
+          {msg && (
+            <div style={{
+              fontSize: 12, fontFamily: T.font.sans, fontWeight: 500,
+              color: msg.ok ? T.status.green : T.status.red,
+              animation: 'settingsFadeIn 0.2s ease',
+            }}>{msg.text}</div>
+          )}
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            style={{
+              ...btnPrimary,
+              opacity: canSubmit ? 1 : 0.4,
+              cursor: canSubmit ? 'pointer' : 'default',
+              alignSelf: 'flex-start',
+            }}
+          >
+            {loading ? 'Saving…' : 'Update Password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function PasswordField({
+  label, value, onChange, show, onToggleShow, error, inputStyle,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  show: boolean
+  onToggleShow: () => void
+  error?: string
+  inputStyle: (focused: boolean, error?: boolean) => React.CSSProperties
+}): React.ReactElement {
+  const [focused, setFocused] = useState(false)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
+        {label}
+      </label>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={inputStyle(focused, !!error)}
+          autoComplete="new-password"
+        />
+        <button
+          type="button"
+          onClick={onToggleShow}
+          style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono,
+            padding: '2px 4px',
+          }}
+        >{show ? 'hide' : 'show'}</button>
+      </div>
+      {error && (
+        <span style={{ fontSize: 11, color: T.status.red, fontFamily: T.font.sans }}>{error}</span>
+      )}
+    </div>
+  )
+}
+
+// ─── Section G: Danger Zone ───────────────────────────────────────────────────
 function DangerZoneSection({ onImportComplete }: { onImportComplete: () => void }): React.ReactElement {
   const [loading, setLoading] = useState(false)
   const deleteBtnHover = useHover()
@@ -1962,6 +2102,7 @@ export function SettingsV5({ onImportComplete }: { onImportComplete: () => void 
         <KnowledgeBaseSection />
         <RagChunksSection />
         <AIToggleSection onImportComplete={onImportComplete} />
+        <ChangePasswordSection />
         <DangerZoneSection onImportComplete={onImportComplete} />
       </div>
     </div>

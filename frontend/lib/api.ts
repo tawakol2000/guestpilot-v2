@@ -84,6 +84,13 @@ export async function apiSignup(
   })
 }
 
+export async function apiChangePassword(newPassword: string): Promise<{ ok: boolean }> {
+  return apiFetch('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  })
+}
+
 // ─── Conversations ─────────────────────────────────────────────────────────────
 export interface ApiConversationSummary {
   id: string
