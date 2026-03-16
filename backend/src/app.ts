@@ -202,14 +202,22 @@ export function createApp(prisma: PrismaClient) {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering (Railway proxy)
+    // Disable TCP Nagle algorithm so each write() flushes immediately
+    if (res.socket) res.socket.setNoDelay(true);
     res.flushHeaders();
     res.write(`event: connected\ndata: {}\n\n`);
     registerSSEClient(tenantId, res);
-    // Keep-alive ping every 25 s so Railway's proxy doesn't close idle connections
+    // Keep-alive ping every 25 s — sends a named event so browser DevTools shows it
     const heartbeat = setInterval(() => {
-      try { res.write(':ping\n\n'); } catch { clearInterval(heartbeat); }
+      const ok = res.write('event: ping\ndata: {}\n\n');
+      if (!ok) {
+        console.log(`[SSE] Write returned false for tenantId=${tenantId} — clearing heartbeat`);
+        clearInterval(heartbeat);
+      }
     }, 25000);
-    res.on('close', () => clearInterval(heartbeat));
+    res.on('close', () => {
+      clearInterval(heartbeat);
+    });
   });
 
   // ── 404 catch-all (log unknown routes to help debug webhook config) ──────
