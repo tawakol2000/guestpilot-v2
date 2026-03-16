@@ -1,0 +1,191 @@
+{
+  "_description": "Tier 3 Topic State Cache — ALWAYS re-inject previous topic unless topic switch detected",
+  "_logic": "Default: re-inject. Exception: topic switch keywords found → reset cache.",
+  
+  "topic_switch_keywords": {
+    "_description": "If ANY of these appear, the guest is changing topics. RESET the cache.",
+    "explicit_en": [
+      "also",
+      "and also",
+      "also can",
+      "also is",
+      "also what",
+      "also do",
+      "by the way",
+      "btw",
+      "another thing",
+      "another question",
+      "one more thing",
+      "one more question",
+      "different question",
+      "quick question",
+      "new question",
+      "separately",
+      "on another note",
+      "oh and",
+      "and one more",
+      "one last thing",
+      "while I'm at it",
+      "since I have you",
+      "while we're at it",
+      "before I forget",
+      "I also wanted",
+      "I also need",
+      "can you also",
+      "could you also",
+      "what about"
+    ],
+    "explicit_ar": [
+      "وكمان",
+      "وبعدين",
+      "سؤال ثاني",
+      "شي ثاني",
+      "بالمناسبة",
+      "وبالاضافة",
+      "حاجة تانية",
+      "سؤال تاني",
+      "وكمان عايز",
+      "وعندي سؤال"
+    ]
+  },
+  
+  "not_switch_signals": {
+    "_description": "These look like they could be switches but are NOT. Guest is still on the same topic. Do NOT reset cache.",
+    "short_answers": [
+      "yes", "no", "ok", "okay", "sure", "thanks", "thank you", "great",
+      "perfect", "alright", "fine", "got it", "understood", "right",
+      "correct", "exactly", "yep", "nope", "maybe", "I think so",
+      "not sure", "let me check", "I'll confirm", "sounds good",
+      "that works", "no problem", "never mind", "forget it"
+    ],
+    "short_answers_ar": [
+      "نعم", "لا", "تمام", "شكرا", "اوكي", "ماشي", "طيب", "حلو",
+      "ممتاز", "ان شاء الله", "الحمد لله", "يعطيك العافية", "جزاك الله خير",
+      "مشكور", "الله يعافيك", "اكيد", "بالضبط"
+    ],
+    "time_responses": [
+      "2pm", "3pm", "tomorrow", "next week", "morning", "afternoon",
+      "evening", "now", "later", "in an hour", "at noon", "at midnight",
+      "today", "tonight", "Monday", "Tuesday", "5am", "10am"
+    ],
+    "identity_responses": [
+      "friend", "my wife", "my husband", "my brother", "my sister",
+      "my father", "my mother", "my family", "my kids", "my children",
+      "cousin", "uncle", "colleague", "Egyptian", "Saudi", "Kuwaiti",
+      "Lebanese", "Jordanian", "Iraqi", "Moroccan", "Emirati",
+      "American", "British", "French", "Turkish"
+    ],
+    "quantity_responses": [
+      "2", "3", "4", "5", "1 bedroom", "2 bedrooms", "3 bedrooms",
+      "2 people", "3 people", "4 adults", "2 kids", "1 night",
+      "2 nights", "3 nights", "a week", "2 weeks", "a month"
+    ],
+    "selection_responses": [
+      "the first one", "the second one", "the bigger one", "the cheaper one",
+      "the one on the left", "floor 3", "floor 5", "building 7",
+      "the 2BR", "the 3BR", "that one"
+    ]
+  },
+
+  "per_category_rules": {
+    "sop-maintenance": {
+      "_description": "Maintenance issues have long follow-up chains. Keep alive longer.",
+      "decay_minutes": 60,
+      "reinject_with": ["sop-maintenance"]
+    },
+    "sop-wifi-doorcode": {
+      "_description": "WiFi/door issues often escalate to troubleshooting.",
+      "decay_minutes": 30,
+      "reinject_with": ["sop-wifi-doorcode"]
+    },
+    "sop-visitor-policy": {
+      "_description": "Visitor conversations involve back-and-forth about who, nationality, documents.",
+      "decay_minutes": 45,
+      "reinject_with": ["sop-visitor-policy"]
+    },
+    "sop-cleaning": {
+      "_description": "Usually quick — confirm time and done.",
+      "decay_minutes": 20,
+      "reinject_with": ["sop-cleaning"]
+    },
+    "sop-early-checkin": {
+      "decay_minutes": 30,
+      "reinject_with": ["sop-early-checkin"]
+    },
+    "sop-late-checkout": {
+      "decay_minutes": 30,
+      "reinject_with": ["sop-late-checkout"]
+    },
+    "sop-amenity-request": {
+      "decay_minutes": 20,
+      "reinject_with": ["sop-amenity-request"]
+    },
+    "sop-escalation-info": {
+      "decay_minutes": 30,
+      "reinject_with": ["sop-escalation-info"]
+    },
+    "property-info": {
+      "decay_minutes": 15,
+      "reinject_with": ["property-info"]
+    },
+    "property-description": {
+      "decay_minutes": 15,
+      "reinject_with": ["property-description"]
+    },
+    "property-amenities": {
+      "decay_minutes": 15,
+      "reinject_with": ["property-amenities"]
+    },
+    "sop-booking-inquiry": {
+      "_description": "Booking discussions are multi-turn by nature.",
+      "decay_minutes": 60,
+      "reinject_with": ["sop-booking-inquiry"]
+    },
+    "pricing-negotiation": {
+      "_description": "Price haggling goes back and forth.",
+      "decay_minutes": 60,
+      "reinject_with": ["pricing-negotiation"]
+    },
+    "pre-arrival-logistics": {
+      "decay_minutes": 30,
+      "reinject_with": ["pre-arrival-logistics"]
+    },
+    "sop-booking-modification": {
+      "decay_minutes": 45,
+      "reinject_with": ["sop-booking-modification"]
+    },
+    "sop-booking-confirmation": {
+      "decay_minutes": 20,
+      "reinject_with": ["sop-booking-confirmation"]
+    },
+    "payment-issues": {
+      "_description": "Payment problems require multiple back-and-forth.",
+      "decay_minutes": 60,
+      "reinject_with": ["payment-issues"]
+    },
+    "post-stay-issues": {
+      "decay_minutes": 60,
+      "reinject_with": ["post-stay-issues"]
+    },
+    "sop-long-term-rental": {
+      "decay_minutes": 60,
+      "reinject_with": ["sop-long-term-rental"]
+    },
+    "sop-booking-cancellation": {
+      "decay_minutes": 45,
+      "reinject_with": ["sop-booking-cancellation"]
+    },
+    "sop-property-viewing": {
+      "decay_minutes": 30,
+      "reinject_with": ["sop-property-viewing"]
+    }
+  },
+
+  "global_settings": {
+    "default_decay_minutes": 30,
+    "max_reinject_count": 5,
+    "reset_on_explicit_switch": true,
+    "reset_on_new_tier1_classification": true,
+    "_note": "reset_on_new_tier1_classification means: if Tier 1 confidently classifies a new message into a DIFFERENT category than the cached one, reset cache to the new category"
+  }
+}

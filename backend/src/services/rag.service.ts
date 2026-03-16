@@ -296,7 +296,7 @@ async function retrievePropertyChunks(
     `;
 
     return results
-      .filter(r => Number(r.similarity) > 0.25)
+      .filter(r => Number(r.similarity) > 0.3)
       .map(r => ({
         content: r.content,
         category: r.category,
@@ -317,7 +317,13 @@ export async function retrieveRelevantKnowledge(
   prisma: PrismaClient,
   topK = 8,
   agentType?: 'guestCoordinator' | 'screeningAI'
-): Promise<Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>> {
+): Promise<{
+  chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
+  topSimilarity: number;
+  tier: 'tier1' | 'tier2_needed' | 'tier3_cache';
+}> {
+  const TIER_1_CONFIDENCE_THRESHOLD = 0.75;
+
   // For guestCoordinator: use KNN classifier for SOPs + pgvector for property chunks only
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
     try {
@@ -348,8 +354,10 @@ export async function retrieveRelevantKnowledge(
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
 
       const combined = [...sopChunks, ...propertyChunks];
-      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks`);
-      return combined;
+      const topSimilarity = combined.length > 0 ? Math.max(...combined.map(r => r.similarity)) : 0;
+      const tier = topSimilarity > TIER_1_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
+      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} topSim=${topSimilarity.toFixed(3)}`);
+      return { chunks: combined, topSimilarity, tier };
     } catch (err) {
       console.warn('[RAG] Classifier failed, falling back to pgvector:', err);
       // Fall through to existing pgvector logic below
@@ -357,9 +365,9 @@ export async function retrieveRelevantKnowledge(
   }
 
   try {
-    if (!(await isPgvectorAvailable(prisma))) return [];
+    if (!(await isPgvectorAvailable(prisma))) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
     const embedding = await embedText(query);
-    if (!embedding || embedding.length === 0) return [];
+    if (!embedding || embedding.length === 0) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
 
     const embeddingStr = `[${embedding.join(',')}]`;
 
@@ -376,6 +384,7 @@ export async function retrieveRelevantKnowledge(
           AND "tenantId" = ${tenantId}
           AND embedding IS NOT NULL
           AND category NOT LIKE 'sop-screening-%'
+          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
         ORDER BY embedding <=> ${embeddingStr}::vector
         LIMIT ${topK}
       `;
@@ -390,6 +399,7 @@ export async function retrieveRelevantKnowledge(
           AND "tenantId" = ${tenantId}
           AND embedding IS NOT NULL
           AND category NOT IN ('sop-service-requests', 'sop-maintenance', 'sop-house-rules', 'sop-checkin-checkout', 'sop-escalation')
+          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
         ORDER BY embedding <=> ${embeddingStr}::vector
         LIMIT ${topK}
       `;
@@ -403,6 +413,7 @@ export async function retrieveRelevantKnowledge(
         WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
           AND "tenantId" = ${tenantId}
           AND embedding IS NOT NULL
+          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
         ORDER BY embedding <=> ${embeddingStr}::vector
         LIMIT ${topK}
       `;
@@ -413,21 +424,25 @@ export async function retrieveRelevantKnowledge(
 
     // Filter: minimum 0.25 similarity, cap at top 3 to prevent token bloat
     const MAX_CHUNKS = 3;
-    const MIN_SIMILARITY = 0.25;
+    const MIN_SIMILARITY = 0.3;
     const filtered = results
       .filter(r => Number(r.similarity) > MIN_SIMILARITY)
       .slice(0, MAX_CHUNKS);
     console.log(`[RAG] retrieved ${filtered.length} chunks (threshold ${MIN_SIMILARITY}, max ${MAX_CHUNKS}): ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'none'}`);
-    return filtered.map(r => ({
+    const mappedChunks = filtered.map(r => ({
         content: r.content,
         category: r.category,
         similarity: Number(r.similarity),
         sourceKey: r.sourceKey,
         propertyId: r.propertyId,
       }));
+    const topSimilarity = mappedChunks.length > 0 ? Math.max(...mappedChunks.map(r => r.similarity)) : 0;
+    const tier = topSimilarity > TIER_1_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
+    console.log(`[RAG] tier=${tier} topSim=${topSimilarity.toFixed(3)} chunks=${mappedChunks.length}`);
+    return { chunks: mappedChunks, topSimilarity, tier };
   } catch (err) {
     console.error('[RAG] retrieveRelevantKnowledge failed:', err);
-    return [];
+    return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
   }
 }
 
@@ -484,20 +499,6 @@ Guest: "Can I get extra towels?"
 Guest: "Do you have a phone charger?"
 {"guest_message":"Let me check on that and get back to you.","escalation":{"title":"amenity-unlisted","note":"Guest [Name] in [Unit] asking for phone charger. Not on standard list.","urgency":"info_request"}}`,
   },
-  // ─── Service: Scheduling ────────────────────────────────────────────────────
-  {
-    category: 'sop-scheduling',
-    sourceKey: 'sop-scheduling',
-    content: `Guest wants to schedule something, asks about available times, working hours, or when housekeeping/maintenance can come.
-
-## SCHEDULING — Working Hours & Time Preferences
-
-**Working hours:** 10:00 AM – 5:00 PM (housekeeping and maintenance)
-
-- During working hours: Ask preferred time. "Now" → confirmed, escalate immediately. Specific time → confirm and escalate.
-- After hours (after 5 PM): Arrange for tomorrow. Ask for preferred time between 10am–5pm → confirm → escalate.
-- Multiple requests in one message: Assume one time slot unless guest explicitly wants separate visits.`,
-  },
   // ─── Maintenance ────────────────────────────────────────────────────────────
   {
     category: 'sop-maintenance',
@@ -544,21 +545,6 @@ Guest: "What's the WiFi password?"
 
 Guest: "The door code isn't working"
 {"guest_message":"Sorry about that, let me get someone to help right away.","escalation":{"title":"door-code-issue","note":"Guest [Name] in [Unit] — door code not working. Needs immediate help.","urgency":"immediate"}}`,
-  },
-  // ─── House Rules ────────────────────────────────────────────────────────────
-  {
-    category: 'sop-house-rules',
-    sourceKey: 'sop-house-rules',
-    content: `Guest asks about rules, smoking, parties, gatherings, noise, or quiet hours.
-
-## HOUSE RULES
-
-- Family-only property — no non-family visitors at any time
-- No smoking indoors
-- No parties or gatherings
-- Quiet hours apply
-
-**Any pushback on rules → escalate immediately**`,
   },
   // ─── Visitor Policy ─────────────────────────────────────────────────────────
   {
@@ -628,36 +614,6 @@ Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only 
 Guest: "Can I check out at 2pm instead of 11?"
 {"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"late-checkout","note":"Guest [Name] in [Unit] — wants late checkout at 2pm. Needs manager approval.","urgency":"info_request"}}`,
   },
-  // ─── Escalation: Immediate ──────────────────────────────────────────────────
-  {
-    category: 'sop-escalation-immediate',
-    sourceKey: 'sop-escalation-immediate',
-    content: `Something urgent happens — emergency, fire, gas, flood, medical, safety concern, guest is upset, noise complaint, or you're unsure how to respond.
-
-## ESCALATION — urgency: "immediate"
-
-Use "immediate" when the situation needs manager attention NOW:
-- Emergencies (fire, gas, flood, medical, safety)
-- Technical/maintenance issues (WiFi, door code, broken items, leaks)
-- Noise complaints or guest dissatisfaction
-- House rule violations or guest pushback
-- Guest sends an image that needs review
-- Anything you're unsure about — when in doubt, escalate`,
-  },
-  // ─── Escalation: Scheduled ──────────────────────────────────────────────────
-  {
-    category: 'sop-escalation-scheduled',
-    sourceKey: 'sop-escalation-scheduled',
-    content: `Cleaning, amenity delivery, or maintenance has been confirmed with a specific time.
-
-## ESCALATION — urgency: "scheduled"
-
-Use "scheduled" when action is needed at a specific time:
-- Cleaning after time and $20 fee confirmed
-- Amenity delivery after time confirmed
-- Maintenance visit at a confirmed time
-- After-hours arrangements confirmed for the next day`,
-  },
   // ─── Escalation: Info Request ───────────────────────────────────────────────
   {
     category: 'sop-escalation-info',
@@ -680,6 +636,62 @@ Guest: "Can you recommend a restaurant?"
 
 Guest: "I want a discount"
 {"guest_message":"I'll pass that along to the team.","escalation":{"title":"discount-request","note":"Guest [Name] in [Unit] requesting discount. Needs manager decision.","urgency":"info_request"}}`,
+  },
+  // ─── New SOP Categories (11) — from v7_new_sop_chunks_and_seeds.json ──────
+  {
+    category: 'sop-booking-inquiry',
+    sourceKey: 'sop-booking-inquiry',
+    content: `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If available, share rate and unit details. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+  },
+  {
+    category: 'pricing-negotiation',
+    sourceKey: 'pricing-negotiation',
+    content: `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. Share the standard rate from your knowledge if available. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental.`,
+  },
+  {
+    category: 'pre-arrival-logistics',
+    sourceKey: 'pre-arrival-logistics',
+    content: `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location pin, or arranging airport transfer. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, escalate as info_request. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them if needed. For late arrivals (after 10pm), escalate as immediate.`,
+  },
+  {
+    category: 'sop-booking-modification',
+    sourceKey: 'sop-booking-modification',
+    content: `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
+  },
+  {
+    category: 'sop-booking-confirmation',
+    sourceKey: 'sop-booking-confirmation',
+    content: `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, ask which platform they booked through (Airbnb, Booking.com, direct) and escalate as info_request. For guests claiming they booked but no record found, escalate as immediate.`,
+  },
+  {
+    category: 'payment-issues',
+    sourceKey: 'payment-issues',
+    content: `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate. For receipt requests, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request.`,
+  },
+  {
+    category: 'post-stay-issues',
+    sourceKey: 'post-stay-issues',
+    content: `POST-STAY ISSUES: Guest has checked out and contacts about lost items, post-stay complaints, damage deposit questions, or feedback. For lost items: ask for description and location where they think they left it. Escalate as immediate so staff can check. For damage deposit questions, escalate as info_request. For post-stay complaints, acknowledge with empathy and escalate as immediate. Never promise items will be found or deposits returned.`,
+  },
+  {
+    category: 'sop-long-term-rental',
+    sourceKey: 'sop-long-term-rental',
+    content: `LONG-TERM RENTAL: Guest is inquiring about monthly stays, corporate housing, or stays longer than 2 weeks. Ask: duration needed, move-in date, number of guests, any preferences. Share standard nightly rate if known, but note that monthly rates are different and need manager approval. Escalate as info_request with all details. For corporate stays, ask if they need a contract or invoice. Never quote monthly rates yourself.`,
+  },
+  {
+    category: 'sop-booking-cancellation',
+    sourceKey: 'sop-booking-cancellation',
+    content: `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Ask which booking/dates they want to cancel if not clear. Escalate as info_request with booking details and reason for cancellation. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
+  },
+  {
+    category: 'sop-property-viewing',
+    sourceKey: 'sop-property-viewing',
+    content: `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. For viewing requests: ask preferred date/time, escalate as info_request. Share existing photos from your knowledge if available. For video requests, escalate as info_request. For photoshoot/filming requests, ask about scope (how many people, duration, commercial or personal) and escalate as immediate — needs manager approval.`,
+  },
+  {
+    category: 'non-actionable',
+    sourceKey: 'non-actionable',
+    content: `NON-ACTIONABLE: Message has no real intent — test messages, wrong chat, system messages, or greetings with no question. For greetings ('Hi', 'Hello'), respond with a friendly greeting and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For system/automated messages, ignore (guest_message: '', escalation: null).`,
   },
   {
     category: 'sop-screening-workflow',

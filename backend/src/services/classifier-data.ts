@@ -27,11 +27,22 @@ export const CHUNK_TOKENS: Record<string, number> = {
   'property-info': 120,
   'property-description': 185,
   'property-amenities': 175,
+  'sop-booking-inquiry': 90,
+  'pricing-negotiation': 95,
+  'pre-arrival-logistics': 95,
+  'sop-booking-modification': 85,
+  'sop-booking-confirmation': 85,
+  'payment-issues': 85,
+  'post-stay-issues': 90,
+  'sop-long-term-rental': 85,
+  'sop-booking-cancellation': 90,
+  'sop-property-viewing': 85,
+  'non-actionable': 60,
 };
 
 export const TOKEN_BUDGET = 500;
 
-// Training examples — 164 total (159 base + 5 self-improvement)
+// Training examples — 284 total (159 base + 5 self-improvement + 120 new categories)
 export interface TrainingExample {
   text: string;
   labels: string[];
@@ -237,6 +248,132 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: "When is checkout?", labels: ['sop-late-checkout', 'property-info'] },
   { text: "What's the WiFi password?", labels: ['sop-wifi-doorcode', 'property-info'] },
   { text: "How do I connect to the internet?", labels: ['sop-wifi-doorcode', 'property-info'] },
+
+  // ── NEW CATEGORY EXAMPLES (120) — v7-full 11 new SOP categories ──
+
+  // ── BOOKING INQUIRY (15) ──
+  { text: 'Do you have apartments available next weekend?', labels: ['sop-booking-inquiry'] },
+  { text: 'I want to book for 3 nights', labels: ['sop-booking-inquiry'] },
+  { text: 'Do you have a 2 bedroom?', labels: ['sop-booking-inquiry'] },
+  { text: 'Is there anything available for tonight?', labels: ['sop-booking-inquiry'] },
+  { text: 'I need a place for a family of 5', labels: ['sop-booking-inquiry'] },
+  { text: 'عندكم شقة فاضية؟', labels: ['sop-booking-inquiry'] },
+  { text: 'Do you have availability from March 20-25?', labels: ['sop-booking-inquiry'] },
+  { text: 'We need 2 apartments next to each other', labels: ['sop-booking-inquiry'] },
+  { text: 'Is the 3BR available for next month?', labels: ['sop-booking-inquiry'] },
+  { text: 'I want to book please', labels: ['sop-booking-inquiry'] },
+  { text: 'Any units available for this Thursday?', labels: ['sop-booking-inquiry'] },
+  { text: 'What are the options for a week-long stay?', labels: ['sop-booking-inquiry'] },
+  { text: 'محتاج شقة غرفتين لمدة 4 ليالي', labels: ['sop-booking-inquiry'] },
+  { text: 'Can I book through you directly?', labels: ['sop-booking-inquiry'] },
+  { text: 'Do you have anything with a balcony?', labels: ['sop-booking-inquiry'] },
+
+  // ── PRICING NEGOTIATION (15) ──
+  { text: "What's the nightly rate?", labels: ['pricing-negotiation'] },
+  { text: "That's too expensive", labels: ['pricing-negotiation'] },
+  { text: 'Can you give me a better price?', labels: ['pricing-negotiation'] },
+  { text: "What's the best you can do?", labels: ['pricing-negotiation'] },
+  { text: 'Do you have a discount for a week?', labels: ['pricing-negotiation'] },
+  { text: 'How much per night?', labels: ['pricing-negotiation'] },
+  { text: "We're on a budget, any cheaper options?", labels: ['pricing-negotiation'] },
+  { text: 'Is there a weekly rate?', labels: ['pricing-negotiation'] },
+  { text: 'كم السعر؟', labels: ['pricing-negotiation'] },
+  { text: 'غالي شوية', labels: ['pricing-negotiation'] },
+  { text: 'Can you match the Airbnb price?', labels: ['pricing-negotiation'] },
+  { text: "What's the rate for 5 nights?", labels: ['pricing-negotiation'] },
+  { text: 'Is the price negotiable?', labels: ['pricing-negotiation'] },
+  { text: 'Do corporate rates apply?', labels: ['pricing-negotiation', 'sop-long-term-rental'] },
+  { text: 'Best offer please', labels: ['pricing-negotiation'] },
+
+  // ── PRE-ARRIVAL LOGISTICS (12) ──
+  { text: 'How do I get there from the airport?', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: 'Can you send me the location?', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: 'We arrive at 9pm on Friday', labels: ['pre-arrival-logistics'] },
+  { text: 'Can someone meet us at the gate?', labels: ['pre-arrival-logistics'] },
+  { text: 'Do you offer airport pickup?', labels: ['pre-arrival-logistics'] },
+  { text: "I'll send the location to my driver", labels: ['pre-arrival-logistics'] },
+  { text: 'ممكن تبعتلي اللوكيشن', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: "We're on our way, ETA 30 minutes", labels: ['pre-arrival-logistics'] },
+  { text: 'How far from City Stars?', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: 'Can you share the Google Maps pin?', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: "We'll arrive around midnight", labels: ['pre-arrival-logistics'] },
+  { text: 'Is there an Uber from the airport?', labels: ['pre-arrival-logistics'] },
+
+  // ── BOOKING MODIFICATION (12) ──
+  { text: 'I need to change my dates', labels: ['sop-booking-modification'] },
+  { text: 'Can we add one more night?', labels: ['sop-booking-modification'] },
+  { text: 'I want to switch to a bigger apartment', labels: ['sop-booking-modification'] },
+  { text: 'Can we change to March 20-23 instead?', labels: ['sop-booking-modification'] },
+  { text: "We'll be 5 instead of 4", labels: ['sop-booking-modification'] },
+  { text: 'ابي اغير التاريخ', labels: ['sop-booking-modification'] },
+  { text: 'Can I extend by 2 more nights?', labels: ['sop-booking-modification'] },
+  { text: 'I want to remove one night from my booking', labels: ['sop-booking-modification'] },
+  { text: 'Can we move to a different unit?', labels: ['sop-booking-modification'] },
+  { text: 'Actually make it 3 nights not 2', labels: ['sop-booking-modification'] },
+  { text: 'My plans changed, can we adjust the dates?', labels: ['sop-booking-modification'] },
+  { text: 'We need to add another person to the reservation', labels: ['sop-booking-modification'] },
+
+  // ── BOOKING CONFIRMATION (10) ──
+  { text: 'Is my booking confirmed?', labels: ['sop-booking-confirmation'] },
+  { text: 'I booked through Airbnb, is it showing?', labels: ['sop-booking-confirmation'] },
+  { text: 'Can you confirm my reservation details?', labels: ['sop-booking-confirmation'] },
+  { text: 'I made a booking 2 hours ago', labels: ['sop-booking-confirmation'] },
+  { text: 'Just want to make sure it went through', labels: ['sop-booking-confirmation'] },
+  { text: 'Check Airbnb I already booked', labels: ['sop-booking-confirmation'] },
+  { text: "Here's my booking confirmation number", labels: ['sop-booking-confirmation'] },
+  { text: 'هل الحجز مؤكد؟', labels: ['sop-booking-confirmation'] },
+  { text: 'I booked through Booking.com is that ok?', labels: ['sop-booking-confirmation'] },
+  { text: 'Did you receive my reservation?', labels: ['sop-booking-confirmation'] },
+
+  // ── PAYMENT ISSUES (10) ──
+  { text: "The payment didn't go through", labels: ['payment-issues'] },
+  { text: 'How do I pay?', labels: ['payment-issues'] },
+  { text: 'Can I get a receipt?', labels: ['payment-issues'] },
+  { text: 'I was overcharged', labels: ['payment-issues'] },
+  { text: "Where's my refund?", labels: ['payment-issues'] },
+  { text: "The payment link isn't working", labels: ['payment-issues'] },
+  { text: 'Can I pay by credit card?', labels: ['payment-issues'] },
+  { text: 'I sent the bank transfer', labels: ['payment-issues'] },
+  { text: 'Can you email me the invoice?', labels: ['payment-issues'] },
+  { text: "My deposit hasn't been returned", labels: ['payment-issues', 'post-stay-issues'] },
+
+  // ── POST-STAY ISSUES (8) ──
+  { text: 'I left my charger in the apartment', labels: ['post-stay-issues'] },
+  { text: 'We checked out but forgot a bag', labels: ['post-stay-issues'] },
+  { text: 'When do I get my deposit back?', labels: ['post-stay-issues'] },
+  { text: 'I want to file a complaint about my stay', labels: ['post-stay-issues'] },
+  { text: 'We left groceries in the fridge', labels: ['post-stay-issues'] },
+  { text: 'Can someone check if my laptop is still there?', labels: ['post-stay-issues'] },
+  { text: 'نسيت شنطتي في الشقة', labels: ['post-stay-issues'] },
+  { text: 'The apartment was not as advertised', labels: ['post-stay-issues'] },
+
+  // ── LONG-TERM RENTAL (5) ──
+  { text: 'Do you have monthly rates?', labels: ['sop-long-term-rental'] },
+  { text: "I'm relocating for 3 months", labels: ['sop-long-term-rental'] },
+  { text: "What's the rate for a month?", labels: ['sop-long-term-rental', 'pricing-negotiation'] },
+  { text: 'I need corporate housing', labels: ['sop-long-term-rental'] },
+  { text: 'سعر شهري كام؟', labels: ['sop-long-term-rental', 'pricing-negotiation'] },
+
+  // ── BOOKING CANCELLATION (5) ──
+  { text: 'I need to cancel my reservation', labels: ['sop-booking-cancellation'] },
+  { text: "What's the cancellation policy?", labels: ['sop-booking-cancellation'] },
+  { text: "Something came up, I can't make it", labels: ['sop-booking-cancellation'] },
+  { text: 'Can I cancel and get a refund?', labels: ['sop-booking-cancellation', 'payment-issues'] },
+  { text: 'ابي الغي الحجز', labels: ['sop-booking-cancellation'] },
+
+  // ── PROPERTY VIEWING (5) ──
+  { text: 'Can I see the apartment first?', labels: ['sop-property-viewing'] },
+  { text: 'Do you have photos of the kitchen?', labels: ['sop-property-viewing'] },
+  { text: 'Can we do a photoshoot inside?', labels: ['sop-property-viewing'] },
+  { text: 'I want to view the apartment before deciding', labels: ['sop-property-viewing'] },
+  { text: 'Do you have a video tour?', labels: ['sop-property-viewing'] },
+
+  // ── NON-ACTIONABLE (5) ──
+  { text: 'Test', labels: [] },
+  { text: 'Hello', labels: [] },
+  { text: 'مرحبا', labels: [] },
+  { text: 'Sorry wrong chat', labels: [] },
+  { text: 'Hi Omar', labels: [] },
 ];
 
 // SOP content map — the actual text injected into the prompt when a chunk ID is selected.
@@ -326,4 +463,26 @@ Use "info_request" when the manager needs to provide information:
 - Early check-in/late checkout within 2-day window
 - Refund or discount requests (NEVER authorize yourself)
 - Any question not covered by your knowledge`,
+
+  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If available, share rate and unit details. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+
+  'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. Share the standard rate from your knowledge if available. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental.`,
+
+  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location pin, or arranging airport transfer. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, escalate as info_request. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them if needed. For late arrivals (after 10pm), escalate as immediate.`,
+
+  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
+
+  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, ask which platform they booked through (Airbnb, Booking.com, direct) and escalate as info_request. For guests claiming they booked but no record found, escalate as immediate.`,
+
+  'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate. For receipt requests, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request.`,
+
+  'post-stay-issues': `POST-STAY ISSUES: Guest has checked out and contacts about lost items, post-stay complaints, damage deposit questions, or feedback. For lost items: ask for description and location where they think they left it. Escalate as immediate so staff can check. For damage deposit questions, escalate as info_request. For post-stay complaints, acknowledge with empathy and escalate as immediate. Never promise items will be found or deposits returned.`,
+
+  'sop-long-term-rental': `LONG-TERM RENTAL: Guest is inquiring about monthly stays, corporate housing, or stays longer than 2 weeks. Ask: duration needed, move-in date, number of guests, any preferences. Share standard nightly rate if known, but note that monthly rates are different and need manager approval. Escalate as info_request with all details. For corporate stays, ask if they need a contract or invoice. Never quote monthly rates yourself.`,
+
+  'sop-booking-cancellation': `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Ask which booking/dates they want to cancel if not clear. Escalate as info_request with booking details and reason for cancellation. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
+
+  'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. For viewing requests: ask preferred date/time, escalate as info_request. Share existing photos from your knowledge if available. For video requests, escalate as info_request. For photoshoot/filming requests, ask about scope (how many people, duration, commercial or personal) and escalate as immediate — needs manager approval.`,
+
+  'non-actionable': `NON-ACTIONABLE: Message has no real intent — test messages, wrong chat, system messages, or greetings with no question. For greetings ('Hi', 'Hello'), respond with a friendly greeting and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For system/automated messages, ignore (guest_message: '', escalation: null).`,
 };

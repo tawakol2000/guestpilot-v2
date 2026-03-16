@@ -1,0 +1,192 @@
+{
+  "immediate_triggers": [
+    {
+      "signal": "safety_emergency",
+      "patterns_en": ["fire", "gas leak", "gas smell", "smoke", "flood", "flooding", "water everywhere", "medical", "ambulance", "hospital", "emergency", "help me", "dangerous", "electric shock", "electrocuted", "ceiling collapsed", "glass broke", "blood"],
+      "patterns_ar": ["حريق", "غاز", "ريحة غاز", "دخان", "مية في كل مكان", "طوارئ", "اسعاف", "مستشفى", "خطر", "كهرباء"],
+      "action": "escalate_now",
+      "weight": 1.0
+    },
+    {
+      "signal": "locked_out",
+      "patterns_en": ["locked out", "can't get in", "door won't open", "code doesn't work", "code not working", "stuck outside", "gate won't open", "key doesn't work", "locked outside", "can't enter", "building access not working", "door code wrong", "code expired"],
+      "patterns_ar": ["مقفل", "ما يفتح الباب", "الكود مايشتغل", "مقدر ادخل", "برا ما اقدر ادخل"],
+      "action": "escalate_now",
+      "weight": 1.0
+    },
+    {
+      "signal": "angry_guest",
+      "patterns_en": ["ridiculous", "unacceptable", "worst", "terrible", "disgusted", "furious", "fed up", "horrible", "pathetic", "outrageous", "appalling", "disgraceful", "livid", "fuming", "pissed off", "sick of this", "had enough", "this is a joke", "what a joke", "nightmare", "disaster", "shameful", "never again", "worst experience"],
+      "patterns_ar": ["مستحيل", "مقبول مش", "اسوأ", "فظيع", "مقرف", "زعلان", "تعبان من", "مش معقول", "كارثة", "فضيحة"],
+      "action": "escalate_now",
+      "weight": 0.9
+    },
+    {
+      "signal": "manager_request",
+      "patterns_en": ["speak to manager", "talk to someone", "contact number", "call me", "your supervisor", "speak to someone in charge", "I want to talk to", "give me a number", "phone number please", "whatsapp number", "your manager", "who's in charge", "escalate this", "I need to speak to", "get me your boss", "is there someone else I can talk to", "direct contact"],
+      "patterns_ar": ["ابي اكلم المدير", "رقمك", "رقم تلفون", "ابي اكلم حد", "مين المسؤول", "عطني رقم"],
+      "action": "escalate_now",
+      "weight": 0.9
+    },
+    {
+      "signal": "rule_violation",
+      "patterns_en": ["party tonight", "having friends over", "smoking inside", "smoking in the apartment", "we're having a gathering", "bringing friends", "invited some people", "having a BBQ inside"],
+      "patterns_ar": ["حفلة", "تدخين داخل", "جايبين ناس", "عزيمة"],
+      "action": "escalate_now",
+      "weight": 1.0
+    },
+    {
+      "signal": "rule_pushback",
+      "patterns_en": ["that's not fair", "discriminat", "why can't", "I don't agree", "make an exception", "leave it to me", "I'll handle it", "who cares", "nobody will know", "what's the big deal", "that's stupid", "doesn't make sense", "I know my rights", "I'll report you", "this is discriminat", "against the law", "you can't stop me", "I paid for this"],
+      "patterns_ar": ["مو عدل", "ليش مايصير", "استثناء", "خلني انا اتصرف", "حقوقي", "مش منطقي"],
+      "action": "escalate_now",
+      "weight": 0.9
+    },
+    {
+      "signal": "threat_review",
+      "patterns_en": ["bad review", "1 star", "one star", "report you", "report this", "airbnb complaint", "booking.com complaint", "I'll leave a review", "write a review", "warn others", "tell everyone", "social media", "going public", "contact airbnb", "file a complaint"],
+      "patterns_ar": ["تقييم سيء", "نجمة وحدة", "راح اشتكي", "بقدم شكوى"],
+      "action": "escalate_now",
+      "weight": 0.8
+    },
+    {
+      "signal": "maintenance_urgent",
+      "patterns_en": ["no water", "no electricity", "power outage", "ceiling leak", "broken lock", "lock broken", "pest", "insects", "cockroach", "cockroaches", "bugs", "rats", "mouse", "mice", "sewage", "sewage smell", "mold", "mould", "no AC", "no heating", "freezing", "boiling", "overflowing", "toilet overflowing", "pipe burst"],
+      "patterns_ar": ["ما فيه مية", "ما فيه كهرباء", "تسريب", "قفل مكسور", "حشرات", "صراصير", "فئران", "مجاري", "عفن"],
+      "action": "escalate_now",
+      "weight": 0.9
+    },
+    {
+      "signal": "guest_image",
+      "patterns_en": ["[image]", "[photo]", "[video]", "sent a picture", "sending photo", "see attached", "look at this", "here's a photo"],
+      "action": "escalate_now",
+      "weight": 0.8,
+      "note": "Any image from guest needs manager review — could be damage, ID, or issue documentation"
+    },
+    {
+      "signal": "noise_complaint",
+      "patterns_en": ["loud", "noise", "noisy", "can't sleep", "neighbors", "neighbours", "construction", "drilling", "banging", "music", "party next door", "loud music", "screaming", "shouting", "barking", "dogs barking", "woke me up", "keeping us awake"],
+      "patterns_ar": ["ضجة", "ازعاج", "جيران", "مايخلوننا ننام", "صوت عالي", "موسيقى"],
+      "action": "escalate_now",
+      "weight": 0.8
+    },
+    {
+      "signal": "past_bad_experience",
+      "patterns_en": ["last time", "didn't let us in", "happened before", "same problem again", "you promised last time", "left on the street", "been waiting for days", "told me before", "was supposed to be fixed", "already reported this"],
+      "patterns_ar": ["المرة اللي فاتت", "مارضوا يدخلونا", "نفس المشكلة", "قلتولي قبل"],
+      "action": "escalate_now",
+      "weight": 0.7
+    },
+    {
+      "signal": "payment_dispute_angry",
+      "patterns_en": ["overcharged", "charged me twice", "wrong amount", "unauthorized charge", "didn't authorize", "fraud", "scam", "stealing", "where's my money", "give me my money back"],
+      "patterns_ar": ["حسبولي زيادة", "مبلغ غلط", "فين فلوسي", "رجعولي فلوسي"],
+      "action": "escalate_now",
+      "weight": 0.9
+    },
+    {
+      "signal": "health_safety",
+      "patterns_en": ["allergic", "allergic reaction", "feeling sick", "food poisoning", "hospital", "doctor", "ill", "vomiting", "can't breathe", "asthma", "chest pain"],
+      "patterns_ar": ["حساسية", "مريض", "مستشفى", "دكتور", "ما اقدر اتنفس"],
+      "action": "escalate_now",
+      "weight": 1.0
+    }
+  ],
+
+  "scheduled_triggers": [
+    {
+      "signal": "cleaning_confirmed",
+      "patterns_en": ["cleaning at", "cleaning confirmed", "yes clean at", "clean it at", "cleaning tomorrow at", "housekeeping at", "mop at"],
+      "patterns_ar": ["تنظيف الساعة", "نعم نظفوا"],
+      "action": "create_task",
+      "weight": 1.0
+    },
+    {
+      "signal": "maintenance_scheduled",
+      "patterns_en": ["maintenance at", "send someone at", "come fix at", "fix it at", "repair at", "plumber at", "electrician at", "technician at"],
+      "patterns_ar": ["صيانة الساعة", "ارسلوا حد الساعة"],
+      "action": "create_task",
+      "weight": 1.0
+    },
+    {
+      "signal": "amenity_delivery",
+      "patterns_en": ["bring towels at", "deliver at", "send up at", "bring pillows at", "drop off at", "need it by"],
+      "patterns_ar": ["جيبوا فوط الساعة", "وصلوا الساعة"],
+      "action": "create_task",
+      "weight": 1.0
+    },
+    {
+      "signal": "next_day_arrangement",
+      "patterns_en": ["tomorrow at", "arrange for tomorrow", "tomorrow morning", "tomorrow afternoon", "first thing tomorrow", "tomorrow please"],
+      "patterns_ar": ["بكرة الساعة", "بكرة الصبح", "رتبوا بكرة"],
+      "action": "create_task",
+      "weight": 0.9
+    },
+    {
+      "signal": "viewing_appointment",
+      "patterns_en": ["view at", "see the apartment at", "come look at", "visit at"],
+      "action": "create_task",
+      "weight": 0.8
+    }
+  ],
+
+  "info_request_triggers": [
+    {
+      "signal": "pricing_question",
+      "patterns_en": ["discount", "cheaper", "best price", "budget", "too expensive", "offer", "negotiate", "deal", "special rate", "reduce the price", "lower price", "cost too much", "can't afford", "price match", "weekly rate", "monthly rate", "bulk discount", "group rate", "corporate rate"],
+      "patterns_ar": ["خصم", "ارخص", "غالي", "عرض", "سعر اقل", "تخفيض", "ميزانية"],
+      "action": "ask_manager",
+      "weight": 0.8
+    },
+    {
+      "signal": "local_recommendation",
+      "patterns_en": ["restaurant", "restaurants", "shop", "shopping", "pharmacy", "hospital nearby", "mall", "supermarket", "grocery", "where can I", "nearby", "close to", "within walking", "food delivery", "Talabat", "gym", "mosque", "church", "ATM", "bank", "cinema", "entertainment", "things to do", "attractions"],
+      "patterns_ar": ["مطعم", "صيدلية", "مستشفى قريب", "مول", "سوبرماركت", "وين", "قريب من", "مسجد", "بنك", "صراف"],
+      "action": "ask_manager",
+      "weight": 0.7
+    },
+    {
+      "signal": "reservation_change",
+      "patterns_en": ["change dates", "modify booking", "add nights", "remove nights", "different unit", "different apartment", "swap", "switch rooms", "cancel booking", "cancel reservation", "change guest count", "add a person", "remove a person"],
+      "patterns_ar": ["غير التاريخ", "عدل الحجز", "زيادة ليالي", "الغاء", "تغيير الشقة"],
+      "action": "ask_manager",
+      "weight": 0.9
+    },
+    {
+      "signal": "refund_request",
+      "patterns_en": ["refund", "money back", "compensation", "credit", "overcharged", "reimburse", "return my deposit", "deposit back", "where's my deposit", "billing error"],
+      "patterns_ar": ["استرجاع", "فلوسي", "تعويض", "التأمين", "ارجعولي"],
+      "action": "ask_manager",
+      "weight": 0.9
+    },
+    {
+      "signal": "early_late_request",
+      "patterns_en": ["early check-in", "early checkin", "late checkout", "late check-out", "arrive early", "leave late", "check in before", "check out after", "extend stay", "extra night", "one more night", "stay longer"],
+      "patterns_ar": ["دخول مبكر", "خروج متأخر", "تمديد", "ليلة اضافية", "ابي اطول"],
+      "action": "ask_manager",
+      "weight": 0.7
+    },
+    {
+      "signal": "long_term_inquiry",
+      "patterns_en": ["monthly", "long term", "long stay", "3 months", "6 months", "1 year", "yearly", "annual", "contract", "corporate stay", "relocation", "monthly rate"],
+      "patterns_ar": ["شهري", "اقامة طويلة", "عقد", "سنوي", "سعر شهري"],
+      "action": "ask_manager",
+      "weight": 0.8
+    },
+    {
+      "signal": "transportation",
+      "patterns_en": ["airport", "airport transfer", "taxi", "uber", "careem", "car rental", "driver", "pickup", "drop off", "transportation", "how to get to", "directions from airport"],
+      "patterns_ar": ["مطار", "تاكسي", "اوبر", "كريم", "سيارة", "توصيل", "كيف اوصل"],
+      "action": "ask_manager",
+      "weight": 0.7
+    },
+    {
+      "signal": "unknown_question",
+      "patterns_en": [],
+      "patterns_ar": [],
+      "action": "ask_manager",
+      "weight": 0.5,
+      "note": "Catch-all: if Omar doesn't have the answer in SOPs, escalate as info_request"
+    }
+  ]
+}

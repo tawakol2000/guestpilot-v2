@@ -14,9 +14,13 @@ import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
 import { retrieveRelevantKnowledge, getLastClassifierResult } from './rag.service';
+import { getSopContent } from './classifier.service';
 import { evaluateAndImprove } from './judge.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
+import { updateTopicState, getReinjectedLabels } from './topic-state.service';
+import { extractIntent } from './intent-extractor.service';
+import { detectEscalationSignals } from './escalation-enrichment.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -1164,14 +1168,99 @@ export async function generateAndSendAiReply(
     // Upgrade 5c: RAG — retrieve relevant property knowledge for this query
     const ragQuery = currentMsgs.map((m: { content: string }) => m.content).join(' ');
     const ragStart = Date.now();
-    const retrievedChunks =
-      tenantConfig?.ragEnabled !== false && context.propertyId
-        ? await retrieveRelevantKnowledge(
-            tenantId, context.propertyId, ragQuery, prisma, 8,
-            context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator'
-          ).catch(() => [])
-        : [];
+    const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
+      ? await retrieveRelevantKnowledge(
+          tenantId, context.propertyId, ragQuery, prisma, 8,
+          context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator'
+        ).catch(() => ({ chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const }))
+      : { chunks: [], topSimilarity: 0, tier: 'tier1' as const };
+    let retrievedChunks = ragResult.chunks;
     const ragDurationMs = Date.now() - ragStart;
+
+    // —— Tier 3: Topic State Cache ——————————————————————————
+    // Only SOP labels drive topic state — property-* and learned-answers are passive context
+    const retrievedLabels = retrievedChunks.map((c: any) => c.category)
+      .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
+    const retrievedSopLabels = retrievedLabels.filter(
+      (l: string) => !l.startsWith('property-') && l !== 'learned-answers'
+    );
+    let tier3Reinjected = false;
+    let tier3TopicSwitch = false;
+
+    if (retrievedSopLabels.length > 0) {
+      updateTopicState(conversationId, retrievedSopLabels);
+    } else if (ragResult.tier === 'tier2_needed' || retrievedSopLabels.length === 0) {
+      const tier3Result = getReinjectedLabels(conversationId, ragQuery);
+      tier3Reinjected = tier3Result.reinjected;
+      tier3TopicSwitch = tier3Result.topicSwitchDetected;
+
+      if (tier3Result.reinjected && tier3Result.labels.length > 0) {
+        // Direct SOP lookup — no redundant vector search needed
+        const reinjectedChunks = tier3Result.labels
+          .map(label => {
+            const content = getSopContent(label);
+            return content ? {
+              content,
+              category: label,
+              similarity: 1.0,
+              sourceKey: label,
+              propertyId: null as string | null,
+            } : null;
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        if (reinjectedChunks.length > 0) {
+          retrievedChunks.push(...reinjectedChunks);
+          ragResult.tier = 'tier3_cache';
+          ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
+          console.log(`[AI] Tier 3 re-injected ${reinjectedChunks.length} chunks for conv ${conversationId}: [${tier3Result.labels.join(', ')}]`);
+        }
+      }
+    }
+
+    // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
+    if (ragResult.tier === 'tier2_needed' && !tier3Reinjected) {
+      const recentForTier2 = allMsgs.slice(-10).map(m => ({
+        role: m.role === 'GUEST' ? 'guest' : 'host',
+        content: m.content,
+      }));
+
+      try {
+        const tier2Result = await extractIntent(recentForTier2, tenantId, conversationId);
+        if (tier2Result && tier2Result.sops.length > 0) {
+          // Direct SOP lookup — no redundant vector search needed
+          const tier2Chunks = tier2Result.sops
+            .map(label => {
+              const content = getSopContent(label);
+              return content ? {
+                content,
+                category: label,
+                similarity: 1.0,
+                sourceKey: label,
+                propertyId: null as string | null,
+              } : null;
+            })
+            .filter((c): c is NonNullable<typeof c> => c !== null);
+
+          if (tier2Chunks.length > 0) {
+            retrievedChunks.push(...tier2Chunks);
+            ragResult.tier = 'tier1'; // Tier 2 resolved it
+            ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
+            // Update topic state with Tier 2's classification
+            updateTopicState(conversationId, tier2Result.sops);
+            console.log(`[AI] Tier 2 resolved: ${tier2Result.topic} → [${tier2Result.sops.join(', ')}]`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[AI] Tier 2 failed (non-fatal):`, err);
+      }
+    }
+
+    // —— Escalation enrichment (post-routing) ——————————————
+    const escalationSignals = detectEscalationSignals(ragQuery);
+    if (escalationSignals.length > 0) {
+      console.log(`[AI] Escalation signals: ${escalationSignals.map(s => s.signal).join(', ')}`);
+    }
 
     const ragContext = {
       query: ragQuery,
@@ -1184,6 +1273,11 @@ export async function generateAndSendAiReply(
       })),
       totalRetrieved: retrievedChunks.length,
       durationMs: ragDurationMs,
+      topSimilarity: ragResult.topSimilarity,
+      tier: ragResult.tier,
+      tier3Reinjected,
+      tier3TopicSwitch,
+      escalationSignals: escalationSignals.map(s => s.signal),
       classifierUsed: context.reservationStatus !== 'INQUIRY',
     };
 
