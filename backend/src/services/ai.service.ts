@@ -1219,6 +1219,7 @@ export async function generateAndSendAiReply(
     }
 
     // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
+    let tier2ResolvedLabels: string[] | undefined;
     if (ragResult.tier === 'tier2_needed' && !tier3Reinjected) {
       const recentForTier2 = allMsgs.slice(-10).map(m => ({
         role: m.role === 'GUEST' ? 'guest' : 'host',
@@ -1248,6 +1249,7 @@ export async function generateAndSendAiReply(
             ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
             // Update topic state with Tier 2's classification
             updateTopicState(conversationId, tier2Result.sops);
+            tier2ResolvedLabels = tier2Result.sops;
             console.log(`[AI] Tier 2 resolved: ${tier2Result.topic} → [${tier2Result.sops.join(', ')}]`);
           }
         }
@@ -1588,6 +1590,8 @@ export async function generateAndSendAiReply(
           classifierTopSim: classifierMeta.topSimilarity,
           neighbors: classifierMeta.neighbors,
           aiResponse: guestMessage,
+          tier2Labels: tier2ResolvedLabels,
+          tier3Reinjected,
         }, prisma).catch(err =>
           console.warn('[AI] Judge evaluation failed (non-fatal):', err)
         );
