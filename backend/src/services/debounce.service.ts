@@ -1,23 +1,121 @@
 /**
  * AI Debounce Service
- * Manages PendingAiReply records for the 2-minute debounce window.
- * When a guest sends multiple messages, only one AI reply fires — 2 mins after the LAST message.
+ * Manages PendingAiReply records for the debounce window.
+ * When a guest sends multiple messages, only one AI reply fires — after the LAST message.
+ * Respects working hours: if outside working hours, defers scheduledAt to next window start.
  */
 
-import { PrismaClient } from '@prisma/client';
-import { getAiConfig } from './ai-config.service';
+import { PrismaClient, TenantAiConfig } from '@prisma/client';
+import { getTenantAiConfig } from './tenant-config.service';
 import { broadcastToTenant } from './sse.service';
 import { addAiReplyJob, removeAiReplyJob } from './queue.service';
 
 const POLL_INTERVAL_MS = 30 * 1000; // job polls every 30s — added to expectedAt for accurate countdown
+
+// ── Working hours helpers ─────────────────────────────────────────────────────
+
+function parseHHMM(hhmm: string): { h: number; m: number } {
+  const [h, m] = hhmm.split(':').map(Number);
+  return { h: h || 0, m: m || 0 };
+}
+
+function getLocalMinutes(date: Date, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+    const h = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+    const m = parseInt(parts.find(p => p.type === 'minute')!.value, 10);
+    return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+  } catch {
+    // Fallback to UTC if timezone is invalid
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+}
+
+function getTodayMidnightInTimezone(now: Date, timezone: string): Date {
+  try {
+    // Get the local date string in the target timezone (e.g. "2025-03-16")
+    const localDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+
+    // Determine the UTC offset at that local midnight by comparing two interpretations
+    const nominalMidnight = new Date(`${localDateStr}T00:00:00Z`); // treated as UTC
+    const offsetProbe = new Date(
+      new Date(`${localDateStr}T00:00:00`).toLocaleString('en-US', { timeZone: timezone }) + ' UTC'
+    );
+    const utcProbe = new Date(
+      new Date(`${localDateStr}T00:00:00`).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC'
+    );
+    const offsetMs = utcProbe.getTime() - offsetProbe.getTime();
+    return new Date(nominalMidnight.getTime() + offsetMs);
+  } catch {
+    // Fallback: UTC midnight
+    const d = new Date(now);
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  }
+}
+
+function isWithinWorkingHours(cfg: TenantAiConfig, now: Date): boolean {
+  if (!cfg.workingHoursEnabled) return true;
+  const current = getLocalMinutes(now, cfg.workingHoursTimezone);
+  const { h: sh, m: sm } = parseHHMM(cfg.workingHoursStart);
+  const { h: eh, m: em } = parseHHMM(cfg.workingHoursEnd);
+  const startMin = sh * 60 + sm;
+  const endMin = eh * 60 + em;
+  if (startMin <= endMin) {
+    // Same day window: e.g. 08:00–22:00
+    return current >= startMin && current < endMin;
+  } else {
+    // Wraps midnight: e.g. 08:00–01:00 (active until 1 AM next day)
+    return current >= startMin || current < endMin;
+  }
+}
+
+function nextWorkingHoursStart(cfg: TenantAiConfig, now: Date): Date {
+  const { h: sh, m: sm } = parseHHMM(cfg.workingHoursStart);
+  const startMin = sh * 60 + sm;
+  const currentMin = getLocalMinutes(now, cfg.workingHoursTimezone);
+
+  const todayMidnight = getTodayMidnightInTimezone(now, cfg.workingHoursTimezone);
+  const todayStart = new Date(todayMidnight.getTime() + startMin * 60 * 1000);
+
+  if (currentMin < startMin) {
+    // Working hours start later today
+    return todayStart;
+  } else {
+    // Working hours start tomorrow
+    return new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+  }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function scheduleAiReply(
   conversationId: string,
   tenantId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  const delay = getAiConfig().debounceDelayMs ?? 120000;
-  const scheduledAt = new Date(Date.now() + delay);
+  const cfg = await getTenantAiConfig(tenantId, prisma);
+  const now = new Date();
+
+  let scheduledAt: Date;
+  if (isWithinWorkingHours(cfg, now)) {
+    scheduledAt = new Date(now.getTime() + cfg.debounceDelayMs);
+  } else {
+    // Outside working hours — defer all messages to next window open
+    scheduledAt = nextWorkingHoursStart(cfg, now);
+    console.log(`[Debounce] Outside working hours tenantId=${tenantId} — deferring to ${scheduledAt.toISOString()}`);
+  }
+
   // expectedAt = when the AI will actually fire (scheduledAt + up to one poll cycle)
   const expectedAt = new Date(scheduledAt.getTime() + POLL_INTERVAL_MS);
 
@@ -27,7 +125,7 @@ export async function scheduleAiReply(
   });
 
   if (existing) {
-    // Reset timer — update scheduledAt to now + delay
+    // Reset timer — update scheduledAt
     await prisma.pendingAiReply.update({
       where: { id: existing.id },
       data: { scheduledAt },
@@ -43,7 +141,7 @@ export async function scheduleAiReply(
   broadcastToTenant(tenantId, 'ai_typing', { conversationId, expectedAt: expectedAt.toISOString() });
 
   // Also enqueue in BullMQ (if Redis available) — fire-and-forget, never breaks DB debounce
-  addAiReplyJob(conversationId, tenantId, delay).catch(err =>
+  addAiReplyJob(conversationId, tenantId, cfg.debounceDelayMs).catch(err =>
     console.warn('[Debounce] BullMQ enqueue failed (non-fatal):', err)
   );
 }

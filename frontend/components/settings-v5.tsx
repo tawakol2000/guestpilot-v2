@@ -24,6 +24,9 @@ import {
   type PropertyAiStatus,
   apiDeleteAllData,
   apiChangePassword,
+  apiGetTenantAiConfig,
+  apiUpdateTenantAiConfig,
+  getTenantMeta,
   type ImportProgress,
   type ApiProperty,
   type ApiMessageTemplate,
@@ -2123,6 +2126,239 @@ function RagChunksSection(): React.ReactElement {
   )
 }
 
+// ─── Section: Webhook URL ─────────────────────────────────────────────────────
+function WebhookUrlSection(): React.ReactElement {
+  const [copied, setCopied] = useState(false)
+  const webhookUrl = getTenantMeta()?.webhookUrl ?? ''
+
+  function handleCopy() {
+    if (!webhookUrl) return
+    navigator.clipboard.writeText(webhookUrl).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.05s' }}>
+      <div style={cardHeaderStyle}>Hostaway Integration</div>
+      <div style={cardBodyStyle}>
+        <div style={{ marginBottom: 4, fontSize: 12, fontWeight: 600, color: T.text.secondary }}>
+          Webhook URL
+        </div>
+        <div style={{ fontSize: 11, color: T.text.tertiary, marginBottom: 10 }}>
+          Paste this URL into Hostaway → Account → Webhooks to enable real-time message sync.
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            readOnly
+            value={webhookUrl || 'Log in to see your webhook URL'}
+            style={{
+              flex: 1,
+              height: 34,
+              padding: '0 10px',
+              fontSize: 12,
+              fontFamily: T.font.mono,
+              background: T.bg.secondary,
+              border: `1px solid ${T.border.default}`,
+              borderRadius: T.radius.sm,
+              color: T.text.primary,
+              outline: 'none',
+              cursor: 'text',
+            }}
+            onFocus={e => e.target.select()}
+          />
+          <button
+            onClick={handleCopy}
+            style={{
+              ...btnGhost,
+              minWidth: 72,
+              color: copied ? T.status.green : T.text.primary,
+              borderColor: copied ? T.status.green : T.border.default,
+            }}
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Section: Working Hours ───────────────────────────────────────────────────
+const COMMON_TIMEZONES = [
+  'UTC',
+  'Africa/Cairo',
+  'Africa/Johannesburg',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Istanbul',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'Asia/Dubai',
+  'Asia/Riyadh',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+]
+
+function WorkingHoursSection(): React.ReactElement {
+  const [enabled, setEnabled] = useState(false)
+  const [start, setStart] = useState('08:00')
+  const [end, setEnd] = useState('01:00')
+  const [timezone, setTimezone] = useState('UTC')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    apiGetTenantAiConfig()
+      .then(cfg => {
+        setEnabled(cfg.workingHoursEnabled ?? false)
+        setStart(cfg.workingHoursStart ?? '08:00')
+        setEnd(cfg.workingHoursEnd ?? '01:00')
+        setTimezone(cfg.workingHoursTimezone ?? 'UTC')
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await apiUpdateTenantAiConfig({
+        workingHoursEnabled: enabled,
+        workingHoursStart: start,
+        workingHoursEnd: end,
+        workingHoursTimezone: timezone,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      // silent — user can retry
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    fontFamily: T.font.sans,
+    background: T.bg.secondary,
+    border: `1px solid ${T.border.default}`,
+    borderRadius: T.radius.sm,
+    color: T.text.primary,
+    outline: 'none',
+  }
+
+  return (
+    <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.1s' }}>
+      <div style={cardHeaderStyle}>Working Hours</div>
+      <div style={cardBodyStyle}>
+        {loading ? (
+          <div style={{ fontSize: 12, color: T.text.tertiary }}>Loading…</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, color: T.text.tertiary, marginBottom: 14 }}>
+              When enabled, the AI only auto-replies during these hours. Messages received outside working hours
+              are batched and processed as a single reply when the window opens.
+            </div>
+
+            {/* Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <button
+                onClick={() => setEnabled(v => !v)}
+                style={{
+                  width: 40,
+                  height: 22,
+                  borderRadius: 11,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: enabled ? T.accent : T.border.default,
+                  position: 'relative',
+                  transition: 'background 0.2s ease',
+                  flexShrink: 0,
+                }}
+                aria-label="Toggle working hours"
+              >
+                <span style={{
+                  position: 'absolute',
+                  top: 3,
+                  left: enabled ? 20 : 3,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.2s ease',
+                }} />
+              </button>
+              <span style={{ fontSize: 13, color: T.text.primary, fontWeight: 500 }}>
+                {enabled ? 'Working hours active' : 'Working hours disabled (AI replies anytime)'}
+              </span>
+            </div>
+
+            {/* Time pickers + timezone — only shown when enabled */}
+            {enabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: T.text.secondary, minWidth: 60 }}>Active from</span>
+                  <input
+                    type="time"
+                    value={start}
+                    onChange={e => setStart(e.target.value)}
+                    style={inputStyle}
+                  />
+                  <span style={{ fontSize: 13, color: T.text.secondary }}>to</span>
+                  <input
+                    type="time"
+                    value={end}
+                    onChange={e => setEnd(e.target.value)}
+                    style={inputStyle}
+                  />
+                  <span style={{ fontSize: 11, color: T.text.tertiary }}>
+                    (end time can be next day, e.g. 08:00–01:00)
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 13, color: T.text.secondary, minWidth: 60 }}>Timezone</span>
+                  <select
+                    value={timezone}
+                    onChange={e => setTimezone(e.target.value)}
+                    style={{ ...inputStyle, paddingRight: 28, cursor: 'pointer' }}
+                  >
+                    {COMMON_TIMEZONES.map(tz => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <SavedFeedback visible={saved} />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Root export ──────────────────────────────────────────────────────────────
 export function SettingsV5({ onImportComplete }: { onImportComplete: () => void }): React.ReactElement {
   useEffect(() => {
@@ -2147,6 +2383,8 @@ export function SettingsV5({ onImportComplete }: { onImportComplete: () => void 
           </div>
         </div>
 
+        <WebhookUrlSection />
+        <WorkingHoursSection />
         <DataSyncSection onImportComplete={onImportComplete} />
         <PropertiesSection />
         <MessageTemplatesSection />

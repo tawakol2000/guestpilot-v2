@@ -76,6 +76,23 @@ export async function updateTenantAiConfig(
     err.field = 'model';
     throw err;
   }
+  if (updates.workingHoursStart !== undefined && !/^\d{2}:\d{2}$/.test(updates.workingHoursStart)) {
+    const err = new Error('workingHoursStart must be HH:mm') as any;
+    err.field = 'workingHoursStart';
+    throw err;
+  }
+  if (updates.workingHoursEnd !== undefined && !/^\d{2}:\d{2}$/.test(updates.workingHoursEnd)) {
+    const err = new Error('workingHoursEnd must be HH:mm') as any;
+    err.field = 'workingHoursEnd';
+    throw err;
+  }
+  if (updates.workingHoursTimezone !== undefined) {
+    try { new Intl.DateTimeFormat(undefined, { timeZone: updates.workingHoursTimezone }); } catch {
+      const err = new Error('Invalid timezone') as any;
+      err.field = 'workingHoursTimezone';
+      throw err;
+    }
+  }
 
   // Strip non-updatable system fields
   const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, ...safeUpdates } = updates as any;

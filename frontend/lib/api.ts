@@ -363,6 +363,10 @@ export interface TenantAiConfig {
   customInstructions: string
   ragEnabled: boolean
   memorySummaryEnabled: boolean
+  workingHoursEnabled: boolean
+  workingHoursStart: string
+  workingHoursEnd: string
+  workingHoursTimezone: string
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {

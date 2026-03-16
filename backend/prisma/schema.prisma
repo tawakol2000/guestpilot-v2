@@ -360,6 +360,10 @@ model TenantAiConfig {
   memorySummaryEnabled Boolean  @default(true)
   judgeThreshold       Float    @default(0.75)
   autoFixThreshold     Float    @default(0.70)
+  workingHoursEnabled  Boolean  @default(false)
+  workingHoursStart    String   @default("08:00")
+  workingHoursEnd      String   @default("01:00")
+  workingHoursTimezone String   @default("UTC")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
