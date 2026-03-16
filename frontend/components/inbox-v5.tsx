@@ -1202,9 +1202,7 @@ export default function InboxV5() {
             }
 
             const msgsWithChannel = newSseMsgs.map(m => m.channel === undefined ? { ...m, channel: c.channel } : m)
-            const updatedMsgs = isSelected
-              ? [...c.messages, ...msgsWithChannel]
-              : c.messages
+            const updatedMsgs = [...c.messages, ...msgsWithChannel]
             return {
               ...c,
               messages: updatedMsgs,
@@ -2545,13 +2543,13 @@ export default function InboxV5() {
                           fontSize: 10,
                           fontFamily: T.font.mono,
                           fontWeight: 700,
-                          color: conv.aiMode === 'autopilot' ? T.accent : conv.aiMode === 'copilot' ? T.status.green : T.text.tertiary,
-                          background: conv.aiMode === 'autopilot' ? T.accent + '14' : conv.aiMode === 'copilot' ? T.status.green + '14' : T.bg.tertiary,
+                          color: (!conv.aiOn || conv.aiMode === 'off') ? T.text.tertiary : conv.aiMode === 'autopilot' ? T.accent : T.status.green,
+                          background: (!conv.aiOn || conv.aiMode === 'off') ? T.bg.tertiary : conv.aiMode === 'autopilot' ? T.accent + '14' : T.status.green + '14',
                           borderRadius: 999,
                           padding: '1px 5px',
                         }}
                       >
-                        {conv.aiMode === 'autopilot' ? 'AUTOPILOT' : conv.aiMode === 'copilot' ? 'COPILOT' : 'OFF'}
+                        {(!conv.aiOn || conv.aiMode === 'off') ? 'OFF' : conv.aiMode === 'autopilot' ? 'AUTOPILOT' : 'COPILOT'}
                       </span>
                     </div>
                   </div>
