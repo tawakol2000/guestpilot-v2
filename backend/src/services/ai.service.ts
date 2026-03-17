@@ -1252,6 +1252,49 @@ export async function generateAndSendAiReply(
             tier2ResolvedLabels = tier2Result.sops;
             console.log(`[AI] Tier 2 resolved: ${tier2Result.topic} → [${tier2Result.sops.join(', ')}]`);
           }
+        } else if (
+          tier2Result &&
+          tier2Result.sops.length === 0 &&
+          ['follow_up', 'ongoing_issue', 'just_chatting'].includes(tier2Result.status)
+        ) {
+          // Tier 2 says this is contextual — re-inject SOPs from previous AI response
+          try {
+            const prevLog = await prisma.aiApiLog.findFirst({
+              where: { tenantId, conversationId },
+              orderBy: { createdAt: 'desc' },
+              select: { ragContext: true },
+            });
+            const prevRag = prevLog?.ragContext as any;
+            const prevSopLabels = (prevRag?.chunks || [])
+              .map((c: any) => c.category)
+              .filter((cat: string) => !cat.startsWith('property-') && cat !== 'learned-answers')
+              .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i) as string[];
+
+            if (prevSopLabels.length > 0) {
+              const contextChunks = prevSopLabels
+                .map(label => {
+                  const content = getSopContent(label);
+                  return content ? {
+                    content,
+                    category: label,
+                    similarity: 1.0,
+                    sourceKey: label,
+                    propertyId: null as string | null,
+                  } : null;
+                })
+                .filter((c): c is NonNullable<typeof c> => c !== null);
+
+              if (contextChunks.length > 0) {
+                retrievedChunks.push(...contextChunks);
+                ragResult.tier = 'tier3_cache';
+                ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
+                updateTopicState(conversationId, prevSopLabels);
+                console.log(`[AI] Tier 2 contextual → re-injected previous SOPs: [${prevSopLabels.join(', ')}] (status=${tier2Result.status})`);
+              }
+            }
+          } catch (err) {
+            console.warn(`[AI] Tier 2 contextual re-injection failed (non-fatal):`, err);
+          }
         }
       } catch (err) {
         console.warn(`[AI] Tier 2 failed (non-fatal):`, err);
