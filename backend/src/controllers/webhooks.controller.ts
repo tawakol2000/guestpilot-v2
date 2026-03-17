@@ -439,6 +439,9 @@ async function handleNewReservation(
       checkOut: data.departureDate ? new Date(data.departureDate) : undefined,
       guestCount: data.numberOfGuests || 1,
       status: mapReservationStatus(data.status),
+      // Re-enable AI for re-bookings: if a prior cancellation set aiEnabled=false,
+      // a new reservation.created webhook should re-activate it.
+      ...(!['CANCELLED', 'CHECKED_OUT'].includes(data.status || '') && { aiEnabled: true }),
     },
   });
 

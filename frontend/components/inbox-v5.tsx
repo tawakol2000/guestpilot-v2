@@ -268,17 +268,26 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
     status: (detail.status as 'OPEN' | 'RESOLVED') || conv.status,
     aiOn: res?.aiEnabled ?? conv.aiOn,
     aiMode: (res?.aiMode as AiMode) || conv.aiMode,
-    messages: (detail.messages || []).flatMap((m: ApiMessage): Message[] => {
-      const sender = senderFromRole(m.role)
-      const msgChannel = channelFromApi(m.channel || detail.channel || (conv.channel as string))
-      const imgs = m.imageUrls && m.imageUrls.length > 0 ? m.imageUrls : undefined
-      // Private notes have no channel; AI_PRIVATE and MANAGER_PRIVATE are outgoing (from host side)
-      if (sender === 'private') {
-        const fromSelf = m.role === 'AI_PRIVATE' || m.role === 'MANAGER_PRIVATE'
-        return [{ id: m.id, sender: 'private', text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', fromSelf, imageUrls: imgs }]
-      }
-      return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs }]
-    }),
+    messages: (() => {
+      const fromApi = (detail.messages || []).flatMap((m: ApiMessage): Message[] => {
+        const sender = senderFromRole(m.role)
+        const msgChannel = channelFromApi(m.channel || detail.channel || (conv.channel as string))
+        const imgs = m.imageUrls && m.imageUrls.length > 0 ? m.imageUrls : undefined
+        // Private notes have no channel; AI_PRIVATE and MANAGER_PRIVATE are outgoing (from host side)
+        if (sender === 'private') {
+          const fromSelf = m.role === 'AI_PRIVATE' || m.role === 'MANAGER_PRIVATE'
+          return [{ id: m.id, sender: 'private', text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', fromSelf, imageUrls: imgs }]
+        }
+        return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs }]
+      })
+      // Preserve SSE-appended messages not yet in the API response (e.g., arrived during the fetch window).
+      // Deduped by trimmed text to avoid duplicates once the API catches up.
+      const apiContents = new Set(fromApi.map(m => m.text.trim()))
+      const ssePending = conv.messages.filter(
+        m => m.id.startsWith('sse-') && !apiContents.has(m.text.trim())
+      )
+      return [...fromApi, ...ssePending]
+    })(),
     guest: {
       name: (() => { const n = detail.guest?.name || conv.guest.name; return n && n !== 'Unknown Guest' ? n : 'Guest'; })(),
       email: detail.guest?.email || '',

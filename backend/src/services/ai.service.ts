@@ -1122,10 +1122,13 @@ export async function generateAndSendAiReply(
       historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
     }
 
-    // Current messages = only GUEST messages received during this debounce window
-    // Apply 10s buffer back from windowStartedAt to account for Hostaway timestamp vs server time skew
+    // Current messages = only GUEST messages received during this debounce window.
+    // Buffer extends 30 min back from windowStartedAt to handle Hostaway webhook delivery delays:
+    // Hostaway timestamps `data.date` as when the guest sent the message, but webhooks can arrive
+    // 5–30 min late. Without a large enough buffer, sentAt < windowStart → AI skips responding.
+    const WEBHOOK_DELIVERY_BUFFER_MS = 30 * 60 * 1000;
     const windowStart = context.windowStartedAt
-      ? new Date(context.windowStartedAt.getTime() - 10000)
+      ? new Date(context.windowStartedAt.getTime() - WEBHOOK_DELIVERY_BUFFER_MS)
       : null;
     const currentMsgs = windowStart
       ? allMsgs.filter(m => m.role === 'GUEST' && m.sentAt >= windowStart)
