@@ -216,7 +216,7 @@ function summaryToConversation(s: ApiConversationSummary): Conversation {
   const lastSender: Sender = s.lastMessageRole ? senderFromRole(s.lastMessageRole) : 'guest'
   return {
     id: s.id,
-    guestName: s.guestName,
+    guestName: s.guestName && s.guestName !== 'Unknown Guest' ? s.guestName : 'Guest',
     unitName: s.propertyName,
     channel: channelFromApi(s.channel),
     lastMessage: s.lastMessage || '',
@@ -229,7 +229,7 @@ function summaryToConversation(s: ApiConversationSummary): Conversation {
     status: (s.status as 'OPEN' | 'RESOLVED') || 'OPEN',
     checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn, s.checkOut),
     messages: [],
-    guest: { name: s.guestName, email: '', phone: '', nationality: '' },
+    guest: { name: s.guestName && s.guestName !== 'Unknown Guest' ? s.guestName : 'Guest', email: '', phone: '', nationality: '' },
     booking: {
       property: s.propertyName,
       checkIn: s.checkIn ? formatDate(s.checkIn) : '',
@@ -280,7 +280,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
       return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs }]
     }),
     guest: {
-      name: detail.guest?.name || conv.guest.name,
+      name: (() => { const n = detail.guest?.name || conv.guest.name; return n && n !== 'Unknown Guest' ? n : 'Guest'; })(),
       email: detail.guest?.email || '',
       phone: detail.guest?.phone || '',
       nationality: detail.guest?.nationality || '',

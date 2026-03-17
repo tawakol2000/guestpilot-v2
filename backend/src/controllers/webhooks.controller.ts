@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { PrismaClient, MessageRole, Channel, ReservationStatus } from '@prisma/client';
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
 import { broadcastToTenant } from '../services/sse.service';
+import { getReservation } from '../services/hostaway.service';
 
 interface HostawayWebhookPayload {
   event: string;
@@ -25,6 +26,8 @@ interface HostawayWebhookPayload {
     attachments?: Array<{ url: string; name?: string; mimeType?: string }>;
     // Reservation fields
     guestName?: string;
+    guestFirstName?: string;
+    guestLastName?: string;
     guestEmail?: string;
     guestPhone?: string;
     arrivalDate?: string;
@@ -108,6 +111,44 @@ export function makeWebhooksController(prisma: PrismaClient) {
   };
 }
 
+// ── Guest name enrichment via Hostaway API ────────────────────────────────────
+// Called when webhook payload lacks a guest name. Fetches the full reservation
+// from Hostaway to get guestName/guestFirstName/guestLastName + dates.
+// Non-fatal: returns null on any error.
+
+async function enrichGuestFromHostaway(
+  tenantId: string,
+  hostawayReservationId: string,
+  prisma: PrismaClient
+): Promise<{ name?: string; email?: string; phone?: string; checkIn?: Date; checkOut?: Date } | null> {
+  try {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { hostawayAccountId: true, hostawayApiKey: true },
+    });
+    if (!tenant?.hostawayAccountId || !tenant?.hostawayApiKey) return null;
+
+    const { result: res } = await getReservation(tenant.hostawayAccountId, tenant.hostawayApiKey, hostawayReservationId);
+
+    const name = res.guestName
+      || [res.guestFirstName, res.guestLastName].filter(Boolean).join(' ')
+      || '';
+
+    console.log(`[Webhook] [${tenantId}] Enriched guest from Hostaway API for reservation ${hostawayReservationId}: name="${name}"`);
+
+    return {
+      name: name || undefined,
+      email: res.guestEmail || undefined,
+      phone: res.guestPhone || undefined,
+      checkIn: res.arrivalDate ? new Date(res.arrivalDate) : undefined,
+      checkOut: res.departureDate ? new Date(res.departureDate) : undefined,
+    };
+  } catch (err: any) {
+    console.warn(`[Webhook] [${tenantId}] enrichGuestFromHostaway failed (non-fatal): ${err.message}`);
+    return null;
+  }
+}
+
 async function processWebhook(
   tenantId: string,
   payload: HostawayWebhookPayload,
@@ -154,7 +195,7 @@ async function handleNewMessage(
   // G2: Conversation lookup with fallback chain
   let conversation = await prisma.conversation.findFirst({
     where: { tenantId, hostawayConversationId: hostawayConvId },
-    include: { reservation: true },
+    include: { reservation: true, guest: true },
   });
 
   // Fallback: look up via reservationId when hostawayConversationId doesn't match
@@ -170,7 +211,7 @@ async function handleNewMessage(
     if (reservation) {
       conversation = await prisma.conversation.findFirst({
         where: { tenantId, reservationId: reservation.id },
-        include: { reservation: true },
+        include: { reservation: true, guest: true },
       });
       // G3: Backfill hostawayConversationId
       if (conversation && !conversation.hostawayConversationId) {
@@ -201,7 +242,7 @@ async function handleNewMessage(
         if (res) {
           conversation = await prisma.conversation.findFirst({
             where: { tenantId, reservationId: res.id },
-            include: { reservation: true },
+            include: { reservation: true, guest: true },
           });
           if (conversation && !conversation.hostawayConversationId) {
             await prisma.conversation.update({
@@ -221,6 +262,25 @@ async function handleNewMessage(
       `[Webhook] [${tenantId}] No conversation for conv=${hostawayConvId} res=${data.reservationId} — dropped (auto-create also failed)`
     );
     return;
+  }
+
+  // S2/S5: If guest is "Unknown Guest", try to enrich from Hostaway API now,
+  // before message is saved and before AI reply fires.
+  if (conversation.guest?.name === 'Unknown Guest' && data.reservationId) {
+    const enriched = await enrichGuestFromHostaway(tenantId, String(data.reservationId), prisma);
+    if (enriched?.name) {
+      await prisma.guest.update({
+        where: { id: conversation.guest.id },
+        data: {
+          name: enriched.name,
+          ...(enriched.email && { email: enriched.email }),
+          ...(enriched.phone && { phone: enriched.phone }),
+        },
+      });
+      // Update local reference so AI reply uses the real name
+      conversation.guest.name = enriched.name;
+      console.log(`[Webhook] [${tenantId}] Backfilled guest name: "${enriched.name}" for conv ${conversation.id}`);
+    }
   }
 
   const hostawayMsgId = String(data.id || '');
@@ -324,7 +384,26 @@ async function handleNewReservation(
     return;
   }
 
-  const guestName = data.guestName || 'Unknown Guest';
+  // S1/S2: Try guestName → first+last → Hostaway API → sentinel
+  // (mirrors import.service.ts logic)
+  let guestName = data.guestName
+    || [data.guestFirstName, data.guestLastName].filter(Boolean).join(' ')
+    || '';
+
+  let enrichedCheckIn: Date | undefined;
+  let enrichedCheckOut: Date | undefined;
+
+  if (!guestName && hostawayReservationId) {
+    const enriched = await enrichGuestFromHostaway(tenantId, hostawayReservationId, prisma);
+    if (enriched) {
+      guestName = enriched.name || '';
+      if (enriched.checkIn) enrichedCheckIn = enriched.checkIn;
+      if (enriched.checkOut) enrichedCheckOut = enriched.checkOut;
+    }
+  }
+
+  guestName = guestName || 'Unknown Guest';
+
   const hostawayGuestId = hostawayReservationId;
 
   const guest = await prisma.guest.upsert({
@@ -346,8 +425,10 @@ async function handleNewReservation(
       propertyId: property.id,
       guestId: guest.id,
       hostawayReservationId,
-      checkIn: data.arrivalDate ? new Date(data.arrivalDate) : new Date(),
-      checkOut: data.departureDate ? new Date(data.departureDate) : new Date(),
+      // S4: Use API-enriched dates if available; sentinel 2999 for inquiries
+      // with no dates (avoids defaulting to today → "Checked Out" badge)
+      checkIn: enrichedCheckIn ?? (data.arrivalDate ? new Date(data.arrivalDate) : new Date('2999-01-01')),
+      checkOut: enrichedCheckOut ?? (data.departureDate ? new Date(data.departureDate) : new Date('2999-12-31')),
       guestCount: data.numberOfGuests || 1,
       channel: mapChannel(data.channelName),
       status: mapReservationStatus(data.status),
@@ -414,6 +495,23 @@ async function handleReservationUpdated(
     return handleNewReservation(tenantId, data, prisma);
   }
 
+  // S3/S6: If existing guest is still "Unknown Guest", enrich from API now
+  const existingGuest = await prisma.guest.findUnique({ where: { id: reservation.guestId } });
+  if (existingGuest?.name === 'Unknown Guest' && hostawayReservationId) {
+    const enriched = await enrichGuestFromHostaway(tenantId, hostawayReservationId, prisma);
+    if (enriched?.name) {
+      await prisma.guest.update({
+        where: { id: reservation.guestId },
+        data: {
+          name: enriched.name,
+          ...(enriched.email && { email: enriched.email }),
+          ...(enriched.phone && { phone: enriched.phone }),
+        },
+      });
+      console.log(`[Webhook] [${tenantId}] Backfilled guest name on reservation update: "${enriched.name}"`);
+    }
+  }
+
   const newStatus = data.status ? mapReservationStatus(data.status) : undefined;
   const isCancelledOrCheckedOut =
     newStatus === ReservationStatus.CANCELLED || newStatus === ReservationStatus.CHECKED_OUT;
@@ -443,12 +541,15 @@ async function handleReservationUpdated(
     }
   }
 
-  // G6: Update guest info if provided
-  if (data.guestName || data.guestEmail || data.guestPhone) {
+  // G6: Update guest info if provided (includes first+last name fallback)
+  const newGuestName = data.guestName
+    || [data.guestFirstName, data.guestLastName].filter(Boolean).join(' ')
+    || '';
+  if (newGuestName || data.guestEmail || data.guestPhone) {
     await prisma.guest.update({
       where: { id: reservation.guestId },
       data: {
-        ...(data.guestName && { name: data.guestName }),
+        ...(newGuestName && { name: newGuestName }),
         ...(data.guestEmail && { email: data.guestEmail }),
         ...(data.guestPhone && { phone: data.guestPhone }),
       },
