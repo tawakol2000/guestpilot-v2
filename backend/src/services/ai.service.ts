@@ -1185,7 +1185,7 @@ export async function generateAndSendAiReply(
     const retrievedLabels = retrievedChunks.map((c: any) => c.category)
       .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
     const retrievedSopLabels = retrievedLabels.filter(
-      (l: string) => !l.startsWith('property-') && l !== 'learned-answers'
+      (l: string) => !l.startsWith('property-') && l !== 'learned-answers' && l !== 'contextual'
     );
     let tier3Reinjected = false;
     let tier3TopicSwitch = false;
@@ -1193,7 +1193,9 @@ export async function generateAndSendAiReply(
 
     if (retrievedSopLabels.length > 0) {
       updateTopicState(conversationId, retrievedSopLabels);
-    } else if (ragResult.tier === 'tier2_needed' || retrievedSopLabels.length === 0) {
+    } else if (ragResult.tier !== 'tier1') {
+      // Only check Tier 3 when Tier 1 wasn't confident.
+      // If Tier 1 returned "contextual" or property-only labels at high confidence, skip Tier 3.
       const tier3Result = getReinjectedLabels(conversationId, ragQuery);
       tier3Reinjected = tier3Result.reinjected;
       tier3TopicSwitch = tier3Result.topicSwitchDetected;

@@ -145,10 +145,10 @@ export async function classifyMessage(query: string): Promise<{
 
   const neighbors = topKDetails.map(n => ({ labels: n.labels, similarity: n.similarity }));
 
-  // Step 1: Contextual gate
+  // Step 1: Contextual gate — "contextual" label means no SOP needed
   const best = topK[0];
-  if (best && _examples[best.index].labels.length === 0 && best.similarity > CONTEXTUAL_THRESHOLD) {
-    return { labels: [], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
+  if (best && _examples[best.index].labels.includes('contextual') && best.similarity > CONTEXTUAL_THRESHOLD) {
+    return { labels: ['contextual'], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
   }
 
   // Step 2: Weighted voting

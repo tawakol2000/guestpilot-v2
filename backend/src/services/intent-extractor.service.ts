@@ -38,7 +38,7 @@ export const RAG_CATEGORIES = [
   'sop-booking-inquiry', 'pricing-negotiation', 'pre-arrival-logistics',
   'sop-booking-modification', 'sop-booking-confirmation', 'payment-issues',
   'post-stay-issues', 'sop-long-term-rental', 'sop-booking-cancellation',
-  'sop-property-viewing', 'non-actionable',
+  'sop-property-viewing', 'non-actionable', 'contextual',
 ] as const;
 
 export const BAKED_IN_CATEGORIES = [

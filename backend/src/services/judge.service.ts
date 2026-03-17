@@ -82,6 +82,7 @@ const VALID_CHUNK_IDS = [
   'sop-booking-cancellation',
   'sop-property-viewing',
   'non-actionable',
+  'contextual',
 ];
 
 const JUDGE_SYSTEM_PROMPT = `You are a retrieval quality evaluator for a hospitality AI system.
@@ -124,7 +125,7 @@ New 11:
 Baked-in categories (handled by system prompt, never retrieved):
 - sop-scheduling, sop-house-rules, sop-escalation-immediate, sop-escalation-scheduled
 
-Messages that are just acknowledgments ("ok", "thanks", "sure", "got it", "👍") or contextual follow-ups ("5am", "tomorrow works", "friend", "Egyptian") should get NO documents at all — return empty correct_labels. These are handled by a topic cache, not the classifier.
+Messages that are just acknowledgments ("ok", "thanks", "sure", "got it", "👍") or contextual follow-ups ("5am", "tomorrow works", "friend", "Egyptian") should get correct_labels: ["contextual"]. This tells the system the classifier is confident no SOP is needed.
 
 Messages about house rules, smoking, parties, noise, scheduling/working hours, or emergencies (gas leak, safety threats, wanting to speak to manager) are handled by the system prompt and should also get NO documents — return empty correct_labels.
 
