@@ -1559,14 +1559,12 @@ export default function AiPipelineV5(): React.ReactElement {
       {/* ─── Section 3: Live Pipeline Feed ─── */}
       <div
         style={{
-          flex: 1,
           display: 'flex',
           flexDirection: 'column',
           background: T.bg.card,
           borderRadius: T.radius.md,
           border: `1px solid ${T.border.default}`,
           boxShadow: T.shadow.sm,
-          overflow: 'hidden',
           animation: 'scaleIn 0.3s ease-out both',
           animationDelay: '0.15s',
           minHeight: 300,
@@ -1633,8 +1631,6 @@ export default function AiPipelineV5(): React.ReactElement {
         {/* Feed list */}
         <div
           style={{
-            overflowY: 'auto',
-            flex: 1,
             padding: '12px 16px',
           }}
         >
