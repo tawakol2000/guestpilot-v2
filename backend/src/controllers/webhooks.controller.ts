@@ -232,7 +232,7 @@ async function handleNewMessage(
       // Retry lookup after creation
       conversation = await prisma.conversation.findFirst({
         where: { tenantId, hostawayConversationId: hostawayConvId },
-        include: { reservation: true },
+        include: { reservation: true, guest: true },
       });
       if (!conversation) {
         // Try by reservationId
