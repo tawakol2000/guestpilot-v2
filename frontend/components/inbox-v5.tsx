@@ -1112,7 +1112,9 @@ export default function InboxV5() {
         setConversations(prev =>
           mapped.map(newConv => {
             const existing = prev.find(p => p.id === newConv.id)
-            if (existing && fetchedDetails.current.has(newConv.id)) {
+            if (existing) {
+              // Always preserve messages/guest/booking/property from existing state —
+              // a list refresh must never wipe messages that SSE or mergeDetail already loaded.
               return {
                 ...existing,
                 aiOn: newConv.aiOn,
@@ -1263,7 +1265,7 @@ export default function InboxV5() {
             setConversations(prev =>
               mapped.map(newConv => {
                 const existing = prev.find(p => p.id === newConv.id)
-                if (existing && fetchedDetails.current.has(newConv.id)) {
+                if (existing) {
                   return {
                     ...existing,
                     aiOn: newConv.aiOn,
