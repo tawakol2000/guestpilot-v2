@@ -1217,9 +1217,17 @@ export default function AiPipelineV5(): React.ReactElement {
         flexDirection: 'column',
         fontFamily: T.font.sans,
         background: T.bg.secondary,
+        overflow: 'hidden',
+      }}
+    >
+    <div
+      style={{
+        flex: 1,
+        overflowY: 'auto',
         padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
         gap: 16,
-        overflow: 'auto',
       }}
     >
       {/* ─── Header + Controls ─── */}
@@ -1788,6 +1796,7 @@ export default function AiPipelineV5(): React.ReactElement {
           </div>
         )}
       </div>
+    </div>
     </div>
   )
 }
