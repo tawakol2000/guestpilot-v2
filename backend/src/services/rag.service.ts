@@ -354,9 +354,13 @@ export async function retrieveRelevantKnowledge(
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
 
       const combined = [...sopChunks, ...propertyChunks];
-      const topSimilarity = combined.length > 0 ? Math.max(...combined.map(r => r.similarity)) : 0;
+      // Use classifier confidence (not just chunk similarity) for tier decision.
+      // The classifier may return property-info at 0.95 sim but getSopContent returns ''
+      // — the classifier WAS confident, just not an SOP category.
+      const chunkTopSim = combined.length > 0 ? Math.max(...combined.map(r => r.similarity)) : 0;
+      const topSimilarity = Math.max(classifierResult.topSimilarity, chunkTopSim);
       const tier = topSimilarity > TIER_1_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
-      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} topSim=${topSimilarity.toFixed(3)}`);
+      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} topSim=${topSimilarity.toFixed(3)} (classifier=${classifierResult.topSimilarity.toFixed(3)})`);
       return { chunks: combined, topSimilarity, tier };
     } catch (err) {
       console.warn('[RAG] Classifier failed, falling back to pgvector:', err);
