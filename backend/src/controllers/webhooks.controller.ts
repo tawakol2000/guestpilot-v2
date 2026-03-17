@@ -235,7 +235,9 @@ async function handleNewMessage(
     // Schedule AI reply if aiEnabled
     if (conversation.reservation.aiEnabled) {
       await scheduleAiReply(conversation.id, tenantId, prisma);
-      console.log(`[Webhook] [${tenantId}] AI reply scheduled for conv ${conversation.id}`);
+      console.log(`[Webhook] [${tenantId}] AI reply scheduled for conv ${conversation.id} (aiMode=${conversation.reservation.aiMode})`);
+    } else {
+      console.log(`[Webhook] [${tenantId}] AI DISABLED for conv ${conversation.id} — reservation.aiEnabled=false (reservationId=${conversation.reservationId}). Toggle AI on in the dashboard.`);
     }
   } else {
     // G5: Still update lastMessageAt for outgoing messages
