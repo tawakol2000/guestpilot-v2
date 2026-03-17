@@ -186,15 +186,21 @@ function channelFromApi(ch: string): Channel {
   return 'direct'
 }
 
-function checkInStatusFromApi(status: string, checkIn: string): CheckInStatus {
+function checkInStatusFromApi(status: string, checkIn: string, checkOut?: string): CheckInStatus {
   if (status === 'INQUIRY') return 'inquiry'
   if (status === 'CANCELLED') return 'cancelled'
-  if (status === 'CHECKED_IN') return 'checked-in'
   if (status === 'CHECKED_OUT') return 'checked-out'
+  // Compute from dates for CONFIRMED/CHECKED_IN/any active status
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const ci = new Date(checkIn)
   ci.setHours(0, 0, 0, 0)
+  if (checkOut) {
+    const co = new Date(checkOut)
+    co.setHours(0, 0, 0, 0)
+    if (today >= co) return 'checked-out'
+  }
+  if (today > ci) return 'checked-in'
   if (ci.getTime() === today.getTime()) return 'checking-in-today'
   return 'upcoming'
 }
@@ -221,7 +227,7 @@ function summaryToConversation(s: ApiConversationSummary): Conversation {
     unreadCount: s.unreadCount,
     starred: s.starred ?? false,
     status: (s.status as 'OPEN' | 'RESOLVED') || 'OPEN',
-    checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn),
+    checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn, s.checkOut),
     messages: [],
     guest: { name: s.guestName, email: '', phone: '', nationality: '' },
     booking: {
@@ -258,7 +264,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
   return {
     ...conv,
     channel: channelFromApi(res?.channel || detail.channel || conv.channel),
-    checkInStatus: checkInStatusFromApi(res?.status || '', res?.checkIn || ''),
+    checkInStatus: checkInStatusFromApi(res?.status || '', res?.checkIn || '', res?.checkOut || ''),
     status: (detail.status as 'OPEN' | 'RESOLVED') || conv.status,
     aiOn: res?.aiEnabled ?? conv.aiOn,
     aiMode: (res?.aiMode as AiMode) || conv.aiMode,
