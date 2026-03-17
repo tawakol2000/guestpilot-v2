@@ -102,8 +102,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     try {
       const tenantId = req.tenantId as string;
       const { propertyId } = req.query as { propertyId?: string };
+      // propertyId=global → only tenant-level SOPs (propertyId IS NULL)
+      const propertyFilter = propertyId === 'global' ? { propertyId: null } : propertyId ? { propertyId } : {};
       const chunks = await prisma.propertyKnowledgeChunk.findMany({
-        where: { tenantId, ...(propertyId ? { propertyId } : {}) },
+        where: { tenantId, ...propertyFilter },
         select: { id: true, propertyId: true, content: true, category: true, sourceKey: true, createdAt: true, updatedAt: true },
         orderBy: { createdAt: 'desc' },
         take: 500,
