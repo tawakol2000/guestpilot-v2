@@ -75,6 +75,7 @@ import { AiLogsV5 } from '@/components/ai-logs-v5'
 import { ClassifierV5 } from '@/components/classifier-v5'
 import AiPipelineV5 from '@/components/ai-pipeline-v5'
 import SopEditorV5 from '@/components/sop-editor-v5'
+import ExamplesEditorV5 from '@/components/examples-editor-v5'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -96,7 +97,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today'
 
 interface Message {
@@ -1890,6 +1891,7 @@ export default function InboxV5() {
             { id: 'logs', label: 'AI Logs' },
             { id: 'pipeline', label: 'Pipeline' },
             { id: 'sops', label: 'SOPs' },
+            { id: 'examples', label: 'Examples' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
           <button
@@ -3498,6 +3500,11 @@ export default function InboxV5() {
       {navTab === 'sops' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <SopEditorV5 />
+        </div>
+      )}
+      {navTab === 'examples' && (
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <ExamplesEditorV5 />
         </div>
       )}
 

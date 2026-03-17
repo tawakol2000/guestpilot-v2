@@ -5,6 +5,7 @@ import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops } from '../services/rag.service';
 import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
+import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
 import { AuthenticatedRequest } from '../types';
 
@@ -394,6 +395,81 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] classifier-examples delete failed:', err);
       res.status(500).json({ error: 'Failed to delete classifier example' });
+    }
+  });
+
+  // PATCH /api/knowledge/classifier-examples/:id — update labels for a DB example
+  router.patch('/classifier-examples/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params as { id: string };
+      const { labels } = req.body as { labels?: string[] };
+
+      if (!Array.isArray(labels)) {
+        res.status(400).json({ error: 'labels must be an array' });
+        return;
+      }
+
+      const existing = await prisma.classifierExample.findFirst({
+        where: { id, tenantId },
+        select: { id: true },
+      });
+      if (!existing) {
+        res.status(404).json({ error: 'Example not found' });
+        return;
+      }
+
+      await prisma.classifierExample.update({
+        where: { id },
+        data: { labels },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples patch failed:', err);
+      res.status(500).json({ error: 'Failed to update classifier example' });
+    }
+  });
+
+  // GET /api/knowledge/all-examples — all training examples (hardcoded + DB) for visual editor
+  router.get('/all-examples', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+
+      // Hardcoded base examples from classifier-data.ts
+      const baseExamples = TRAINING_EXAMPLES.map((ex, i) => ({
+        id: `base-${i}`,
+        text: ex.text,
+        labels: ex.labels,
+        source: 'base' as const,
+        editable: false,
+        createdAt: null as string | null,
+      }));
+
+      // DB examples (judge, manual, tier2-feedback, etc.)
+      const dbExamples = await prisma.classifierExample.findMany({
+        where: { tenantId, active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, text: true, labels: true, source: true, createdAt: true },
+      });
+
+      const dbMapped = dbExamples.map(ex => ({
+        id: ex.id,
+        text: ex.text,
+        labels: ex.labels as string[],
+        source: (ex.source || 'manual') as string,
+        editable: true,
+        createdAt: ex.createdAt?.toISOString() || null,
+      }));
+
+      res.json({
+        examples: [...baseExamples, ...dbMapped],
+        baseCount: baseExamples.length,
+        dbCount: dbMapped.length,
+      });
+    } catch (err) {
+      console.error('[Knowledge] all-examples query failed:', err);
+      res.status(500).json({ error: 'Failed to fetch all examples' });
     }
   });
 
