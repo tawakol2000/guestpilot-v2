@@ -109,8 +109,17 @@ interface PipelineFeedEntry {
     query: string
     tier: 'tier1' | 'tier2_needed' | 'tier3_cache' | 'unknown'
     topSimilarity: number | null
+    // Tier 1
+    classifierLabels: string[]
+    classifierTopSim: number | null
+    classifierMethod: string | null
+    // Tier 3
     tier3Reinjected: boolean
     tier3TopicSwitch: boolean
+    tier3ReinjectedLabels: string[]
+    // Tier 2
+    tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null
+    // Other
     escalationSignals: string[]
     chunksRetrieved: number
     chunks: Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>
@@ -575,7 +584,7 @@ function MetaPill({ label, value, color }: { label: string; value: string; color
 function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, tier3Reinjected: false, tier3TopicSwitch: false, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
+  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, classifierLabels: [] as string[], classifierTopSim: null as number | null, classifierMethod: null as string | null, tier3Reinjected: false, tier3TopicSwitch: false, tier3ReinjectedLabels: [] as string[], tier2Output: null as any, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
   const ev = entry.evaluation
   const hasError = !!entry.error
   const tierKey = (p.tier || 'unknown') as keyof typeof TIER_COLORS
@@ -736,44 +745,40 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             color={TIER_COLORS.tier1.fg}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Method + similarity */}
+              {/* Method + classifier similarity */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                {ev && (
-                  <MetaPill label="method:" value={ev.classifierMethod} />
+                {(p.classifierMethod || ev?.classifierMethod) && (
+                  <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
                 )}
-                {p.topSimilarity != null && (
+                {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>similarity:</span>
-                    <SimilarityBar score={p.topSimilarity} width={80} />
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
+                    <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
                   </div>
                 )}
               </div>
-              {/* Labels predicted */}
-              {ev && ev.classifierLabels.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>labels:</span>
-                  {ev.classifierLabels.map((label, i) => {
-                    const sc = sopBadgeColor(label)
-                    return (
-                      <span
-                        key={i}
-                        style={{
-                          background: sc.bg,
-                          color: sc.fg,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          fontFamily: T.font.sans,
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          border: `1px solid ${sc.fg}20`,
-                        }}
-                      >
-                        {label}
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
+              {/* Classifier labels */}
+              {(() => {
+                const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
+                return labels.length > 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
+                    {labels.map((label: string, i: number) => {
+                      const sc = sopBadgeColor(label)
+                      return (
+                        <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
+                          {label}
+                        </span>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, fontStyle: 'italic' }}>no labels (contextual)</span>
+                  </div>
+                )
+              })()}
               {/* Verdict */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {p.tier === 'tier1' ? (
@@ -810,27 +815,26 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>re-injected:</span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: p.tier3Reinjected ? T.status.green : T.text.tertiary,
-                      fontFamily: T.font.sans,
-                    }}
-                  >
+                  <span style={{ fontSize: 11, fontWeight: 600, color: p.tier3Reinjected ? T.status.green : T.text.tertiary, fontFamily: T.font.sans }}>
                     {p.tier3Reinjected ? 'Yes' : 'No'}
                   </span>
                 </div>
+                {p.tier3Reinjected && (p.tier3ReinjectedLabels || []).length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ re-injected SOPs:</span>
+                    {(p.tier3ReinjectedLabels || []).map((label: string, i: number) => {
+                      const sc = sopBadgeColor(label)
+                      return (
+                        <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
+                          {label}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>topic switch:</span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: p.tier3TopicSwitch ? T.status.amber : T.text.tertiary,
-                      fontFamily: T.font.sans,
-                    }}
-                  >
+                  <span style={{ fontSize: 11, fontWeight: 600, color: p.tier3TopicSwitch ? T.status.amber : T.text.tertiary, fontFamily: T.font.sans }}>
                     {p.tier3TopicSwitch ? 'Yes' : 'No'}
                   </span>
                 </div>
@@ -845,37 +849,41 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             color={TIER_COLORS.tier2_needed.fg}
             dimmed={p.tier !== 'tier2_needed'}
           >
-            {p.tier !== 'tier2_needed' ? (
+            {p.tier !== 'tier2_needed' && !p.tier2Output ? (
               <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
                 -- Skipped ({p.tier === 'tier1' ? 'Tier 1 confident' : 'Tier 3 handled'})
               </span>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle2 size={13} color={T.status.green} />
-                  <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>Fired</span>
+                  <Zap size={13} color={T.status.amber} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>Fired</span>
                 </div>
-                {ev && ev.classifierLabels.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>result:</span>
-                    {ev.classifierLabels.map((l, i) => (
-                      <span
-                        key={i}
-                        style={{
-                          background: '#FEF3C7',
-                          color: '#D97706',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          fontFamily: T.font.sans,
-                          border: '1px solid #D9770620',
-                        }}
-                      >
-                        {l}
-                      </span>
-                    ))}
-                  </div>
+                {p.tier2Output && (
+                  <>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <MetaPill label="topic:" value={p.tier2Output.topic} />
+                      <MetaPill label="status:" value={p.tier2Output.status} color={p.tier2Output.status === 'ongoing_issue' ? T.status.amber : p.tier2Output.status === 'follow_up' ? T.status.blue : undefined} />
+                      <MetaPill label="urgency:" value={p.tier2Output.urgency} color={p.tier2Output.urgency === 'angry' ? T.status.red : p.tier2Output.urgency === 'frustrated' ? T.status.amber : p.tier2Output.urgency === 'emergency' ? T.status.red : undefined} />
+                    </div>
+                    {p.tier2Output.sops.length > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ SOPs:</span>
+                        {p.tier2Output.sops.map((s: string, i: number) => {
+                          const sc = sopBadgeColor(s)
+                          return (
+                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
+                              {s}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ SOPs: none (contextual)</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

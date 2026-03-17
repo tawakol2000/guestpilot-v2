@@ -1177,6 +1177,9 @@ export async function generateAndSendAiReply(
     let retrievedChunks = ragResult.chunks;
     const ragDurationMs = Date.now() - ragStart;
 
+    // Capture classifier metadata right after RAG retrieval (for ragContext logging)
+    const classifierSnap = getLastClassifierResult();
+
     // —— Tier 3: Topic State Cache ——————————————————————————
     // Only SOP labels drive topic state — property-* and learned-answers are passive context
     const retrievedLabels = retrievedChunks.map((c: any) => c.category)
@@ -1186,6 +1189,7 @@ export async function generateAndSendAiReply(
     );
     let tier3Reinjected = false;
     let tier3TopicSwitch = false;
+    let tier3ReinjectedLabels: string[] = [];
 
     if (retrievedSopLabels.length > 0) {
       updateTopicState(conversationId, retrievedSopLabels);
@@ -1213,6 +1217,7 @@ export async function generateAndSendAiReply(
           retrievedChunks.push(...reinjectedChunks);
           ragResult.tier = 'tier3_cache';
           ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
+          tier3ReinjectedLabels = tier3Result.labels;
           console.log(`[AI] Tier 3 re-injected ${reinjectedChunks.length} chunks for conv ${conversationId}: [${tier3Result.labels.join(', ')}]`);
         }
       }
@@ -1220,6 +1225,7 @@ export async function generateAndSendAiReply(
 
     // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
     let tier2ResolvedLabels: string[] | undefined;
+    let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
     if (ragResult.tier === 'tier2_needed' && !tier3Reinjected) {
       const recentForTier2 = allMsgs.slice(-10).map(m => ({
         role: m.role === 'GUEST' ? 'guest' : 'host',
@@ -1228,6 +1234,9 @@ export async function generateAndSendAiReply(
 
       try {
         const tier2Result = await extractIntent(recentForTier2, tenantId, conversationId);
+        if (tier2Result) {
+          tier2Output = { topic: tier2Result.topic, status: tier2Result.status, urgency: tier2Result.urgency, sops: tier2Result.sops };
+        }
         if (tier2Result && tier2Result.sops.length > 0) {
           // Direct SOP lookup — no redundant vector search needed
           const tier2Chunks = tier2Result.sops
@@ -1320,10 +1329,19 @@ export async function generateAndSendAiReply(
       durationMs: ragDurationMs,
       topSimilarity: ragResult.topSimilarity,
       tier: ragResult.tier,
+      // Tier 1 details
+      classifierUsed: context.reservationStatus !== 'INQUIRY',
+      classifierLabels: classifierSnap?.labels || [],
+      classifierTopSim: classifierSnap?.topSimilarity ?? null,
+      classifierMethod: classifierSnap?.method || null,
+      // Tier 3 details
       tier3Reinjected,
       tier3TopicSwitch,
+      tier3ReinjectedLabels,
+      // Tier 2 details
+      tier2Output,
+      // Escalation
       escalationSignals: escalationSignals.map(s => s.signal),
-      classifierUsed: context.reservationStatus !== 'INQUIRY',
     };
 
     const propertyInfo = buildPropertyInfo(

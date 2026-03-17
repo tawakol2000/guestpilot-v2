@@ -68,8 +68,17 @@ export function aiPipelineRouter(prisma: PrismaClient) {
             query: ragCtx?.query?.substring(0, 200) || '',
             tier: ragCtx?.tier || 'unknown',
             topSimilarity: ragCtx?.topSimilarity ?? null,
+            // Tier 1 details
+            classifierLabels: ragCtx?.classifierLabels || [],
+            classifierTopSim: ragCtx?.classifierTopSim ?? null,
+            classifierMethod: ragCtx?.classifierMethod || null,
+            // Tier 3 details
             tier3Reinjected: ragCtx?.tier3Reinjected ?? false,
             tier3TopicSwitch: ragCtx?.tier3TopicSwitch ?? false,
+            tier3ReinjectedLabels: ragCtx?.tier3ReinjectedLabels || [],
+            // Tier 2 details
+            tier2Output: ragCtx?.tier2Output || null,
+            // Escalation
             escalationSignals: ragCtx?.escalationSignals || [],
             chunksRetrieved: ragCtx?.totalRetrieved ?? 0,
             chunks: (ragCtx?.chunks || []).map((c: any) => ({

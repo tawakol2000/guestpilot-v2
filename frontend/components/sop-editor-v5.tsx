@@ -427,8 +427,16 @@ export default function SopEditorV5() {
     <div style={{
       fontFamily: T.font.sans,
       color: T.text.primary,
-      minHeight: '100vh',
+      height: '100%',
       background: T.bg.primary,
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column' as const,
+    }}>
+    <div style={{
+      flex: 1,
+      overflowY: 'auto' as const,
+      padding: 20,
     }}>
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <div style={{
@@ -825,6 +833,7 @@ export default function SopEditorV5() {
           ))}
         </div>
       )}
+    </div>
     </div>
   )
 }
