@@ -317,6 +317,24 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
     } else if (!judgeResult.retrievalCorrect && input.classifierTopSim >= 0.7) {
       console.log(`[Judge] High-confidence misclassification (sim=${input.classifierTopSim.toFixed(2)}), flagged for review: "${input.guestMessage.substring(0, 50)}"`);
     }
+
+    // Step 4: Low-confidence reinforcement — judge says correct but Tier 1 barely recognized it.
+    // Add as training example so Tier 1 handles it confidently next time (no Tier 2 needed).
+    const LOW_SIM_REINFORCE_THRESHOLD = 0.40;
+    if (
+      judgeResult.retrievalCorrect &&
+      input.classifierTopSim < LOW_SIM_REINFORCE_THRESHOLD &&
+      canAutoFix(input.tenantId)
+    ) {
+      const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
+      if (!existing) {
+        const reinforceLabels = judgeResult.correctLabels.filter(l => VALID_CHUNK_IDS.includes(l));
+        await addExample(input.tenantId, input.guestMessage, reinforceLabels, 'low-sim-reinforce', prisma);
+        recordAutoFix(input.tenantId);
+        await reinitializeClassifier(input.tenantId, prisma);
+        console.log(`[Judge] Low-sim reinforcement (sim=${input.classifierTopSim.toFixed(2)}): "${input.guestMessage.substring(0, 50)}" → [${reinforceLabels.join(', ') || '(contextual)'}]`);
+      }
+    }
   } catch (err) {
     console.warn('[Judge] evaluateAndImprove failed (non-fatal):', err);
   }
