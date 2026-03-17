@@ -182,9 +182,43 @@ async function handleNewMessage(
     }
   }
 
+  // Auto-create reservation + conversation if neither exists (handles out-of-order webhooks,
+  // inquiry-first messages, or missing reservation.created events from Hostaway)
+  if (!conversation && data.reservationId) {
+    console.log(`[Webhook] [${tenantId}] No conversation for conv=${hostawayConvId} res=${data.reservationId} — auto-creating from message webhook`);
+    try {
+      await handleNewReservation(tenantId, { ...data, id: data.reservationId }, prisma);
+      // Retry lookup after creation
+      conversation = await prisma.conversation.findFirst({
+        where: { tenantId, hostawayConversationId: hostawayConvId },
+        include: { reservation: true },
+      });
+      if (!conversation) {
+        // Try by reservationId
+        const res = await prisma.reservation.findUnique({
+          where: { tenantId_hostawayReservationId: { tenantId, hostawayReservationId: String(data.reservationId) } },
+        });
+        if (res) {
+          conversation = await prisma.conversation.findFirst({
+            where: { tenantId, reservationId: res.id },
+            include: { reservation: true },
+          });
+          if (conversation && !conversation.hostawayConversationId) {
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: { hostawayConversationId: hostawayConvId },
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[Webhook] [${tenantId}] Auto-create failed:`, err);
+    }
+  }
+
   if (!conversation) {
     console.warn(
-      `[Webhook] [${tenantId}] No conversation for conv=${hostawayConvId} res=${data.reservationId} — dropped`
+      `[Webhook] [${tenantId}] No conversation for conv=${hostawayConvId} res=${data.reservationId} — dropped (auto-create also failed)`
     );
     return;
   }
