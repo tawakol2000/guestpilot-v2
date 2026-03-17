@@ -832,12 +832,12 @@ export async function seedTenantSops(
   tenantId: string,
   prisma: PrismaClient
 ): Promise<number> {
-  // 1. Delete existing SOP chunks for this tenant (propertyId IS NULL, category LIKE 'sop-%')
+  // 1. Delete existing SOP chunks for this tenant (propertyId IS NULL, all seeded categories)
   await prisma.$executeRaw`
     DELETE FROM "PropertyKnowledgeChunk"
     WHERE "propertyId" IS NULL
       AND "tenantId" = ${tenantId}
-      AND category LIKE 'sop-%'
+      AND (category LIKE 'sop-%' OR category IN ('pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues', 'non-actionable', 'property-info', 'property-description', 'property-amenities'))
   `;
 
   const vectorEnabled = await isPgvectorAvailable(prisma);

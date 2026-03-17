@@ -574,8 +574,9 @@ export default function SopEditorV5() {
                 border: `1px solid ${T.border.default}`,
                 borderRadius: T.radius.sm,
                 boxShadow: T.shadow.lg,
-                zIndex: 50,
-                overflow: 'hidden',
+                zIndex: 9999,
+                overflow: 'auto',
+                maxHeight: 300,
                 animation: 'scaleIn 0.15s ease-out both',
               }}>
                 {/* Global option */}
@@ -693,7 +694,7 @@ export default function SopEditorV5() {
           style={{
             position: 'fixed' as const,
             inset: 0,
-            zIndex: 40,
+            zIndex: 9998,
           }}
         />
       )}
