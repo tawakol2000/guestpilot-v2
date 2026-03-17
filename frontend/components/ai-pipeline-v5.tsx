@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Activity, Zap, Brain, RefreshCw, ChevronDown, ChevronRight,
   Clock, DollarSign, AlertTriangle, CheckCircle2, XCircle, Minus,
@@ -71,7 +71,7 @@ function ensureStyles(): void {
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
 const headers = () => ({
-  Authorization: `Bearer ${localStorage.getItem('gp_token')}`,
+  Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('gp_token') : ''}`,
   'Content-Type': 'application/json',
 })
 
@@ -138,7 +138,9 @@ async function fetchStats(): Promise<PipelineStats> {
 async function fetchFeed(limit = 50, offset = 0): Promise<{ entries: PipelineFeedEntry[]; total: number }> {
   const res = await fetch(`${API_BASE}/api/ai-pipeline/feed?limit=${limit}&offset=${offset}`, { headers: headers() })
   if (!res.ok) throw new Error(`Feed fetch failed: ${res.status}`)
-  return res.json()
+  const data = await res.json()
+  // Backend returns { feed, total } — normalize to { entries, total }
+  return { entries: data.feed || data.entries || [], total: data.total || 0 }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -573,10 +575,10 @@ function MetaPill({ label, value, color }: { label: string; value: string; color
 function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const p = entry.pipeline
+  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, tier3Reinjected: false, tier3TopicSwitch: false, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
   const ev = entry.evaluation
   const hasError = !!entry.error
-  const tierKey = p.tier as keyof typeof TIER_COLORS
+  const tierKey = (p.tier || 'unknown') as keyof typeof TIER_COLORS
   const tc = TIER_COLORS[tierKey] || TIER_COLORS.unknown
 
   // Judge verdict icon
