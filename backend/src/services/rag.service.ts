@@ -85,18 +85,20 @@ export async function ingestPropertyKnowledge(
     DELETE FROM "PropertyKnowledgeChunk"
     WHERE "propertyId" = ${propertyId}
       AND "tenantId" = ${tenantId}
-      AND category IN ('property-info', 'property-description', 'property-amenities')
+      AND category IN ('property-info', 'property-description')
   `;
 
   const chunks: { content: string; category: string; sourceKey: string }[] = [];
 
-  // 2a. Build property-info chunk: clean key-value format (excludes amenities — separate chunk)
+  // 2a. Build property-info chunk: clean key-value format
+  // Amenities are NOT stored as a pgvector chunk — they're injected dynamically
+  // into the sop-amenity-request SOP via the {PROPERTY_AMENITIES} placeholder.
   const customKb = property.customKnowledgeBase as Record<string, unknown> | null;
   if (customKb && typeof customKb === 'object') {
     const lines: string[] = [];
     if (property.address) lines.push(`Address: ${property.address}`);
     for (const [key, val] of Object.entries(customKb)) {
-      if (key === 'amenities') continue; // amenities go in their own chunk
+      if (key === 'amenities') continue; // handled via sop-amenity-request SOP
       const strVal = String(val ?? '').trim();
       if (!strVal || strVal === 'N/A' || strVal === 'null') continue;
       const label = KEY_LABELS[key] || key;
@@ -107,18 +109,6 @@ export async function ingestPropertyKnowledge(
         content: lines.join('\n'),
         category: 'property-info',
         sourceKey: 'property-info',
-      });
-    }
-
-    // 2a-ii. Build property-amenities chunk: dedicated for amenity queries
-    const amenitiesVal = String(customKb.amenities ?? '').trim();
-    if (amenitiesVal && amenitiesVal !== 'N/A' && amenitiesVal !== 'null') {
-      const amenitiesList = amenitiesVal.split(',').map((a: string) => a.trim()).filter(Boolean);
-      const amenitiesContent = `## Available Amenities & Services\nThe following amenities are available at this property:\n${amenitiesList.map((a: string) => `• ${a}`).join('\n')}\n\nItems NOT on this list may not be available — check with manager before confirming.`;
-      chunks.push({
-        content: amenitiesContent,
-        category: 'property-amenities',
-        sourceKey: 'property-amenities',
       });
     }
   }
@@ -293,7 +283,7 @@ async function retrievePropertyChunks(
       WHERE "propertyId" = $2
         AND "tenantId" = $3
         AND "${col}" IS NOT NULL
-        AND category IN ('property-info', 'property-description', 'property-amenities', 'learned-answers')
+        AND category IN ('property-info', 'property-description', 'learned-answers')
       ORDER BY "${col}" <=> $1::vector
       LIMIT $4`,
       embeddingStr, propertyId, tenantId, topK
@@ -854,7 +844,7 @@ export async function seedTenantSops(
     DELETE FROM "PropertyKnowledgeChunk"
     WHERE "propertyId" IS NULL
       AND "tenantId" = ${tenantId}
-      AND (category LIKE 'sop-%' OR category IN ('pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues', 'non-actionable', 'property-info', 'property-description', 'property-amenities'))
+      AND (category LIKE 'sop-%' OR category IN ('pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues', 'non-actionable', 'property-info', 'property-description'))
   `;
 
   const vectorEnabled = await isPgvectorAvailable(prisma);

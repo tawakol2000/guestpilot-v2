@@ -66,10 +66,9 @@ const VALID_CHUNK_IDS = [
   'sop-visitor-policy',
   'sop-early-checkin',
   'sop-late-checkout',
-  'sop-escalation-info',
+  'sop-complaint',
   'property-info',
   'property-description',
-  'property-amenities',
   // New 11
   'sop-booking-inquiry',
   'pricing-negotiation',
@@ -104,12 +103,11 @@ Original 11:
 - sop-visitor-policy: visitors, friends coming over, family visits, passport verification
 - sop-early-checkin: early check-in, arriving before 3pm, bag drop
 - sop-late-checkout: late checkout, leaving after 11am, extending stay
-- sop-escalation-info: restaurant recommendations, local info, questions we can't answer
+- sop-complaint: guest dissatisfaction, review threats, property quality complaints
 - property-info: address, floor, bedrooms, check-in/out times, door code, WiFi credentials
 - property-description: building features, pool, gym, parking
-- property-amenities: list of available items and appliances
 
-New 11:
+Other categories:
 - sop-booking-inquiry: availability checks, new booking requests, unit options
 - pricing-negotiation: discounts, rates, budget concerns, price negotiations
 - pre-arrival-logistics: directions, arrival coordination, location sharing, airport transfer

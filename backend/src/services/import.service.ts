@@ -121,7 +121,7 @@ export async function runImport(
   if (opts.preserveLearnedAnswers || opts.preservePropertyChunks) {
     const categories: string[] = [];
     if (opts.preserveLearnedAnswers) categories.push('learned-answers');
-    if (opts.preservePropertyChunks) categories.push('property-info', 'property-description', 'property-amenities');
+    if (opts.preservePropertyChunks) categories.push('property-info', 'property-description');
     if (categories.length > 0) {
       // Fetch chunks with their property's hostawayListingId so we can re-link after import
       const chunks = await prisma.$queryRaw<Array<{
