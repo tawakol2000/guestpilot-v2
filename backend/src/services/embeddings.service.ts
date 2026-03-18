@@ -123,6 +123,7 @@ async function cohereEmbedText(text: string, inputType?: EmbeddingInputType): Pr
       texts: [text],
       inputType: mapInputType(inputType),
       embeddingTypes: ['float'],
+      outputDimension: 1024,
     });
     const embeddings = res.embeddings;
     if (embeddings && 'float' in embeddings && Array.isArray(embeddings.float) && embeddings.float[0]) {
@@ -148,6 +149,7 @@ async function cohereEmbedBatch(texts: string[], inputType?: EmbeddingInputType)
         texts: batch,
         inputType: mapInputType(inputType),
         embeddingTypes: ['float'],
+        outputDimension: 1024,
       });
       const embeddings = res.embeddings;
       if (embeddings && 'float' in embeddings && Array.isArray(embeddings.float)) {
