@@ -47,7 +47,7 @@ Return ONLY this JSON, nothing else:
 - non-actionable — greetings, test messages, house rules questions, scheduling questions, baked-in topics
 - contextual — short follow-ups ("ok", "yes", "sure", "and?") that need previous topic re-injected
 
-Return SOPS: [] for messages that only need scheduling, house rules, or emergency handling (baked into system prompt). Also return [] when guest is simply providing info the host requested (name, nationality, guest count) and no SOP procedure is needed.
+IMPORTANT: Greetings in ANY language ("hi", "hello", "hey", "هاي", "مرحبا", "السلام عليكم", "hallo") MUST return SOPS: ["non-actionable"]. Do NOT use conversation history to override a greeting — a greeting is always non-actionable regardless of what was discussed before.
 
 ## Examples
 
@@ -69,7 +69,16 @@ GUEST: Egyptian
 {"TOPIC":"nationality verification","STATUS":"follow_up","URGENCY":"routine","SOPS":[]}
 ```
 
-**3. Guest at the gate needing access:**
+**3. Greeting in Arabic — always non-actionable (ignore conversation history):**
+```
+HOST: The bidet is available in the bathroom.
+GUEST: هاي
+```
+```json
+{"TOPIC":"greeting","STATUS":"just_chatting","URGENCY":"routine","SOPS":["non-actionable"]}
+```
+
+**4. Guest at the gate needing access:**
 ```
 HOST: Hi Hamza, hope you're enjoying your stay.
 GUEST: From 1pm-2pm, Thanks
