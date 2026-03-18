@@ -299,7 +299,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
     },
     booking: {
       ...conv.booking,
-      id: res?.id || '',
+      id: (detail as any).hostawayConversationId || conv.booking.id || '',
       property: detail.property?.name || conv.unitName,
       checkIn: res?.checkIn ? formatDate(res.checkIn) : conv.booking.checkIn,
       checkOut: res?.checkOut ? formatDate(res.checkOut) : conv.booking.checkOut,
