@@ -20,7 +20,6 @@ import {
   TRAINING_EXAMPLES,
   SOP_CONTENT,
   CHUNK_TOKENS,
-  TOKEN_BUDGET,
   BAKED_IN_CHUNKS,
   type TrainingExample,
 } from './classifier-data';
@@ -181,10 +180,20 @@ export async function classifyMessage(query: string): Promise<{
 
 /**
  * Get the SOP content text for a given chunk ID.
- * Returns empty string if chunk not found.
+ * If chunkId is 'sop-amenity-request' and propertyAmenities is provided,
+ * injects the property-specific amenities list into the {PROPERTY_AMENITIES} placeholder.
  */
-export function getSopContent(chunkId: string): string {
-  return SOP_CONTENT[chunkId] || '';
+export function getSopContent(chunkId: string, propertyAmenities?: string): string {
+  let content = SOP_CONTENT[chunkId] || '';
+  if (chunkId === 'sop-amenity-request' && content.includes('{PROPERTY_AMENITIES}')) {
+    if (propertyAmenities) {
+      const list = propertyAmenities.split(',').map(a => `• ${a.trim()}`).filter(Boolean).join('\n');
+      content = content.replace('{PROPERTY_AMENITIES}', list);
+    } else {
+      content = content.replace('{PROPERTY_AMENITIES}', 'No amenities data available for this property.');
+    }
+  }
+  return content;
 }
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -202,16 +211,12 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 function applyTokenBudget(labels: string[]): { labels: string[]; tokensUsed: number } {
+  // No budget cap — retrieve all relevant SOPs. Token counts tracked for logging only.
   let tokens = 0;
-  const result: string[] = [];
   for (const label of labels) {
-    const cost = CHUNK_TOKENS[label] || 100;
-    if (tokens + cost <= TOKEN_BUDGET) {
-      result.push(label);
-      tokens += cost;
-    }
+    tokens += CHUNK_TOKENS[label] || 100;
   }
-  return { labels: result, tokensUsed: tokens };
+  return { labels, tokensUsed: tokens };
 }
 
 /**

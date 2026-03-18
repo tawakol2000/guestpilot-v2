@@ -33,8 +33,8 @@ export interface IntentExtraction {
 
 export const RAG_CATEGORIES = [
   'sop-cleaning', 'sop-amenity-request', 'sop-maintenance', 'sop-wifi-doorcode',
-  'sop-visitor-policy', 'sop-early-checkin', 'sop-late-checkout', 'sop-escalation-info',
-  'property-info', 'property-description', 'property-amenities',
+  'sop-visitor-policy', 'sop-early-checkin', 'sop-late-checkout', 'sop-complaint',
+  'property-info', 'property-description',
   'sop-booking-inquiry', 'pricing-negotiation', 'pre-arrival-logistics',
   'sop-booking-modification', 'sop-booking-confirmation', 'payment-issues',
   'post-stay-issues', 'sop-long-term-rental', 'sop-booking-cancellation',

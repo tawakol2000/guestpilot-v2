@@ -1,9 +1,7 @@
 /**
  * Classifier training data and SOP content.
- * Ported from run_embedding_eval_v2.py (v7, 99/100 score).
- *
- * DO NOT EDIT training examples without re-running the eval script.
- * Each example is a guest message paired with the chunk IDs that should be retrieved.
+ * v8: Updated SOPs, added sop-complaint, removed sop-escalation-info,
+ * merged property-amenities into sop-amenity-request, restructured contextual vs non-actionable.
  */
 
 // Chunks baked into system prompt (never retrieved by classifier)
@@ -14,36 +12,33 @@ export const BAKED_IN_CHUNKS = new Set([
   'sop-escalation-scheduled',
 ]);
 
-// Token costs for RAG-retrieved chunks
+// Token costs for RAG-retrieved chunks (reference only — no budget cap enforced)
 export const CHUNK_TOKENS: Record<string, number> = {
-  'sop-cleaning': 195,
-  'sop-amenity-request': 155,
-  'sop-maintenance': 250,
+  'sop-cleaning': 150,
+  'sop-amenity-request': 200,
+  'sop-maintenance': 260,
   'sop-wifi-doorcode': 140,
-  'sop-visitor-policy': 170,
-  'sop-early-checkin': 220,
-  'sop-late-checkout': 140,
-  'sop-escalation-info': 160,
+  'sop-visitor-policy': 300,
+  'sop-early-checkin': 380,
+  'sop-late-checkout': 280,
+  'sop-complaint': 200,
   'property-info': 120,
   'property-description': 185,
-  'property-amenities': 175,
-  'sop-booking-inquiry': 90,
-  'pricing-negotiation': 95,
-  'pre-arrival-logistics': 95,
-  'sop-booking-modification': 85,
-  'sop-booking-confirmation': 85,
-  'payment-issues': 85,
-  'post-stay-issues': 90,
-  'sop-long-term-rental': 85,
-  'sop-booking-cancellation': 90,
-  'sop-property-viewing': 85,
-  'non-actionable': 60,
+  'sop-booking-inquiry': 120,
+  'pricing-negotiation': 150,
+  'pre-arrival-logistics': 150,
+  'sop-booking-modification': 110,
+  'sop-booking-confirmation': 110,
+  'payment-issues': 120,
+  'post-stay-issues': 110,
+  'sop-long-term-rental': 110,
+  'sop-booking-cancellation': 110,
+  'sop-property-viewing': 100,
+  'non-actionable': 80,
   'contextual': 0,
 };
 
-export const TOKEN_BUDGET = 500;
-
-// Training examples — 284 total (159 base + 5 self-improvement + 120 new categories)
+// Training examples
 export interface TrainingExample {
   text: string;
   labels: string[];
@@ -61,20 +56,20 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'The place is filthy I want it cleaned NOW', labels: ['sop-cleaning'] },
   { text: 'تنظيف الشقة', labels: ['sop-cleaning'] },
 
-  // ── AMENITY (13) ──
-  { text: 'I need a pillow', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Do you have a baby crib?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Can I get extra towels?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Is there a blender?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Do you have a phone charger?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'We need more blankets', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Is there an iron?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Can I get hangers?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'Do you have kids plates and cups?', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'What amenities does this apartment have?', labels: ['property-amenities'] },
-  { text: "What's available in the apartment?", labels: ['property-amenities'] },
-  { text: 'محتاج مخدة', labels: ['sop-amenity-request', 'property-amenities'] },
-  { text: 'محتاج فوط', labels: ['sop-amenity-request', 'property-amenities'] },
+  // ── AMENITY (13) — property-amenities merged into sop-amenity-request ──
+  { text: 'I need a pillow', labels: ['sop-amenity-request'] },
+  { text: 'Do you have a baby crib?', labels: ['sop-amenity-request'] },
+  { text: 'Can I get extra towels?', labels: ['sop-amenity-request'] },
+  { text: 'Is there a blender?', labels: ['sop-amenity-request'] },
+  { text: 'Do you have a phone charger?', labels: ['sop-amenity-request'] },
+  { text: 'We need more blankets', labels: ['sop-amenity-request'] },
+  { text: 'Is there an iron?', labels: ['sop-amenity-request'] },
+  { text: 'Can I get hangers?', labels: ['sop-amenity-request'] },
+  { text: 'Do you have kids plates and cups?', labels: ['sop-amenity-request'] },
+  { text: 'What amenities does this apartment have?', labels: ['sop-amenity-request'] },
+  { text: "What's available in the apartment?", labels: ['sop-amenity-request'] },
+  { text: 'محتاج مخدة', labels: ['sop-amenity-request'] },
+  { text: 'محتاج فوط', labels: ['sop-amenity-request'] },
 
   // ── MAINTENANCE (37) ──
   { text: "The TV remote isn't working", labels: ['sop-maintenance'] },
@@ -86,9 +81,9 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'The door is stuck', labels: ['sop-maintenance'] },
   { text: 'The toilet is clogged', labels: ['sop-maintenance'] },
   { text: 'The toilet is clogged and overflowing please help immediately', labels: ['sop-maintenance'] },
-  { text: 'There is no hair dryer in the property', labels: ['sop-maintenance', 'property-amenities'] },
-  { text: 'The hair dryer is missing', labels: ['sop-maintenance', 'property-amenities'] },
-  { text: "There's supposed to be an iron but it's not here", labels: ['sop-maintenance', 'property-amenities'] },
+  { text: 'There is no hair dryer in the property', labels: ['sop-maintenance', 'sop-amenity-request'] },
+  { text: 'The hair dryer is missing', labels: ['sop-maintenance', 'sop-amenity-request'] },
+  { text: "There's supposed to be an iron but it's not here", labels: ['sop-maintenance', 'sop-amenity-request'] },
   { text: "There's no hot water", labels: ['sop-maintenance'] },
   { text: 'There is a leak under the sink', labels: ['sop-maintenance'] },
   { text: 'Water is dripping from the ceiling', labels: ['sop-maintenance'] },
@@ -133,12 +128,12 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'How do I get into the building?', labels: ['sop-wifi-doorcode', 'property-info'] },
   { text: "The door code isn't working I'm locked out", labels: ['sop-wifi-doorcode', 'sop-maintenance'] },
 
-  // ── HOUSE RULES → contextual (5) ──
-  { text: 'Can I smoke on the balcony?', labels: ['contextual'] },
-  { text: 'Is there a quiet hours policy?', labels: ['contextual'] },
-  { text: 'What are the house rules?', labels: ['contextual'] },
-  { text: 'We want to have a small birthday gathering', labels: ['contextual'] },
-  { text: 'Can we have a party?', labels: ['contextual'] },
+  // ── HOUSE RULES → non-actionable (baked-in) (5) ──
+  { text: 'Can I smoke on the balcony?', labels: ['non-actionable'] },
+  { text: 'Is there a quiet hours policy?', labels: ['non-actionable'] },
+  { text: 'What are the house rules?', labels: ['non-actionable'] },
+  { text: 'We want to have a small birthday gathering', labels: ['non-actionable'] },
+  { text: 'Can we have a party?', labels: ['non-actionable'] },
 
   // ── VISITOR (11) ──
   { text: 'Can I have a friend over?', labels: ['sop-visitor-policy'] },
@@ -169,7 +164,7 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'Is it possible to stay until 3pm on my last day?', labels: ['sop-late-checkout'] },
   { text: 'What time do we need to leave?', labels: ['sop-late-checkout', 'property-info'] },
   { text: 'When is checkout?', labels: ['sop-late-checkout', 'property-info'] },
-  { text: 'Can we extend our stay by 2 more nights?', labels: ['sop-late-checkout', 'sop-escalation-info'] },
+  { text: 'Can we extend our stay by 2 more nights?', labels: ['sop-booking-modification'] },
 
   // ── PROPERTY (8) ──
   { text: 'What floor is the apartment?', labels: ['property-info', 'property-description'] },
@@ -177,52 +172,64 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'How many bedrooms are there?', labels: ['property-info'] },
   { text: "Where is the apartment? What's the address?", labels: ['property-info'] },
   { text: "Where exactly is the apartment? What's the address?", labels: ['property-info'] },
-  { text: 'Is there parking available?', labels: ['property-description', 'property-amenities'] },
-  { text: 'Is there a pool we can use?', labels: ['property-description', 'property-amenities'] },
-  { text: 'Is there a gym?', labels: ['property-description', 'property-amenities'] },
+  { text: 'Is there parking available?', labels: ['property-description', 'sop-amenity-request'] },
+  { text: 'Is there a pool we can use?', labels: ['property-description', 'sop-amenity-request'] },
+  { text: 'Is there a gym?', labels: ['property-description', 'sop-amenity-request'] },
 
-  // ── SCHEDULING → contextual (5) ──
-  { text: 'What are the working hours?', labels: ['contextual'] },
-  { text: 'What are the working hours for maintenance?', labels: ['contextual'] },
-  { text: 'Can someone come at 2pm?', labels: ['contextual'] },
-  { text: 'Is it possible to arrange something for tomorrow?', labels: ['contextual'] },
-  { text: 'Is it possible to arrange something for tomorrow morning?', labels: ['contextual'] },
+  // ── SCHEDULING → non-actionable (baked-in) (5) ──
+  { text: 'What are the working hours?', labels: ['non-actionable'] },
+  { text: 'What are the working hours for maintenance?', labels: ['non-actionable'] },
+  { text: 'Can someone come at 2pm?', labels: ['non-actionable'] },
+  { text: 'Is it possible to arrange something for tomorrow?', labels: ['non-actionable'] },
+  { text: 'Is it possible to arrange something for tomorrow morning?', labels: ['non-actionable'] },
 
-  // ── ESCALATION INFO (10) ──
-  { text: 'Can you recommend a restaurant nearby?', labels: ['sop-escalation-info'] },
-  { text: 'Can you recommend a good restaurant nearby?', labels: ['sop-escalation-info'] },
-  { text: "What's there to do around here?", labels: ['sop-escalation-info'] },
-  { text: "Where's the nearest pharmacy?", labels: ['sop-escalation-info'] },
-  { text: 'How do I get to the airport?', labels: ['sop-escalation-info'] },
-  { text: 'How do I get to the airport from here?', labels: ['sop-escalation-info'] },
-  { text: 'I want a refund', labels: ['sop-escalation-info'] },
-  { text: 'I want a refund. This is not what was advertised.', labels: ['sop-escalation-info'] },
-  { text: 'I want a discount for the problems', labels: ['sop-escalation-info'] },
-  { text: "I want a discount for all the problems we've had", labels: ['sop-escalation-info'] },
+  // ── FORMER ESCALATION INFO (10) — re-routed ──
+  { text: 'Can you recommend a restaurant nearby?', labels: ['non-actionable'] },
+  { text: 'Can you recommend a good restaurant nearby?', labels: ['non-actionable'] },
+  { text: "What's there to do around here?", labels: ['non-actionable'] },
+  { text: "Where's the nearest pharmacy?", labels: ['non-actionable'] },
+  { text: 'How do I get to the airport?', labels: ['pre-arrival-logistics'] },
+  { text: 'How do I get to the airport from here?', labels: ['pre-arrival-logistics'] },
+  { text: 'I want a refund', labels: ['payment-issues'] },
+  { text: 'I want a refund. This is not what was advertised.', labels: ['payment-issues', 'sop-complaint'] },
+  { text: 'I want a discount for the problems', labels: ['pricing-negotiation'] },
+  { text: "I want a discount for all the problems we've had", labels: ['pricing-negotiation'] },
 
-  // ── ESCALATION IMMEDIATE → contextual (10) ──
-  { text: 'I want to speak to a manager', labels: ['contextual'] },
-  { text: 'I want to speak to a manager right now', labels: ['contextual'] },
-  { text: "I'm going to leave a terrible review", labels: ['contextual'] },
-  { text: "I'm going to leave a terrible review if this isn't fixed today", labels: ['contextual'] },
-  { text: 'This is unacceptable nobody is helping', labels: ['contextual'] },
-  { text: 'This is unacceptable. Nothing works in this apartment and nobody is helping.', labels: ['contextual'] },
-  { text: 'I smell gas in the apartment!', labels: ['contextual'] },
-  { text: 'I smell gas in the apartment!!!', labels: ['contextual'] },
-  { text: 'Someone is trying to get into our apartment', labels: ['contextual'] },
-  { text: "Someone is trying to get into our apartment, we're scared", labels: ['contextual'] },
+  // ── COMPLAINT (10) — NEW ──
+  { text: "I'm not happy with this apartment", labels: ['sop-complaint'] },
+  { text: 'This place is nothing like the photos', labels: ['sop-complaint'] },
+  { text: 'The apartment is terrible', labels: ['sop-complaint'] },
+  { text: "I'm very disappointed with the property", labels: ['sop-complaint'] },
+  { text: 'Not satisfied at all', labels: ['sop-complaint'] },
+  { text: 'This is not worth what we paid', labels: ['sop-complaint', 'pricing-negotiation'] },
+  { text: 'مش راضي عن الشقة', labels: ['sop-complaint'] },
+  { text: 'الشقة مش زي الصور', labels: ['sop-complaint'] },
+  { text: "We're really unhappy with the place", labels: ['sop-complaint'] },
+  { text: 'I expected much better for this price', labels: ['sop-complaint'] },
+
+  // ── FORMER ESCALATION IMMEDIATE → complaint / non-actionable (10) ──
+  { text: 'I want to speak to a manager', labels: ['sop-complaint'] },
+  { text: 'I want to speak to a manager right now', labels: ['sop-complaint'] },
+  { text: "I'm going to leave a terrible review", labels: ['sop-complaint'] },
+  { text: "I'm going to leave a terrible review if this isn't fixed today", labels: ['sop-complaint'] },
+  { text: 'This is unacceptable nobody is helping', labels: ['sop-complaint'] },
+  { text: 'This is unacceptable. Nothing works in this apartment and nobody is helping.', labels: ['sop-complaint', 'sop-maintenance'] },
+  { text: 'I smell gas in the apartment!', labels: ['non-actionable'] },
+  { text: 'I smell gas in the apartment!!!', labels: ['non-actionable'] },
+  { text: 'Someone is trying to get into our apartment', labels: ['non-actionable'] },
+  { text: "Someone is trying to get into our apartment, we're scared", labels: ['non-actionable'] },
 
   // ── EMERGENCY (2) ──
   { text: 'Water flooding from bathroom into hallway', labels: ['sop-maintenance'] },
   { text: "There's water flooding from the bathroom into the hallway", labels: ['sop-maintenance'] },
 
-  // ── NOISE → contextual (4) ──
-  { text: "The neighbors are so loud we can't sleep", labels: ['contextual'] },
-  { text: "The neighbors upstairs are so loud we can't sleep", labels: ['contextual'] },
-  { text: 'Construction noise starting at 7am every day', labels: ['contextual'] },
-  { text: "There's construction noise starting at 7am every day, is this normal?", labels: ['contextual'] },
+  // ── NOISE → non-actionable (baked-in escalation handles) (4) ──
+  { text: "The neighbors are so loud we can't sleep", labels: ['non-actionable'] },
+  { text: "The neighbors upstairs are so loud we can't sleep", labels: ['non-actionable'] },
+  { text: 'Construction noise starting at 7am every day', labels: ['non-actionable'] },
+  { text: "There's construction noise starting at 7am every day, is this normal?", labels: ['non-actionable'] },
 
-  // ── CONTEXTUAL (19) ──
+  // ── CONTEXTUAL — short follow-ups only (Tier 3 re-injects last SOP) ──
   { text: 'Ok thanks', labels: ['contextual'] },
   { text: 'Yes', labels: ['contextual'] },
   { text: "No that's fine", labels: ['contextual'] },
@@ -270,14 +277,12 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'وبعدين؟', labels: ['contextual'] },
   { text: 'يعني؟', labels: ['contextual'] },
 
-  // ── SELF-IMPROVEMENT EXAMPLES (5) — added from v7 failures ──
+  // ── SELF-IMPROVEMENT EXAMPLES (5) ──
   { text: "What time is check in?", labels: ['sop-early-checkin', 'property-info'] },
   { text: "What time do we need to leave?", labels: ['sop-late-checkout', 'property-info'] },
   { text: "When is checkout?", labels: ['sop-late-checkout', 'property-info'] },
   { text: "What's the WiFi password?", labels: ['sop-wifi-doorcode', 'property-info'] },
   { text: "How do I connect to the internet?", labels: ['sop-wifi-doorcode', 'property-info'] },
-
-  // ── NEW CATEGORY EXAMPLES (120) — v7-full 11 new SOP categories ──
 
   // ── BOOKING INQUIRY (15) ──
   { text: 'Do you have apartments available next weekend?', labels: ['sop-booking-inquiry'] },
@@ -369,11 +374,11 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'I left my charger in the apartment', labels: ['post-stay-issues'] },
   { text: 'We checked out but forgot a bag', labels: ['post-stay-issues'] },
   { text: 'When do I get my deposit back?', labels: ['post-stay-issues'] },
-  { text: 'I want to file a complaint about my stay', labels: ['post-stay-issues'] },
+  { text: 'I want to file a complaint about my stay', labels: ['post-stay-issues', 'sop-complaint'] },
   { text: 'We left groceries in the fridge', labels: ['post-stay-issues'] },
   { text: 'Can someone check if my laptop is still there?', labels: ['post-stay-issues'] },
   { text: 'نسيت شنطتي في الشقة', labels: ['post-stay-issues'] },
-  { text: 'The apartment was not as advertised', labels: ['post-stay-issues'] },
+  { text: 'The apartment was not as advertised', labels: ['post-stay-issues', 'sop-complaint'] },
 
   // ── LONG-TERM RENTAL (5) ──
   { text: 'Do you have monthly rates?', labels: ['sop-long-term-rental'] },
@@ -396,121 +401,107 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'I want to view the apartment before deciding', labels: ['sop-property-viewing'] },
   { text: 'Do you have a video tour?', labels: ['sop-property-viewing'] },
 
-  // ── NON-ACTIONABLE (5) ──
-  { text: 'Test', labels: ['contextual'] },
-  { text: 'Hello', labels: ['contextual'] },
-  { text: 'مرحبا', labels: ['contextual'] },
-  { text: 'Sorry wrong chat', labels: ['contextual'] },
-  { text: 'Hi Omar', labels: ['contextual'] },
+  // ── NON-ACTIONABLE: greetings / test / wrong chat (5) ──
+  { text: 'Test', labels: ['non-actionable'] },
+  { text: 'Hello', labels: ['non-actionable'] },
+  { text: 'مرحبا', labels: ['non-actionable'] },
+  { text: 'Sorry wrong chat', labels: ['non-actionable'] },
+  { text: 'Hi Omar', labels: ['non-actionable'] },
 ];
 
 // SOP content map — the actual text injected into the prompt when a chunk ID is selected.
-// These mirror the SOP_CHUNKS in rag.service.ts but are used by the classifier for direct lookup.
 export const SOP_CONTENT: Record<string, string> = {
   'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
-
-## CLEANING REQUESTS
-
-Cleaning costs $20 per session. Available during working hours only (10am–5pm). Recurring cleaning is OK ($20 each session).
-
-**Flow:**
-1. Ask guest for preferred time (between 10am–5pm)
-2. Guest confirms time → mention the $20 fee
-3. Escalate as "scheduled" with time and fee confirmed
-
-Mention the fee on confirmation, NOT on the first ask.
-
-**After hours (after 5 PM):** Arrange for tomorrow. Ask for preferred time between 10am–5pm.`,
+Cleaning costs $20 per session. Available during working hours only (10am–5pm). Recurring cleaning is OK ($20 each session). If the guest mentions anything that the unit was not cleaned, waive and don't mention the $20 fee.`,
 
   'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
 
-## AMENITY REQUESTS
+## AVAILABLE PROPERTY AMENITIES
+
+{PROPERTY_AMENITIES}
 
 Check the property amenities list for available items. Only confirm items explicitly listed there.
 - Item on the amenities list → confirm availability, ask for delivery time during working hours (10am–5pm), then escalate as "scheduled"
 - Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
 
-  'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue.
-
-## MAINTENANCE & TECHNICAL ISSUES
-
+  'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
 Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it, and escalate immediately.
-
 **All maintenance/technical issues → urgency: "immediate"**`,
 
   'sop-wifi-doorcode': `Guest asks about WiFi password, WiFi network name, internet connection, door code, entry code, lock code, how to get in, or can't open the door.
-
-## WIFI & DOOR CODE
-
 WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Give them directly.
-
 If there's a **problem** (WiFi not working, code not working, can't connect, locked out) → escalate immediately.`,
 
   'sop-visitor-policy': `Guest wants to invite someone over, have a friend visit, bring a visitor, asks about visitor rules, or asks if someone can come to the apartment.
 
 ## VISITOR POLICY
-
 - ONLY immediate family members allowed as visitors
 - Guest must send visitor's passport through the chat
 - Family names must match guest's family name
-- Collect passport image → escalate for manager verification
-- Non-family visitors (friends, colleagues, etc.) = NOT allowed`,
+Collect passport image → escalate for manager verification
+Non-family visitors (friends, colleagues, etc.) = NOT allowed
+
+**Examples:**
+Guest: "Can my someone come over for dinner?"
+{"guest_message":"We only allow immediate family members as visitors. If they're family, please send their passport through the chat and we'll arrange access.","escalation":null}
+
+Guest: "That's unfair, it's just one friend"
+{"guest_message":"I understand, but this is a strict policy we need to follow. I'll pass your feedback along.","escalation":{"title":"house-rule-pushback","note":"Guest [Name] in [Unit] pushing back on visitor policy. Wants non-family friend. Needs manager.","urgency":"immediate"}}`,
 
   'sop-early-checkin': `Guest asks for early check-in, arriving early, wants to check in before 3pm, or asks if they can come earlier.
 
 ## EARLY CHECK-IN
-
 Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-
 **More than 2 days before check-in:** Do NOT escalate. Tell guest:
 "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
-
 **Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
+**Never confirm early check-in yourself.**
 
-**Never confirm early check-in yourself.**`,
+**Examples:**
+Guest: "Can I check in at noon?" (check-in is far away)
+{"guest_message":"We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab something at O1 Mall — it's a 1-minute walk.","escalation":null}
+
+Guest: "I arrive tomorrow at 10am, early check-in?" (within 2 days)
+{"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"early-checkin","note":"Guest [Name] in [Unit] — early check-in tomorrow 10am. Within 2-day window.","urgency":"info_request"}}`,
 
   'sop-late-checkout': `Guest asks for late checkout, wants to leave later, stay longer on checkout day, check out after 11am, or extend their stay on the last day.
-
-## LATE CHECKOUT
-
 Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-
 **More than 2 days before checkout:** Do NOT escalate. Tell guest the same 2-day rule.
-
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
+**Never confirm late checkout yourself.**
 
-**Never confirm late checkout yourself.**`,
+**Example:**
+Guest: "Can I check out at 2pm instead of 11?"
+{"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"late-checkout","note":"Guest [Name] in [Unit] — wants late checkout at 2pm. Needs manager approval.","urgency":"info_request"}}`,
 
-  'sop-escalation-info': `Guest asks something you can't answer — local recommendations, restaurants, pricing, discounts, refunds, reservation changes, or availability.
+  'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
+Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
+- Cleanliness complaints → offer immediate cleaning (waive $20 fee) and escalate as immediate
+- Noise complaints → acknowledge and escalate as immediate
+- Review threats or requests to speak to manager → acknowledge their frustration, escalate as immediate
+- Property-quality complaints (misleading listing, broken promises, not as advertised) → escalate as immediate with full details
+- General dissatisfaction → empathize, ask for specifics, escalate as immediate
+Never offer refunds, discounts, or compensation yourself. Inform the guest you have notified the manager.`,
 
-## ESCALATION — urgency: "info_request"
+  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If available, share property links. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
 
-Use "info_request" when the manager needs to provide information:
-- Local recommendations (restaurants, shops, activities)
-- Reservation changes (dates, guest count)
-- Early check-in/late checkout within 2-day window
-- Refund or discount requests (NEVER authorize yourself)
-- Any question not covered by your knowledge`,
+  'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
 
-  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If available, share rate and unit details. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
-
-  'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. Share the standard rate from your knowledge if available. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental.`,
-
-  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location pin, or arranging airport transfer. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, escalate as info_request. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them if needed. For late arrivals (after 10pm), escalate as immediate.`,
+  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, tell them unfortunately we don't provide airport transfer. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them only if needed. Check-in starts at 3pm. It's self check-in and the door code is provided.`,
 
   'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
 
-  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, ask which platform they booked through (Airbnb, Booking.com, direct) and escalate as info_request. For guests claiming they booked but no record found, escalate as immediate.`,
+  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll check with the team. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
 
-  'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate. For receipt requests, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request.`,
+  'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate-payment-issue. For receipt requests or invoice, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request. And inform the guest that you have notified the manager.`,
 
-  'post-stay-issues': `POST-STAY ISSUES: Guest has checked out and contacts about lost items, post-stay complaints, damage deposit questions, or feedback. For lost items: ask for description and location where they think they left it. Escalate as immediate so staff can check. For damage deposit questions, escalate as info_request. For post-stay complaints, acknowledge with empathy and escalate as immediate. Never promise items will be found or deposits returned.`,
+  'post-stay-issues': `POST-STAY ISSUES: Guest has checked out and contacts about lost items, post-stay complaints, damage deposit questions, or feedback. For lost items: ask for description. Escalate as immediate as post-stay-issue so staff can check. For damage deposit questions, escalate as info_request. For post-stay complaints, acknowledge with empathy and escalate as immediate. Never promise items will be found or deposits returned.`,
 
-  'sop-long-term-rental': `LONG-TERM RENTAL: Guest is inquiring about monthly stays, corporate housing, or stays longer than 2 weeks. Ask: duration needed, move-in date, number of guests, any preferences. Share standard nightly rate if known, but note that monthly rates are different and need manager approval. Escalate as info_request with all details. For corporate stays, ask if they need a contract or invoice. Never quote monthly rates yourself.`,
+  'sop-long-term-rental': `LONG-TERM RENTAL: Guest is inquiring about monthly stays, corporate housing, or stays longer than 3 weeks. Ask: duration needed, move-in date, number of guests, any preferences. Share standard nightly rate if known, but note that monthly rates are different and need manager approval. Escalate as long-term-rental with all details. Tell the guest I will inform the manager for additional discount if there are any. Never quote monthly rates yourself.`,
 
-  'sop-booking-cancellation': `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Ask which booking/dates they want to cancel if not clear. Escalate as info_request with booking details and reason for cancellation. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
+  'sop-booking-cancellation': `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Escalate as booking-cancellation with booking details. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
 
-  'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. For viewing requests: ask preferred date/time, escalate as info_request. Share existing photos from your knowledge if available. For video requests, escalate as info_request. For photoshoot/filming requests, ask about scope (how many people, duration, commercial or personal) and escalate as immediate — needs manager approval.`,
+  'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. First recommend that the photos are available online and comprehensive of the property. If wants videos, escalate to manager, and tell the guest I'll ask the manager if there are videos to provide.`,
 
-  'non-actionable': `NON-ACTIONABLE: Message has no real intent — test messages, wrong chat, system messages, or greetings with no question. For greetings ('Hi', 'Hello'), respond with a friendly greeting and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For system/automated messages, ignore (guest_message: '', escalation: null).`,
+  'non-actionable': `NON-ACTIONABLE: Greetings, test messages, wrong chat, or questions about topics already covered by your standard procedures (house rules, working hours, scheduling, escalation rules). For greetings, respond warmly and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For house rules or scheduling questions, answer from your standard procedures.`,
 };

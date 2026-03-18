@@ -17,31 +17,35 @@ Return ONLY this JSON, nothing else:
 
 ## SOP Categories (ONLY use these 22):
 
-**Original 11:**
+**Operational SOPs:**
 - sop-cleaning — cleaning/housekeeping requests, $20 fee, scheduling
-- sop-amenity-request — requesting pillows, towels, blankets, kitchen items, hangers, iron
-- sop-maintenance — broken items, plumbing, electrical, AC, pests, leaks, appliances not working
+- sop-amenity-request — requesting pillows, towels, blankets, kitchen items, hangers, iron, amenity availability
+- sop-maintenance — broken items, plumbing, electrical, AC, pests, leaks, appliances not working, mold, smell
 - sop-wifi-doorcode — WiFi password, door codes, connectivity issues, locked out, building access
 - sop-visitor-policy — visitor rules, family-only, guest count, passports, nationality verification, ID submission
 - sop-early-checkin — arriving before 3PM, bag drop-off, early access
-- sop-late-checkout — leaving after 11AM, extending stay, extra nights
-- sop-escalation-info — local recommendations, refund requests, questions we can't answer, contact requests
-- property-info — address, floor, bedrooms, parking, check-in/out times, directions, unit details
-- property-description — general property description, compound facilities, pool, gym
-- property-amenities — what amenities are available, what's in the apartment
+- sop-late-checkout — leaving after 11AM, extending stay on last day
+- sop-complaint — guest dissatisfaction, unhappy with property, review threats, complaints about quality/cleanliness
 
-**New 11:**
+**Booking & Payment:**
 - sop-booking-inquiry — availability checks, new booking requests, property search, unit options
 - pricing-negotiation — discounts, pricing questions, budget concerns, rate negotiations, best offers
-- pre-arrival-logistics — directions, arrival coordination, location sharing, meeting arrangements, airport transfer
 - sop-booking-modification — date changes, guest count changes, unit swaps, adding/removing nights
 - sop-booking-confirmation — verifying reservation exists, confirming dates/details, checking booking status
-- payment-issues — payment failures, refund requests, receipts, billing disputes, overcharges
-- post-stay-issues — lost items after checkout, post-stay complaints, damage deposit questions
-- sop-long-term-rental — monthly rental inquiries, long-term contracts, corporate stays
 - sop-booking-cancellation — cancellation requests, cancellation policy, refund after cancellation
+- payment-issues — payment failures, refund requests, receipts, billing disputes, overcharges
+- sop-long-term-rental — monthly rental inquiries, long-term contracts, corporate stays
+
+**Property & Logistics:**
+- property-info — address, floor, bedrooms, parking, check-in/out times, directions, unit details
+- property-description — general property description, compound facilities, pool, gym
+- pre-arrival-logistics — directions, arrival coordination, location sharing, meeting arrangements, airport transfer
 - sop-property-viewing — property tours, photo/video requests, filming inquiries, viewing before booking
-- non-actionable — greetings, test messages, system messages, no real intent
+- post-stay-issues — lost items after checkout, post-stay complaints, damage deposit questions
+
+**Meta:**
+- non-actionable — greetings, test messages, house rules questions, scheduling questions, baked-in topics
+- contextual — short follow-ups ("ok", "yes", "sure", "and?") that need previous topic re-injected
 
 Return SOPS: [] for messages that only need scheduling, house rules, or emergency handling (baked into system prompt). Also return [] when guest is simply providing info the host requested (name, nationality, guest count) and no SOP procedure is needed.
 

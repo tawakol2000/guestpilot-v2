@@ -1168,6 +1168,10 @@ export async function generateAndSendAiReply(
 
     const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
 
+    // Property amenities string for dynamic SOP injection
+    const propertyAmenities = context.customKnowledgeBase?.amenities
+      ? String(context.customKnowledgeBase.amenities) : undefined;
+
     // Upgrade 5c: RAG — retrieve relevant property knowledge for this query
     const ragQuery = currentMsgs.map((m: { content: string }) => m.content).join(' ');
     const ragStart = Date.now();
@@ -1207,7 +1211,7 @@ export async function generateAndSendAiReply(
         // Direct SOP lookup — no redundant vector search needed
         const reinjectedChunks = tier3Result.labels
           .map(label => {
-            const content = getSopContent(label);
+            const content = getSopContent(label, propertyAmenities);
             return content ? {
               content,
               category: label,
@@ -1246,7 +1250,7 @@ export async function generateAndSendAiReply(
           // Direct SOP lookup — no redundant vector search needed
           const tier2Chunks = tier2Result.sops
             .map(label => {
-              const content = getSopContent(label);
+              const content = getSopContent(label, propertyAmenities);
               return content ? {
                 content,
                 category: label,
@@ -1287,7 +1291,7 @@ export async function generateAndSendAiReply(
             if (prevSopLabels.length > 0) {
               const contextChunks = prevSopLabels
                 .map(label => {
-                  const content = getSopContent(label);
+                  const content = getSopContent(label, propertyAmenities);
                   return content ? {
                     content,
                     category: label,
