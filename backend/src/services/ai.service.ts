@@ -896,8 +896,30 @@ function buildPropertyInfo(
     wifiUsername?: string;
     wifiPassword?: string;
   },
-  retrievedChunks?: Array<{ content: string; category: string }>
+  retrievedChunks?: Array<{ content: string; category: string }>,
+  reservationStatus?: string
 ): string {
+  // Compute human-readable booking status
+  const bookingStatusDisplay = (() => {
+    if (!reservationStatus) return 'Unknown';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const ci = new Date(checkIn); ci.setHours(0, 0, 0, 0);
+    const co = new Date(checkOut); co.setHours(0, 0, 0, 0);
+    switch (reservationStatus) {
+      case 'INQUIRY': return 'Inquiry (pre-booking)';
+      case 'CONFIRMED':
+        if (ci.getTime() === today.getTime()) return 'Confirmed (Checking in today)';
+        if (ci > today) return 'Confirmed (Upcoming)';
+        return 'Confirmed';
+      case 'CHECKED_IN':
+        if (co.getTime() === today.getTime()) return 'Checked In (Checking out today)';
+        return 'Checked In';
+      case 'CHECKED_OUT': return 'Checked Out';
+      case 'CANCELLED': return 'Cancelled';
+      default: return reservationStatus;
+    }
+  })();
+
   let info = `## PROPERTY DATA — AUTHORITATIVE SOURCE
 CRITICAL INSTRUCTION: You MUST only answer questions using data explicitly listed in this section.
 If a guest asks about something not listed here, respond with "Let me check on that for you" and set escalate to true.
@@ -905,21 +927,24 @@ NEVER use general hotel, apartment, or hospitality knowledge to fill information
 
 ### RESERVATION DETAILS
 Guest Name: ${guestName}
+Booking Status: ${bookingStatusDisplay}
 Check-in: ${checkIn}
 Check-out: ${checkOut}
 Number of Guests: ${guestCount}
-
-### ACCESS & CONNECTIVITY
 `;
 
-  if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
-    info += `Door Code: ${listing.doorSecurityCode}\n`;
-  }
-  if (listing.wifiUsername && listing.wifiUsername !== 'N/A') {
-    info += `WiFi Network Name: ${listing.wifiUsername}\n`;
-  }
-  if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
-    info += `WiFi Password: ${listing.wifiPassword}\n`;
+  // Only include access info for confirmed/checked-in guests — NEVER for inquiries
+  if (reservationStatus !== 'INQUIRY') {
+    info += '\n### ACCESS & CONNECTIVITY\n';
+    if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
+      info += `Door Code: ${listing.doorSecurityCode}\n`;
+    }
+    if (listing.wifiUsername && listing.wifiUsername !== 'N/A') {
+      info += `WiFi Network Name: ${listing.wifiUsername}\n`;
+    }
+    if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
+      info += `WiFi Password: ${listing.wifiPassword}\n`;
+    }
   }
 
   if (retrievedChunks && retrievedChunks.length > 0) {
@@ -1359,7 +1384,8 @@ export async function generateAndSendAiReply(
       context.checkOut,
       context.guestCount,
       context.listing,
-      retrievedChunks
+      retrievedChunks,
+      context.reservationStatus
     );
 
     // Check for image attachments in current window messages (from DB imageUrls field)

@@ -99,7 +99,7 @@ type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
 type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'opus'
-type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today'
+type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
   id: string
@@ -171,8 +171,9 @@ const channelColors: Record<Channel, string> = {
 
 const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   upcoming: { label: 'Upcoming', color: '#6E56CF' },
-  'checking-in-today': { label: 'Today', color: T.status.amber },
+  'checking-in-today': { label: 'Check-in Today', color: T.status.amber },
   'checked-in': { label: 'Checked In', color: T.status.green },
+  'checking-out-today': { label: 'Checkout Today', color: T.status.amber },
   'checked-out': { label: 'Checked Out', color: T.text.tertiary },
   inquiry: { label: 'Inquiry', color: T.accent },
   cancelled: { label: 'Cancelled', color: T.status.red },
@@ -199,10 +200,11 @@ function checkInStatusFromApi(status: string, checkIn: string, checkOut?: string
   if (checkOut) {
     const co = new Date(checkOut)
     co.setHours(0, 0, 0, 0)
+    if (co.getTime() === today.getTime()) return 'checking-out-today'
     if (today >= co) return 'checked-out'
   }
-  if (today > ci) return 'checked-in'
   if (ci.getTime() === today.getTime()) return 'checking-in-today'
+  if (today > ci) return 'checked-in'
   return 'upcoming'
 }
 
