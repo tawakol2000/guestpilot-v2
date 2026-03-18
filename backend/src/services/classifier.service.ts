@@ -16,6 +16,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch } from './embeddings.service';
+import { rerank, isRerankEnabled } from './rerank.service';
 import {
   TRAINING_EXAMPLES,
   SOP_CONTENT,
@@ -147,7 +148,29 @@ export async function classifyMessage(query: string): Promise<{
   }
   similarities.sort((a, b) => b.similarity - a.similarity);
 
-  const topK = similarities.slice(0, K);
+  // Get wider candidate pool for potential reranking
+  const RERANK_CANDIDATES = 10;
+  const candidatePool = similarities.slice(0, isRerankEnabled() ? RERANK_CANDIDATES : K);
+
+  // Rerank candidates using cross-encoder if available (much better cross-lingual matching)
+  let topK: typeof candidatePool;
+  let classifyMethod = 'knn_vote';
+  if (isRerankEnabled() && candidatePool.length > K) {
+    const candidateTexts = candidatePool.map(c => _examples[c.index].text);
+    const reranked = await rerank(query, candidateTexts, K);
+    if (reranked && reranked.length > 0) {
+      topK = reranked.map(r => ({
+        index: candidatePool[r.index].index,
+        similarity: r.relevanceScore, // use rerank score instead of cosine
+      }));
+      classifyMethod = 'knn_rerank';
+    } else {
+      topK = candidatePool.slice(0, K); // fallback to cosine-only
+    }
+  } else {
+    topK = candidatePool.slice(0, K);
+  }
+
   const topKDetails = topK.map(({ index, similarity }) => ({
     index,
     similarity,
@@ -190,7 +213,7 @@ export async function classifyMessage(query: string): Promise<{
   // Step 4: Apply token budget
   const { labels, tokensUsed } = applyTokenBudget(candidateLabels);
 
-  return { labels, method: 'knn_vote', topK: topKDetails, neighbors, tokensUsed, topSimilarity };
+  return { labels, method: classifyMethod, topK: topKDetails, neighbors, tokensUsed, topSimilarity };
 }
 
 /**

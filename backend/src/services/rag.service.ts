@@ -9,6 +9,7 @@
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch, getEmbeddingProvider } from './embeddings.service';
 import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier } from './classifier.service';
+import { rerank, isRerankEnabled } from './rerank.service';
 
 /** Returns the DB column name for the active embedding provider. */
 function embCol(): string {
@@ -428,13 +429,27 @@ export async function retrieveRelevantKnowledge(
     // Log ALL results with scores for diagnostics
     console.log(`[RAG] raw results for "${query.substring(0, 60)}": ${results.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'empty'}`);
 
-    // Filter: minimum 0.25 similarity, cap at top 3 to prevent token bloat
     const MAX_CHUNKS = 3;
     const MIN_SIMILARITY = 0.3;
-    const filtered = results
-      .filter(r => Number(r.similarity) > MIN_SIMILARITY)
-      .slice(0, MAX_CHUNKS);
-    console.log(`[RAG] retrieved ${filtered.length} chunks (threshold ${MIN_SIMILARITY}, max ${MAX_CHUNKS}): ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'none'}`);
+    let filtered = results.filter(r => Number(r.similarity) > MIN_SIMILARITY);
+
+    // Rerank: cross-encoder re-scoring for better relevance ordering
+    if (isRerankEnabled() && filtered.length > MAX_CHUNKS) {
+      const reranked = await rerank(query, filtered.map(r => r.content), MAX_CHUNKS);
+      if (reranked && reranked.length > 0) {
+        filtered = reranked.map(r => ({
+          ...filtered[r.index],
+          similarity: r.relevanceScore as any, // use rerank score
+        }));
+        console.log(`[RAG] reranked: ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ')}`);
+      } else {
+        filtered = filtered.slice(0, MAX_CHUNKS);
+      }
+    } else {
+      filtered = filtered.slice(0, MAX_CHUNKS);
+    }
+
+    console.log(`[RAG] retrieved ${filtered.length} chunks: ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'none'}`);
     const mappedChunks = filtered.map(r => ({
         content: r.content,
         category: r.category,
