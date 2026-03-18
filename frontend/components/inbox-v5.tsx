@@ -1766,7 +1766,8 @@ export default function InboxV5() {
             <DataRow label="Nights" value={selectedConv.booking.nights ? String(selectedConv.booking.nights) : ''} />
             <DataRow label="Guests" value={selectedConv.booking.guests ? String(selectedConv.booking.guests) : ''} />
             <DataRow label="Source" value={selectedConv.booking.source} />
-            <DataRow label="ID" value={selectedConv.booking.id} mono last />
+            <DataRow label="ID" value={selectedConv.booking.id} mono />
+            <DataRow label="Conv ID" value={selectedConv.id} mono last />
           </PanelSection>
         ))
 
