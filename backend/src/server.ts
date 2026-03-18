@@ -46,6 +46,19 @@ async function main() {
   (async () => {
     try {
       const tenants = await prisma.tenant.findMany({ select: { id: true } });
+
+      // Load embedding provider FIRST — must happen before any embedding calls
+      if (tenants.length > 0) {
+        const cfg = await prisma.tenantAiConfig.findUnique({
+          where: { tenantId: tenants[0].id },
+          select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
+        });
+        if (cfg) {
+          if (cfg.embeddingProvider) setEmbeddingProvider(cfg.embeddingProvider as EmbeddingProvider);
+          setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
+        }
+      }
+
       for (const tenant of tenants) {
         // Re-seed SOP chunks with fresh embeddings
         const sopCount = await seedTenantSops(tenant.id, prisma);
@@ -62,17 +75,6 @@ async function main() {
       // Initialize the KNN classifier for SOP routing
       try {
         await initializeClassifier();
-        // Load Tier 1 thresholds from DB (first tenant — single-tenant system)
-        if (tenants.length > 0) {
-          const cfg = await prisma.tenantAiConfig.findUnique({
-            where: { tenantId: tenants[0].id },
-            select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
-          });
-          if (cfg) {
-            setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
-            if (cfg.embeddingProvider) setEmbeddingProvider(cfg.embeddingProvider as EmbeddingProvider);
-          }
-        }
         console.log('[Startup] KNN classifier initialized');
       } catch (err) {
         console.warn('[Startup] KNN classifier init failed (non-fatal):', err);
