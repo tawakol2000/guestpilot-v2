@@ -118,14 +118,22 @@ Other categories:
 - sop-long-term-rental: monthly rental inquiries, long-term contracts, corporate stays
 - sop-booking-cancellation: cancellation requests, cancellation policy questions
 - sop-property-viewing: property tours, photo/video requests, filming inquiries
-- non-actionable: greetings, test messages, wrong chat, system messages
+- non-actionable: greetings ("hi", "hello", "مرحبا"), test messages, wrong chat, house rules questions, scheduling questions, working hours, emergencies (gas, safety), noise complaints — topics already handled by the baked-in system prompt
+- contextual: ONLY short follow-ups to an ongoing conversation ("ok", "yes", "sure", "5am", "tomorrow works", "got it", "👍") — triggers re-injection of the previous topic's SOP
 
 Baked-in categories (handled by system prompt, never retrieved):
 - sop-scheduling, sop-house-rules, sop-escalation-immediate, sop-escalation-scheduled
 
-Messages that are just acknowledgments ("ok", "thanks", "sure", "got it", "👍") or contextual follow-ups ("5am", "tomorrow works", "friend", "Egyptian") should get correct_labels: ["contextual"]. This tells the system the classifier is confident no SOP is needed.
+IMPORTANT distinction between contextual and non-actionable:
+- "contextual" = the message is a FOLLOW-UP to a previous topic (e.g., guest said "ok" after being told about cleaning). The system re-injects the last SOP.
+- "non-actionable" = the message has NO ongoing topic context (greetings, test messages, house rules questions, scheduling questions, emergencies). The system prompt handles it directly.
 
-Messages about house rules, smoking, parties, noise, scheduling/working hours, or emergencies (gas leak, safety threats, wanting to speak to manager) are handled by the system prompt and should also get NO documents — return empty correct_labels.
+Examples:
+- "Hi" → non-actionable (greeting, no previous topic)
+- "Hello Omar" → non-actionable (greeting)
+- "Ok thanks" → contextual (follow-up acknowledgment)
+- "Can I smoke?" → non-actionable (house rules, baked in)
+- "Sure" → contextual (follow-up)
 
 Return ONLY raw JSON, no markdown, no explanation outside the JSON:
 {"retrieval_correct":true,"correct_labels":[],"confidence":"high","reasoning":"one sentence"}`;
