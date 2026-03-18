@@ -1201,6 +1201,15 @@ export default function InboxV5() {
           setAiSuggestion(null)
         }
 
+        // Play notification sound for new guest messages
+        if (sender === 'guest') {
+          try {
+            const audio = new Audio('/notification.wav')
+            audio.volume = 0.3
+            audio.play().catch(() => {})
+          } catch {}
+        }
+
         const newSseMsgs: Message[] = []
         if (sender === 'private') {
           const fromSelf = msg.role === 'AI_PRIVATE' || msg.role === 'MANAGER_PRIVATE'

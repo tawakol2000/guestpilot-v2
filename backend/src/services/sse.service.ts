@@ -41,7 +41,8 @@ function initRedis(): void {
     // psubscribe matches all tenant channels: sse:<tenantId>
     subscriber.psubscribe('sse:*', (err) => {
       if (err) {
-        console.warn('[SSE] Redis psubscribe failed:', err.message);
+        console.warn('[SSE] Redis psubscribe failed — disabling Redis broadcast, using in-memory only:', err.message);
+        publisher = null; // Force broadcastToTenant to use in-memory fallback
         return;
       }
       console.log('[SSE] Redis pub/sub ready — broadcasts will reach all Railway instances');
