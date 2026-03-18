@@ -295,10 +295,16 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'نبي نطلع متأخر شوي', labels: ['sop-late-checkout'] },
   { text: 'وين الشقة بالضبط؟ ابي اللوكيشن', labels: ['pre-arrival-logistics', 'property-info'] },
   { text: 'كيف ادخل الشقة؟ وش كود الباب؟', labels: ['sop-wifi-doorcode', 'property-info'] },
-  // Amenities & cleaning
+  // Amenities & cleaning (including room-specific amenity questions)
   { text: 'محتاجين تنظيف الشقة', labels: ['sop-cleaning'] },
   { text: 'في مكواة في الشقة؟', labels: ['sop-amenity-request'] },
   { text: 'محتاج فوط زيادة وشراشف', labels: ['sop-amenity-request'] },
+  { text: 'الحمام فيه شطاف؟', labels: ['sop-amenity-request'] },
+  { text: 'هل في غسالة في الشقة؟', labels: ['sop-amenity-request'] },
+  { text: 'في سشوار في الحمام؟', labels: ['sop-amenity-request'] },
+  { text: 'هل يوجد ميكرويف؟', labels: ['sop-amenity-request'] },
+  { text: 'هل يوجد بيديه في الحمام؟', labels: ['sop-amenity-request'] },
+  { text: 'الشقة فيها غسالة صحون؟', labels: ['sop-amenity-request'] },
   { text: 'الشقة مش نظيفة ابدا', labels: ['sop-complaint', 'sop-cleaning'] },
   // Complaints & visitors
   { text: 'مش راضي عن الخدمة ابد', labels: ['sop-complaint'] },
