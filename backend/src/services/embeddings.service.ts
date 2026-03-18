@@ -119,7 +119,7 @@ async function cohereEmbedText(text: string, inputType?: EmbeddingInputType): Pr
   if (!client) return [];
   try {
     const res = await client.embed({
-      model: 'embed-multilingual-v4.0',
+      model: 'embed-v4.0',
       texts: [text],
       inputType: mapInputType(inputType),
       embeddingTypes: ['float'],
@@ -144,7 +144,7 @@ async function cohereEmbedBatch(texts: string[], inputType?: EmbeddingInputType)
     const batch = texts.slice(i, i + BATCH_SIZE);
     try {
       const res = await client.embed({
-        model: 'embed-multilingual-v4.0',
+        model: 'embed-v4.0',
         texts: batch,
         inputType: mapInputType(inputType),
         embeddingTypes: ['float'],
