@@ -46,12 +46,17 @@ export function getClassifierThresholds(): { voteThreshold: number; contextualGa
   return { voteThreshold: _voteThreshold, contextualGate: _contextualGate };
 }
 
-// ─── State ─────────────────────────────────────────────────────────────────
+// ─── State (atomic swap pattern — FR-007) ───────────────────────────────
+interface ClassifierState {
+  examples: TrainingExample[];
+  embeddings: number[][];
+  initDurationMs: number;
+}
+
 let _initialized = false;
 let _initializingPromise: Promise<void> | null = null;
-let _exampleEmbeddings: number[][] = [];
-let _examples: TrainingExample[] = [];
-let _initDurationMs = 0;
+let _state: ClassifierState | null = null;
+let _reinitPromise: Promise<void> | null = null;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -68,8 +73,8 @@ export function getClassifierStatus(): {
 } {
   return {
     initialized: _initialized,
-    exampleCount: _examples.length,
-    initDurationMs: _initDurationMs,
+    exampleCount: _state?.examples.length ?? 0,
+    initDurationMs: _state?.initDurationMs ?? 0,
     sopChunkCount: Object.keys(SOP_CONTENT).length,
     bakedInCount: BAKED_IN_CHUNKS.size,
   };
@@ -88,26 +93,29 @@ export async function initializeClassifier(): Promise<void> {
     const startMs = Date.now();
     try {
       // Filter out any examples with baked-in labels only (safety check)
-      _examples = TRAINING_EXAMPLES.map(ex => ({
+      const examples = TRAINING_EXAMPLES.map(ex => ({
         text: ex.text,
         labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
       }));
 
       // Embed all training examples
-      const texts = _examples.map(e => e.text);
-      _exampleEmbeddings = await embedBatch(texts, 'classification');
+      const texts = examples.map(e => e.text);
+      const embeddings = await embedBatch(texts, 'classification');
 
       // Verify embeddings
-      const validCount = _exampleEmbeddings.filter(e => e && e.length > 0).length;
-      if (validCount < _examples.length * 0.9) {
-        console.error(`[Classifier] Only ${validCount}/${_examples.length} examples embedded — aborting`);
+      const validCount = embeddings.filter(e => e && e.length > 0).length;
+      if (validCount < examples.length * 0.9) {
+        console.error(`[Classifier] Only ${validCount}/${examples.length} examples embedded — aborting`);
         _initializingPromise = null;
         return;
       }
 
-      _initDurationMs = Date.now() - startMs;
+      const initDurationMs = Date.now() - startMs;
+
+      // Atomic swap — readers see either the old state or the complete new state
+      _state = { examples, embeddings, initDurationMs };
       _initialized = true;
-      console.log(`[Classifier] Initialized: ${_examples.length} examples, ${_initDurationMs}ms`);
+      console.log(`[Classifier] Initialized: ${examples.length} examples, ${initDurationMs}ms`);
     } catch (err) {
       console.error('[Classifier] Initialization failed:', err);
       _initializingPromise = null;
@@ -129,7 +137,9 @@ export async function classifyMessage(query: string): Promise<{
   tokensUsed: number;
   topSimilarity: number;
 }> {
-  if (!_initialized || _exampleEmbeddings.length === 0) {
+  // Snapshot state for thread-safe reads during classification (FR-007)
+  const state = _state;
+  if (!state || state.embeddings.length === 0) {
     return { labels: [], method: 'classifier_not_initialized', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
@@ -141,8 +151,8 @@ export async function classifyMessage(query: string): Promise<{
 
   // Compute cosine similarity with all training examples
   const similarities: Array<{ index: number; similarity: number }> = [];
-  for (let i = 0; i < _exampleEmbeddings.length; i++) {
-    const emb = _exampleEmbeddings[i];
+  for (let i = 0; i < state.embeddings.length; i++) {
+    const emb = state.embeddings[i];
     if (!emb || emb.length === 0) continue;
     similarities.push({ index: i, similarity: cosineSimilarity(queryEmbedding, emb) });
   }
@@ -156,7 +166,7 @@ export async function classifyMessage(query: string): Promise<{
   let topK: typeof candidatePool;
   let classifyMethod = 'knn_vote';
   if (isRerankEnabled() && candidatePool.length > K) {
-    const candidateTexts = candidatePool.map(c => _examples[c.index].text);
+    const candidateTexts = candidatePool.map(c => state.examples[c.index].text);
     const reranked = await rerank(query, candidateTexts, K);
     if (reranked && reranked.length > 0) {
       topK = reranked.map(r => ({
@@ -174,8 +184,8 @@ export async function classifyMessage(query: string): Promise<{
   const topKDetails = topK.map(({ index, similarity }) => ({
     index,
     similarity,
-    text: _examples[index].text,
-    labels: _examples[index].labels,
+    text: state.examples[index].text,
+    labels: state.examples[index].labels,
   }));
 
   const topSimilarity = topK.length > 0 ? topK[0].similarity : 0;
@@ -184,7 +194,7 @@ export async function classifyMessage(query: string): Promise<{
 
   // Step 1: Contextual gate — "contextual" label means no SOP needed
   const best = topK[0];
-  if (best && _examples[best.index].labels.includes('contextual') && best.similarity > _contextualGate) {
+  if (best && state.examples[best.index].labels.includes('contextual') && best.similarity > _contextualGate) {
     return { labels: ['contextual'], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
   }
 
@@ -193,7 +203,7 @@ export async function classifyMessage(query: string): Promise<{
   const labelCounts: Record<string, number> = {};
 
   for (const { index, similarity } of topK) {
-    for (const label of _examples[index].labels) {
+    for (const label of state.examples[index].labels) {
       votes[label] = (votes[label] || 0) + similarity;
       labelCounts[label] = (labelCounts[label] || 0) + 1;
     }
@@ -240,15 +250,16 @@ export function getSopContent(chunkId: string, propertyAmenities?: string): stri
  * before auto-fixing — prevents poisoning from confident-but-wrong Tier 2 classifications.
  */
 export async function getMaxSimilarityForLabels(text: string, labels: string[]): Promise<number> {
-  if (!_initialized || _examples.length === 0) return 0;
+  const state = _state;
+  if (!state || state.examples.length === 0) return 0;
   const embedding = await embedText(text, 'classification');
   if (!embedding) return 0;
 
   let maxSim = 0;
-  for (let i = 0; i < _examples.length; i++) {
-    const ex = _examples[i];
+  for (let i = 0; i < state.examples.length; i++) {
+    const ex = state.examples[i];
     if (!ex.labels.some(l => labels.includes(l))) continue;
-    const sim = cosineSimilarity(embedding, _exampleEmbeddings[i]);
+    const sim = cosineSimilarity(embedding, state.embeddings[i]);
     if (sim > maxSim) maxSim = sim;
   }
   return maxSim;
@@ -282,36 +293,47 @@ function applyTokenBudget(labels: string[]): { labels: string[]; tokensUsed: num
  * Called after the judge adds a new training example.
  */
 export async function reinitializeClassifier(tenantId: string, prisma: PrismaClient): Promise<void> {
-  // Dynamic import to avoid circular dependency
-  const { getActiveExamples } = await import('./classifier-store.service');
+  // Deduplication guard — coalesce concurrent reinit requests (T023)
+  if (_reinitPromise) return _reinitPromise;
 
-  const startMs = Date.now();
-  try {
-    const dbExamples = await getActiveExamples(tenantId, prisma);
+  const doReinit = async (): Promise<void> => {
+    // Dynamic import to avoid circular dependency
+    const { getActiveExamples } = await import('./classifier-store.service');
 
-    // Merge: base hardcoded examples + DB-added examples (deduplicated by text)
-    const baseExamples = TRAINING_EXAMPLES.map(ex => ({
-      text: ex.text,
-      labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
-    }));
+    const startMs = Date.now();
+    try {
+      const dbExamples = await getActiveExamples(tenantId, prisma);
 
-    const baseTexts = new Set(baseExamples.map(e => e.text));
-    const newExamples = dbExamples
-      .map(ex => ({
+      // Merge: base hardcoded examples + DB-added examples (deduplicated by text)
+      const baseExamples = TRAINING_EXAMPLES.map(ex => ({
         text: ex.text,
         labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
-      }))
-      .filter(e => !baseTexts.has(e.text));
+      }));
 
-    _examples = [...baseExamples, ...newExamples];
+      const baseTexts = new Set(baseExamples.map(e => e.text));
+      const newExamples = dbExamples
+        .map(ex => ({
+          text: ex.text,
+          labels: ex.labels.filter(l => !BAKED_IN_CHUNKS.has(l)),
+        }))
+        .filter(e => !baseTexts.has(e.text));
 
-    const texts = _examples.map(e => e.text);
-    _exampleEmbeddings = await embedBatch(texts, 'classification');
+      const examples = [...baseExamples, ...newExamples];
 
-    _initDurationMs = Date.now() - startMs;
-    _initialized = true;
-    console.log(`[Classifier] Re-initialized: ${_examples.length} examples (${newExamples.length} from DB), ${_initDurationMs}ms`);
-  } catch (err) {
-    console.error('[Classifier] Re-initialization failed:', err);
-  }
+      const texts = examples.map(e => e.text);
+      const embeddings = await embedBatch(texts, 'classification');
+
+      const initDurationMs = Date.now() - startMs;
+
+      // Atomic swap — readers see either the old state or the complete new state (FR-007)
+      _state = { examples, embeddings, initDurationMs };
+      _initialized = true;
+      console.log(`[Classifier] Re-initialized: ${examples.length} examples (${newExamples.length} from DB), ${initDurationMs}ms`);
+    } catch (err) {
+      console.error('[Classifier] Re-initialization failed:', err);
+    }
+  };
+
+  _reinitPromise = doReinit().finally(() => { _reinitPromise = null; });
+  return _reinitPromise;
 }

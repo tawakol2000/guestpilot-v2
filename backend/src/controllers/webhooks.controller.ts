@@ -93,11 +93,7 @@ export function makeWebhooksController(prisma: PrismaClient) {
         return;
       }
 
-      // TODO: G9/G10 — Hostaway signature verification
-      // Hostaway doesn't appear to send X-Hostaway-Signature header.
-      // Check Hostaway webhook documentation for the correct verification method.
-      // For now, skip verification to allow webhooks to process.
-      console.log(`[Webhook] [${tenantId}] Processing (signature verification disabled pending Hostaway docs)`);
+      // Auth handled by webhook-auth middleware (FR-001)
 
       // Return 200 immediately
       res.status(200).json({ ok: true });
@@ -366,20 +362,29 @@ async function handleNewMessage(
   // G5: Use conditional role — GUEST for incoming, HOST for outgoing
   const role = isGuest ? MessageRole.GUEST : MessageRole.HOST;
 
-  // Save message
-  await prisma.message.create({
-    data: {
-      conversationId: conversation.id,
-      tenantId,
-      role,
-      content: data.body || '',
-      channel: msgChannel,
-      communicationType: data.communicationType?.toLowerCase() || 'channel',
-      sentAt: data.date ? parseHostawayDate(data.date) : new Date(),
-      hostawayMessageId: hostawayMsgId,
-      imageUrls: (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean),
-    },
-  });
+  // Save message (with duplicate guard for unique constraint on hostawayMessageId)
+  try {
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        tenantId,
+        role,
+        content: data.body || '',
+        channel: msgChannel,
+        communicationType: data.communicationType?.toLowerCase() || 'channel',
+        sentAt: data.date ? parseHostawayDate(data.date) : new Date(),
+        hostawayMessageId: hostawayMsgId,
+        imageUrls: (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean),
+      },
+    });
+  } catch (err: any) {
+    // P2002 = Prisma unique constraint violation — duplicate webhook delivery
+    if (err?.code === 'P2002') {
+      console.log(`[Webhook] Duplicate message ${hostawayMsgId} skipped`);
+      return;
+    }
+    throw err;
+  }
 
   if (isGuest) {
     // Update conversation: increment unread, update timestamp

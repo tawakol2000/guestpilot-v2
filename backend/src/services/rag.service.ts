@@ -16,6 +16,11 @@ function embCol(): string {
   return getEmbeddingProvider() === 'cohere' ? 'embedding_cohere' : 'embedding';
 }
 
+/** Returns the vector dimension for the active embedding provider. */
+function embDim(): number {
+  return getEmbeddingProvider() === 'cohere' ? 1024 : 1536;
+}
+
 function generateId(): string {
   // Simple cuid-like ID without external dependency
   return `ck${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
@@ -149,7 +154,7 @@ export async function ingestPropertyKnowledge(
         await (prisma.$executeRawUnsafe as any)(
           `INSERT INTO "PropertyKnowledgeChunk"
             (id, "tenantId", "propertyId", content, category, "sourceKey", "${col}", "createdAt", "updatedAt")
-          VALUES ($1, $2, $3, $4, $5, $6, $7::vector, now(), now())`,
+          VALUES ($1, $2, $3, $4, $5, $6, $7::vector(${embDim()}), now(), now())`,
           id, tenantId, propertyId,
           chunks[i].content, chunks[i].category, chunks[i].sourceKey,
           embeddingStr
@@ -209,7 +214,7 @@ export async function appendLearnedAnswer(
           const embeddingStr = `[${embedding.join(',')}]`;
           await (prisma.$executeRawUnsafe as any)(
             `UPDATE "PropertyKnowledgeChunk"
-            SET content = $1, "${embCol()}" = $2::vector, "updatedAt" = now()
+            SET content = $1, "${embCol()}" = $2::vector(${embDim()}), "updatedAt" = now()
             WHERE id = $3 AND "tenantId" = $4`,
             updatedContent, embeddingStr, existing[0].id, tenantId
           );
@@ -238,7 +243,7 @@ export async function appendLearnedAnswer(
           await (prisma.$executeRawUnsafe as any)(
             `INSERT INTO "PropertyKnowledgeChunk"
               (id, "tenantId", "propertyId", content, category, "sourceKey", "${embCol()}", "createdAt", "updatedAt")
-            VALUES ($1, $2, $3, $4, 'learned-answers', 'learned-answers', $5::vector, now(), now())`,
+            VALUES ($1, $2, $3, $4, 'learned-answers', 'learned-answers', $5::vector(${embDim()}), now(), now())`,
             id, tenantId, propertyId, newLine, embeddingStr
           );
           console.log(`[RAG] Created learned-answers chunk for property ${propertyId}`);
@@ -278,13 +283,13 @@ async function retrievePropertyChunks(
     const col = embCol();
     const results = await (prisma.$queryRawUnsafe as any)(
       `SELECT id, content, category, "sourceKey", "propertyId",
-        1 - ("${col}" <=> $1::vector) as similarity
+        1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
       FROM "PropertyKnowledgeChunk"
       WHERE "propertyId" = $2
         AND "tenantId" = $3
         AND "${col}" IS NOT NULL
         AND category IN ('property-info', 'property-description', 'learned-answers')
-      ORDER BY "${col}" <=> $1::vector
+      ORDER BY "${col}" <=> $1::vector(${embDim()})
       LIMIT $4`,
       embeddingStr, propertyId, tenantId, topK
     ) as Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
@@ -376,41 +381,41 @@ export async function retrieveRelevantKnowledge(
     if (agentType === 'guestCoordinator') {
       results = await (prisma.$queryRawUnsafe as any)(
         `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector) as similarity
+          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
         FROM "PropertyKnowledgeChunk"
         WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
           AND "tenantId" = $3
           AND "${col}" IS NOT NULL
           AND category NOT LIKE 'sop-screening-%'
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector
+        ORDER BY "${col}" <=> $1::vector(${embDim()})
         LIMIT $4`,
         embeddingStr, propertyId, tenantId, topK
       ) as ChunkRow[];
     } else if (agentType === 'screeningAI') {
       results = await (prisma.$queryRawUnsafe as any)(
         `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector) as similarity
+          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
         FROM "PropertyKnowledgeChunk"
         WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
           AND "tenantId" = $3
           AND "${col}" IS NOT NULL
           AND category NOT IN ('sop-service-requests', 'sop-maintenance', 'sop-house-rules', 'sop-checkin-checkout', 'sop-escalation')
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector
+        ORDER BY "${col}" <=> $1::vector(${embDim()})
         LIMIT $4`,
         embeddingStr, propertyId, tenantId, topK
       ) as ChunkRow[];
     } else {
       results = await (prisma.$queryRawUnsafe as any)(
         `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector) as similarity
+          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
         FROM "PropertyKnowledgeChunk"
         WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
           AND "tenantId" = $3
           AND "${col}" IS NOT NULL
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector
+        ORDER BY "${col}" <=> $1::vector(${embDim()})
         LIMIT $4`,
         embeddingStr, propertyId, tenantId, topK
       ) as ChunkRow[];
@@ -873,7 +878,7 @@ export async function seedTenantSops(
         await (prisma.$executeRawUnsafe as any)(
           `INSERT INTO "PropertyKnowledgeChunk"
             (id, "tenantId", "propertyId", content, category, "sourceKey", "${col}", "createdAt", "updatedAt")
-          VALUES ($1, $2, NULL, $3, $4, $5, $6::vector, now(), now())`,
+          VALUES ($1, $2, NULL, $3, $4, $5, $6::vector(${embDim()}), now(), now())`,
           id, tenantId, chunk.content, chunk.category, chunk.sourceKey, embeddingStr
         );
       } else {

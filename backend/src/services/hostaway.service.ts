@@ -9,6 +9,23 @@ import { HostawayListing, HostawayReservation, HostawayConversation, HostawayMes
 
 const HOSTAWAY_BASE_URL = 'https://api.hostaway.com';
 
+// T032: Retry with exponential backoff for transient Hostaway API failures
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxAttempts = 3, baseDelayMs = 2000): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const isRetryable = !status || status === 408 || status === 429 || status === 503 || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT';
+      if (!isRetryable || attempt === maxAttempts) throw err;
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.warn(`[Hostaway] Attempt ${attempt}/${maxAttempts} failed (${status || err.code}), retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('Unreachable');
+}
+
 // Per-tenant token cache
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
@@ -18,7 +35,7 @@ async function getAccessToken(accountId: string, apiKey: string): Promise<string
     return cached.token;
   }
 
-  const res = await axios.post(
+  const res = await retryWithBackoff(() => axios.post(
     `${HOSTAWAY_BASE_URL}/v1/accessTokens`,
     new URLSearchParams({
       grant_type: 'client_credentials',
@@ -27,7 +44,7 @@ async function getAccessToken(accountId: string, apiKey: string): Promise<string
       scope: 'general',
     }).toString(),
     { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
+  ));
 
   const token: string = res.data.access_token;
   const expiresIn: number = (res.data.expires_in || 86400) - 60;
@@ -116,7 +133,7 @@ export async function getReservation(
   reservationId: number | string
 ): Promise<{ result: HostawayReservation }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get(`/v1/reservations/${reservationId}`);
+  const res = await retryWithBackoff(() => client.get(`/v1/reservations/${reservationId}`));
   return res.data;
 }
 
@@ -180,10 +197,10 @@ export async function sendMessageToConversation(
   }
   console.log(`[Hostaway] Sending to conv ${conversationId} (${communicationType}): "${body.substring(0, 80)}"`);
   const client = await getClient(accountId, apiKey);
-  const res = await client.post(`/v1/conversations/${conversationId}/messages`, {
+  const res = await retryWithBackoff(() => client.post(`/v1/conversations/${conversationId}/messages`, {
     body,
     communicationType,
-  });
+  }));
   console.log(`[Hostaway] Send success, status: ${res.status}`);
   return res.data;
 }

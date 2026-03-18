@@ -184,6 +184,11 @@ export async function embedText(text: string, inputType?: EmbeddingInputType): P
     ? await cohereEmbedText(text, inputType)
     : await openaiEmbedText(text);
 
+  const expectedDim = _activeProvider === 'cohere' ? 1024 : 1536;
+  if (embedding.length > 0 && embedding.length !== expectedDim) {
+    console.error(`[Embeddings] Dimension mismatch: got ${embedding.length}, expected ${expectedDim} for provider ${_activeProvider}`);
+  }
+
   if (embedding.length > 0 && text.length <= 1000) {
     _cache.set(cacheKey(text, inputType), { embedding, ts: Date.now() });
   }
@@ -191,7 +196,15 @@ export async function embedText(text: string, inputType?: EmbeddingInputType): P
 }
 
 export async function embedBatch(texts: string[], inputType?: EmbeddingInputType): Promise<number[][]> {
-  return _activeProvider === 'cohere'
-    ? cohereEmbedBatch(texts, inputType)
-    : openaiEmbedBatch(texts);
+  const results = _activeProvider === 'cohere'
+    ? await cohereEmbedBatch(texts, inputType)
+    : await openaiEmbedBatch(texts);
+
+  const expectedDim = _activeProvider === 'cohere' ? 1024 : 1536;
+  const firstNonEmpty = results.find(r => r.length > 0);
+  if (firstNonEmpty && firstNonEmpty.length !== expectedDim) {
+    console.error(`[Embeddings] Batch dimension mismatch: got ${firstNonEmpty.length}, expected ${expectedDim} for provider ${_activeProvider}`);
+  }
+
+  return results;
 }

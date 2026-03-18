@@ -14,8 +14,10 @@ export async function addExample(
   source: string,
   prisma: PrismaClient
 ): Promise<{ id: string }> {
-  return prisma.classifierExample.create({
-    data: { tenantId, text, labels, source },
+  return prisma.classifierExample.upsert({
+    where: { tenantId_text: { tenantId, text } },
+    create: { tenantId, text, labels, source },
+    update: { labels, source, active: true },
     select: { id: true },
   });
 }

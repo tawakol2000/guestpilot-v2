@@ -111,3 +111,10 @@ cd backend && npx prisma studio     # browse data
 - `AI_SYSTEM_FLOW-v7.md` — Detailed 9-stage AI pipeline flow
 - `CLASSIFIER_FRONTEND_CLAUDE_CODE.md` — Pending: classifier dashboard UI spec
 - `JUDGE_SELF_IMPROVEMENT_CLAUDE_CODE.md` — Pending: judge service spec
+
+## Active Technologies
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ (001-system-audit)
+- PostgreSQL + pgvector + Prisma ORM (001-system-audit)
+
+## Recent Changes
+- 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

@@ -24,14 +24,9 @@ import { detectEscalationSignals } from './escalation-enrichment.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ─── Model pricing (per 1M tokens) ──────────────────────────────────────────
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'claude-opus-4-6': { input: 15, output: 75 },
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-haiku-4-5-20251001': { input: 0.80, output: 4 },
-  'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
-  'claude-3-5-haiku-20241022': { input: 0.80, output: 4 },
-};
+// ─── Model pricing (per 1M tokens) — loaded from config for easy updates ────
+import modelPricingData from '../config/model-pricing.json';
+const MODEL_PRICING: Record<string, { input: number; output: number }> = modelPricingData;
 
 function calculateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const pricing = MODEL_PRICING[model] || { input: 3, output: 15 }; // default to sonnet pricing
@@ -158,7 +153,8 @@ async function createMessage(
       messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
     };
     const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
-    console.log('[CLAUDE-RAW]', JSON.stringify(createParams));
+    // T017: Raw prompt log removed — may contain door codes / WiFi passwords.
+    // AiApiLog table already captures full request data for debugging.
     const response = await withRetry(() =>
       (anthropic.messages.create as any)(createParams, createOpts)
     ) as Anthropic.Message;
@@ -1002,20 +998,35 @@ async function handleEscalation(
 
     // Resolve old task if requested — independent of new task creation so the
     // AI can close one task and open another in the same response.
+    // T018: Verify task belongs to tenant before mutating.
     if (resolveTaskId) {
-      const resolved = await prisma.task.update({
-        where: { id: resolveTaskId },
-        data: { status: 'completed', completedAt: new Date() },
+      const resolveTarget = await prisma.task.findFirst({
+        where: { id: resolveTaskId, tenantId },
       });
-      broadcastToTenant(tenantId, 'task_updated', { conversationId, task: resolved });
+      if (!resolveTarget) {
+        console.warn(`[AI] resolveTaskId ${resolveTaskId} not found for tenant ${tenantId} — skipping`);
+      } else {
+        const resolved = await prisma.task.update({
+          where: { id: resolveTaskId },
+          data: { status: 'completed', completedAt: new Date() },
+        });
+        broadcastToTenant(tenantId, 'task_updated', { conversationId, task: resolved });
+      }
     }
 
     if (updateTaskId) {
-      task = await prisma.task.update({
-        where: { id: updateTaskId },
-        data: { title, note, urgency },
+      const updateTarget = await prisma.task.findFirst({
+        where: { id: updateTaskId, tenantId },
       });
-      broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
+      if (!updateTarget) {
+        console.warn(`[AI] updateTaskId ${updateTaskId} not found for tenant ${tenantId} — skipping`);
+      } else {
+        task = await prisma.task.update({
+          where: { id: updateTaskId },
+          data: { title, note, urgency },
+        });
+        broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
+      }
     } else if (title) {
       task = await createTask(prisma, {
         tenantId,
@@ -1481,6 +1492,19 @@ export async function generateAndSendAiReply(
             escalation: { title: string; note: string; urgency: string } | null;
           };
           guestMessage = parsed.guest_message || '';
+          // T019: Validate AI output escalation fields before use
+          if (parsed.escalation) {
+            const validUrgencies = ['immediate', 'scheduled', 'info_request'];
+            if (!validUrgencies.includes(parsed.escalation.urgency)) {
+              parsed.escalation.urgency = 'immediate';
+            }
+            if (parsed.escalation.title) {
+              parsed.escalation.title = parsed.escalation.title.slice(0, 200);
+            }
+            if (parsed.escalation.note) {
+              parsed.escalation.note = parsed.escalation.note.slice(0, 2000);
+            }
+          }
           // Handle task resolve/update even when escalation is null
           if (parsed.escalation) {
             await handleEscalation(
@@ -1512,6 +1536,14 @@ export async function generateAndSendAiReply(
         }
       } catch {
         console.error(`[AI] [${conversationId}] JSON parse failed`);
+        // T030: Escalate on JSON parse failure so manager can follow up manually
+        await handleEscalation(
+          prisma, tenantId, conversationId, context.propertyId,
+          'ai-parse-failure',
+          `AI response failed JSON parsing. Raw response snippet: ${rawResponse?.substring(0, 200)}`,
+          'immediate'
+        );
+        broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
         return;
       }
     } else {
@@ -1617,6 +1649,14 @@ export async function generateAndSendAiReply(
         }
       } catch {
         console.error(`[AI] [${conversationId}] Image JSON parse failed`);
+        // T030: Escalate on JSON parse failure so manager can follow up manually
+        await handleEscalation(
+          prisma, tenantId, conversationId, context.propertyId,
+          'ai-parse-failure',
+          `AI response failed JSON parsing. Raw response snippet: ${rawResponse?.substring(0, 200)}`,
+          'immediate'
+        );
+        broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
         return;
       }
     }
@@ -1649,15 +1689,10 @@ export async function generateAndSendAiReply(
     const lastGuestMsg = allMsgs.filter(m => m.role === 'GUEST').at(-1);
     const lastMsgChannel = lastGuestMsg?.channel ?? Channel.OTHER;
     const communicationType = lastMsgChannel === Channel.WHATSAPP ? 'whatsapp' : 'channel';
-    await hostawayService.sendMessageToConversation(
-      hostawayAccountId, hostawayApiKey, hostawayConversationId, guestMessage, communicationType
-    );
-    console.log(`[AI] [${conversationId}] Sent reply via Hostaway`);
-
     const sentAt = new Date();
 
-    // Save to DB — record which channel it was sent through
-    await prisma.message.create({
+    // T031: Write-ahead delivery — save to DB FIRST, then send via Hostaway
+    const savedMessage = await prisma.message.create({
       data: {
         conversationId,
         tenantId,
@@ -1666,6 +1701,7 @@ export async function generateAndSendAiReply(
         sentAt,
         channel: lastMsgChannel,
         communicationType,
+        hostawayMessageId: '',
       },
     });
 
@@ -1682,6 +1718,32 @@ export async function generateAndSendAiReply(
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });
+
+    // T031: Now send via Hostaway + T033: Escalate on delivery failure
+    try {
+      const sendResult = await hostawayService.sendMessageToConversation(
+        hostawayAccountId, hostawayApiKey, hostawayConversationId, guestMessage, communicationType
+      );
+      console.log(`[AI] [${conversationId}] Sent reply via Hostaway`);
+
+      // Update DB record with Hostaway message ID if returned
+      const hostawayMsgId = (sendResult as any)?.result?.id;
+      if (hostawayMsgId) {
+        await prisma.message.update({
+          where: { id: savedMessage.id },
+          data: { hostawayMessageId: String(hostawayMsgId) },
+        }).catch(err => console.warn(`[AI] [${conversationId}] Failed to update hostawayMessageId:`, err));
+      }
+    } catch (sendErr) {
+      // T033: Message is saved in DB but not delivered — escalate to manager
+      console.error(`[AI] [${conversationId}] Hostaway send failed:`, sendErr);
+      await handleEscalation(
+        prisma, tenantId, conversationId, context.propertyId,
+        'message-delivery-failure',
+        `AI reply saved but Hostaway delivery failed. Error: ${sendErr instanceof Error ? sendErr.message : String(sendErr)}. Message preview: "${guestMessage.substring(0, 150)}"`,
+        'immediate'
+      );
+    }
 
     // Fire-and-forget: LLM-as-judge evaluation + self-improvement
     // NEVER awaited — runs in background after response is already sent

@@ -118,6 +118,21 @@ export function clearTopicState(conversationId: string): void {
   _cache.delete(conversationId);
 }
 
+// Periodic cleanup of expired cache entries (every 5 minutes)
+const _cleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [id, state] of _cache.entries()) {
+    if (now - state.updatedAt > getDecayMs(state.labels)) {
+      _cache.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+/** Call during graceful shutdown to stop the periodic cleanup timer. */
+export function stopTopicStateCleanup(): void {
+  clearInterval(_cleanupTimer);
+}
+
 export function getTopicCacheStats(): { size: number; conversationIds: string[] } {
   const now = Date.now();
   for (const [id, state] of _cache.entries()) {

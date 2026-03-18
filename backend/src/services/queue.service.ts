@@ -56,6 +56,7 @@ export async function addAiReplyJob(
         delay: delayMs,
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
       }
     );
   } catch (err) {

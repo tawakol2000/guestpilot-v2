@@ -43,6 +43,8 @@ function initRedis(): void {
       if (err) {
         console.warn('[SSE] Redis psubscribe failed — disabling Redis broadcast, using in-memory only:', err.message);
         publisher = null; // Force broadcastToTenant to use in-memory fallback
+        try { subscriber?.disconnect(); } catch {}
+        subscriber = null;
         return;
       }
       console.log('[SSE] Redis pub/sub ready — broadcasts will reach all Railway instances');
@@ -57,6 +59,10 @@ function initRedis(): void {
     publisher = null;
     subscriber = null;
   }
+
+  process.on('beforeExit', () => {
+    try { publisher?.disconnect(); subscriber?.disconnect(); } catch {}
+  });
 }
 
 initRedis();
@@ -68,7 +74,7 @@ function deliverToLocalClients(tenantId: string, msg: string): void {
   if (!tenantClients?.size) return;
   console.log(`[SSE] Delivering to ${tenantClients.size} local client(s) tenantId=${tenantId}`);
   for (const res of tenantClients) {
-    try { res.write(msg); } catch { tenantClients.delete(res); }
+    try { res.write(msg); } catch (err: any) { console.warn('[SSE] Write failed, removing client:', err?.message || 'unknown'); tenantClients.delete(res); }
   }
 }
 
@@ -81,6 +87,7 @@ export function registerSSEClient(tenantId: string, res: Response): void {
   console.log(`[SSE] Client connected tenantId=${tenantId} totalClients=${count}`);
   res.on('close', () => {
     clients.get(tenantId)?.delete(res);
+    if (clients.get(tenantId)?.size === 0) { clients.delete(tenantId); }
     const remaining = clients.get(tenantId)?.size ?? 0;
     console.log(`[SSE] Client disconnected tenantId=${tenantId} remainingClients=${remaining}`);
   });
@@ -108,6 +115,6 @@ function broadcastInMemory(tenantId: string, event: string, msg: string): void {
   }
   console.log(`[SSE] In-memory broadcast event="${event}" to ${tenantClients.size} client(s) tenantId=${tenantId}`);
   for (const res of tenantClients) {
-    try { res.write(msg); } catch { tenantClients.delete(res); }
+    try { res.write(msg); } catch (err: any) { console.warn('[SSE] Write failed, removing client:', err?.message || 'unknown'); tenantClients.delete(res); }
   }
 }

@@ -119,23 +119,17 @@ export async function scheduleAiReply(
   // expectedAt = when the AI will actually fire (scheduledAt + up to one poll cycle)
   const expectedAt = new Date(scheduledAt.getTime() + POLL_INTERVAL_MS);
 
-  // Check for existing unfired pending reply
-  const existing = await prisma.pendingAiReply.findFirst({
-    where: { conversationId, fired: false },
+  // Cleanup old completed (fired) records for this conversation
+  await prisma.pendingAiReply.deleteMany({
+    where: { conversationId, fired: true },
   });
 
-  if (existing) {
-    // Reset timer — update scheduledAt
-    await prisma.pendingAiReply.update({
-      where: { id: existing.id },
-      data: { scheduledAt },
-    });
-  } else {
-    // Create new pending reply
-    await prisma.pendingAiReply.create({
-      data: { conversationId, tenantId, scheduledAt, fired: false },
-    });
-  }
+  // Atomic upsert — eliminates findFirst+create/update race condition (FR-006)
+  await prisma.pendingAiReply.upsert({
+    where: { conversationId },
+    create: { conversationId, tenantId, scheduledAt, fired: false },
+    update: { scheduledAt, fired: false },
+  });
 
   // Broadcast typing indicator to browser
   broadcastToTenant(tenantId, 'ai_typing', { conversationId, expectedAt: expectedAt.toISOString() });

@@ -2,7 +2,13 @@ import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthenticatedRequest, JwtPayload } from '../types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+// FR-002: JWT_SECRET MUST be explicitly set — no fallback
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is not set. Exiting.');
+  process.exit(1);
+}
+
+export const JWT_SECRET = process.env.JWT_SECRET;
 
 export function authMiddleware(
   req: AuthenticatedRequest,
@@ -27,5 +33,5 @@ export function authMiddleware(
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '90d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
 }

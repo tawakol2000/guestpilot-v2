@@ -1,7 +1,7 @@
 /**
  * Per-tenant AI configuration service.
  * Each tenant gets their own agent name, model, temperature, debounce delay, etc.
- * Uses a 5-minute in-memory cache to avoid repeated DB hits.
+ * Uses a 60-second in-memory cache to avoid repeated DB hits.
  * Creates default config on first access (upsert).
  */
 import { PrismaClient, TenantAiConfig } from '@prisma/client';
@@ -12,7 +12,7 @@ interface CacheEntry {
 }
 
 const _cache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds — reduced for faster config propagation
 
 const ALLOWED_MODELS = [
   'claude-haiku-4-5-20251001',

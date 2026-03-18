@@ -161,8 +161,8 @@ model PendingAiReply {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([conversationId])
   @@index([fired, scheduledAt])
-  @@index([conversationId])
 }
 
 model Task {
@@ -327,14 +327,15 @@ model AiApiLog {
 // ─── Property Knowledge Chunks (pgvector RAG) ────────────────────────────────
 
 model PropertyKnowledgeChunk {
-  id          String   @id @default(cuid())
-  tenantId    String
-  propertyId  String?
-  content     String   @db.Text
-  category    String   @default("general")
-  sourceKey   String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String                    @id @default(cuid())
+  tenantId         String
+  propertyId       String?
+  content          String                    @db.Text
+  category         String                    @default("general")
+  sourceKey        String                    @default("")
+  embedding_cohere Unsupported("vector(1024)")?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -388,6 +389,7 @@ model ClassifierExample {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, text])
   @@index([tenantId, active])
 }
 

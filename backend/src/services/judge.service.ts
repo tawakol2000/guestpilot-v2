@@ -56,6 +56,17 @@ function recordAutoFix(tenantId: string): void {
   if (entry) entry.count++;
 }
 
+// Periodic cleanup of expired cache entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of _thresholdCache.entries()) {
+    if (now > entry.expiresAt) _thresholdCache.delete(key);
+  }
+  for (const [key, entry] of _fixCounts.entries()) {
+    if (now > entry.resetAt) _fixCounts.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 // All valid SOP chunk IDs the judge can recommend (22 RAG categories)
 const VALID_CHUNK_IDS = [
   // Original 11

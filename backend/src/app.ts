@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { authRouter } from './routes/auth';
@@ -20,11 +21,20 @@ import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { registerSSEClient } from './services/sse.service';
 import { getAiApiLog } from './services/ai.service';
-import { authMiddleware } from './middleware/auth';
+import { authMiddleware, JWT_SECRET } from './middleware/auth';
 import { JwtPayload } from './types';
 
 export function createApp(prisma: PrismaClient) {
   const app = express();
+
+  // Trust first proxy hop (Railway reverse proxy)
+  app.set('trust proxy', 1);
+
+  // ── Security headers (FR-015) ───────────────────────────────────────────
+  app.use(helmet({
+    contentSecurityPolicy: false,       // API-only, no HTML served
+    crossOriginEmbedderPolicy: false,   // Not needed for API
+  }));
 
   // ── Middleware ────────────────────────────────────────────────────────────
   const allowedOrigins = process.env.CORS_ORIGINS
@@ -196,7 +206,7 @@ export function createApp(prisma: PrismaClient) {
     if (!token) { res.status(401).end(); return; }
     let tenantId: string;
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET || 'changeme') as JwtPayload;
+      const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
       tenantId = payload.tenantId;
     } catch {
       res.status(401).end();
