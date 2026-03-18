@@ -141,6 +141,50 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
   const classifierStatus = getClassifierStatus();
   const classifierThresholds = getClassifierThresholds();
 
+  // Full per-call pipeline details — this is what the Pipeline page shows
+  const pipelineDetails = aiLogs.map(log => {
+    const ctx = log.ragContext as any;
+    return {
+      time: log.createdAt.toISOString(),
+      agent: log.agentName,
+      model: log.model,
+      conversationId: log.conversationId,
+      // Input: the guest message(s) that triggered this call
+      guestQuery: ctx?.query || '',
+      // Tier 1 — Embedding Classifier
+      tier1: {
+        method: ctx?.classifierMethod || null,
+        labels: ctx?.classifierLabels || [],
+        topSimilarity: ctx?.classifierTopSim ?? null,
+        classifierUsed: ctx?.classifierUsed ?? true,
+      },
+      // Tier 2 — Intent Extractor (Haiku)
+      tier2: ctx?.tier2Output || null,
+      // Tier 3 — Topic State Cache
+      tier3: {
+        reinjected: ctx?.tier3Reinjected ?? false,
+        topicSwitch: ctx?.tier3TopicSwitch ?? false,
+        reinjectedLabels: ctx?.tier3ReinjectedLabels || [],
+      },
+      // RAG chunks retrieved
+      retrievedChunks: (ctx?.chunks || []).map((c: any) => ({
+        category: c.category,
+        similarity: c.similarity,
+        content: c.content,
+      })),
+      // Escalation signals
+      escalationSignals: ctx?.escalationSignals || [],
+      // AI output
+      responseText: log.responseText,
+      // Cost & performance
+      inputTokens: log.inputTokens,
+      outputTokens: log.outputTokens,
+      costUsd: log.costUsd,
+      durationMs: log.durationMs,
+      error: log.error,
+    };
+  });
+
   return {
     period: { from: dayAgo.toISOString(), to: now.toISOString() },
     messageCounts,
@@ -149,18 +193,21 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
     evalStats,
     pendingStats,
     chunkHits,
-    // Detailed records for Opus to review
+    // Full pipeline trace for every AI call (what the Pipeline page shows)
+    pipelineDetails,
+    // Classifier evaluations (judge decisions)
     evaluations: evaluations.map(e => ({
-      message: e.guestMessage.substring(0, 200),
+      message: e.guestMessage,
       classifierLabels: e.classifierLabels,
       topSim: e.classifierTopSim,
       correct: e.retrievalCorrect,
       judgeLabels: e.judgeCorrectLabels,
       autoFixed: e.autoFixed,
+      confidence: e.judgeConfidence,
       reasoning: e.judgeReasoning,
     })),
     newExamples: newExamples.map(e => ({
-      text: e.text.substring(0, 200),
+      text: e.text,
       labels: e.labels,
       source: e.source,
       active: e.active,
@@ -263,25 +310,28 @@ Analyze the past 24 hours of system data and produce a comprehensive audit repor
 ## 2. Message Volume & Response Rate
 Guest/AI/host message counts, AI response rate (AI messages / guest messages), channel breakdown.
 
-## 3. Classification Accuracy
+## 3. Per-Message Pipeline Review
+For EACH AI call in the pipeline trace: was the classification correct? Did the right SOP get retrieved? Was the AI response appropriate? Flag specific calls where the pipeline failed. Quote the guest message and AI response.
+
+## 4. Classification Accuracy
 Tier 1 accuracy rate, average similarity scores, Tier 2 fire rate, judge intervention rate. Flag any patterns in misclassifications.
 
-## 4. Auto-Fix Review
+## 5. Auto-Fix Review
 Review EACH auto-fixed example individually. For each: was the correction correct? Is the text-to-label mapping sensible? Flag any that should be deactivated.
 
-## 5. Cost Analysis
+## 6. Cost Analysis
 Total API costs, cost per guest message, breakdown by agent (Omar, Judge, IntentExtractor). Trends or anomalies.
 
-## 6. SOP Coverage
+## 7. SOP Coverage
 Which SOPs fired most? Any SOPs that never fired? Any messages that fell through without a good SOP match?
 
-## 7. Threshold Recommendations
+## 8. Threshold Recommendations
 Based on the data: should judgeThreshold, autoFixThreshold, voteThreshold, or contextualGate be adjusted? Explain why with data.
 
-## 8. System Health Score
+## 9. System Health Score
 Rate 1-10 with justification. Consider: accuracy, cost efficiency, response coverage, error rate, self-improvement quality.
 
-## 9. Action Items
+## 10. Action Items
 Prioritized list of specific, actionable recommendations. Include: training examples to add, settings to change, SOPs to update, examples to deactivate.`;
 
 export async function generateOpusReport(tenantId: string, reportId: string, prisma: PrismaClient): Promise<void> {
@@ -295,27 +345,52 @@ export async function generateOpusReport(tenantId: string, reportId: string, pri
 
     const rawData = await collectDailyData(tenantId, prisma);
 
+    // Build per-call pipeline details (this is what the Pipeline page shows for each message)
+    const pipelineSection = rawData.pipelineDetails.map((p, i) => {
+      let s = `### Call #${i + 1} — ${p.agent} @ ${p.time}\n`;
+      s += `**Guest message:** "${p.guestQuery}"\n`;
+      s += `**Conversation:** ${p.conversationId}\n\n`;
+      s += `**Tier 1 (Classifier):** method=${p.tier1.method}, labels=[${p.tier1.labels.join(', ')}], topSim=${p.tier1.topSimilarity?.toFixed(3) ?? 'N/A'}\n`;
+      if (p.tier2) s += `**Tier 2 (Haiku):** ${JSON.stringify(p.tier2)}\n`;
+      if (p.tier3.reinjected) s += `**Tier 3 (Topic Cache):** reinjected=[${p.tier3.reinjectedLabels.join(', ')}]\n`;
+      if (p.retrievedChunks.length > 0) {
+        s += `**Retrieved SOPs (${p.retrievedChunks.length}):** ${p.retrievedChunks.map((c: any) => `${c.category} (${c.similarity?.toFixed(2)})`).join(', ')}\n`;
+      }
+      if (p.escalationSignals.length > 0) s += `**Escalation signals:** ${p.escalationSignals.join(', ')}\n`;
+      s += `\n**AI Response:**\n${p.responseText}\n`;
+      s += `\n_${p.inputTokens}in / ${p.outputTokens}out / $${p.costUsd.toFixed(4)} / ${p.durationMs}ms${p.error ? ' / ERROR: ' + p.error : ''}_\n`;
+      return s;
+    }).join('\n---\n\n');
+
     const userContent = `Here is the complete pipeline data for the past 24 hours (${rawData.period.from} to ${rawData.period.to}):
 
-## Message Volume
+## Summary Statistics
+
+### Message Volume
 ${JSON.stringify(rawData.messageCounts, null, 2)}
 
-## Channel Distribution
+### Channel Distribution
 ${JSON.stringify(rawData.channelCounts, null, 2)}
 
-## AI API Call Statistics
+### AI API Call Statistics
 ${JSON.stringify(rawData.aiLogStats, null, 2)}
 
-## Classifier Evaluation Statistics
+### Classifier Evaluation Statistics
 ${JSON.stringify(rawData.evalStats, null, 2)}
 
-## SOP Hit Frequency
+### SOP Hit Frequency
 ${JSON.stringify(rawData.chunkHits, null, 2)}
 
-## Pending AI Replies
+### Pending AI Replies
 ${JSON.stringify(rawData.pendingStats, null, 2)}
 
-## All Classifier Evaluations (${rawData.evaluations.length} total)
+## Full Pipeline Trace — Every AI Call (${rawData.pipelineDetails.length} total)
+
+Each entry shows: guest message → Tier 1/2/3 classification → retrieved SOPs → AI response.
+
+${pipelineSection}
+
+## Classifier Judge Evaluations (${rawData.evaluations.length} total)
 ${JSON.stringify(rawData.evaluations, null, 2)}
 
 ## New Training Examples Generated Today (${rawData.newExamples.length} total)
@@ -338,7 +413,7 @@ ${rawData.activeSops.join(', ')}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: OPUS_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
     });
