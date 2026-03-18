@@ -1197,8 +1197,13 @@ export async function generateAndSendAiReply(
     const propertyAmenities = context.customKnowledgeBase?.amenities
       ? String(context.customKnowledgeBase.amenities) : undefined;
 
-    // Upgrade 5c: RAG — retrieve relevant property knowledge for this query
-    const ragQuery = currentMsgs.map((m: { content: string }) => m.content).join(' ');
+    // Upgrade 5c: RAG — retrieve relevant property knowledge for this query.
+    // Use LAST guest message for classification (cleaner signal for KNN — accumulated
+    // messages dilute intent, e.g., "brother" + "Saudi Arabia" oscillates between
+    // visitor-policy and non-actionable). AI still sees ALL messages in content blocks.
+    const ragQuery = currentMsgs.length > 0
+      ? currentMsgs[currentMsgs.length - 1].content
+      : currentMsgs.map((m: { content: string }) => m.content).join(' ');
     const ragStart = Date.now();
     const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
       ? await retrieveRelevantKnowledge(
