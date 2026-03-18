@@ -35,6 +35,7 @@ model Tenant {
   tenantAiConfig          TenantAiConfig?
   classifierExamples      ClassifierExample[]
   classifierEvaluations   ClassifierEvaluation[]
+  opusReports             OpusReport[]
 }
 
 model Property {
@@ -414,6 +415,26 @@ model ClassifierEvaluation {
   @@index([tenantId, retrievalCorrect])
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([tenantId, autoFixed])
+}
+
+// ─── OPUS Audit Reports ─────────────────────────────────────────────────────
+
+model OpusReport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  reportDate      DateTime
+  status          String   @default("pending")
+  rawData         Json     @default("{}")
+  reportMarkdown  String   @db.Text @default("")
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  costUsd         Float    @default(0)
+  durationMs      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reportDate(sort: Desc)])
 }
 
 // ─── AI Config Version History ───────────────────────────────────────────────

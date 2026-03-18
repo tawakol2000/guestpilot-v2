@@ -940,3 +940,36 @@ export async function apiDeleteClassifierExample(id: string): Promise<{ ok: bool
 export async function apiReinitializeClassifier(): Promise<{ ok: boolean; exampleCount: number }> {
   return apiFetch('/api/knowledge/classifier-reinitialize', { method: 'POST' })
 }
+
+// ─── OPUS Audit Reports ─────────────────────────────────────────────────────
+
+export interface OpusReportSummary {
+  id: string
+  reportDate: string
+  status: string
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+  durationMs: number
+  createdAt: string
+}
+
+export interface OpusReportDetail extends OpusReportSummary {
+  reportMarkdown: string
+}
+
+export async function apiGenerateOpusReport(): Promise<{ id: string; status: string }> {
+  return apiFetch('/api/opus/generate', { method: 'POST' })
+}
+
+export async function apiGetOpusReports(): Promise<OpusReportSummary[]> {
+  return apiFetch('/api/opus/reports')
+}
+
+export async function apiGetOpusReport(id: string): Promise<OpusReportDetail> {
+  return apiFetch(`/api/opus/reports/${id}`)
+}
+
+export async function apiGetOpusReportRaw(id: string): Promise<Record<string, unknown>> {
+  return apiFetch(`/api/opus/reports/${id}/raw`)
+}
