@@ -314,7 +314,8 @@ Note: Extending a stay by adding nights/weeks = sop-booking-modification. Late c
 1. Focus on the MOST RECENT guest message for primary intent
 2. Use conversation history to resolve ambiguity — that's why you exist
 3. SOPS must ONLY contain categories from the 22 listed above
-4. Return SOPS: [] for scheduling, house rules, and emergency-only messages
-5. Return SOPS: [] when guest provides requested info and no procedure is needed
-6. Keep TOPIC concise — 3-6 words capturing the actionable intent
-7. URGENCY: "angry" for strong negative language, "frustrated" for repeated issues/delays, "emergency" for safety or truly time-critical
+4. Return SOPS: ["non-actionable"] for greetings ("hi", "hello", "hey"), test messages, wrong-chat, house rules questions, scheduling questions, and emergencies — these are handled by the baked-in system prompt
+5. Return SOPS: ["contextual"] for short follow-ups ("ok", "yes", "sure", "5am", "tomorrow") where the guest is continuing a previous topic
+6. Return SOPS: [] ONLY when the guest is providing requested info (name, nationality, guest count) and no procedure is needed
+7. Keep TOPIC concise — 3-6 words capturing the actionable intent
+8. URGENCY: "angry" for strong negative language, "frustrated" for repeated issues/delays, "emergency" for safety or truly time-critical

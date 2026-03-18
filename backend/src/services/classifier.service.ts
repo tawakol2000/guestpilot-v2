@@ -161,7 +161,7 @@ export async function classifyMessage(query: string): Promise<{
     if (reranked && reranked.length > 0) {
       topK = reranked.map(r => ({
         index: candidatePool[r.index].index,
-        similarity: r.relevanceScore, // use rerank score instead of cosine
+        similarity: candidatePool[r.index].similarity, // keep cosine for thresholds; rerank only picks WHICH neighbors
       }));
       classifyMethod = 'knn_rerank';
     } else {
