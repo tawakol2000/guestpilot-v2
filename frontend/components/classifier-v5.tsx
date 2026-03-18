@@ -819,13 +819,20 @@ function TrainingExamplesSection() {
 function ThresholdSettings() {
   const [judgeVal,   setJudgeVal]   = useState(0.75)
   const [autoFixVal, setAutoFixVal] = useState(0.70)
+  const [voteVal, setVoteVal] = useState(0.30)
+  const [ctxGateVal, setCtxGateVal] = useState(0.85)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
 
   useEffect(() => {
     apiGetClassifierThresholds()
-      .then(d => { setJudgeVal(d.judgeThreshold); setAutoFixVal(d.autoFixThreshold); setLoaded(true) })
+      .then(d => {
+        setJudgeVal(d.judgeThreshold); setAutoFixVal(d.autoFixThreshold)
+        if (d.classifierVoteThreshold != null) setVoteVal(d.classifierVoteThreshold)
+        if (d.classifierContextualGate != null) setCtxGateVal(d.classifierContextualGate)
+        setLoaded(true)
+      })
       .catch(() => setLoaded(true))
   }, [])
 
@@ -836,7 +843,10 @@ function ThresholdSettings() {
     if (autoFixErr || saving) return
     setSaving(true); setSavedMsg('')
     try {
-      await apiSetClassifierThresholds({ judgeThreshold: judgeVal, autoFixThreshold: autoFixVal })
+      await apiSetClassifierThresholds({
+        judgeThreshold: judgeVal, autoFixThreshold: autoFixVal,
+        classifierVoteThreshold: voteVal, classifierContextualGate: ctxGateVal,
+      })
       setSavedMsg('Saved')
       setTimeout(() => setSavedMsg(''), 3000)
     } catch (e: any) {
@@ -978,6 +988,31 @@ function ThresholdSettings() {
             Auto-fix threshold must be less than judge threshold
           </div>
         )}
+
+        {/* Tier 1 classifier thresholds */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Tier 1 — Embedding Classifier
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <SliderRow
+              label="Vote threshold"
+              hint="— label needs this % of weighted vote"
+              value={voteVal}
+              onChange={v => setVoteVal(v)}
+              min={0.10} max={0.60} step={0.01}
+              color={T.accent}
+            />
+            <SliderRow
+              label="Contextual gate"
+              hint="— short-circuit to contextual above this similarity"
+              value={ctxGateVal}
+              onChange={v => setCtxGateVal(v)}
+              min={0.50} max={0.95} step={0.01}
+              color={T.accent}
+            />
+          </div>
+        </div>
       </div>
     </Card>
   )

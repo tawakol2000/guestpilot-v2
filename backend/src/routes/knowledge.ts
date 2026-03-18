@@ -7,6 +7,7 @@ import { getClassifierStatus, classifyMessage, isClassifierInitialized, initiali
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
+import { setClassifierThresholds } from '../services/classifier.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -268,11 +269,13 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const cfg = await prisma.tenantAiConfig.findUnique({
         where: { tenantId },
-        select: { judgeThreshold: true, autoFixThreshold: true },
+        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true },
       });
       res.json({
         judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
         autoFixThreshold: cfg?.autoFixThreshold ?? 0.70,
+        classifierVoteThreshold: cfg?.classifierVoteThreshold ?? 0.30,
+        classifierContextualGate: cfg?.classifierContextualGate ?? 0.85,
       });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds GET failed:', err);
@@ -284,7 +287,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
   router.post('/classifier-thresholds', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const { judgeThreshold, autoFixThreshold } = req.body as { judgeThreshold?: number; autoFixThreshold?: number };
+      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate } = req.body as {
+        judgeThreshold?: number; autoFixThreshold?: number;
+        classifierVoteThreshold?: number; classifierContextualGate?: number;
+      };
 
       if (typeof judgeThreshold !== 'number' || judgeThreshold < 0.3 || judgeThreshold > 1.0) {
         res.status(400).json({ error: 'judgeThreshold must be between 0.3 and 1.0' });
@@ -298,15 +304,26 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         res.status(400).json({ error: 'autoFixThreshold must be less than judgeThreshold' });
         return;
       }
+      const voteT = typeof classifierVoteThreshold === 'number' ? classifierVoteThreshold : 0.30;
+      const ctxG = typeof classifierContextualGate === 'number' ? classifierContextualGate : 0.85;
+      if (voteT < 0.1 || voteT > 0.8) {
+        res.status(400).json({ error: 'classifierVoteThreshold must be between 0.1 and 0.8' });
+        return;
+      }
+      if (ctxG < 0.5 || ctxG > 0.95) {
+        res.status(400).json({ error: 'classifierContextualGate must be between 0.5 and 0.95' });
+        return;
+      }
 
       await prisma.tenantAiConfig.upsert({
         where: { tenantId },
-        update: { judgeThreshold, autoFixThreshold },
-        create: { tenantId, judgeThreshold, autoFixThreshold },
+        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG },
+        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG },
       });
 
       invalidateThresholdCache(tenantId);
-      res.json({ ok: true, judgeThreshold, autoFixThreshold });
+      setClassifierThresholds(voteT, ctxG);
+      res.json({ ok: true, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds POST failed:', err);
       res.status(500).json({ error: 'Failed to save thresholds' });

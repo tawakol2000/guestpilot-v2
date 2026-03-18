@@ -7,7 +7,7 @@ import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
-import { initializeClassifier } from './services/classifier.service';
+import { initializeClassifier, setClassifierThresholds } from './services/classifier.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -61,6 +61,14 @@ async function main() {
       // Initialize the KNN classifier for SOP routing
       try {
         await initializeClassifier();
+        // Load Tier 1 thresholds from DB (first tenant — single-tenant system)
+        if (tenants.length > 0) {
+          const cfg = await prisma.tenantAiConfig.findUnique({
+            where: { tenantId: tenants[0].id },
+            select: { classifierVoteThreshold: true, classifierContextualGate: true },
+          });
+          if (cfg) setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
+        }
         console.log('[Startup] KNN classifier initialized');
       } catch (err) {
         console.warn('[Startup] KNN classifier init failed (non-fatal):', err);

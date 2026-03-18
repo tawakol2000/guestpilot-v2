@@ -26,9 +26,24 @@ import {
 
 // ─── Config (tuned from v7 eval: 99/100) ──────────────────────────────────
 const K = 3;
-const VOTE_THRESHOLD = 0.30;
-const CONTEXTUAL_THRESHOLD = 0.85;
 const MIN_NEIGHBOR_AGREEMENT = 2;
+
+// Configurable via settings UI — updated by setClassifierThresholds()
+let _voteThreshold = 0.30;
+let _contextualGate = 0.85;
+
+/**
+ * Update Tier 1 classifier thresholds at runtime (called when settings are saved).
+ */
+export function setClassifierThresholds(voteThreshold: number, contextualGate: number): void {
+  _voteThreshold = voteThreshold;
+  _contextualGate = contextualGate;
+  console.log(`[Classifier] Thresholds updated: voteThreshold=${_voteThreshold}, contextualGate=${_contextualGate}`);
+}
+
+export function getClassifierThresholds(): { voteThreshold: number; contextualGate: number } {
+  return { voteThreshold: _voteThreshold, contextualGate: _contextualGate };
+}
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let _initialized = false;
@@ -146,7 +161,7 @@ export async function classifyMessage(query: string): Promise<{
 
   // Step 1: Contextual gate — "contextual" label means no SOP needed
   const best = topK[0];
-  if (best && _examples[best.index].labels.includes('contextual') && best.similarity > CONTEXTUAL_THRESHOLD) {
+  if (best && _examples[best.index].labels.includes('contextual') && best.similarity > _contextualGate) {
     return { labels: ['contextual'], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
   }
 
@@ -166,7 +181,7 @@ export async function classifyMessage(query: string): Promise<{
   // Step 3: Filter by vote threshold AND neighbor agreement
   const candidateLabels = Object.entries(votes)
     .filter(([label, weight]) =>
-      weight / totalWeight > VOTE_THRESHOLD &&
+      weight / totalWeight > _voteThreshold &&
       (labelCounts[label] || 0) >= MIN_NEIGHBOR_AGREEMENT
     )
     .sort((a, b) => b[1] - a[1])
