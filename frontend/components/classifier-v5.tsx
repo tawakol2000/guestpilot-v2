@@ -1032,13 +1032,13 @@ function ThresholdSettings() {
                 border: `1px solid ${providerVal === p ? T.border.strong : T.border.default}`,
                 borderRadius: T.radius.sm, cursor: 'pointer', transition: 'all 0.15s',
               }}>
-                {p === 'openai' ? 'OpenAI (1536d)' : 'Cohere v3 (1024d)'}
+                {p === 'openai' ? 'OpenAI (1536d)' : 'Cohere v4 (1024d)'}
               </button>
             ))}
           </div>
           <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 8, lineHeight: 1.5 }}>
             {providerVal === 'cohere'
-              ? 'embed-multilingual-v3.0 — optimized input types for classification + search. Better Arabic accuracy.'
+              ? 'embed-multilingual-v4.0 — optimized input types for classification + search. Better Arabic accuracy. Rerank enabled.'
               : 'text-embedding-3-small — default provider.'}
             {' '}Switching re-embeds all data (~30s).
           </div>
