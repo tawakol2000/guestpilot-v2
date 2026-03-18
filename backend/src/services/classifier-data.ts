@@ -332,7 +332,13 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: "We'll arrive around midnight", labels: ['pre-arrival-logistics'] },
   { text: 'Is there an Uber from the airport?', labels: ['pre-arrival-logistics'] },
 
-  // ── BOOKING MODIFICATION (12) ──
+  // ── BOOKING MODIFICATION (18) — includes stay extension examples ──
+  { text: 'We want to extend our stay for 2 more weeks', labels: ['sop-booking-modification'] },
+  { text: 'Can we extend for another week?', labels: ['sop-booking-modification'] },
+  { text: 'Planning to extend for 2 more weeks', labels: ['sop-booking-modification'] },
+  { text: "We'd like to stay longer, maybe 5 more nights", labels: ['sop-booking-modification'] },
+  { text: 'Is it possible to extend our booking?', labels: ['sop-booking-modification'] },
+  { text: 'نبي نمدد الإقامة أسبوعين', labels: ['sop-booking-modification'] },
   { text: 'I need to change my dates', labels: ['sop-booking-modification'] },
   { text: 'Can we add one more night?', labels: ['sop-booking-modification'] },
   { text: 'I want to switch to a bigger apartment', labels: ['sop-booking-modification'] },
@@ -464,7 +470,7 @@ Guest: "Can I check in at noon?" (check-in is far away)
 Guest: "I arrive tomorrow at 10am, early check-in?" (within 2 days)
 {"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"early-checkin","note":"Guest [Name] in [Unit] — early check-in tomorrow 10am. Within 2-day window.","urgency":"info_request"}}`,
 
-  'sop-late-checkout': `Guest asks for late checkout, wants to leave later, stay longer on checkout day, check out after 11am, or extend their stay on the last day.
+  'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
 Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
 **More than 2 days before checkout:** Do NOT escalate. Tell guest the same 2-day rule.
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"

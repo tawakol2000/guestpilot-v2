@@ -300,6 +300,16 @@ GUEST: This is unacceptable
 {"TOPIC":"AC broken third complaint","STATUS":"ongoing_issue","URGENCY":"angry","SOPS":["sop-maintenance"]}
 ```
 
+**26. Stay extension (NOT late checkout):**
+```
+HOST: Hope you're enjoying your stay!
+GUEST: Hi Omar, we are currently in the compound and planning to extend for 2 more weeks
+```
+```json
+{"TOPIC":"2-week stay extension","STATUS":"new_request","URGENCY":"routine","SOPS":["sop-booking-modification"]}
+```
+Note: Extending a stay by adding nights/weeks = sop-booking-modification. Late checkout = staying past checkout TIME on the last day only.
+
 ## Rules
 1. Focus on the MOST RECENT guest message for primary intent
 2. Use conversation history to resolve ambiguity — that's why you exist

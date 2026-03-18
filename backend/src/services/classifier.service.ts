@@ -196,6 +196,26 @@ export function getSopContent(chunkId: string, propertyAmenities?: string): stri
   return content;
 }
 
+/**
+ * Check if a message text has reasonable similarity to existing training examples
+ * that share any of the given labels. Used by the judge to validate Tier 2 feedback
+ * before auto-fixing — prevents poisoning from confident-but-wrong Tier 2 classifications.
+ */
+export async function getMaxSimilarityForLabels(text: string, labels: string[]): Promise<number> {
+  if (!_initialized || _examples.length === 0) return 0;
+  const embedding = await embedText(text);
+  if (!embedding) return 0;
+
+  let maxSim = 0;
+  for (let i = 0; i < _examples.length; i++) {
+    const ex = _examples[i];
+    if (!ex.labels.some(l => labels.includes(l))) continue;
+    const sim = cosineSimilarity(embedding, _exampleEmbeddings[i]);
+    if (sim > maxSim) maxSim = sim;
+  }
+  return maxSim;
+}
+
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
 function cosineSimilarity(a: number[], b: number[]): number {

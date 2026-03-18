@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
 import { addExample, getExampleByText } from './classifier-store.service';
-import { reinitializeClassifier } from './classifier.service';
+import { reinitializeClassifier, getMaxSimilarityForLabels } from './classifier.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -221,39 +221,50 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
       if (tier2Differs && canAutoFix(input.tenantId)) {
         const validLabels = input.tier2Labels.filter(l => VALID_CHUNK_IDS.includes(l));
         if (validLabels.length > 0) {
-          const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
-          if (existing) {
-            console.log(`[Judge] Tier 2 feedback — example already exists: "${input.guestMessage.substring(0, 50)}"`);
-            return;
+          // Validate Tier 2 labels have reasonable semantic similarity to existing training examples.
+          // Prevents auto-fixing with confident-but-wrong labels (e.g., "extend stay" → sop-late-checkout
+          // when the correct label is sop-booking-modification).
+          const tier2SimCheck = await getMaxSimilarityForLabels(input.guestMessage, validLabels);
+          if (tier2SimCheck < 0.35) {
+            console.log(`[Judge] Tier 2 labels [${validLabels.join(', ')}] have low similarity (${tier2SimCheck.toFixed(3)}) to existing examples — skipping auto-fix, falling through to judge`);
+            // Don't return — fall through to the standard judge path below
+          } else {
+            const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
+            if (existing) {
+              console.log(`[Judge] Tier 2 feedback — example already exists: "${input.guestMessage.substring(0, 50)}"`);
+              return;
+            }
+            await addExample(input.tenantId, input.guestMessage, validLabels, 'tier2-feedback', prisma);
+            recordAutoFix(input.tenantId);
+
+            // Save evaluation record for observability
+            await prisma.classifierEvaluation.create({
+              data: {
+                tenantId: input.tenantId,
+                conversationId: input.conversationId,
+                guestMessage: input.guestMessage,
+                classifierLabels: input.classifierLabels,
+                classifierMethod: input.classifierMethod,
+                classifierTopSim: input.classifierTopSim,
+                judgeCorrectLabels: validLabels,
+                retrievalCorrect: false,
+                judgeConfidence: 'high',
+                judgeReasoning: `Tier 2 resolved: [${validLabels.join(', ')}]`,
+                judgeInputTokens: 0,
+                judgeOutputTokens: 0,
+                judgeCost: 0,
+                autoFixed: true,
+              },
+            }).catch(err => console.warn('[Judge] Failed to save Tier 2 feedback evaluation:', err));
+
+            await reinitializeClassifier(input.tenantId, prisma);
+            console.log(`[Judge] Tier 2 feedback: "${input.guestMessage.substring(0, 50)}" → [${validLabels.join(', ')}] (skipped judge call)`);
+            return; // Tier 2 auto-fix succeeded — don't also run the judge
           }
-          await addExample(input.tenantId, input.guestMessage, validLabels, 'tier2-feedback', prisma);
-          recordAutoFix(input.tenantId);
-
-          // Save evaluation record for observability
-          await prisma.classifierEvaluation.create({
-            data: {
-              tenantId: input.tenantId,
-              conversationId: input.conversationId,
-              guestMessage: input.guestMessage,
-              classifierLabels: input.classifierLabels,
-              classifierMethod: input.classifierMethod,
-              classifierTopSim: input.classifierTopSim,
-              judgeCorrectLabels: validLabels,
-              retrievalCorrect: false,
-              judgeConfidence: 'high',
-              judgeReasoning: `Tier 2 resolved: [${validLabels.join(', ')}]`,
-              judgeInputTokens: 0,
-              judgeOutputTokens: 0,
-              judgeCost: 0,
-              autoFixed: true,
-            },
-          }).catch(err => console.warn('[Judge] Failed to save Tier 2 feedback evaluation:', err));
-
-          await reinitializeClassifier(input.tenantId, prisma);
-          console.log(`[Judge] Tier 2 feedback: "${input.guestMessage.substring(0, 50)}" → [${validLabels.join(', ')}] (skipped judge call)`);
         }
+      } else if (!tier2Differs) {
+        return; // Tier 2 agrees with Tier 1 — no correction needed
       }
-      return; // Tier 2 handled it — don't also run the judge
     }
 
     // ── Standard judge path ───────────────────────────────────────────────
