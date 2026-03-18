@@ -441,12 +441,17 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'I want to view the apartment before deciding', labels: ['sop-property-viewing'] },
   { text: 'Do you have a video tour?', labels: ['sop-property-viewing'] },
 
-  // ── NON-ACTIONABLE: greetings / test / wrong chat (5) ──
+  // ── NON-ACTIONABLE: greetings / test / wrong chat ──
   { text: 'Test', labels: ['non-actionable'] },
   { text: 'Hello', labels: ['non-actionable'] },
+  { text: 'Hi', labels: ['non-actionable'] },
+  { text: 'Hey', labels: ['non-actionable'] },
   { text: 'مرحبا', labels: ['non-actionable'] },
+  { text: 'هاي', labels: ['non-actionable'] },
+  { text: 'السلام عليكم', labels: ['non-actionable'] },
   { text: 'Sorry wrong chat', labels: ['non-actionable'] },
   { text: 'Hi Omar', labels: ['non-actionable'] },
+  { text: 'Hello Omar', labels: ['non-actionable'] },
 ];
 
 // SOP content map — the actual text injected into the prompt when a chunk ID is selected.
