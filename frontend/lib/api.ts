@@ -848,6 +848,7 @@ export async function apiGetClassifierThresholds(): Promise<{
   autoFixThreshold: number
   classifierVoteThreshold: number
   classifierContextualGate: number
+  embeddingProvider: string
 }> {
   return apiFetch('/api/knowledge/classifier-thresholds')
 }
@@ -857,6 +858,7 @@ export async function apiSetClassifierThresholds(data: {
   autoFixThreshold: number
   classifierVoteThreshold: number
   classifierContextualGate: number
+  embeddingProvider: string
 }): Promise<{ ok: boolean }> {
   return apiFetch('/api/knowledge/classifier-thresholds', {
     method: 'POST',

@@ -821,6 +821,7 @@ function ThresholdSettings() {
   const [autoFixVal, setAutoFixVal] = useState(0.70)
   const [voteVal, setVoteVal] = useState(0.30)
   const [ctxGateVal, setCtxGateVal] = useState(0.85)
+  const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -831,6 +832,7 @@ function ThresholdSettings() {
         setJudgeVal(d.judgeThreshold); setAutoFixVal(d.autoFixThreshold)
         if (d.classifierVoteThreshold != null) setVoteVal(d.classifierVoteThreshold)
         if (d.classifierContextualGate != null) setCtxGateVal(d.classifierContextualGate)
+        if (d.embeddingProvider) setProviderVal(d.embeddingProvider as 'openai' | 'cohere')
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
@@ -846,6 +848,7 @@ function ThresholdSettings() {
       await apiSetClassifierThresholds({
         judgeThreshold: judgeVal, autoFixThreshold: autoFixVal,
         classifierVoteThreshold: voteVal, classifierContextualGate: ctxGateVal,
+        embeddingProvider: providerVal,
       })
       setSavedMsg('Saved')
       setTimeout(() => setSavedMsg(''), 3000)
@@ -1011,6 +1014,33 @@ function ThresholdSettings() {
               min={0.50} max={0.95} step={0.01}
               color={T.accent}
             />
+          </div>
+        </div>
+
+        {/* Embedding provider toggle */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Embedding Provider
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(['openai', 'cohere'] as const).map(p => (
+              <button key={p} onClick={() => setProviderVal(p)} style={{
+                flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                background: providerVal === p ? T.border.strong : T.bg.secondary,
+                color: providerVal === p ? '#fff' : T.text.secondary,
+                border: `1px solid ${providerVal === p ? T.border.strong : T.border.default}`,
+                borderRadius: T.radius.sm, cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+                {p === 'openai' ? 'OpenAI (1536d)' : 'Cohere v3 (1024d)'}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 8, lineHeight: 1.5 }}>
+            {providerVal === 'cohere'
+              ? 'embed-multilingual-v3.0 — optimized input types for classification + search. Better Arabic accuracy.'
+              : 'text-embedding-3-small — default provider.'}
+            {' '}Switching re-embeds all data (~30s).
           </div>
         </div>
       </div>

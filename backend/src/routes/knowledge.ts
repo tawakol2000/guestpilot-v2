@@ -2,12 +2,12 @@ import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
-import { seedTenantSops } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier } from '../services/classifier.service';
+import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
-import { setClassifierThresholds } from '../services/classifier.service';
+import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -269,13 +269,14 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const cfg = await prisma.tenantAiConfig.findUnique({
         where: { tenantId },
-        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true },
+        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
       });
       res.json({
         judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
         autoFixThreshold: cfg?.autoFixThreshold ?? 0.70,
         classifierVoteThreshold: cfg?.classifierVoteThreshold ?? 0.30,
         classifierContextualGate: cfg?.classifierContextualGate ?? 0.85,
+        embeddingProvider: cfg?.embeddingProvider ?? 'openai',
       });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds GET failed:', err);
@@ -287,9 +288,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
   router.post('/classifier-thresholds', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate } = req.body as {
+      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate, embeddingProvider: newProvider } = req.body as {
         judgeThreshold?: number; autoFixThreshold?: number;
         classifierVoteThreshold?: number; classifierContextualGate?: number;
+        embeddingProvider?: string;
       };
 
       if (typeof judgeThreshold !== 'number' || judgeThreshold < 0.3 || judgeThreshold > 1.0) {
@@ -315,15 +317,38 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         return;
       }
 
+      const provider = (newProvider === 'cohere' ? 'cohere' : 'openai') as EmbeddingProvider;
+      const prevProvider = getEmbeddingProvider();
+
       await prisma.tenantAiConfig.upsert({
         where: { tenantId },
-        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG },
-        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG },
+        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider },
+        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider },
       });
 
       invalidateThresholdCache(tenantId);
       setClassifierThresholds(voteT, ctxG);
-      res.json({ ok: true, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG });
+
+      // If embedding provider changed, re-embed everything in the background
+      if (provider !== prevProvider) {
+        setEmbeddingProvider(provider);
+        console.log(`[Thresholds] Embedding provider changed: ${prevProvider} → ${provider}. Re-embedding all data...`);
+        (async () => {
+          try {
+            await seedTenantSops(tenantId, prisma);
+            const properties = await prisma.property.findMany({ where: { tenantId } });
+            for (const prop of properties) {
+              await ingestPropertyKnowledge(tenantId, prop.id, prop, prisma);
+            }
+            await initializeClassifier();
+            console.log(`[Thresholds] Re-embedding complete for provider=${provider}`);
+          } catch (err) {
+            console.error('[Thresholds] Re-embedding failed:', err);
+          }
+        })();
+      }
+
+      res.json({ ok: true, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds POST failed:', err);
       res.status(500).json({ error: 'Failed to save thresholds' });

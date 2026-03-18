@@ -277,6 +277,34 @@ export const TRAINING_EXAMPLES: TrainingExample[] = [
   { text: 'وبعدين؟', labels: ['contextual'] },
   { text: 'يعني؟', labels: ['contextual'] },
 
+  // ── ARABIC EXPANSION (21) — covers key SOPs in Arabic/Gulf dialect ──
+  // Maintenance
+  { text: 'التكييف مش شغال', labels: ['sop-maintenance'] },
+  { text: 'مفيش ماء ساخن', labels: ['sop-maintenance'] },
+  { text: 'في تسريب مياه في الحمام', labels: ['sop-maintenance'] },
+  { text: 'الغسالة مش بتشتغل', labels: ['sop-maintenance'] },
+  { text: 'في ريحة وحشة في الشقة', labels: ['sop-maintenance'] },
+  // Booking & pricing
+  { text: 'عندكم شقق فاضية الاسبوع الجاي؟', labels: ['sop-booking-inquiry'] },
+  { text: 'كم سعر الليلة؟', labels: ['pricing-negotiation'] },
+  { text: 'نبي نمدد الإقامة', labels: ['sop-booking-modification'] },
+  { text: 'ابي الغي الحجز واسترجع فلوسي', labels: ['sop-booking-cancellation', 'payment-issues'] },
+  { text: 'هل الحجز مأكد ولا لا؟', labels: ['sop-booking-confirmation'] },
+  // Check-in/checkout & logistics
+  { text: 'ممكن نوصل بدري الساعة 10؟', labels: ['sop-early-checkin'] },
+  { text: 'نبي نطلع متأخر شوي', labels: ['sop-late-checkout'] },
+  { text: 'وين الشقة بالضبط؟ ابي اللوكيشن', labels: ['pre-arrival-logistics', 'property-info'] },
+  { text: 'كيف ادخل الشقة؟ وش كود الباب؟', labels: ['sop-wifi-doorcode', 'property-info'] },
+  // Amenities & cleaning
+  { text: 'محتاجين تنظيف الشقة', labels: ['sop-cleaning'] },
+  { text: 'في مكواة في الشقة؟', labels: ['sop-amenity-request'] },
+  { text: 'محتاج فوط زيادة وشراشف', labels: ['sop-amenity-request'] },
+  { text: 'الشقة مش نظيفة ابدا', labels: ['sop-complaint', 'sop-cleaning'] },
+  // Complaints & visitors
+  { text: 'مش راضي عن الخدمة ابد', labels: ['sop-complaint'] },
+  { text: 'ممكن اخوي يزورنا؟', labels: ['sop-visitor-policy'] },
+  { text: 'ابي اكلم المدير', labels: ['sop-complaint'] },
+
   // ── SELF-IMPROVEMENT EXAMPLES (5) ──
   { text: "What time is check in?", labels: ['sop-early-checkin', 'property-info'] },
   { text: "What time do we need to leave?", labels: ['sop-late-checkout', 'property-info'] },

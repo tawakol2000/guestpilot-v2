@@ -94,7 +94,7 @@ export async function initializeClassifier(): Promise<void> {
 
       // Embed all training examples
       const texts = _examples.map(e => e.text);
-      _exampleEmbeddings = await embedBatch(texts);
+      _exampleEmbeddings = await embedBatch(texts, 'classification');
 
       // Verify embeddings
       const validCount = _exampleEmbeddings.filter(e => e && e.length > 0).length;
@@ -132,8 +132,8 @@ export async function classifyMessage(query: string): Promise<{
     return { labels: [], method: 'classifier_not_initialized', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
   }
 
-  // Embed the query
-  const queryEmbedding = await embedText(query);
+  // Embed the query (classification mode for Cohere input_type)
+  const queryEmbedding = await embedText(query, 'classification');
   if (!queryEmbedding || queryEmbedding.length === 0) {
     return { labels: [], method: 'embedding_failed', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
   }
@@ -218,7 +218,7 @@ export function getSopContent(chunkId: string, propertyAmenities?: string): stri
  */
 export async function getMaxSimilarityForLabels(text: string, labels: string[]): Promise<number> {
   if (!_initialized || _examples.length === 0) return 0;
-  const embedding = await embedText(text);
+  const embedding = await embedText(text, 'classification');
   if (!embedding) return 0;
 
   let maxSim = 0;
@@ -283,7 +283,7 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
     _examples = [...baseExamples, ...newExamples];
 
     const texts = _examples.map(e => e.text);
-    _exampleEmbeddings = await embedBatch(texts);
+    _exampleEmbeddings = await embedBatch(texts, 'classification');
 
     _initDurationMs = Date.now() - startMs;
     _initialized = true;

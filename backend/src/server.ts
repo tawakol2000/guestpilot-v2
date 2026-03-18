@@ -8,6 +8,7 @@ import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
 import { initializeClassifier, setClassifierThresholds } from './services/classifier.service';
+import { setEmbeddingProvider, type EmbeddingProvider } from './services/embeddings.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -65,9 +66,12 @@ async function main() {
         if (tenants.length > 0) {
           const cfg = await prisma.tenantAiConfig.findUnique({
             where: { tenantId: tenants[0].id },
-            select: { classifierVoteThreshold: true, classifierContextualGate: true },
+            select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
           });
-          if (cfg) setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
+          if (cfg) {
+            setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
+            if (cfg.embeddingProvider) setEmbeddingProvider(cfg.embeddingProvider as EmbeddingProvider);
+          }
         }
         console.log('[Startup] KNN classifier initialized');
       } catch (err) {

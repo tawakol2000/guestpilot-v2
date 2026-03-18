@@ -7,8 +7,13 @@
  * requires raw SQL). Use $executeRaw / $queryRaw for all embedding operations.
  */
 import { PrismaClient } from '@prisma/client';
-import { embedText, embedBatch } from './embeddings.service';
+import { embedText, embedBatch, getEmbeddingProvider } from './embeddings.service';
 import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier } from './classifier.service';
+
+/** Returns the DB column name for the active embedding provider. */
+function embCol(): string {
+  return getEmbeddingProvider() === 'cohere' ? 'embedding_cohere' : 'embedding';
+}
 
 function generateId(): string {
   // Simple cuid-like ID without external dependency
@@ -134,13 +139,14 @@ export async function ingestPropertyKnowledge(
   let embeddings: number[][] = [];
   if (vectorEnabled) {
     try {
-      embeddings = await embedBatch(chunks.map(c => c.content));
+      embeddings = await embedBatch(chunks.map(c => c.content), 'search_document');
     } catch (err) {
       console.warn('[RAG] embedBatch failed:', err);
     }
   }
 
   // 4. Insert each chunk with or without embedding
+  const col = embCol();
   let inserted = 0;
   for (let i = 0; i < chunks.length; i++) {
     const id = generateId();
@@ -149,15 +155,14 @@ export async function ingestPropertyKnowledge(
     try {
       if (vectorEnabled && embedding && embedding.length > 0) {
         const embeddingStr = `[${embedding.join(',')}]`;
-        await prisma.$executeRaw`
-          INSERT INTO "PropertyKnowledgeChunk"
-            (id, "tenantId", "propertyId", content, category, "sourceKey", embedding, "createdAt", "updatedAt")
-          VALUES (
-            ${id}, ${tenantId}, ${propertyId},
-            ${chunks[i].content}, ${chunks[i].category}, ${chunks[i].sourceKey},
-            ${embeddingStr}::vector, now(), now()
-          )
-        `;
+        await (prisma.$executeRawUnsafe as any)(
+          `INSERT INTO "PropertyKnowledgeChunk"
+            (id, "tenantId", "propertyId", content, category, "sourceKey", "${col}", "createdAt", "updatedAt")
+          VALUES ($1, $2, $3, $4, $5, $6, $7::vector, now(), now())`,
+          id, tenantId, propertyId,
+          chunks[i].content, chunks[i].category, chunks[i].sourceKey,
+          embeddingStr
+        );
       } else {
         await prisma.$executeRaw`
           INSERT INTO "PropertyKnowledgeChunk"
@@ -208,14 +213,15 @@ export async function appendLearnedAnswer(
     const updatedContent = existing[0].content + '\n\n' + newLine;
     if (vectorEnabled) {
       try {
-        const embedding = await embedText(updatedContent);
+        const embedding = await embedText(updatedContent, 'search_document');
         if (embedding && embedding.length > 0) {
           const embeddingStr = `[${embedding.join(',')}]`;
-          await prisma.$executeRaw`
-            UPDATE "PropertyKnowledgeChunk"
-            SET content = ${updatedContent}, embedding = ${embeddingStr}::vector, "updatedAt" = now()
-            WHERE id = ${existing[0].id} AND "tenantId" = ${tenantId}
-          `;
+          await (prisma.$executeRawUnsafe as any)(
+            `UPDATE "PropertyKnowledgeChunk"
+            SET content = $1, "${embCol()}" = $2::vector, "updatedAt" = now()
+            WHERE id = $3 AND "tenantId" = $4`,
+            updatedContent, embeddingStr, existing[0].id, tenantId
+          );
           console.log(`[RAG] Updated learned-answers chunk for property ${propertyId}`);
           return;
         }
@@ -235,18 +241,15 @@ export async function appendLearnedAnswer(
     const id = generateId();
     if (vectorEnabled) {
       try {
-        const embedding = await embedText(newLine);
+        const embedding = await embedText(newLine, 'search_document');
         if (embedding && embedding.length > 0) {
           const embeddingStr = `[${embedding.join(',')}]`;
-          await prisma.$executeRaw`
-            INSERT INTO "PropertyKnowledgeChunk"
-              (id, "tenantId", "propertyId", content, category, "sourceKey", embedding, "createdAt", "updatedAt")
-            VALUES (
-              ${id}, ${tenantId}, ${propertyId},
-              ${newLine}, 'learned-answers', 'learned-answers',
-              ${embeddingStr}::vector, now(), now()
-            )
-          `;
+          await (prisma.$executeRawUnsafe as any)(
+            `INSERT INTO "PropertyKnowledgeChunk"
+              (id, "tenantId", "propertyId", content, category, "sourceKey", "${embCol()}", "createdAt", "updatedAt")
+            VALUES ($1, $2, $3, $4, 'learned-answers', 'learned-answers', $5::vector, now(), now())`,
+            id, tenantId, propertyId, newLine, embeddingStr
+          );
           console.log(`[RAG] Created learned-answers chunk for property ${propertyId}`);
           return;
         }
@@ -277,23 +280,23 @@ async function retrievePropertyChunks(
 ): Promise<Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>> {
   try {
     if (!(await isPgvectorAvailable(prisma))) return [];
-    const embedding = await embedText(query);
+    const embedding = await embedText(query, 'search_query');
     if (!embedding || embedding.length === 0) return [];
 
     const embeddingStr = `[${embedding.join(',')}]`;
-    const results = await prisma.$queryRaw<
-      Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
-    >`
-      SELECT id, content, category, "sourceKey", "propertyId",
-        1 - (embedding <=> ${embeddingStr}::vector) as similarity
+    const col = embCol();
+    const results = await (prisma.$queryRawUnsafe as any)(
+      `SELECT id, content, category, "sourceKey", "propertyId",
+        1 - ("${col}" <=> $1::vector) as similarity
       FROM "PropertyKnowledgeChunk"
-      WHERE "propertyId" = ${propertyId}
-        AND "tenantId" = ${tenantId}
-        AND embedding IS NOT NULL
+      WHERE "propertyId" = $2
+        AND "tenantId" = $3
+        AND "${col}" IS NOT NULL
         AND category IN ('property-info', 'property-description', 'property-amenities', 'learned-answers')
-      ORDER BY embedding <=> ${embeddingStr}::vector
-      LIMIT ${topK}
-    `;
+      ORDER BY "${col}" <=> $1::vector
+      LIMIT $4`,
+      embeddingStr, propertyId, tenantId, topK
+    ) as Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
 
     return results
       .filter(r => Number(r.similarity) > 0.3)
@@ -370,57 +373,56 @@ export async function retrieveRelevantKnowledge(
 
   try {
     if (!(await isPgvectorAvailable(prisma))) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
-    const embedding = await embedText(query);
+    const embedding = await embedText(query, 'search_query');
     if (!embedding || embedding.length === 0) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
 
     const embeddingStr = `[${embedding.join(',')}]`;
+    const col = embCol();
 
-    let results: Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
+    type ChunkRow = { id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null };
+    let results: ChunkRow[];
 
     if (agentType === 'guestCoordinator') {
-      results = await prisma.$queryRaw<
-        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
-      >`
-        SELECT id, content, category, "sourceKey", "propertyId",
-          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+      results = await (prisma.$queryRawUnsafe as any)(
+        `SELECT id, content, category, "sourceKey", "propertyId",
+          1 - ("${col}" <=> $1::vector) as similarity
         FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
-          AND "tenantId" = ${tenantId}
-          AND embedding IS NOT NULL
+        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
+          AND "tenantId" = $3
+          AND "${col}" IS NOT NULL
           AND category NOT LIKE 'sop-screening-%'
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY embedding <=> ${embeddingStr}::vector
-        LIMIT ${topK}
-      `;
+        ORDER BY "${col}" <=> $1::vector
+        LIMIT $4`,
+        embeddingStr, propertyId, tenantId, topK
+      ) as ChunkRow[];
     } else if (agentType === 'screeningAI') {
-      results = await prisma.$queryRaw<
-        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
-      >`
-        SELECT id, content, category, "sourceKey", "propertyId",
-          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+      results = await (prisma.$queryRawUnsafe as any)(
+        `SELECT id, content, category, "sourceKey", "propertyId",
+          1 - ("${col}" <=> $1::vector) as similarity
         FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
-          AND "tenantId" = ${tenantId}
-          AND embedding IS NOT NULL
+        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
+          AND "tenantId" = $3
+          AND "${col}" IS NOT NULL
           AND category NOT IN ('sop-service-requests', 'sop-maintenance', 'sop-house-rules', 'sop-checkin-checkout', 'sop-escalation')
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY embedding <=> ${embeddingStr}::vector
-        LIMIT ${topK}
-      `;
+        ORDER BY "${col}" <=> $1::vector
+        LIMIT $4`,
+        embeddingStr, propertyId, tenantId, topK
+      ) as ChunkRow[];
     } else {
-      results = await prisma.$queryRaw<
-        Array<{ id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>
-      >`
-        SELECT id, content, category, "sourceKey", "propertyId",
-          1 - (embedding <=> ${embeddingStr}::vector) as similarity
+      results = await (prisma.$queryRawUnsafe as any)(
+        `SELECT id, content, category, "sourceKey", "propertyId",
+          1 - ("${col}" <=> $1::vector) as similarity
         FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = ${propertyId} OR "propertyId" IS NULL)
-          AND "tenantId" = ${tenantId}
-          AND embedding IS NOT NULL
+        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
+          AND "tenantId" = $3
+          AND "${col}" IS NOT NULL
           AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY embedding <=> ${embeddingStr}::vector
-        LIMIT ${topK}
-      `;
+        ORDER BY "${col}" <=> $1::vector
+        LIMIT $4`,
+        embeddingStr, propertyId, tenantId, topK
+      ) as ChunkRow[];
     }
 
     // Log ALL results with scores for diagnostics
@@ -846,13 +848,14 @@ export async function seedTenantSops(
   let embeddings: number[][] = [];
   if (vectorEnabled) {
     try {
-      embeddings = await embedBatch(SOP_CHUNKS.map(c => c.content));
+      embeddings = await embedBatch(SOP_CHUNKS.map(c => c.content), 'search_document');
     } catch (err) {
       console.warn('[RAG] SOP embedding failed, storing without embeddings:', err);
     }
   }
 
   // 3. Insert each SOP chunk
+  const col = embCol();
   let inserted = 0;
   for (let i = 0; i < SOP_CHUNKS.length; i++) {
     const chunk = SOP_CHUNKS[i];
@@ -862,15 +865,12 @@ export async function seedTenantSops(
     try {
       if (vectorEnabled && embedding && embedding.length > 0) {
         const embeddingStr = `[${embedding.join(',')}]`;
-        await prisma.$executeRaw`
-          INSERT INTO "PropertyKnowledgeChunk"
-            (id, "tenantId", "propertyId", content, category, "sourceKey", embedding, "createdAt", "updatedAt")
-          VALUES (
-            ${id}, ${tenantId}, NULL,
-            ${chunk.content}, ${chunk.category}, ${chunk.sourceKey},
-            ${embeddingStr}::vector, now(), now()
-          )
-        `;
+        await (prisma.$executeRawUnsafe as any)(
+          `INSERT INTO "PropertyKnowledgeChunk"
+            (id, "tenantId", "propertyId", content, category, "sourceKey", "${col}", "createdAt", "updatedAt")
+          VALUES ($1, $2, NULL, $3, $4, $5, $6::vector, now(), now())`,
+          id, tenantId, chunk.content, chunk.category, chunk.sourceKey, embeddingStr
+        );
       } else {
         // Store without embedding — chunks exist in DB but won't be retrieved via vector search
         // System degrades gracefully: minimal prompt + property info + hard boundaries
