@@ -1,14 +1,14 @@
 # GuestPilot v2
 
-Production deployment structure with clean separation of frontend and backend.
+Multi-tenant AI guest services platform for serviced apartments. Automates guest communication across Airbnb, Booking.com, WhatsApp, and direct channels via Hostaway PMS integration.
 
 ## Folder Structure
 
-- **backend/** — Express + Prisma backend service
+- **backend/** — Express + Prisma + Claude AI backend
   - Deployed on Railway: https://backend-production-31542.up.railway.app
   - GitHub: https://github.com/tawakol2000/guestpilot-backend
 
-- **frontend/** — Next.js 15 + React 19 frontend application
+- **frontend/** — Next.js 16 + React 19 frontend
   - Deployed on Vercel: https://v0-inbox-dashboard-wrrb.vercel.app
   - GitHub: https://github.com/tawakol2000/v0-inbox-dashboard
 
@@ -32,15 +32,26 @@ npm run dev  # local development on localhost:3000
 ## Environment Variables
 
 ### Backend (Railway)
-- `DATABASE_URL` — PostgreSQL connection
-- `JWT_SECRET` — Auth token signing key
-- `ANTHROPIC_API_KEY` — Claude API key
-- `NODE_ENV` — `production`
-- `CORS_ORIGINS` — Frontend URL for CORS
-- `DRY_RUN` — Set to `true` to restrict messages to test conversation 40570028
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `JWT_SECRET` | Yes | Auth token signing key |
+| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `OPENAI_API_KEY` | No | OpenAI embeddings (RAG disabled without) |
+| `COHERE_API_KEY` | No | Cohere embeddings + reranking |
+| `REDIS_URL` | No | BullMQ queue (falls back to polling) |
+| `LANGFUSE_PUBLIC_KEY` | No | Langfuse observability |
+| `LANGFUSE_SECRET_KEY` | No | Langfuse observability |
+| `LANGFUSE_HOST` | No | Default: https://cloud.langfuse.com |
+| `NODE_ENV` | No | `production` for Railway |
+| `CORS_ORIGINS` | No | Comma-separated frontend URLs |
+| `RAILWAY_PUBLIC_DOMAIN` | No | Public URL for webhooks |
+| `DRY_RUN` | No | Restrict messages to specific conversation IDs |
 
 ### Frontend (Vercel)
-- `NEXT_PUBLIC_API_URL` — Backend API URL
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | Yes | Backend API URL |
 
 ## Deployment
 
@@ -51,5 +62,6 @@ Both services auto-deploy on push to GitHub:
 ## Important Notes
 
 - Database: Railway PostgreSQL (internal networking within same project)
-- Messages: DRY_RUN=true restricts test sends to conversation 40570028
 - Webhooks: Set Hostaway webhook to `https://backend-production-31542.up.railway.app/webhooks/hostaway/{tenantId}`
+- See `SPEC.md` for complete system specification
+- See `CLAUDE.md` for AI assistant context

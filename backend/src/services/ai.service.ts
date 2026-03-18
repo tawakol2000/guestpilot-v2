@@ -999,19 +999,24 @@ async function handleEscalation(
 ): Promise<void> {
   try {
     let task;
+
+    // Resolve old task if requested — independent of new task creation so the
+    // AI can close one task and open another in the same response.
     if (resolveTaskId) {
-      task = await prisma.task.update({
+      const resolved = await prisma.task.update({
         where: { id: resolveTaskId },
         data: { status: 'completed', completedAt: new Date() },
       });
-      broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
-    } else if (updateTaskId) {
+      broadcastToTenant(tenantId, 'task_updated', { conversationId, task: resolved });
+    }
+
+    if (updateTaskId) {
       task = await prisma.task.update({
         where: { id: updateTaskId },
         data: { title, note, urgency },
       });
       broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
-    } else {
+    } else if (title) {
       task = await createTask(prisma, {
         tenantId,
         conversationId,
@@ -1041,7 +1046,8 @@ async function handleEscalation(
     }
 
     // Save AI private note and broadcast it so it shows in chat
-    if (!resolveTaskId && note) {
+    // Skip for bare resolves (no new/updated task)
+    if (note && task) {
       const privateMsg = await prisma.message.create({
         data: {
           conversationId,

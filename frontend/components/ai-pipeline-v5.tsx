@@ -847,7 +847,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             stepNum={4}
             title="Tier 2 -- Intent Extractor (Haiku)"
             color={TIER_COLORS.tier2_needed.fg}
-            dimmed={p.tier !== 'tier2_needed'}
+            dimmed={p.tier !== 'tier2_needed' && !p.tier2Output}
           >
             {p.tier !== 'tier2_needed' && !p.tier2Output ? (
               <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>

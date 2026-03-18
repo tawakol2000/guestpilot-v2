@@ -1,100 +1,113 @@
-# Boutique Residence — AI Guest Services System (Guest Pilot V2)
+# GuestPilot v2 — AI Guest Services Platform
 
-## Project Overview
-Multi-tenant AI guest services platform for serviced apartments.
-Handles automated WhatsApp/messaging responses for hotel guests.
-Integrated with Hostaway PMS via webhooks.
-
-## Repo Structure
-```
-guest-pilot-v2/          ← git root
-  CLAUDE.md              ← this file
-  SPEC.md                ← implementation spec
-  backend/               ← Node.js/TypeScript API
-  frontend/              ← Client-facing UI
-```
+Multi-tenant AI communication platform for serviced apartments. Integrates with Hostaway PMS, automates guest messaging across Airbnb/Booking/WhatsApp/Direct channels.
 
 ## Tech Stack
-- **Backend:** Node.js + TypeScript + Express (`backend/` directory)
-- **Database:** PostgreSQL via Prisma ORM (hosted on Railway)
-- **AI:** Anthropic Claude API (`claude-haiku-4-5-20251001`)
-- **Queue:** BullMQ + Redis (to be added on `advanced-ai` branch)
-- **Hosting:** Railway (backend + PostgreSQL + Redis)
-- **PMS Integration:** Hostaway webhooks + REST API
+- **Backend:** Node.js + TypeScript + Express
+- **Database:** PostgreSQL + Prisma ORM + pgvector
+- **AI:** Anthropic Claude API (Haiku 4.5 default), OpenAI/Cohere embeddings
+- **Queue:** BullMQ + Redis (optional)
+- **Frontend:** Next.js 16 + React 19 + Tailwind 4 + shadcn/ui
+- **Hosting:** Railway (backend), Vercel (frontend)
 
-## Backend Directory Structure
+## Directory Structure
 ```
 backend/
   src/
-    agents/         # AI agent logic (guestCoordinator, screeningAI, managerTranslator)
-    services/       # Business logic services
-    routes/         # Express route handlers
-    workers/        # Background job workers (new — BullMQ)
-    jobs/           # Scheduled jobs (aiDebounce.job.ts)
+    controllers/        # Request handlers (webhooks, conversations, auth, etc.)
+    routes/             # Express route definitions
+    services/           # Business logic
+    workers/            # BullMQ workers (aiReply.worker.ts)
+    jobs/               # Scheduled jobs (aiDebounce.job.ts)
+    middleware/         # Auth (JWT), error handling
+    config/             # AI config, SOP data, prompt files
   prisma/
-    schema.prisma   # Database schema
-    migrations/     # Migration history
-  scripts/          # Utility and test scripts
+    schema.prisma       # Database schema
+
+frontend/
+  app/                  # Next.js pages (login, dashboard)
+  components/           # UI components (inbox-v5, ai-pipeline-v5, etc.)
+  lib/                  # Utils, API client
 ```
 
 ## Key Services
-| File | Purpose |
-|------|---------|
-| `ai.service.ts` | Core AI generation logic |
-| `debounce.service.ts` | Message batching before AI reply |
-| `import.service.ts` | Hostaway property data sync |
-| `conversation.service.ts` | Conversation state management |
+
+| Service | Purpose |
+|---------|---------|
+| ai.service.ts | Core AI pipeline: prompt building, Claude API calls, response handling |
+| classifier.service.ts | KNN-3 embedding classifier for SOP routing |
+| judge.service.ts | LLM-as-Judge self-improvement + auto-fix |
+| debounce.service.ts | Message batching (30s) + working hours deferral |
+| rag.service.ts | pgvector retrieval for property knowledge |
+| intent-extractor.service.ts | Tier 2 Haiku intent extraction |
+| topic-state.service.ts | Tier 3 topic cache for contextual follow-ups |
+| embeddings.service.ts | OpenAI/Cohere dual embedding provider |
+| rerank.service.ts | Cohere cross-encoder reranking |
+| memory.service.ts | Conversation summarization |
+| escalation-enrichment.service.ts | Keyword-based escalation signals |
+| tenant-config.service.ts | Per-tenant AI settings (cached 5min) |
+| hostaway.service.ts | Hostaway API client |
+| sse.service.ts | Server-Sent Events (Redis pub/sub or in-memory) |
+| queue.service.ts | BullMQ job queue |
+| observability.service.ts | Langfuse tracing |
+| opus.service.ts | Daily audit reports (Claude Opus) |
 
 ## Branch Strategy
+
 | Branch | Purpose | Deployed |
-|--------|---------|---------|
-| `main` | Production — current backend + frontend | Railway (main service) |
-| `advanced-ai` | All AI upgrades — backend only | Railway (separate service) |
+|--------|---------|----------|
+| main | Production | Railway + Vercel |
+| advanced-ai-v7 | AI upgrades (current dev) | Railway (separate service) |
 
-**Never merge `advanced-ai` → `main` until all upgrades are tested and stable.**
-
-## Database Models (Key Hierarchy)
+## Database Hierarchy
 ```
 Tenant → Property → Reservation → Conversation → Message
                                               ↘ PendingAiReply
+                                              ↘ Task
 ```
-- All models have `tenantId` for multi-tenancy
-- `PendingAiReply` table manages debounce state
+All models have `tenantId` for multi-tenancy.
 
 ## Environment Variables
-```env
-DATABASE_URL           # PostgreSQL connection string (Railway)
-ANTHROPIC_API_KEY      # Claude API
-HOSTAWAY_CLIENT_ID     # PMS integration
-HOSTAWAY_CLIENT_SECRET
-JWT_SECRET
-REDIS_URL              # Redis (Railway) — needed for BullMQ
-OPENAI_API_KEY         # For embeddings (text-embedding-3-small)
-LANGFUSE_PUBLIC_KEY    # Observability
+```
+DATABASE_URL           # PostgreSQL (required)
+JWT_SECRET             # Auth (required)
+ANTHROPIC_API_KEY      # Claude API (required)
+OPENAI_API_KEY         # Embeddings (optional — RAG disabled without)
+COHERE_API_KEY         # Embeddings + reranking (optional)
+REDIS_URL              # BullMQ queue (optional — falls back to polling)
+LANGFUSE_PUBLIC_KEY    # Observability (optional)
 LANGFUSE_SECRET_KEY
-LANGFUSE_HOST          # https://cloud.langfuse.com
+LANGFUSE_HOST          # Default: https://cloud.langfuse.com
+PORT                   # Default: 3000
+NODE_ENV               # development / production
+RAILWAY_PUBLIC_DOMAIN  # Public URL for webhooks
+CORS_ORIGINS           # Comma-separated frontend URLs
+DRY_RUN                # Restrict to specific conversation IDs
 ```
 
-## Critical Rules for AI Development
-1. **Never break the main guest messaging flow** — all new features must degrade gracefully
-2. **If Redis/OpenAI/Langfuse env vars are missing**, fall back silently, never crash
-3. **Every DB query must include `tenantId`** — no cross-tenant data leaks ever
-4. Follow existing TypeScript patterns (`AuthenticatedRequest` type, service factory pattern)
-5. Always run `npx prisma generate` after schema changes
-6. Always verify `npm run build` passes before committing
+## Critical Rules
+1. **Never break the main guest messaging flow** — all new features degrade gracefully
+2. **Missing env vars** (Redis, OpenAI, Langfuse, Cohere) → fall back silently, never crash
+3. **AI output** must be valid JSON — no markdown, code blocks, or extra text
+4. **Never expose access codes** (door code, WiFi) to INQUIRY-status guests
+5. **Never commit secrets** — .env files, API keys, credentials
+6. **Escalate when in doubt** — better to over-escalate than miss an issue
 
-## Coding Patterns
-- Services are initialized with `prisma` client passed as parameter
-- Routes use `authenticateToken` middleware → sets `req.user = { tenantId, userId }`
-- Error responses follow: `{ error: string, details?: any }`
-- All async functions use `try/catch` with proper error logging
-- Environment variable checks at service init time, not at call time
+## Build & Run
+```bash
+# Backend
+cd backend && npm install && npm run dev
 
-## What NOT To Do
-- ❌ Do not use LangChain (use Vercel AI SDK or direct Anthropic SDK)
-- ❌ Do not add Pinecone or external vector DBs (use pgvector on existing PostgreSQL)
-- ❌ Do not hardcode prompts in JSON config files (move to database)
-- ❌ Do not use numeric 1–10 eval scores (use binary pass/fail for LLM-as-judge)
-- ❌ Do not make cross-tenant DB queries without explicit `tenantId` filter
-- ❌ Do not use `localStorage` or browser storage APIs in any artifacts
-- ❌ Do not commit directly to `main`
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Database
+cd backend && npx prisma db push    # apply schema
+cd backend && npx prisma studio     # browse data
+```
+
+## Reference Docs
+- `SPEC.md` — Complete system specification (endpoints, data model, AI pipeline, settings)
+- `AI_SYSTEM_FLOW-v7.md` — Detailed 9-stage AI pipeline flow
+- `CLASSIFIER_FRONTEND_CLAUDE_CODE.md` — Pending: classifier dashboard UI spec
+- `JUDGE_SELF_IMPROVEMENT_CLAUDE_CODE.md` — Pending: judge service spec

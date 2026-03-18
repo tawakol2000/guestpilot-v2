@@ -204,23 +204,10 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
       return;
     }
 
-    // Load per-tenant thresholds (cached)
-    const thresholds = await getThresholds(input.tenantId, prisma);
-
-    // Skip if topSim is above the judge threshold — trusted result
-    if (input.classifierTopSim >= thresholds.judgeThreshold) {
-      return;
-    }
-
-    // Skip if all winning labels have majority support (≥2/3 neighbors agree) —
-    // the classifier is consistent even at lower similarity, no judge needed
-    if (hasMajorityNeighborSupport(input.classifierLabels, input.neighbors)) {
-      return;
-    }
-
-    // ── Tier 2 feedback path ──────────────────────────────────────────────
+    // ── Tier 2 feedback path (FREE — no judge call) ─────────────────────
+    // Runs BEFORE majority-support / threshold checks so corrections are
+    // always stored even when neighbors happen to agree with Tier 1.
     // Tier 2 already called Haiku WITH conversation context and got the right labels.
-    // No need to call the judge (another Haiku call WITHOUT conversation context).
     // Use Tier 2's labels directly as the correction — more reliable and cheaper.
     if (input.tier2Labels && input.tier2Labels.length > 0) {
       const tier2Differs = !arraysEqual(input.classifierLabels, input.tier2Labels);
@@ -271,6 +258,20 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
       } else if (!tier2Differs) {
         return; // Tier 2 agrees with Tier 1 — no correction needed
       }
+    }
+
+    // Load per-tenant thresholds (cached)
+    const thresholds = await getThresholds(input.tenantId, prisma);
+
+    // Skip if topSim is above the judge threshold — trusted result
+    if (input.classifierTopSim >= thresholds.judgeThreshold) {
+      return;
+    }
+
+    // Skip if all winning labels have majority support (≥2/3 neighbors agree) —
+    // the classifier is consistent even at lower similarity, no judge needed
+    if (hasMajorityNeighborSupport(input.classifierLabels, input.neighbors)) {
+      return;
     }
 
     // ── Standard judge path ───────────────────────────────────────────────

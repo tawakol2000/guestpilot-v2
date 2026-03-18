@@ -16,7 +16,7 @@ Save message to DB → SSE broadcast to browser
     ↓
 scheduleAiReply() → PendingAiReply record
     ↓
-[Debounce: wait for more messages — default 5s]
+[Debounce: wait for more messages — default 30s]
     ↓
 30s Poll Job picks up due replies
     ↓
@@ -72,7 +72,7 @@ generateAndSendAiReply() — MAIN PIPELINE
 
 1. Fetch tenant config (cached 5 min)
 2. **Working hours check:**
-   - If within hours → `scheduledAt = now + debounceDelayMs` (default 5000ms)
+   - If within hours → `scheduledAt = now + debounceDelayMs` (default 30000ms)
    - If outside hours → `scheduledAt = nextWorkingHoursStart()` (defer to morning)
    - Config: `workingHoursEnabled`, `workingHoursStart` (HH:MM), `workingHoursEnd`, `workingHoursTimezone`
 3. Upsert `PendingAiReply`:
@@ -319,7 +319,7 @@ Manual trigger via `POST /api/opus/generate`. Collects 24h of pipeline data and 
 | Tier 2 sim check | 0.35 | No | judge.service.ts |
 | Low-sim reinforce | 0.40 | No | judge.service.ts |
 | Max auto-fixes/hour | 10 | No | judge.service.ts |
-| Debounce delay | 5000ms | Yes (DB) | debounce.service.ts |
+| Debounce delay | 30000ms | Yes (DB) | debounce.service.ts |
 | Poll interval | 30000ms | No | aiDebounce.job.ts |
 | Webhook buffer | 30 min | No | ai.service.ts |
 | Memory summary threshold | 10 msgs | No | ai.service.ts |

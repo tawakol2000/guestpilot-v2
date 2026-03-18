@@ -120,7 +120,7 @@ async function enrichGuestFromHostaway(
   tenantId: string,
   hostawayReservationId: string,
   prisma: PrismaClient
-): Promise<{ name?: string; email?: string; phone?: string; checkIn?: Date; checkOut?: Date } | null> {
+): Promise<{ name?: string; email?: string; phone?: string; checkIn?: Date; checkOut?: Date; numberOfGuests?: number; status?: string } | null> {
   try {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -142,6 +142,8 @@ async function enrichGuestFromHostaway(
       phone: res.guestPhone || undefined,
       checkIn: res.arrivalDate ? new Date(res.arrivalDate) : undefined,
       checkOut: res.departureDate ? new Date(res.departureDate) : undefined,
+      numberOfGuests: res.numberOfGuests || undefined,
+      status: res.status || undefined,
     };
   } catch (err: any) {
     console.warn(`[Webhook] [${tenantId}] enrichGuestFromHostaway failed (non-fatal): ${err.message}`);
@@ -155,7 +157,7 @@ async function processWebhook(
   prisma: PrismaClient
 ): Promise<void> {
   const { event, data } = payload;
-  console.log(`[Webhook] [${tenantId}] Event: ${event}`);
+  console.log(`[Webhook] [${tenantId}] Event: ${event} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests}`);
 
   switch (event) {
     case 'message.received':
@@ -164,6 +166,8 @@ async function processWebhook(
     case 'reservation.created':
       await handleNewReservation(tenantId, data, prisma);
       break;
+    // 'reservation.modified' is not a documented Hostaway event (only 'reservation.updated'),
+    // but kept as a harmless alias in case Hostaway ever sends it.
     case 'reservation.modified':
     case 'reservation.updated':
       await handleReservationUpdated(tenantId, data, prisma);
@@ -280,6 +284,67 @@ async function handleNewMessage(
       // Update local reference so AI reply uses the real name
       conversation.guest.name = enriched.name;
       console.log(`[Webhook] [${tenantId}] Backfilled guest name: "${enriched.name}" for conv ${conversation.id}`);
+    }
+  }
+
+  // Resync reservation data if stale (>1 hour) — fallback for unreliable reservation webhooks
+  if (conversation.reservation && data.reservationId) {
+    const ONE_HOUR = 60 * 60 * 1000;
+    const reservationAge = Date.now() - new Date(conversation.reservation.updatedAt).getTime();
+    if (reservationAge > ONE_HOUR) {
+      console.log(`[Webhook] [${tenantId}] Reservation ${conversation.reservation.id} stale (${Math.round(reservationAge / 60000)}min) — resyncing from Hostaway API`);
+      const fresh = await enrichGuestFromHostaway(tenantId, String(data.reservationId), prisma);
+      if (fresh) {
+        const freshStatus = fresh.status ? mapReservationStatus(fresh.status) : undefined;
+        const isCancelledOrCheckedOut = freshStatus === ReservationStatus.CANCELLED || freshStatus === ReservationStatus.CHECKED_OUT;
+
+        const updates: Record<string, unknown> = {};
+        if (fresh.checkIn && fresh.checkIn.getTime() !== new Date(conversation.reservation.checkIn).getTime()) {
+          updates.checkIn = fresh.checkIn;
+        }
+        if (fresh.checkOut && fresh.checkOut.getTime() !== new Date(conversation.reservation.checkOut).getTime()) {
+          updates.checkOut = fresh.checkOut;
+        }
+        if (fresh.numberOfGuests && fresh.numberOfGuests !== conversation.reservation.guestCount) {
+          updates.guestCount = fresh.numberOfGuests;
+        }
+        if (freshStatus && freshStatus !== conversation.reservation.status) {
+          updates.status = freshStatus;
+        }
+        // Re-enable AI if reservation is no longer cancelled/checked-out
+        if (!isCancelledOrCheckedOut && !conversation.reservation.aiEnabled) {
+          updates.aiEnabled = true;
+        }
+        // Disable AI if reservation became cancelled/checked-out
+        if (isCancelledOrCheckedOut && conversation.reservation.aiEnabled) {
+          updates.aiEnabled = false;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await prisma.reservation.update({
+            where: { id: conversation.reservation.id },
+            data: updates,
+          });
+          // Update local reference so AI reply logic uses fresh data
+          Object.assign(conversation.reservation, updates);
+
+          console.log(`[Webhook] [${tenantId}] Resynced reservation ${conversation.reservation.id}: ${JSON.stringify(updates)}`);
+
+          // Broadcast so frontend reflects changes without page refresh
+          const convs = await prisma.conversation.findMany({
+            where: { reservationId: conversation.reservation.id },
+            select: { id: true },
+          });
+          broadcastToTenant(tenantId, 'reservation_updated', {
+            reservationId: conversation.reservation.id,
+            conversationIds: convs.map(c => c.id),
+            status: updates.status ?? conversation.reservation.status,
+            checkIn: (updates.checkIn as Date)?.toISOString?.() ?? conversation.reservation.checkIn,
+            checkOut: (updates.checkOut as Date)?.toISOString?.() ?? conversation.reservation.checkOut,
+            guestCount: updates.guestCount ?? conversation.reservation.guestCount,
+          });
+        }
+      }
     }
   }
 
@@ -528,6 +593,7 @@ async function handleReservationUpdated(
       ...(data.numberOfGuests && { guestCount: data.numberOfGuests }),
       ...(newStatus && { status: newStatus }),
       ...(isCancelledOrCheckedOut && { aiEnabled: false }),
+      ...(!isCancelledOrCheckedOut && newStatus && { aiEnabled: true }),
     },
   });
 
@@ -559,11 +625,14 @@ async function handleReservationUpdated(
     });
   }
 
-  // G8: SSE broadcast
+  // G8: SSE broadcast — include all updated fields so frontend reflects changes
   broadcastToTenant(tenantId, 'reservation_updated', {
     reservationId: reservation.id,
     conversationIds: convs.map(c => c.id),
     status: newStatus,
+    ...(data.arrivalDate && { checkIn: new Date(data.arrivalDate).toISOString() }),
+    ...(data.departureDate && { checkOut: new Date(data.departureDate).toISOString() }),
+    ...(data.numberOfGuests && { guestCount: data.numberOfGuests }),
   });
 
   console.log(`[Webhook] [${tenantId}] Reservation ${hostawayReservationId} updated`);
