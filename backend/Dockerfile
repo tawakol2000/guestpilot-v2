@@ -6,8 +6,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python ML packages
-RUN pip3 install --no-cache-dir scikit-learn numpy cohere
+# Install Python ML packages (--break-system-packages needed for Debian 12/PEP 668)
+RUN pip3 install --no-cache-dir --break-system-packages scikit-learn numpy cohere
 
 WORKDIR /app
 
