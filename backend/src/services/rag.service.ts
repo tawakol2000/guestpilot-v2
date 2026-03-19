@@ -486,6 +486,14 @@ export async function retrieveRelevantKnowledge(
         console.warn('[RAG] Failed to load tenant SOP overrides, using defaults:', err);
       }
 
+      // Deduplicate sopChunks by sourceKey (guards against LLM returning duplicate labels)
+      const seenKeys = new Set<string>();
+      sopChunks = sopChunks.filter(c => {
+        if (seenKeys.has(c.sourceKey)) return false;
+        seenKeys.add(c.sourceKey);
+        return true;
+      });
+
       // Also get property-specific chunks via pgvector
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
 

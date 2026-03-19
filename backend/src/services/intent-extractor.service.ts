@@ -102,10 +102,10 @@ export async function extractIntent(
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    // Validate SOPS are from allowed categories
-    const validSops = (parsed.SOPS || []).filter((s: string) =>
+    // Validate SOPS are from allowed categories, deduplicate
+    const validSops = [...new Set<string>((parsed.SOPS || []).filter((s: string) =>
       (RAG_CATEGORIES as readonly string[]).includes(s)
-    );
+    ))];
 
     const result: IntentExtraction = {
       topic: parsed.TOPIC || 'unknown',
