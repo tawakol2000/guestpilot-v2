@@ -16,6 +16,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 COPY src ./src/
 COPY scripts ./scripts/
+COPY config ./config/
 COPY tsconfig.json ./
 
 # Install Node packages
@@ -28,4 +29,4 @@ RUN npx prisma generate
 RUN npm run build
 
 EXPOSE 3000
-CMD ["node", "dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
