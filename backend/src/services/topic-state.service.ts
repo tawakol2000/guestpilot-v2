@@ -3,12 +3,14 @@
  *
  * CRITICAL DESIGN: Always re-inject by default. Only STOP when:
  * 1. Topic switch keyword detected (clear cache)
- * 2. Cache expired (per-category TTL)
- * 3. Tier 1 confidently classified into a DIFFERENT category (reset to new)
+ * 2. Centroid distance check detects semantic topic change (clear cache)
+ * 3. Cache expired (per-category TTL)
+ * 4. Tier 1 confidently classified into a DIFFERENT category (reset to new)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getCentroids, getExampleCountPerLabel, cosineSimilarity } from './classifier.service';
 
 // Load config at startup
 let CONFIG: any = null;
@@ -49,6 +51,8 @@ const NOT_SWITCH_SIGNALS: string[] = [
 
 const DEFAULT_DECAY_MS = (CONFIG?.global_settings?.default_decay_minutes || 30) * 60 * 1000;
 const MAX_REINJECT = CONFIG?.global_settings?.max_reinject_count || 5;
+const CENTROID_SWITCH_THRESHOLD = CONFIG?.global_settings?.centroid_switch_threshold ?? 0.60;
+const CENTROID_MIN_EXAMPLES = CONFIG?.global_settings?.centroid_min_examples ?? 3;
 
 function getDecayMs(labels: string[]): number {
   if (!CONFIG?.per_category_rules || labels.length === 0) return DEFAULT_DECAY_MS;
@@ -68,7 +72,7 @@ export function updateTopicState(conversationId: string, labels: string[]): void
   _cache.set(conversationId, { labels, updatedAt: Date.now(), reinjectCount: 0 });
 }
 
-export function getReinjectedLabels(conversationId: string, messageText: string): {
+export function getReinjectedLabels(conversationId: string, messageText: string, messageEmbedding?: number[]): {
   labels: string[];
   reinjected: boolean;
   topicSwitchDetected: boolean;
@@ -104,8 +108,35 @@ export function getReinjectedLabels(conversationId: string, messageText: string)
   const topicSwitchDetected = ALL_SWITCH_KEYWORDS.some(kw => textLower.includes(kw.toLowerCase()));
   if (topicSwitchDetected) {
     _cache.delete(conversationId);
-    console.log(`[TopicState] Topic switch detected: "${messageText.substring(0, 50)}"`);
+    console.log(`[TopicState] Keyword topic switch detected: "${messageText.substring(0, 50)}"`);
     return { labels: [], reinjected: false, topicSwitchDetected: true };
+  }
+
+  // Centroid-based semantic topic switch detection
+  // If the message embedding is far from all active topic centroids, the guest silently changed topics
+  if (messageEmbedding && messageEmbedding.length > 0) {
+    const centroids = getCentroids();
+    if (centroids) {
+      const exampleCounts = getExampleCountPerLabel();
+      let maxSim = -1;
+      let checkedAny = false;
+
+      for (const label of state.labels) {
+        const centroid = centroids[label];
+        if (!centroid) continue;
+        // Skip unreliable centroids (too few training examples)
+        if ((exampleCounts[label] || 0) < CENTROID_MIN_EXAMPLES) continue;
+        checkedAny = true;
+        const sim = cosineSimilarity(messageEmbedding, centroid);
+        if (sim > maxSim) maxSim = sim;
+      }
+
+      if (checkedAny && maxSim >= 0 && maxSim < CENTROID_SWITCH_THRESHOLD) {
+        _cache.delete(conversationId);
+        console.log(`[TopicState] Centroid topic switch detected (sim=${maxSim.toFixed(3)} < threshold=${CENTROID_SWITCH_THRESHOLD}): "${messageText.substring(0, 50)}"`);
+        return { labels: [], reinjected: false, topicSwitchDetected: true };
+      }
+    }
   }
 
   // DEFAULT: re-inject

@@ -1,16 +1,17 @@
 /**
- * KNN-3 Embedding Classifier for guest message routing.
+ * LR Sigmoid Classifier (with KNN diagnostic for observability) for guest message routing.
  * Ported from run_embedding_eval_v2.py (v7, 99/100 score).
  *
  * Architecture:
  * - 164 training examples embedded once at startup using OpenAI text-embedding-3-small
- * - Each incoming message is embedded and compared to all training examples
- * - KNN-3 with weighted voting determines which SOP chunks to retrieve
+ * - Each incoming message is embedded and scored by a logistic-regression sigmoid model
+ * - LR inference with three-tier confidence routing determines which SOP chunks to retrieve
+ * - KNN-3 runs alongside as a diagnostic signal for observability (not used for routing)
  * - Contextual gate suppresses retrieval for "Ok thanks", "Yes", etc.
  * - Token budget caps total retrieved content at 500 tokens
  *
- * Cost: ~$0.000001 per classification (one 20-token embedding call)
- * Latency: <50ms after initialization (embedding is the bottleneck)
+ * Cost: ~$0.000001 per classification (one 20-token embedding call + local LR inference)
+ * Latency: <50ms after initialization (embedding is the bottleneck, LR inference is <1ms)
  * Deterministic: same input always produces same output
  */
 
@@ -92,6 +93,8 @@ export interface ClassificationResult {
   neighbors: Array<{ labels: string[]; similarity: number }>;
   tokensUsed: number;
   topSimilarity: number;
+  // Query embedding (used by topic-state for centroid distance check)
+  queryEmbedding?: number[];
 }
 
 let _initialized = false;
@@ -422,6 +425,7 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
     neighbors,
     tokensUsed,
     topSimilarity: knnDiag.topSimilarity,
+    queryEmbedding,
   };
 }
 
@@ -464,9 +468,34 @@ export async function getMaxSimilarityForLabels(text: string, labels: string[]):
   return maxSim;
 }
 
+// ─── Exported helpers (used by topic-state.service.ts for centroid distance) ──
+
+/**
+ * Return the current centroids map (category → mean embedding) or null if not loaded.
+ * Used by topic-state.service.ts for centroid-based topic switch detection.
+ */
+export function getCentroids(): Record<string, number[]> | null {
+  return _state?.centroids && Object.keys(_state.centroids).length > 0 ? _state.centroids : null;
+}
+
+/**
+ * Return the count of training examples per label. Used to determine if a centroid
+ * is reliable (needs >= min_examples training examples).
+ */
+export function getExampleCountPerLabel(): Record<string, number> {
+  if (!_state) return {};
+  const counts: Record<string, number> = {};
+  for (const ex of _state.examples) {
+    for (const label of ex.labels) {
+      counts[label] = (counts[label] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
   let normA = 0;
   let normB = 0;

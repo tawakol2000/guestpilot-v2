@@ -28,7 +28,7 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // GET /api/knowledge/classifier-status — classifier health check (KNN + LR)
+  // GET /api/knowledge/classifier-status — classifier health check (LR primary, KNN diagnostic)
   router.get('/classifier-status', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;

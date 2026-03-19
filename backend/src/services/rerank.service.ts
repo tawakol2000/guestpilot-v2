@@ -1,13 +1,12 @@
 /**
- * Cohere Rerank Service — cross-encoder re-scoring for KNN classifier and RAG retrieval.
+ * Cohere Rerank Service — cross-encoder re-scoring for RAG retrieval.
  *
  * Cross-encoders process query + document tokens jointly, giving much better
  * semantic matching than cosine similarity on compressed embeddings. Especially
  * valuable for cross-lingual matching (Arabic query → English training example).
  *
- * Used in two places:
- * 1. KNN classifier: re-score top-10 training examples → pick top-3 for voting
- * 2. RAG retrieval: re-score top-8 pgvector results → pick top-3 for AI context
+ * Used in:
+ * 1. RAG retrieval: re-score top-8 pgvector results → pick top-3 for AI context
  *
  * Gracefully disabled when COHERE_API_KEY is missing.
  * Cost: ~$2/1000 searches. At 100 messages/day = $6/month.

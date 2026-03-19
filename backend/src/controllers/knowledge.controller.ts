@@ -369,7 +369,7 @@ export function makeKnowledgeController(prisma: PrismaClient) {
         // 5. Reload LR weights metadata
         loadLrWeightsMetadata();
 
-        // 6. Trigger atomic swap reinit of the KNN classifier
+        // 6. Trigger atomic swap reinit of the LR classifier
         await reinitializeClassifier(tenantId, prisma);
 
         res.json(summary);
@@ -471,12 +471,12 @@ export function makeKnowledgeController(prisma: PrismaClient) {
             });
 
             const ragCtx = aiLog?.ragContext as any;
-            const classifierTopSim = ragCtx?.classifierTopSim ?? null;
+            const classifierConfidence = ragCtx?.classifierConfidence ?? ragCtx?.classifierTopSim ?? null;
             const classifierLabels = ragCtx?.classifierLabels as string[] | undefined;
 
             if (
-              classifierTopSim !== null &&
-              classifierTopSim < 0.40 &&
+              classifierConfidence !== null &&
+              classifierConfidence < 0.40 &&
               classifierLabels &&
               classifierLabels.length > 0
             ) {
@@ -504,7 +504,7 @@ export function makeKnowledgeController(prisma: PrismaClient) {
                 reinitializeClassifier(tenantId, prisma).catch(err =>
                   console.error('[Rating] Classifier reinit after operator reinforcement failed:', err)
                 );
-                console.log(`[Rating] Operator reinforcement (topSim=${classifierTopSim.toFixed(3)}): "${guestText.substring(0, 60)}..." -> [${classifierLabels.join(', ')}]`);
+                console.log(`[Rating] Operator reinforcement (LR confidence=${classifierConfidence.toFixed(3)}): "${guestText.substring(0, 60)}..." -> [${classifierLabels.join(', ')}]`);
               }
             }
           } catch (err) {

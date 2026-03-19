@@ -41,6 +41,7 @@ let _lastClassifierResult: {
   neighbors: Array<{ labels: string[]; similarity: number }>;
   tier: 'high' | 'medium' | 'low';
   topCandidates: Array<{ label: string; confidence: number }>;
+  queryEmbedding?: number[];
 } | null = null;
 
 export function getLastClassifierResult(): typeof _lastClassifierResult {
@@ -344,7 +345,7 @@ export async function retrieveRelevantKnowledge(
     }
   } catch { /* use default */ }
 
-  // For guestCoordinator: use KNN classifier for SOPs + pgvector for property chunks only
+  // For guestCoordinator: use LR classifier for SOPs + pgvector for property chunks only
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
     try {
       const classifierResult = await classifyMessage(query);
@@ -356,6 +357,7 @@ export async function retrieveRelevantKnowledge(
         neighbors: classifierResult.neighbors,
         tier: classifierResult.tier,
         topCandidates: classifierResult.topCandidates,
+        queryEmbedding: classifierResult.queryEmbedding,
       };
       console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method}, confidence=${classifierResult.confidence.toFixed(3)}, tier=${classifierResult.tier})`);
 
@@ -498,7 +500,7 @@ export async function retrieveRelevantKnowledge(
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
 
       const combined = [...sopChunks, ...propertyChunks];
-      const topSimilarity = classifierResult.topSimilarity;
+      const topSimilarity = classifierResult.confidence;
       // Map confidence tiers to the existing tier system for backward compatibility
       const tier = confidenceTier === 'high' ? 'tier1' as const : 'tier2_needed' as const;
       console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} confidenceTier=${confidenceTier} topSim=${topSimilarity.toFixed(3)}`);

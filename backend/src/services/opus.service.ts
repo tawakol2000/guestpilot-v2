@@ -261,15 +261,15 @@ GuestPilot uses a multi-tier classification and response pipeline:
 2. Message saved to DB → debounce timer started (waits for more messages)
 3. After debounce: Tier 1-3 classification → RAG retrieval → AI response generation → send via Hostaway API
 
-### Tier 1 — KNN Embedding Classifier
+### Tier 1 — LR Embedding Classifier
 - 300+ training examples, each labeled with SOP categories
-- Embeds the guest message, finds K=3 nearest neighbors by cosine similarity
+- Embeds the guest message and applies LR sigmoid model with three-tier confidence routing (KNN diagnostic runs alongside)
 - Weighted voting: label needs >voteThreshold (default 0.30) of weighted vote AND ≥2/3 neighbor agreement
 - Contextual gate: if best match is "contextual" above contextualGate (default 0.85), skip SOP retrieval and re-inject last topic (Tier 3)
-- Returns: labels[], topSimilarity, method
+- Returns: labels[], LR confidence (primary), topSimilarity (KNN diagnostic), method
 
 ### Tier 2 — Intent Extractor (Claude Haiku)
-- Fires when Tier 1 topSimilarity < 0.75 (judgeThreshold) AND Tier 3 doesn't re-inject
+- Fires when Tier 1 LR confidence is low (below judgeThreshold 0.75) AND Tier 3 doesn't re-inject
 - Reads last 3 guest + 2 host messages for context
 - Returns: TOPIC, STATUS, URGENCY, SOPS[]
 
@@ -280,7 +280,7 @@ GuestPilot uses a multi-tier classification and response pipeline:
 
 ### Self-Improvement Judge
 - Runs after each AI response (fire-and-forget)
-- Skipped if Tier 1 topSimilarity ≥ judgeThreshold (0.75) or majority neighbor support
+- Skipped if Tier 1 LR confidence ≥ judgeThreshold (0.75) or majority neighbor support
 - If Tier 2 fired: validates Tier 2's labels have ≥0.35 similarity to existing examples before auto-fixing
 - Otherwise: calls Claude Haiku to judge if classification was correct
 - If incorrect AND topSim < autoFixThreshold (0.70): auto-adds the message as a new training example

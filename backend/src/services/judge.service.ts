@@ -437,7 +437,7 @@ async function callJudge(input: JudgeInput): Promise<JudgeResult | null> {
     const userMessage = `GUEST MESSAGE: "${input.guestMessage}"
 CLASSIFIER RETRIEVED: [${input.classifierLabels.join(', ') || 'nothing'}]
 CLASSIFIER CONFIDENCE: ${lrConf.toFixed(3)} (LR sigmoid)
-KNN SIMILARITY: ${input.classifierTopSim.toFixed(3)} (nearest neighbor)
+CLASSIFIER DIAGNOSTIC (KNN): ${input.classifierTopSim.toFixed(3)} (nearest neighbor)
 CLASSIFIER METHOD: ${input.classifierMethod}
 AI RESPONSE: "${input.aiResponse.substring(0, 500)}"
 

@@ -674,68 +674,56 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
         {/* Tier badge */}
         <TierBadge tier={p.tier} />
 
-        {/* T031: LR confidence or KNN similarity — per entry */}
-        {isLrEntry ? (
-          <>
-            {/* LR confidence percentage */}
-            {p.classifierConfidence != null && (
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  fontFamily: T.font.mono,
-                  color: p.classifierConfidence >= 0.75 ? T.status.green : p.classifierConfidence >= 0.5 ? T.status.amber : T.status.red,
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {(p.classifierConfidence * 100).toFixed(0)}%
-              </span>
-            )}
-            {/* Confidence tier badge */}
-            {p.confidenceTier && (
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  fontFamily: T.font.sans,
-                  background: p.confidenceTier === 'high' ? '#DCFCE7' : p.confidenceTier === 'medium' ? '#FEF3C7' : '#FEE2E2',
-                  color: p.confidenceTier === 'high' ? T.status.green : p.confidenceTier === 'medium' ? T.status.amber : T.status.red,
-                  padding: '2px 6px',
-                  borderRadius: 999,
-                  border: `1px solid ${p.confidenceTier === 'high' ? 'rgba(21,128,61,0.2)' : p.confidenceTier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {p.confidenceTier}
-              </span>
-            )}
-            {/* LLM Override badge */}
-            {p.lmOverride && (
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  fontFamily: T.font.sans,
-                  background: '#FFF7ED',
-                  color: '#C2410C',
-                  padding: '2px 6px',
-                  borderRadius: 999,
-                  border: '1px solid rgba(194,65,12,0.2)',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                LLM Override
-              </span>
-            )}
-          </>
-        ) : (
-          /* KNN similarity — existing display */
-          p.topSimilarity != null ? (
-            <SimilarityBar score={p.topSimilarity} width={40} />
-          ) : null
+        {/* LR confidence + tier badge */}
+        {p.classifierConfidence != null && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              fontFamily: T.font.mono,
+              color: p.classifierConfidence >= 0.75 ? T.status.green : p.classifierConfidence >= 0.5 ? T.status.amber : T.status.red,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {(p.classifierConfidence * 100).toFixed(0)}%
+          </span>
+        )}
+        {p.confidenceTier && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              background: p.confidenceTier === 'high' ? '#DCFCE7' : p.confidenceTier === 'medium' ? '#FEF3C7' : '#FEE2E2',
+              color: p.confidenceTier === 'high' ? T.status.green : p.confidenceTier === 'medium' ? T.status.amber : T.status.red,
+              padding: '2px 6px',
+              borderRadius: 999,
+              border: `1px solid ${p.confidenceTier === 'high' ? 'rgba(21,128,61,0.2)' : p.confidenceTier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {p.confidenceTier}
+          </span>
+        )}
+        {p.lmOverride && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              background: '#FFF7ED',
+              color: '#C2410C',
+              padding: '2px 6px',
+              borderRadius: 999,
+              border: '1px solid rgba(194,65,12,0.2)',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            LLM Override
+          </span>
         )}
 
         {/* SOP count */}
@@ -830,10 +818,10 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             </div>
           </TimelineStep>
 
-          {/* Step 2: Tier 1 -- Embedding Classifier (adapts per-entry for LR vs KNN) */}
+          {/* Step 2: Tier 1 -- LR Sigmoid Classifier */}
           <TimelineStep
             stepNum={2}
-            title={isLrEntry ? 'Tier 1 -- LR Sigmoid Classifier' : 'Tier 1 -- Embedding Classifier'}
+            title="Tier 1 -- LR Sigmoid Classifier"
             color={TIER_COLORS.tier1.fg}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -956,7 +944,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                         <ChevronRight size={12} color={T.text.tertiary} />
                       </div>
                       <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        KNN Diagnostic
+                        Embedding Diagnostic
                       </span>
                       {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
                         <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
@@ -984,62 +972,6 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                /* ── KNN Engine display (existing) ── */
-                <>
-                  {/* Method + classifier similarity */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {(p.classifierMethod || ev?.classifierMethod) && (
-                      <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
-                    )}
-                    {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
-                        <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
-                      </div>
-                    )}
-                  </div>
-                  {/* Classifier labels */}
-                  {(() => {
-                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
-                    return labels.length > 0 ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
-                        {labels.map((label: string, i: number) => {
-                          const sc = sopBadgeColor(label)
-                          return (
-                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
-                              {label}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
-                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, fontStyle: 'italic' }}>no labels (contextual)</span>
-                      </div>
-                    )
-                  })()}
-                  {/* Verdict */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {p.tier === 'tier1' ? (
-                      <>
-                        <CheckCircle2 size={13} color={T.status.green} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
-                          Confident
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertTriangle size={13} color={T.status.amber} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
-                          Low confidence — routed to {p.tier === 'tier3_cache' ? 'Tier 3' : p.tier === 'tier2_needed' ? 'Tier 2' : 'fallback'}
-                        </span>
-                      </>
                     )}
                   </div>
                 </>
@@ -1416,8 +1348,8 @@ export default function AiPipelineV5(): React.ReactElement {
   const [accuracyPeriod, setAccuracyPeriod] = useState<'7d' | '30d'>('30d')
   const [accuracyLoading, setAccuracyLoading] = useState(false)
 
-  // T029: Engine type auto-detection
-  const [engineType, setEngineType] = useState<'knn' | 'lr'>('knn')
+  // Engine type: always LR (KNN legacy removed in 005-remove-knn-legacy)
+  const engineType = 'lr' as const
 
   // Snapshot state (T026)
   const [snapshotLoading, setSnapshotLoading] = useState(false)
@@ -1425,14 +1357,7 @@ export default function AiPipelineV5(): React.ReactElement {
 
   useEffect(() => { ensureStyles() }, [])
 
-  // T029: Fetch classifier status to detect engine type
-  useEffect(() => {
-    apiGetClassifierStatus()
-      .then(status => {
-        if (status.classifierType === 'lr') setEngineType('lr')
-      })
-      .catch(() => { /* keep default knn */ })
-  }, [])
+  // Engine type detection no longer needed — always LR
 
   // Fetch accuracy metrics when period changes
   useEffect(() => {
@@ -1728,7 +1653,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 border: `1px solid ${engineType === 'lr' ? `${PURPLE}30` : 'rgba(21,128,61,0.2)'}`,
               }}
             >
-              {engineType === 'lr' ? 'LR Engine' : 'KNN Engine'}
+              LR Engine
             </span>
             {/* T014a: Override rate warning */}
             {accuracy && typeof accuracy.overrideRate === 'number' && accuracy.overrideRate > 0.15 && (
@@ -2101,9 +2026,9 @@ export default function AiPipelineV5(): React.ReactElement {
             />
             <FlowArrow />
 
-            {/* KNN Classifier */}
+            {/* LR Classifier */}
             <FlowStep
-              label="Tier 1: KNN"
+              label="Tier 1: LR"
               count={stats.tiers.tier1.count}
               color={TIER_COLORS.tier1.fg}
               isActive={stats.tiers.tier1.count > 0}

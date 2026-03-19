@@ -1256,7 +1256,7 @@ export async function generateAndSendAiReply(
     } else if (ragResult.tier !== 'tier1') {
       // Only check Tier 3 when Tier 1 wasn't confident.
       // If Tier 1 returned "contextual" or property-only labels at high confidence, skip Tier 3.
-      const tier3Result = getReinjectedLabels(conversationId, ragQuery);
+      const tier3Result = getReinjectedLabels(conversationId, ragQuery, classifierSnap?.queryEmbedding);
       tier3Reinjected = tier3Result.reinjected;
       tier3TopicSwitch = tier3Result.topicSwitchDetected;
 

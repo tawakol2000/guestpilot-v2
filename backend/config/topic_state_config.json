@@ -186,6 +186,9 @@
     "max_reinject_count": 5,
     "reset_on_explicit_switch": true,
     "reset_on_new_tier1_classification": true,
-    "_note": "reset_on_new_tier1_classification means: if Tier 1 confidently classifies a new message into a DIFFERENT category than the cached one, reset cache to the new category"
+    "centroid_switch_threshold": 0.60,
+    "centroid_min_examples": 3,
+    "_note": "reset_on_new_tier1_classification means: if Tier 1 confidently classifies a new message into a DIFFERENT category than the cached one, reset cache to the new category",
+    "_note_centroid": "centroid_switch_threshold: cosine similarity below which a topic switch is detected via centroid distance. centroid_min_examples: minimum training examples per category before trusting centroid distance."
   }
 }

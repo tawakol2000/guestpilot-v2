@@ -192,7 +192,12 @@ generateAndSendAiReply() — MAIN PIPELINE
   - Cache not expired (default 30-min TTL per category)
   - Reinject count < 5 (prevents infinite loops)
   - No topic-switch keywords detected ("also", "by the way", "another thing")
-- **Clears cache** if topic switch detected
+  - Centroid distance check passes (embedding is close to active topic centroid)
+- **Clears cache** (topic switch detected) if:
+  - Explicit switch keyword found, OR
+  - Centroid distance: cosine similarity between message embedding and active topic centroid < 0.60 (configurable via `topic_state_config.json`)
+  - Centroid check requires ≥3 training examples per category (below this, unreliable centroid → keyword-only fallback)
+  - Falls back to keyword-only detection when centroids unavailable (no trained model)
 - Updates cache when new SOP labels are classified
 
 #### Tier 2 — Intent Extractor (Haiku)
@@ -348,6 +353,8 @@ Manual trigger via `POST /api/opus/generate`. Collects 24h of pipeline data and 
 | Webhook buffer | 30 min | No | ai.service.ts |
 | Memory summary threshold | 10 msgs | No | ai.service.ts |
 | Topic state decay | 30 min | Config file | topic-state.service.ts |
+| Centroid switch threshold | 0.60 | Config file | topic-state.service.ts |
+| Centroid min examples | 3 | Config file | topic-state.service.ts |
 | Max topic re-inject | 5 | Config file | topic-state.service.ts |
 | RAG pgvector top-K | 8 | No | rag.service.ts |
 | RAG min similarity | 0.3 | No | rag.service.ts |
