@@ -1222,12 +1222,18 @@ export async function generateAndSendAiReply(
       ? currentMsgs[currentMsgs.length - 1].content
       : currentMsgs.map((m: { content: string }) => m.content).join(' ');
     const ragStart = Date.now();
+    // Pass conversationId + recent messages for low-tier intent extraction fallback (T013)
+    const recentForRag = allMsgs.slice(-10).map(m => ({
+      role: m.role === 'GUEST' ? 'guest' : 'host',
+      content: m.content,
+    }));
     const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
       ? await retrieveRelevantKnowledge(
           tenantId, context.propertyId, ragQuery, prisma, 8,
-          context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator'
-        ).catch(() => ({ chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const }))
-      : { chunks: [], topSimilarity: 0, tier: 'tier1' as const };
+          context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator',
+          conversationId, recentForRag
+        ).catch(() => ({ chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined }))
+      : { chunks: [], topSimilarity: 0, tier: 'tier1' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined };
     let retrievedChunks = ragResult.chunks;
     const ragDurationMs = Date.now() - ragStart;
 
@@ -1372,7 +1378,7 @@ export async function generateAndSendAiReply(
       console.log(`[AI] Escalation signals: ${escalationSignals.map(s => s.signal).join(', ')}`);
     }
 
-    const ragContext = {
+    const ragContext: any = {
       query: ragQuery,
       chunks: retrievedChunks.map((c: any) => ({
         content: c.content.substring(0, 200),
@@ -1385,11 +1391,15 @@ export async function generateAndSendAiReply(
       durationMs: ragDurationMs,
       topSimilarity: ragResult.topSimilarity,
       tier: ragResult.tier,
+      // Three-tier confidence routing (T013)
+      confidenceTier: ragResult.confidenceTier || null,
+      topCandidates: ragResult.topCandidates || null,
       // Tier 1 details
       classifierUsed: context.reservationStatus !== 'INQUIRY',
       classifierLabels: classifierSnap?.labels || [],
       classifierTopSim: classifierSnap?.topSimilarity ?? null,
       classifierMethod: classifierSnap?.method || null,
+      classifierConfidence: classifierSnap?.confidence ?? null,
       // Tier 3 details
       tier3Reinjected,
       tier3TopicSwitch,
@@ -1399,6 +1409,14 @@ export async function generateAndSendAiReply(
       // Escalation
       escalationSignals: escalationSignals.map(s => s.signal),
     };
+
+    // T014: Auto-escalate when low tier returns empty (both classifier and intent extractor failed)
+    if (ragResult.confidenceTier === 'low' && ragResult.chunks.length === 0) {
+      await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
+        'classification-failure', 'Both LR classifier and intent extractor failed to classify this message.',
+        'info_request');
+      console.log(`[AI] [${conversationId}] Classification failure escalation — both LR and intent extractor returned empty`);
+    }
 
     const propertyInfo = buildPropertyInfo(
       context.guestName,
@@ -1658,6 +1676,52 @@ export async function generateAndSendAiReply(
         );
         broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
         return;
+      }
+    }
+
+    // T014: LLM override detection for medium-tier messages
+    // When the classifier was uncertain (medium tier), check if the AI's response
+    // used a different SOP than the classifier's top pick — log the override for analysis
+    if (ragResult.confidenceTier === 'medium' && ragResult.topCandidates && ragResult.topCandidates.length > 0 && guestMessage) {
+      try {
+        const topCandidates = ragResult.topCandidates;
+        const responseLower = guestMessage.toLowerCase();
+
+        // Extract category keywords from SOP labels (e.g., 'sop-cleaning' → 'clean')
+        const labelToKeywords: Record<string, string[]> = {};
+        for (const candidate of topCandidates.slice(0, 3)) {
+          const parts = candidate.label.replace(/^sop-/, '').split('-');
+          labelToKeywords[candidate.label] = parts.map(p => p.toLowerCase());
+        }
+
+        // Detect which SOP the AI actually used by checking response keywords
+        let detectedSop: string | null = null;
+        let bestKeywordHits = 0;
+        for (const [label, keywords] of Object.entries(labelToKeywords)) {
+          const hits = keywords.filter(kw => responseLower.includes(kw)).length;
+          if (hits > bestKeywordHits) {
+            bestKeywordHits = hits;
+            detectedSop = label;
+          }
+        }
+
+        // Log override if the AI chose a different SOP than the classifier's top pick
+        if (detectedSop && detectedSop !== topCandidates[0].label) {
+          ragContext.llmOverride = {
+            classifierPick: topCandidates[0].label,
+            llmPick: detectedSop,
+            confidence: topCandidates[0].confidence,
+          };
+          console.log(`[AI] [${conversationId}] LLM override detected: classifier=${topCandidates[0].label}(${topCandidates[0].confidence.toFixed(2)}) → llm=${detectedSop}`);
+        } else if (!detectedSop) {
+          ragContext.llmOverride = {
+            classifierPick: topCandidates[0].label,
+            llmPick: 'unknown',
+            confidence: topCandidates[0].confidence,
+          };
+        }
+      } catch (err) {
+        console.warn(`[AI] [${conversationId}] LLM override detection failed (non-fatal):`, err);
       }
     }
 

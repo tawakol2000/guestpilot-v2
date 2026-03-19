@@ -587,7 +587,7 @@ export async function retrieveRelevantKnowledge(
         propertyId: r.propertyId,
       }));
     const topSimilarity = mappedChunks.length > 0 ? Math.max(...mappedChunks.map(r => r.similarity)) : 0;
-    const tier = topSimilarity > TIER_1_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
+    const tier = topSimilarity > HIGH_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
     console.log(`[RAG] tier=${tier} topSim=${topSimilarity.toFixed(3)} chunks=${mappedChunks.length}`);
     return { chunks: mappedChunks, topSimilarity, tier };
   } catch (err) {
