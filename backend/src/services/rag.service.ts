@@ -323,7 +323,14 @@ export async function retrieveRelevantKnowledge(
   topSimilarity: number;
   tier: 'tier1' | 'tier2_needed' | 'tier3_cache';
 }> {
-  const TIER_1_CONFIDENCE_THRESHOLD = 0.75;
+  // Tier 2 threshold — configurable per tenant via UI
+  let TIER_1_CONFIDENCE_THRESHOLD = 0.75;
+  try {
+    const cfg = await getTenantAiConfig(tenantId, prisma);
+    if (cfg.tier2Threshold !== undefined && cfg.tier2Threshold !== null) {
+      TIER_1_CONFIDENCE_THRESHOLD = cfg.tier2Threshold;
+    }
+  } catch { /* use default */ }
 
   // For guestCoordinator: use KNN classifier for SOPs + pgvector for property chunks only
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {

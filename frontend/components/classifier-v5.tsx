@@ -844,6 +844,7 @@ function ThresholdSettings() {
   const [autoFixVal, setAutoFixVal] = useState(0.70)
   const [voteVal, setVoteVal] = useState(0.30)
   const [ctxGateVal, setCtxGateVal] = useState(0.85)
+  const [tier2Val, setTier2Val] = useState(0.75)
   const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
   const [judgeModeVal, setJudgeModeVal] = useState<'evaluate_all' | 'sampling'>('evaluate_all')
   const [judgeModesSaving, setJudeModeSaving] = useState(false)
@@ -858,6 +859,7 @@ function ThresholdSettings() {
         setJudgeVal(d.judgeThreshold); setAutoFixVal(d.autoFixThreshold)
         if (d.classifierVoteThreshold != null) setVoteVal(d.classifierVoteThreshold)
         if (d.classifierContextualGate != null) setCtxGateVal(d.classifierContextualGate)
+        if ((d as any).tier2Threshold != null) setTier2Val((d as any).tier2Threshold)
         if (d.embeddingProvider) setProviderVal(d.embeddingProvider as 'openai' | 'cohere')
         setLoaded(true)
       })
@@ -893,6 +895,7 @@ function ThresholdSettings() {
       await apiSetClassifierThresholds({
         judgeThreshold: judgeVal, autoFixThreshold: autoFixVal,
         classifierVoteThreshold: voteVal, classifierContextualGate: ctxGateVal,
+        tier2Threshold: tier2Val,
         embeddingProvider: providerVal,
       })
       setSavedMsg('Saved')
@@ -1058,6 +1061,14 @@ function ThresholdSettings() {
               onChange={v => setCtxGateVal(v)}
               min={0.50} max={0.95} step={0.01}
               color={T.accent}
+            />
+            <SliderRow
+              label="Tier 2 threshold"
+              hint="— fire intent extractor (Haiku) below this similarity"
+              value={tier2Val}
+              onChange={v => setTier2Val(v)}
+              min={0.40} max={0.90} step={0.01}
+              color="#F59E0B"
             />
           </div>
         </div>

@@ -364,6 +364,7 @@ model TenantAiConfig {
   autoFixThreshold     Float    @default(0.70)
   classifierVoteThreshold     Float @default(0.30)
   classifierContextualGate    Float @default(0.85)
+  tier2Threshold              Float @default(0.75)
   embeddingProvider           String @default("openai")
   workingHoursEnabled  Boolean  @default(false)
   workingHoursStart    String   @default("08:00")
