@@ -8,10 +8,11 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch, getEmbeddingProvider } from './embeddings.service';
-import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier } from './classifier.service';
+import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier, type ClassificationResult } from './classifier.service';
 import { BAKED_IN_CHUNKS } from './classifier-data';
 import { rerank, isRerankEnabled } from './rerank.service';
 import { getTenantAiConfig } from './tenant-config.service';
+import { extractIntent } from './intent-extractor.service';
 
 /** Returns the DB column name for the active embedding provider. */
 function embCol(): string {
@@ -36,7 +37,10 @@ let _lastClassifierResult: {
   method: string;
   labels: string[];
   topSimilarity: number;
+  confidence: number;  // LR sigmoid confidence (primary metric)
   neighbors: Array<{ labels: string[]; similarity: number }>;
+  tier: 'high' | 'medium' | 'low';
+  topCandidates: Array<{ label: string; confidence: number }>;
 } | null = null;
 
 export function getLastClassifierResult(): typeof _lastClassifierResult {
@@ -317,18 +321,26 @@ export async function retrieveRelevantKnowledge(
   query: string,
   prisma: PrismaClient,
   topK = 8,
-  agentType?: 'guestCoordinator' | 'screeningAI'
+  agentType?: 'guestCoordinator' | 'screeningAI',
+  conversationId?: string,
+  recentMessages?: Array<{ role: string; content: string }>
 ): Promise<{
   chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
   topSimilarity: number;
   tier: 'tier1' | 'tier2_needed' | 'tier3_cache';
+  confidenceTier?: 'high' | 'medium' | 'low';
+  topCandidates?: Array<{ label: string; confidence: number }>;
 }> {
-  // Tier 2 threshold — configurable per tenant via UI
-  let TIER_1_CONFIDENCE_THRESHOLD = 0.75;
+  // Three-tier confidence thresholds — configurable per tenant via UI
+  let HIGH_CONFIDENCE_THRESHOLD = 0.85;
+  let LOW_CONFIDENCE_THRESHOLD = 0.55;
   try {
     const cfg = await getTenantAiConfig(tenantId, prisma);
-    if (cfg.tier2Threshold !== undefined && cfg.tier2Threshold !== null) {
-      TIER_1_CONFIDENCE_THRESHOLD = cfg.tier2Threshold;
+    if (cfg.highConfidenceThreshold !== undefined && cfg.highConfidenceThreshold !== null) {
+      HIGH_CONFIDENCE_THRESHOLD = cfg.highConfidenceThreshold;
+    }
+    if (cfg.lowConfidenceThreshold !== undefined && cfg.lowConfidenceThreshold !== null) {
+      LOW_CONFIDENCE_THRESHOLD = cfg.lowConfidenceThreshold;
     }
   } catch { /* use default */ }
 
@@ -340,23 +352,106 @@ export async function retrieveRelevantKnowledge(
         method: classifierResult.method,
         labels: classifierResult.labels,
         topSimilarity: classifierResult.topSimilarity,
+        confidence: classifierResult.confidence,  // LR sigmoid confidence
         neighbors: classifierResult.neighbors,
+        tier: classifierResult.tier,
+        topCandidates: classifierResult.topCandidates,
       };
-      console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method})`);
+      console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method}, confidence=${classifierResult.confidence.toFixed(3)}, tier=${classifierResult.tier})`);
 
-      // Look up SOP content from in-memory map
-      let sopChunks = classifierResult.labels
-        .map(label => {
-          const content = getSopContent(label);
-          return content ? {
-            content,
-            category: label,
+      // ─── Three-tier confidence routing (T013) ─────────────────────────
+      // Determine confidence tier using LR sigmoid confidence (NOT cosine similarity)
+      const lrConfidence = classifierResult.confidence;
+      const confidenceTier: 'high' | 'medium' | 'low' =
+        lrConfidence >= HIGH_CONFIDENCE_THRESHOLD ? 'high' :
+        lrConfidence >= LOW_CONFIDENCE_THRESHOLD ? 'medium' : 'low';
+
+      let sopChunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }> = [];
+
+      if (confidenceTier === 'high') {
+        // HIGH tier: inject single top SOP (existing behavior)
+        sopChunks = classifierResult.labels
+          .map(label => {
+            const content = getSopContent(label);
+            return content ? {
+              content,
+              category: label,
+              similarity: 1.0,
+              sourceKey: label,
+              propertyId: null as string | null,
+            } : null;
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+      } else if (confidenceTier === 'medium') {
+        // MEDIUM tier: inject top 3 candidates with verification context
+        const top3 = classifierResult.topCandidates.slice(0, 3);
+        sopChunks = top3
+          .map((candidate, idx) => {
+            const content = getSopContent(candidate.label);
+            if (!content) return null;
+            return {
+              content: `CANDIDATE ${idx + 1} (classifier confidence: ${candidate.confidence.toFixed(2)}): ${content}`,
+              category: candidate.label,
+              similarity: candidate.confidence,
+              sourceKey: candidate.label,
+              propertyId: null as string | null,
+            };
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        if (sopChunks.length > 0) {
+          // Add verification instruction as a preamble chunk
+          sopChunks.unshift({
+            content: 'VERIFICATION REQUIRED: The classifier was not fully confident. Multiple SOP candidates are provided below. Read all candidates carefully and choose the most relevant one based on the guest message context. If none fit, respond with general courtesy.',
+            category: 'verification-instruction',
             similarity: 1.0,
-            sourceKey: label,
-            propertyId: null as string | null,
-          } : null;
-        })
-        .filter((c): c is NonNullable<typeof c> => c !== null);
+            sourceKey: 'verification-instruction',
+            propertyId: null,
+          });
+        }
+        console.log(`[RAG] Medium confidence — injected ${top3.length} candidate SOPs: [${top3.map(c => `${c.label}(${c.confidence.toFixed(2)})`).join(', ')}]`);
+
+      } else {
+        // LOW tier: fire intent extractor as fallback
+        console.log(`[RAG] Low confidence (${lrConfidence.toFixed(3)}) — firing Tier 2 intent extractor`);
+        let intentResult = null;
+        try {
+          if (conversationId && recentMessages && recentMessages.length > 0) {
+            intentResult = await extractIntent(recentMessages, tenantId, conversationId);
+          }
+        } catch (err) {
+          console.warn('[RAG] Intent extractor failed in low-tier fallback (non-fatal):', err);
+        }
+
+        if (intentResult && intentResult.sops.length > 0) {
+          // Intent extractor returned SOPs — look them up
+          sopChunks = intentResult.sops
+            .map(label => {
+              const content = getSopContent(label);
+              return content ? {
+                content,
+                category: label,
+                similarity: 1.0,
+                sourceKey: label,
+                propertyId: null as string | null,
+              } : null;
+            })
+            .filter((c): c is NonNullable<typeof c> => c !== null);
+          console.log(`[RAG] Low tier — intent extractor resolved: [${intentResult.sops.join(', ')}]`);
+        } else {
+          // Both classifier and intent extractor failed — return empty (baked-in SOPs still present)
+          console.log(`[RAG] Low tier — both classifier and intent extractor failed. No dynamic SOPs.`);
+          const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
+          return {
+            chunks: propertyChunks,
+            topSimilarity: classifierResult.topSimilarity,
+            tier: 'tier2_needed' as const,
+            confidenceTier: 'low',
+            topCandidates: classifierResult.topCandidates,
+          };
+        }
+      }
 
       // Apply per-tenant SOP overrides (skip/replace) — baked-in SOPs are exempt
       try {
@@ -366,6 +461,8 @@ export async function retrieveRelevantKnowledge(
           sopChunks = sopChunks.filter(chunk => {
             // Baked-in SOPs are never affected by tenant overrides
             if (BAKED_IN_CHUNKS.has(chunk.category)) return true;
+            // Verification instruction is not a real SOP — skip override checks
+            if (chunk.category === 'verification-instruction') return true;
 
             const override = sopOverrides[chunk.category];
             if (!override) return true; // no override configured — keep default
@@ -393,13 +490,11 @@ export async function retrieveRelevantKnowledge(
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
 
       const combined = [...sopChunks, ...propertyChunks];
-      // FIX: Use only the classifier's actual cosine similarity for tier decision.
-      // Previously, SOP chunks had hardcoded similarity=1.0 which dominated Math.max(),
-      // making the 0.75 threshold dead code — every labeled message was "tier1 confident."
       const topSimilarity = classifierResult.topSimilarity;
-      const tier = topSimilarity > TIER_1_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
-      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} topSim=${topSimilarity.toFixed(3)}`);
-      return { chunks: combined, topSimilarity, tier };
+      // Map confidence tiers to the existing tier system for backward compatibility
+      const tier = confidenceTier === 'high' ? 'tier1' as const : 'tier2_needed' as const;
+      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} confidenceTier=${confidenceTier} topSim=${topSimilarity.toFixed(3)}`);
+      return { chunks: combined, topSimilarity, tier, confidenceTier, topCandidates: classifierResult.topCandidates };
     } catch (err) {
       console.warn('[RAG] Classifier failed, falling back to pgvector:', err);
       // Fall through to existing pgvector logic below

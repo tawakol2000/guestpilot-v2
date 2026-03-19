@@ -99,7 +99,7 @@
 
 - [x] T027 [P] [US6] Verify existing rating flow in `frontend/components/inbox-v5.tsx`
 - [x] T028 [P] [US6] Add rating-to-training-example flow in backend
-- [ ] T029 [US6] Add ratings display to pipeline dashboard in `frontend/components/ai-pipeline-v5.tsx`
+- [x] T029 [US6] Add ratings display to pipeline dashboard in `frontend/components/ai-pipeline-v5.tsx`
 
 **Checkpoint**: Operator ratings feed into training, visible in dashboard.
 
@@ -108,9 +108,9 @@
 ## Phase 9: Polish & Cross-Cutting Concerns
 
 - [x] T030 Review system prompts for accuracy
-- [ ] T031 Run through all 7 quickstart.md verification steps to validate fixes end-to-end
-- [ ] T032 Generate initial pipeline snapshot via `POST /api/ai-pipeline/snapshot`
-- [ ] T033 Run initial gap analysis via `POST /api/knowledge/gap-analysis` and review/approve suggested examples
+- [x] T031 Run through all 7 quickstart.md verification steps to validate fixes end-to-end
+- [x] T032 Generate initial pipeline snapshot via `POST /api/ai-pipeline/snapshot`
+- [x] T033 Run initial gap analysis via `POST /api/knowledge/gap-analysis` and review/approve suggested examples
 
 ---
 

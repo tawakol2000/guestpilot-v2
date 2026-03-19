@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw, Search, X, Activity, CheckCircle, AlertTriangle, Wrench,
   ChevronRight, Plus, Trash2, Play, Brain, DollarSign, TrendingUp, TrendingDown,
-  Settings2, Save, Minus, FileText,
+  Settings2, Save, Minus, FileText, Zap, BarChart3,
 } from 'lucide-react'
 import {
   apiGetClassifierStatus,
@@ -20,9 +20,11 @@ import {
   apiBatchClassify,
   apiGetTenantAiConfig,
   apiUpdateTenantAiConfig,
+  apiRetrainClassifier,
   type ClassifierEvaluation,
   type ClassifierExampleItem,
   type BatchClassifyResult,
+  type RetrainResult,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -845,6 +847,8 @@ function ThresholdSettings() {
   const [voteVal, setVoteVal] = useState(0.30)
   const [ctxGateVal, setCtxGateVal] = useState(0.85)
   const [tier2Val, setTier2Val] = useState(0.75)
+  const [highConfVal, setHighConfVal] = useState(0.85)
+  const [lowConfVal, setLowConfVal] = useState(0.55)
   const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
   const [judgeModeVal, setJudgeModeVal] = useState<'evaluate_all' | 'sampling'>('evaluate_all')
   const [judgeModesSaving, setJudeModeSaving] = useState(false)
@@ -852,6 +856,14 @@ function ThresholdSettings() {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
+  const [classifierType, setClassifierType] = useState<'knn' | 'lr' | null>(null)
+  const [retraining, setRetraining] = useState(false)
+  const [retrainMsg, setRetrainMsg] = useState('')
+  const [retrainErr, setRetrainErr] = useState('')
+  const [calibration, setCalibration] = useState<{
+    lrAccuracy: number
+    perCategory: Array<{ category: string; accuracy: number; total: number; correct: number }>
+  } | null>(null)
 
   useEffect(() => {
     apiGetClassifierThresholds()
@@ -867,6 +879,21 @@ function ThresholdSettings() {
     apiGetTenantAiConfig()
       .then(cfg => {
         if ((cfg as any).judgeMode) setJudgeModeVal((cfg as any).judgeMode)
+        if ((cfg as any).highConfidenceThreshold != null) setHighConfVal((cfg as any).highConfidenceThreshold)
+        if ((cfg as any).lowConfidenceThreshold != null) setLowConfVal((cfg as any).lowConfidenceThreshold)
+      })
+      .catch(() => {})
+    // Detect classifier type and load calibration data
+    apiGetClassifierStatus()
+      .then((s: any) => {
+        if (s.classifierType) setClassifierType(s.classifierType)
+        else if (s.lrAccuracy != null) setClassifierType('lr')
+        if (s.lrAccuracy != null || s.perCategory) {
+          setCalibration({
+            lrAccuracy: s.lrAccuracy ?? 0,
+            perCategory: s.perCategory ?? [],
+          })
+        }
       })
       .catch(() => {})
   }, [])
@@ -898,12 +925,50 @@ function ThresholdSettings() {
         tier2Threshold: tier2Val,
         embeddingProvider: providerVal,
       })
+      // Save tier threshold values to tenant config
+      if (classifierType === 'lr') {
+        await apiUpdateTenantAiConfig({
+          highConfidenceThreshold: highConfVal,
+          lowConfidenceThreshold: lowConfVal,
+        } as any)
+      }
       setSavedMsg('Saved')
       setTimeout(() => setSavedMsg(''), 3000)
     } catch (e: any) {
       setSavedMsg(e.message || 'Error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRetrain() {
+    if (retraining) return
+    setRetraining(true); setRetrainMsg(''); setRetrainErr('')
+    try {
+      const res = await apiRetrainClassifier()
+      setRetrainMsg(`Retrained: ${res.exampleCount} examples, ${(res.crossValAccuracy * 100).toFixed(1)}% accuracy, ${(res.trainDurationMs / 1000).toFixed(1)}s`)
+      // Update calibration data from retrain result
+      setCalibration(prev => ({
+        lrAccuracy: res.crossValAccuracy,
+        perCategory: prev?.perCategory ?? [],
+      }))
+      // Refresh classifier status to get updated per-category data
+      apiGetClassifierStatus()
+        .then((s: any) => {
+          if (s.perCategory) {
+            setCalibration(prev => ({
+              lrAccuracy: prev?.lrAccuracy ?? res.crossValAccuracy,
+              perCategory: s.perCategory ?? [],
+            }))
+          }
+        })
+        .catch(() => {})
+      setTimeout(() => setRetrainMsg(''), 8000)
+    } catch (e: any) {
+      setRetrainErr(e.message || 'Retrain failed')
+      setTimeout(() => setRetrainErr(''), 8000)
+    } finally {
+      setRetraining(false)
     }
   }
 
@@ -1135,6 +1200,159 @@ function ThresholdSettings() {
             Evaluate All: judge checks every AI response. Sampling: judge checks ~30% of responses.
           </div>
         </div>
+
+        {/* ── LR-Only Sections ─────────────────────────────────────────────── */}
+        {classifierType === 'lr' && (
+          <>
+            {/* Retrain Classifier Button */}
+            <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  LR Classifier
+                </div>
+              </div>
+              <button onClick={handleRetrain} disabled={retraining} style={{
+                width: '100%', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                fontSize: 13, fontWeight: 700, fontFamily: T.font.sans,
+                background: retraining ? T.bg.secondary : T.accent,
+                color: retraining ? T.text.tertiary : '#fff',
+                border: `1px solid ${retraining ? T.border.default : T.accent}`,
+                borderRadius: T.radius.sm, cursor: retraining ? 'default' : 'pointer',
+                transition: 'all 0.15s', opacity: retraining ? 0.7 : 1,
+              }}>
+                {retraining
+                  ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <Zap size={14} />}
+                {retraining ? 'Retraining...' : 'Retrain Classifier'}
+              </button>
+              {retrainMsg && (
+                <div style={{
+                  marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
+                  background: `${T.status.green}0A`, border: `1px solid ${T.status.green}28`,
+                  fontSize: 11, fontFamily: T.font.mono, color: T.status.green, lineHeight: 1.5,
+                }}>{retrainMsg}</div>
+              )}
+              {retrainErr && (
+                <div style={{
+                  marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
+                  background: `${T.status.red}0A`, border: `1px solid ${T.status.red}28`,
+                  fontSize: 11, fontFamily: T.font.mono, color: T.status.red, lineHeight: 1.5,
+                }}>{retrainErr}</div>
+              )}
+            </div>
+
+            {/* Calibration Results */}
+            {calibration && (
+              <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <BarChart3 size={13} color={T.text.tertiary} />
+                  <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Calibration Results
+                  </div>
+                </div>
+                <div style={{
+                  padding: '10px 14px', borderRadius: T.radius.sm,
+                  background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+                  marginBottom: 12,
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.font.sans, color: T.text.primary }}>
+                    Cross-validation accuracy:{' '}
+                  </span>
+                  <span style={{
+                    fontSize: 14, fontWeight: 800, fontFamily: T.font.mono,
+                    color: (calibration.lrAccuracy * 100) >= 80 ? T.status.green
+                      : (calibration.lrAccuracy * 100) >= 60 ? T.status.amber
+                      : T.status.red,
+                  }}>
+                    {(calibration.lrAccuracy * 100).toFixed(1)}%
+                  </span>
+                </div>
+                {calibration.perCategory.length > 0 && (
+                  <div style={{ borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.font.sans, fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ background: T.bg.secondary }}>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Category</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Accuracy</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Samples</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...calibration.perCategory]
+                          .sort((a, b) => a.accuracy - b.accuracy)
+                          .map((cat, i) => {
+                            const accPct = cat.accuracy * 100
+                            const rowColor = accPct < 60 ? T.status.red : accPct < 80 ? T.status.amber : T.status.green
+                            return (
+                              <tr key={cat.category} style={{ background: i % 2 === 0 ? T.bg.primary : T.bg.secondary }}>
+                                <td style={{ padding: '5px 10px', fontFamily: T.font.mono, fontSize: 10, color: T.text.primary, borderBottom: `1px solid ${T.border.default}` }}>
+                                  {cat.category}
+                                </td>
+                                <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: T.font.mono, fontSize: 11, fontWeight: 700, color: rowColor, borderBottom: `1px solid ${T.border.default}` }}>
+                                  {accPct.toFixed(1)}%
+                                </td>
+                                <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: T.font.mono, fontSize: 10, color: T.text.tertiary, borderBottom: `1px solid ${T.border.default}` }}>
+                                  {cat.total}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tier Confidence Thresholds (LR only) */}
+            <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                LR Tier Confidence Thresholds
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <SliderRow
+                  label="High Confidence Threshold"
+                  hint="— messages above this skip to single SOP (Tier 1)"
+                  value={highConfVal}
+                  onChange={v => setHighConfVal(v)}
+                  min={0.70} max={0.95} step={0.01}
+                  color={T.status.green}
+                />
+                <SliderRow
+                  label="Low Confidence Threshold"
+                  hint="— messages below this use intent extractor fallback"
+                  value={lowConfVal}
+                  onChange={v => setLowConfVal(v)}
+                  min={0.30} max={0.70} step={0.01}
+                  color={T.status.amber}
+                />
+              </div>
+              {/* Visual range legend for LR tiers */}
+              <div style={{
+                display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
+                overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 14,
+              }}>
+                {[
+                  { label: 'intent fallback', color: `${T.status.red}22`, textColor: T.status.red, pct: lowConfVal * 100 },
+                  { label: 'multi-SOP', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (highConfVal - lowConfVal) * 100 },
+                  { label: 'single SOP', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - highConfVal) * 100 },
+                ].map(seg => (
+                  <div key={seg.label} style={{
+                    width: `${seg.pct}%`, background: seg.color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden', minWidth: 0,
+                  }}>
+                    {seg.pct > 12 && (
+                      <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
+                        {seg.label}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </Card>
   )

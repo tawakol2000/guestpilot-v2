@@ -1,10 +1,13 @@
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { execFile } from 'child_process';
+import * as path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { AuthenticatedRequest } from '../types';
 import { appendLearnedAnswer } from '../services/rag.service';
 import { extractIntent } from '../services/intent-extractor.service';
-import { reinitializeClassifier } from '../services/classifier.service';
+import { reinitializeClassifier, loadLrWeightsMetadata } from '../services/classifier.service';
+import { TRAINING_EXAMPLES } from '../services/classifier-data';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -300,6 +303,79 @@ export function makeKnowledgeController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[Knowledge] gapAnalysis error:', err);
         res.status(500).json({ error: 'Failed to run gap analysis' });
+      }
+    },
+
+    async retrainClassifier(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+
+        // 1. Fetch all active ClassifierExample from DB (global — no tenantId filter)
+        const dbExamples = await prisma.classifierExample.findMany({
+          where: { active: true },
+          select: { text: true, labels: true },
+        });
+
+        // 2. Merge hardcoded base examples + DB examples (deduplicated by text)
+        const baseExamples = TRAINING_EXAMPLES.map(ex => ({
+          text: ex.text,
+          labels: ex.labels,
+        }));
+        const baseTexts = new Set(baseExamples.map(e => e.text));
+        const newExamples = dbExamples
+          .map(ex => ({ text: ex.text, labels: ex.labels as string[] }))
+          .filter(e => !baseTexts.has(e.text));
+        const mergedExamples = [...baseExamples, ...newExamples];
+
+        // 3. Get Cohere API key
+        const cohereApiKey = process.env.COHERE_API_KEY;
+        if (!cohereApiKey) {
+          res.status(400).json({ error: 'COHERE_API_KEY not configured — required for LR training' });
+          return;
+        }
+
+        // 4. Call the Python training script using execFile (safe from injection)
+        const scriptPath = path.join(__dirname, '../../scripts/train_classifier.py');
+        const outputPath = path.join(__dirname, '../config/classifier-weights.json');
+
+        const summary = await new Promise<any>((resolve, reject) => {
+          const child = execFile('python3', [scriptPath, '--output', outputPath], {
+            timeout: 120000, // 2 min max
+          }, (error, stdout, stderr) => {
+            if (error) {
+              console.error('[retrainClassifier] Script error:', error.message);
+              console.error('[retrainClassifier] stderr:', stderr);
+              reject(new Error(`Training script failed: ${error.message}\n${stderr}`));
+              return;
+            }
+
+            if (stderr) {
+              console.log('[retrainClassifier] Progress:', stderr);
+            }
+
+            try {
+              const result = JSON.parse(stdout);
+              resolve(result);
+            } catch (parseErr) {
+              reject(new Error(`Failed to parse training output: ${stdout}`));
+            }
+          });
+
+          // Write input to stdin
+          child.stdin?.write(JSON.stringify({ examples: mergedExamples, cohereApiKey }));
+          child.stdin?.end();
+        });
+
+        // 5. Reload LR weights metadata
+        loadLrWeightsMetadata();
+
+        // 6. Trigger atomic swap reinit of the KNN classifier
+        await reinitializeClassifier(tenantId, prisma);
+
+        res.json(summary);
+      } catch (err: any) {
+        console.error('[Knowledge] retrainClassifier error:', err);
+        res.status(500).json({ error: err.message || 'Failed to retrain classifier' });
       }
     },
 

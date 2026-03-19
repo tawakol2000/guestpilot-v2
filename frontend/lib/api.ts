@@ -813,6 +813,7 @@ export async function apiGetClassifierStatus(): Promise<{
   initDurationMs: number
   sopChunkCount: number
   bakedInCount: number
+  classifierType?: 'knn' | 'lr'
 }> {
   return apiFetch('/api/knowledge/classifier-status')
 }
@@ -985,6 +986,7 @@ export async function apiGetOpusReportRaw(id: string): Promise<Record<string, un
 export interface AccuracyMetrics {
   overall: { correct: number; total: number; accuracy: number }
   emptyLabelRate: number
+  overrideRate?: number
   perCategory: Array<{ category: string; correct: number; total: number; accuracy: number }>
   selfImprovement: {
     totalActive: number
@@ -1047,4 +1049,21 @@ export async function apiBatchClassify(messages: string[], voteThreshold?: numbe
     method: 'POST',
     body: JSON.stringify({ messages, voteThreshold }),
   })
+}
+
+// ─── LR Classifier Retrain ────────────────────────────────────────────────────
+
+export interface RetrainResult {
+  success: boolean
+  exampleCount: number
+  classes: number
+  crossValAccuracy: number
+  globalThreshold: number
+  trainDurationMs: number
+  message: string
+  error?: string
+}
+
+export async function apiRetrainClassifier(): Promise<RetrainResult> {
+  return apiFetch('/api/knowledge/retrain-classifier', { method: 'POST' })
 }

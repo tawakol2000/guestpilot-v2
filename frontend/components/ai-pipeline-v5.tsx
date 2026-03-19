@@ -7,7 +7,7 @@ import {
   ArrowRight, Layers, Target, Shield, Sparkles, BarChart3, TrendingUp, Radio,
   Camera,
 } from 'lucide-react'
-import { apiFetchAccuracy, apiGenerateSnapshot, type AccuracyMetrics } from '../lib/api'
+import { apiFetchAccuracy, apiGenerateSnapshot, apiGetClassifierStatus, type AccuracyMetrics } from '../lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -115,6 +115,12 @@ interface PipelineFeedEntry {
     classifierLabels: string[]
     classifierTopSim: number | null
     classifierMethod: string | null
+    // LR classifier fields
+    classifierConfidence?: number | null
+    confidenceTier?: 'high' | 'medium' | 'low' | null
+    lmOverride?: boolean
+    classifierPick?: string | null
+    llmPick?: string | null
     // Tier 3
     tier3Reinjected: boolean
     tier3TopicSwitch: boolean
@@ -587,11 +593,15 @@ function MetaPill({ label, value, color }: { label: string; value: string; color
 function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, classifierLabels: [] as string[], classifierTopSim: null as number | null, classifierMethod: null as string | null, tier3Reinjected: false, tier3TopicSwitch: false, tier3ReinjectedLabels: [] as string[], tier2Output: null as any, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
+  const [knnDiagExpanded, setKnnDiagExpanded] = useState(false)
+  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, classifierLabels: [] as string[], classifierTopSim: null as number | null, classifierMethod: null as string | null, classifierConfidence: null as number | null, confidenceTier: null as string | null, lmOverride: false, classifierPick: null as string | null, llmPick: null as string | null, tier3Reinjected: false, tier3TopicSwitch: false, tier3ReinjectedLabels: [] as string[], tier2Output: null as any, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
   const ev = entry.evaluation
   const hasError = !!entry.error
   const tierKey = (p.tier || 'unknown') as keyof typeof TIER_COLORS
   const tc = TIER_COLORS[tierKey] || TIER_COLORS.unknown
+
+  // T031: Detect if this is an LR engine entry (per-entry, not global)
+  const isLrEntry = !!(p.classifierConfidence != null || p.classifierMethod === 'lr_sigmoid')
 
   // Judge verdict icon
   const JudgeIcon = ev
@@ -664,9 +674,68 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
         {/* Tier badge */}
         <TierBadge tier={p.tier} />
 
-        {/* Similarity */}
-        {p.topSimilarity != null && (
-          <SimilarityBar score={p.topSimilarity} width={40} />
+        {/* T031: LR confidence or KNN similarity — per entry */}
+        {isLrEntry ? (
+          <>
+            {/* LR confidence percentage */}
+            {p.classifierConfidence != null && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  fontFamily: T.font.mono,
+                  color: p.classifierConfidence >= 0.75 ? T.status.green : p.classifierConfidence >= 0.5 ? T.status.amber : T.status.red,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {(p.classifierConfidence * 100).toFixed(0)}%
+              </span>
+            )}
+            {/* Confidence tier badge */}
+            {p.confidenceTier && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  fontFamily: T.font.sans,
+                  background: p.confidenceTier === 'high' ? '#DCFCE7' : p.confidenceTier === 'medium' ? '#FEF3C7' : '#FEE2E2',
+                  color: p.confidenceTier === 'high' ? T.status.green : p.confidenceTier === 'medium' ? T.status.amber : T.status.red,
+                  padding: '2px 6px',
+                  borderRadius: 999,
+                  border: `1px solid ${p.confidenceTier === 'high' ? 'rgba(21,128,61,0.2)' : p.confidenceTier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {p.confidenceTier}
+              </span>
+            )}
+            {/* LLM Override badge */}
+            {p.lmOverride && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 600,
+                  fontFamily: T.font.sans,
+                  background: '#FFF7ED',
+                  color: '#C2410C',
+                  padding: '2px 6px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(194,65,12,0.2)',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                LLM Override
+              </span>
+            )}
+          </>
+        ) : (
+          /* KNN similarity — existing display */
+          p.topSimilarity != null ? (
+            <SimilarityBar score={p.topSimilarity} width={40} />
+          ) : null
         )}
 
         {/* SOP count */}
@@ -761,65 +830,220 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             </div>
           </TimelineStep>
 
-          {/* Step 2: Tier 1 -- Embedding Classifier */}
+          {/* Step 2: Tier 1 -- Embedding Classifier (adapts per-entry for LR vs KNN) */}
           <TimelineStep
             stepNum={2}
-            title="Tier 1 -- Embedding Classifier"
+            title={isLrEntry ? 'Tier 1 -- LR Sigmoid Classifier' : 'Tier 1 -- Embedding Classifier'}
             color={TIER_COLORS.tier1.fg}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {/* Method + classifier similarity */}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                {(p.classifierMethod || ev?.classifierMethod) && (
-                  <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
-                )}
-                {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
-                    <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
-                  </div>
-                )}
-              </div>
-              {/* Classifier labels */}
-              {(() => {
-                const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
-                return labels.length > 0 ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
-                    {labels.map((label: string, i: number) => {
-                      const sc = sopBadgeColor(label)
-                      return (
-                        <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
-                          {label}
+              {isLrEntry ? (
+                /* ── T031: LR Engine display ── */
+                <>
+                  {/* LR primary classification */}
+                  {(() => {
+                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
+                    const primaryLabel = labels[0] || '(none)'
+                    const conf = p.classifierConfidence != null ? p.classifierConfidence : 0
+                    const tier = p.confidenceTier || 'low'
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, fontFamily: T.font.sans, color: T.text.primary }}>
+                          LR: {primaryLabel} ({(conf * 100).toFixed(0)}%)
                         </span>
-                      )
-                    })}
-                  </div>
-                ) : (
+                        <span style={{ fontSize: 9, fontFamily: T.font.mono, color: T.text.tertiary }}>—</span>
+                        <span style={{ fontSize: 10, fontFamily: T.font.sans, color: T.text.secondary }}>Tier:</span>
+                        {/* Confidence tier colored badge */}
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            fontFamily: T.font.sans,
+                            background: tier === 'high' ? '#DCFCE7' : tier === 'medium' ? '#FEF3C7' : '#FEE2E2',
+                            color: tier === 'high' ? T.status.green : tier === 'medium' ? T.status.amber : T.status.red,
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            border: `1px solid ${tier === 'high' ? 'rgba(21,128,61,0.2)' : tier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                          }}
+                        >
+                          {tier}
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                  {/* All classifier labels */}
+                  {(() => {
+                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
+                    return labels.length > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
+                        {labels.map((label: string, i: number) => {
+                          const sc = sopBadgeColor(label)
+                          return (
+                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
+                              {label}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    ) : null
+                  })()}
+
+                  {/* LLM Override indicator */}
+                  {p.lmOverride && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          fontFamily: T.font.sans,
+                          background: '#FFF7ED',
+                          color: '#C2410C',
+                          padding: '3px 10px',
+                          borderRadius: 999,
+                          border: '1px solid rgba(194,65,12,0.2)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <Sparkles size={10} />
+                        LLM Override: {p.classifierPick || '?'} → {p.llmPick || '?'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Verdict */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
-                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, fontStyle: 'italic' }}>no labels (contextual)</span>
+                    {p.tier === 'tier1' ? (
+                      <>
+                        <CheckCircle2 size={13} color={T.status.green} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
+                          Confident
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle size={13} color={T.status.amber} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
+                          Low confidence — routed to {p.tier === 'tier3_cache' ? 'Tier 3' : p.tier === 'tier2_needed' ? 'Tier 2' : 'fallback'}
+                        </span>
+                      </>
+                    )}
                   </div>
-                )
-              })()}
-              {/* Verdict */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {p.tier === 'tier1' ? (
-                  <>
-                    <CheckCircle2 size={13} color={T.status.green} />
-                    <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
-                      Confident
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle size={13} color={T.status.amber} />
-                    <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
-                      Low confidence — routed to {p.tier === 'tier3_cache' ? 'Tier 3' : p.tier === 'tier2_needed' ? 'Tier 2' : 'fallback'}
-                    </span>
-                  </>
-                )}
-              </div>
+
+                  {/* Collapsible KNN Diagnostic section */}
+                  <div style={{ marginTop: 4 }}>
+                    <div
+                      onClick={(e) => { e.stopPropagation(); setKnnDiagExpanded(v => !v) }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        padding: '4px 0',
+                      }}
+                    >
+                      <div
+                        style={{
+                          transition: 'transform 0.2s ease',
+                          transform: knnDiagExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <ChevronRight size={12} color={T.text.tertiary} />
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        KNN Diagnostic
+                      </span>
+                      {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
+                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                          (sim: {(p.classifierTopSim ?? ev?.classifierTopSim ?? 0).toFixed(2)})
+                        </span>
+                      )}
+                    </div>
+                    {knnDiagExpanded && (
+                      <div style={{ paddingLeft: 18, paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 6, animation: 'fadeInUp 0.2s ease-out both' }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {(p.classifierMethod || ev?.classifierMethod) && (
+                            <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
+                          )}
+                          {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
+                              <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
+                            </div>
+                          )}
+                        </div>
+                        {p.topSimilarity != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>top similarity:</span>
+                            <SimilarityBar score={p.topSimilarity} width={80} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                /* ── KNN Engine display (existing) ── */
+                <>
+                  {/* Method + classifier similarity */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {(p.classifierMethod || ev?.classifierMethod) && (
+                      <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
+                    )}
+                    {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
+                        <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
+                      </div>
+                    )}
+                  </div>
+                  {/* Classifier labels */}
+                  {(() => {
+                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
+                    return labels.length > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
+                        {labels.map((label: string, i: number) => {
+                          const sc = sopBadgeColor(label)
+                          return (
+                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
+                              {label}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
+                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, fontStyle: 'italic' }}>no labels (contextual)</span>
+                      </div>
+                    )
+                  })()}
+                  {/* Verdict */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {p.tier === 'tier1' ? (
+                      <>
+                        <CheckCircle2 size={13} color={T.status.green} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
+                          Confident
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle size={13} color={T.status.amber} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
+                          Low confidence — routed to {p.tier === 'tier3_cache' ? 'Tier 3' : p.tier === 'tier2_needed' ? 'Tier 2' : 'fallback'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </TimelineStep>
 
@@ -1192,11 +1416,23 @@ export default function AiPipelineV5(): React.ReactElement {
   const [accuracyPeriod, setAccuracyPeriod] = useState<'7d' | '30d'>('30d')
   const [accuracyLoading, setAccuracyLoading] = useState(false)
 
+  // T029: Engine type auto-detection
+  const [engineType, setEngineType] = useState<'knn' | 'lr'>('knn')
+
   // Snapshot state (T026)
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [snapshotMessage, setSnapshotMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => { ensureStyles() }, [])
+
+  // T029: Fetch classifier status to detect engine type
+  useEffect(() => {
+    apiGetClassifierStatus()
+      .then(status => {
+        if (status.classifierType === 'lr') setEngineType('lr')
+      })
+      .catch(() => { /* keep default knn */ })
+  }, [])
 
   // Fetch accuracy metrics when period changes
   useEffect(() => {
@@ -1477,8 +1713,44 @@ export default function AiPipelineV5(): React.ReactElement {
                 fontFamily: T.font.sans,
               }}
             >
-              Classifier Accuracy
+              {engineType === 'lr' ? 'LR Confidence' : 'Classifier Accuracy'}
             </span>
+            {/* Engine type badge */}
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                fontFamily: T.font.mono,
+                background: engineType === 'lr' ? '#EDE9FE' : '#DCFCE7',
+                color: engineType === 'lr' ? PURPLE : T.status.green,
+                padding: '2px 6px',
+                borderRadius: 999,
+                border: `1px solid ${engineType === 'lr' ? `${PURPLE}30` : 'rgba(21,128,61,0.2)'}`,
+              }}
+            >
+              {engineType === 'lr' ? 'LR Engine' : 'KNN Engine'}
+            </span>
+            {/* T014a: Override rate warning */}
+            {accuracy && typeof accuracy.overrideRate === 'number' && accuracy.overrideRate > 0.15 && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  fontFamily: T.font.sans,
+                  background: accuracy.overrideRate > 0.25 ? '#FEE2E2' : '#FEF3C7',
+                  color: accuracy.overrideRate > 0.25 ? T.status.red : '#92400E',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  border: `1px solid ${accuracy.overrideRate > 0.25 ? 'rgba(220,38,38,0.2)' : 'rgba(146,64,14,0.15)'}`,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <AlertTriangle size={10} />
+                Classifier needs retraining (override rate: {(accuracy.overrideRate * 100).toFixed(0)}%)
+              </span>
+            )}
             {/* Period toggle */}
             <div style={{ display: 'flex', gap: 2, marginLeft: 8 }}>
               {(['7d', '30d'] as const).map(p => (
@@ -1572,7 +1844,7 @@ export default function AiPipelineV5(): React.ReactElement {
         ) : accuracy ? (
           <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-              {/* Card 1: Classifier Accuracy */}
+              {/* Card 1: Classifier Accuracy / LR Confidence */}
               <div
                 style={{
                   flex: 1,
@@ -1584,7 +1856,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 }}
               >
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 4 }}>
-                  Classifier Accuracy
+                  {engineType === 'lr' ? 'LR Confidence' : 'Classifier Accuracy'}
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: accuracy.overall.accuracy >= 0.8 ? T.status.green : accuracy.overall.accuracy >= 0.6 ? T.status.amber : T.status.red, fontFamily: T.font.sans, lineHeight: 1.1 }}>
                   {(accuracy.overall.accuracy * 100).toFixed(1)}%

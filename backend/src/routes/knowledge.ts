@@ -8,6 +8,7 @@ import { addExample, getActiveExamples, getExampleByText } from '../services/cla
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
+import { getTenantAiConfig } from '../services/tenant-config.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -27,11 +28,23 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // GET /api/knowledge/classifier-status — KNN classifier health check
+  // GET /api/knowledge/classifier-status — classifier health check (KNN + LR)
   router.get('/classifier-status', async (req: any, res) => {
     try {
+      const tenantId = req.tenantId as string;
       const status = getClassifierStatus();
-      res.json(status);
+      const config = await getTenantAiConfig(tenantId, prisma);
+      res.json({
+        ...status,
+        classifierType: 'lr',
+        lrAccuracy: status.lrAccuracy,
+        lastTrainedAt: status.lastTrainedAt,
+        retrainAvailable: true,
+        confidenceTiers: {
+          highThreshold: (config as any).highConfidenceThreshold || 0.85,
+          lowThreshold: (config as any).lowConfidenceThreshold || 0.55,
+        },
+      });
     } catch (err) {
       console.error('[Knowledge] classifier-status failed:', err);
       res.status(500).json({ error: 'Failed to get classifier status' });
@@ -584,6 +597,9 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       res.status(500).json({ error: 'Failed to reject classifier example' });
     }
   });
+
+  // POST /api/knowledge/retrain-classifier — T003: retrain LR classifier from all examples
+  router.post('/retrain-classifier', ((req, res) => ctrl.retrainClassifier(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   // POST /api/knowledge/batch-classify — T022-T023: batch classify messages
   router.post('/batch-classify', async (req: any, res) => {

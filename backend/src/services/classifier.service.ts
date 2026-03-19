@@ -14,9 +14,10 @@
  * Deterministic: same input always produces same output
  */
 
+import path from 'path';
+import fs from 'fs';
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch } from './embeddings.service';
-import { rerank, isRerankEnabled } from './rerank.service';
 import {
   TRAINING_EXAMPLES,
   SOP_CONTENT,
@@ -48,9 +49,49 @@ export function getClassifierThresholds(): { voteThreshold: number; contextualGa
 
 // ─── State (atomic swap pattern — FR-007) ───────────────────────────────
 interface ClassifierState {
+  // Existing fields:
   examples: TrainingExample[];
   embeddings: number[][];
   initDurationMs: number;
+  // LR classifier (T005):
+  lrWeights: {
+    classes: string[];
+    coefficients: number[][];  // [n_classes x embedding_dim]
+    intercepts: number[];      // [n_classes]
+  } | null;
+  lrThresholds: {
+    global: number;
+    perCategory: Record<string, number>;
+  } | null;
+  centroids: Record<string, number[]>;  // mean embedding per category
+  calibration: {
+    crossValAccuracy: number;
+    perCategoryAccuracy: Record<string, number>;
+  } | null;
+  trainedAt: string | null;
+}
+
+// ─── Exported result types ──────────────────────────────────────────────
+
+export interface ClassificationResult {
+  // LR decision (primary)
+  labels: string[];
+  confidence: number;
+  tier: 'high' | 'medium' | 'low';
+  topCandidates: Array<{ label: string; confidence: number }>;
+  method: string;  // 'lr_sigmoid'
+  // KNN diagnostic (for pipeline display)
+  knnDiagnostic: {
+    topSimilarity: number;
+    method: string;
+    labels: string[];
+    neighbors: Array<{ text: string; labels: string[]; similarity: number }>;
+  };
+  // Backward-compat surface (consumed by rag.service, knowledge routes, batchClassify)
+  topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
+  neighbors: Array<{ labels: string[]; similarity: number }>;
+  tokensUsed: number;
+  topSimilarity: number;
 }
 
 let _initialized = false;
@@ -70,6 +111,8 @@ export function getClassifierStatus(): {
   initDurationMs: number;
   sopChunkCount: number;
   bakedInCount: number;
+  lrAccuracy: number | null;
+  lastTrainedAt: string | null;
 } {
   return {
     initialized: _initialized,
@@ -77,7 +120,68 @@ export function getClassifierStatus(): {
     initDurationMs: _state?.initDurationMs ?? 0,
     sopChunkCount: Object.keys(SOP_CONTENT).length,
     bakedInCount: BAKED_IN_CHUNKS.size,
+    lrAccuracy: _state?.calibration?.crossValAccuracy ?? null,
+    lastTrainedAt: _state?.trainedAt ?? null,
   };
+}
+
+/**
+ * Return the current state's calibration data (for classifier-status endpoint).
+ */
+export function getClassifierCalibration(): {
+  crossValAccuracy: number;
+  perCategoryAccuracy: Record<string, number>;
+} | null {
+  return _state?.calibration ?? null;
+}
+
+/**
+ * Load full LR weights + metadata from classifier-weights.json (if it exists).
+ * Populates lrWeights, lrThresholds, centroids, calibration, trainedAt on the current state.
+ * Called after training completes and on startup/reinit.
+ */
+export function loadLrWeightsMetadata(): void {
+  try {
+    const weightsPath = path.join(__dirname, '../config/classifier-weights.json');
+    if (!fs.existsSync(weightsPath)) {
+      console.log('[Classifier] No classifier-weights.json found — LR classifier not loaded');
+      return;
+    }
+
+    const data = JSON.parse(fs.readFileSync(weightsPath, 'utf-8'));
+
+    const lrWeights = (data.classes && data.coefficients && data.intercepts) ? {
+      classes: data.classes as string[],
+      coefficients: data.coefficients as number[][],
+      intercepts: data.intercepts as number[],
+    } : null;
+
+    const lrThresholds = data.thresholds ? {
+      global: data.thresholds.global ?? 0.5,
+      perCategory: data.thresholds.perCategory ?? {},
+    } : null;
+
+    const centroids: Record<string, number[]> = data.centroids ?? {};
+
+    const calibration = data.calibration ? {
+      crossValAccuracy: data.calibration.crossValAccuracy ?? 0,
+      perCategoryAccuracy: data.calibration.perCategoryAccuracy ?? {},
+    } : null;
+
+    const trainedAt: string | null = data.trainedAt ?? null;
+
+    if (_state) {
+      _state.lrWeights = lrWeights;
+      _state.lrThresholds = lrThresholds;
+      _state.centroids = centroids;
+      _state.calibration = calibration;
+      _state.trainedAt = trainedAt;
+    }
+
+    console.log(`[Classifier] LR weights loaded: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}, trainedAt=${trainedAt}`);
+  } catch (err) {
+    console.warn('[Classifier] Could not load LR weights:', err);
+  }
 }
 
 /**
@@ -113,7 +217,16 @@ export async function initializeClassifier(): Promise<void> {
       const initDurationMs = Date.now() - startMs;
 
       // Atomic swap — readers see either the old state or the complete new state
-      _state = { examples, embeddings, initDurationMs };
+      _state = {
+        examples,
+        embeddings,
+        initDurationMs,
+        lrWeights: null,
+        lrThresholds: null,
+        centroids: {},
+        calibration: null,
+        trainedAt: null,
+      };
       _initialized = true;
       console.log(`[Classifier] Initialized: ${examples.length} examples, ${initDurationMs}ms`);
     } catch (err) {
@@ -125,30 +238,71 @@ export async function initializeClassifier(): Promise<void> {
   return _initializingPromise;
 }
 
-/**
- * Classify a guest message and return the SOP chunk IDs to retrieve.
- * Returns empty labels if classifier not initialized (graceful degradation).
- */
-export async function classifyMessage(query: string, overrideVoteThreshold?: number): Promise<{
+// ─── LR Inference (T006) ──────────────────────────────────────────────────
+
+function classifyWithLR(
+  embedding: number[],
+  state: ClassifierState,
+  highThreshold: number = 0.85,
+  lowThreshold: number = 0.55
+): {
   labels: string[];
-  method: string;
-  topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
-  neighbors: Array<{ labels: string[]; similarity: number }>;
-  tokensUsed: number;
+  confidence: number;
+  topCandidates: Array<{ label: string; confidence: number }>;
+  tier: 'high' | 'medium' | 'low';
+} {
+  if (!state.lrWeights) throw new Error('LR classifier not trained. Run retrain first.');
+
+  const { classes, coefficients, intercepts } = state.lrWeights;
+  const perCatThresholds = state.lrThresholds?.perCategory || {};
+
+  // Compute sigmoid scores per label (OneVsRest)
+  const scores: Array<{ label: string; confidence: number }> = [];
+  for (let i = 0; i < classes.length; i++) {
+    // Dot product + intercept
+    let logit = intercepts[i];
+    for (let j = 0; j < embedding.length; j++) {
+      logit += coefficients[i][j] * embedding[j];
+    }
+    // Sigmoid
+    const prob = 1 / (1 + Math.exp(-logit));
+    scores.push({ label: classes[i], confidence: prob });
+  }
+
+  // Sort by confidence descending
+  scores.sort((a, b) => b.confidence - a.confidence);
+
+  // Get labels above per-category threshold
+  const labels = scores
+    .filter(s => s.confidence >= (perCatThresholds[s.label] || state.lrThresholds?.global || 0.5))
+    .map(s => s.label);
+
+  const maxConfidence = scores.length > 0 ? scores[0].confidence : 0;
+  const tier: 'high' | 'medium' | 'low' =
+    maxConfidence >= highThreshold ? 'high' :
+    maxConfidence >= lowThreshold ? 'medium' : 'low';
+
+  return {
+    labels,
+    confidence: maxConfidence,
+    topCandidates: scores.slice(0, 5),  // top 5 for logging
+    tier,
+  };
+}
+
+// ─── KNN Diagnostic (internal — runs alongside LR for pipeline display) ──
+
+function runKnnDiagnostic(
+  queryEmbedding: number[],
+  state: ClassifierState,
+  overrideVoteThreshold?: number
+): {
   topSimilarity: number;
-}> {
-  // Snapshot state for thread-safe reads during classification (FR-007)
-  const state = _state;
-  if (!state || state.embeddings.length === 0) {
-    return { labels: [], method: 'classifier_not_initialized', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
-  }
-
-  // Embed the query (classification mode for Cohere input_type)
-  const queryEmbedding = await embedText(query, 'classification');
-  if (!queryEmbedding || queryEmbedding.length === 0) {
-    return { labels: [], method: 'embedding_failed', topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0 };
-  }
-
+  method: string;
+  labels: string[];
+  neighbors: Array<{ text: string; labels: string[]; similarity: number }>;
+  topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
+} {
   // Compute cosine similarity with all training examples
   const similarities: Array<{ index: number; similarity: number }> = [];
   for (let i = 0; i < state.embeddings.length; i++) {
@@ -158,28 +312,9 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
   }
   similarities.sort((a, b) => b.similarity - a.similarity);
 
-  // Get wider candidate pool for potential reranking
-  const RERANK_CANDIDATES = 10;
-  const candidatePool = similarities.slice(0, isRerankEnabled() ? RERANK_CANDIDATES : K);
-
-  // Rerank candidates using cross-encoder if available (much better cross-lingual matching)
-  let topK: typeof candidatePool;
-  let classifyMethod = 'knn_vote';
-  if (isRerankEnabled() && candidatePool.length > K) {
-    const candidateTexts = candidatePool.map(c => state.examples[c.index].text);
-    const reranked = await rerank(query, candidateTexts, K);
-    if (reranked && reranked.length > 0) {
-      topK = reranked.map(r => ({
-        index: candidatePool[r.index].index,
-        similarity: candidatePool[r.index].similarity, // keep cosine for thresholds; rerank only picks WHICH neighbors
-      }));
-      classifyMethod = 'knn_rerank';
-    } else {
-      topK = candidatePool.slice(0, K); // fallback to cosine-only
-    }
-  } else {
-    topK = candidatePool.slice(0, K);
-  }
+  // KNN-3 cosine-only (diagnostic — no async rerank)
+  const topK = similarities.slice(0, K);
+  const knnMethod = 'knn_vote';
 
   const topKDetails = topK.map(({ index, similarity }) => ({
     index,
@@ -190,30 +325,25 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
 
   const topSimilarity = topK.length > 0 ? topK[0].similarity : 0;
 
-  const neighbors = topKDetails.map(n => ({ labels: n.labels, similarity: n.similarity }));
+  const knnNeighbors = topKDetails.map(n => ({
+    text: n.text,
+    labels: n.labels,
+    similarity: n.similarity,
+  }));
 
-  // Step 1: Contextual gate — "contextual" label means no SOP needed
-  const best = topK[0];
-  if (best && state.examples[best.index].labels.includes('contextual') && best.similarity > _contextualGate) {
-    return { labels: ['contextual'], method: 'contextual_match', topK: topKDetails, neighbors, tokensUsed: 0, topSimilarity };
-  }
-
-  // Step 2: Weighted voting
+  // Weighted voting for KNN labels
   const votes: Record<string, number> = {};
   const labelCounts: Record<string, number> = {};
-
   for (const { index, similarity } of topK) {
     for (const label of state.examples[index].labels) {
       votes[label] = (votes[label] || 0) + similarity;
       labelCounts[label] = (labelCounts[label] || 0) + 1;
     }
   }
-
   const totalWeight = topK.reduce((sum, { similarity }) => sum + similarity, 0);
 
-  // Step 3: Filter by vote threshold AND neighbor agreement
   const effectiveThreshold = overrideVoteThreshold ?? _voteThreshold;
-  const candidateLabels = Object.entries(votes)
+  const knnLabels = Object.entries(votes)
     .filter(([label, weight]) =>
       weight / totalWeight > effectiveThreshold &&
       (labelCounts[label] || 0) >= MIN_NEIGHBOR_AGREEMENT
@@ -221,10 +351,78 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
     .sort((a, b) => b[1] - a[1])
     .map(([label]) => label);
 
-  // Step 4: Apply token budget
-  const { labels, tokensUsed } = applyTokenBudget(candidateLabels);
+  return {
+    topSimilarity,
+    method: knnMethod,
+    labels: knnLabels,
+    neighbors: knnNeighbors,
+    topK: topKDetails,
+  };
+}
 
-  return { labels, method: classifyMethod, topK: topKDetails, neighbors, tokensUsed, topSimilarity };
+/**
+ * Classify a guest message using LR (primary) with KNN diagnostic.
+ * Returns empty labels if classifier not initialized (graceful degradation).
+ * Requires LR weights to be loaded — throws if not trained.
+ */
+export async function classifyMessage(query: string, overrideVoteThreshold?: number): Promise<ClassificationResult> {
+  // Snapshot state for thread-safe reads during classification (FR-007)
+  const state = _state;
+  if (!state || state.embeddings.length === 0) {
+    return {
+      labels: [], confidence: 0, tier: 'low', topCandidates: [], method: 'classifier_not_initialized',
+      knnDiagnostic: { topSimilarity: 0, method: 'none', labels: [], neighbors: [] },
+      topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0,
+    };
+  }
+
+  // Embed the query (classification mode for Cohere input_type)
+  const queryEmbedding = await embedText(query, 'classification');
+  if (!queryEmbedding || queryEmbedding.length === 0) {
+    return {
+      labels: [], confidence: 0, tier: 'low', topCandidates: [], method: 'embedding_failed',
+      knnDiagnostic: { topSimilarity: 0, method: 'none', labels: [], neighbors: [] },
+      topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0,
+    };
+  }
+
+  // Require LR weights — fail loudly if not trained
+  if (state.lrWeights === null) {
+    throw new Error('LR classifier not trained. Run POST /api/knowledge/retrain-classifier first.');
+  }
+
+  // Primary: LR sigmoid classification (T006)
+  const lrResult = classifyWithLR(queryEmbedding, state);
+
+  // Diagnostic: KNN (for pipeline display, kept for backward compat)
+  const knnDiag = runKnnDiagnostic(queryEmbedding, state, overrideVoteThreshold);
+
+  // Apply token budget to LR labels
+  const { labels: budgetedLabels, tokensUsed } = applyTokenBudget(lrResult.labels);
+
+  // Backward-compat neighbors surface (from KNN diagnostic)
+  const neighbors = knnDiag.topK.map(n => ({ labels: n.labels, similarity: n.similarity }));
+
+  return {
+    // LR decision (primary)
+    labels: budgetedLabels,
+    confidence: lrResult.confidence,
+    tier: lrResult.tier,
+    topCandidates: lrResult.topCandidates,
+    method: 'lr_sigmoid',
+    // KNN diagnostic
+    knnDiagnostic: {
+      topSimilarity: knnDiag.topSimilarity,
+      method: knnDiag.method,
+      labels: knnDiag.labels,
+      neighbors: knnDiag.neighbors,
+    },
+    // Backward-compat surface
+    topK: knnDiag.topK,
+    neighbors,
+    tokensUsed,
+    topSimilarity: knnDiag.topSimilarity,
+  };
 }
 
 /**
@@ -326,8 +524,63 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
 
       const initDurationMs = Date.now() - startMs;
 
+      // Load LR weights from classifier-weights.json (T008)
+      let lrWeights: ClassifierState['lrWeights'] = null;
+      let lrThresholds: ClassifierState['lrThresholds'] = null;
+      let centroids: ClassifierState['centroids'] = {};
+      let calibration: ClassifierState['calibration'] = null;
+      let trainedAt: ClassifierState['trainedAt'] = null;
+
+      try {
+        const weightsPath = path.join(__dirname, '../config/classifier-weights.json');
+        if (fs.existsSync(weightsPath)) {
+          const data = JSON.parse(fs.readFileSync(weightsPath, 'utf-8'));
+
+          if (data.classes && data.coefficients && data.intercepts) {
+            lrWeights = {
+              classes: data.classes as string[],
+              coefficients: data.coefficients as number[][],
+              intercepts: data.intercepts as number[],
+            };
+          }
+
+          if (data.thresholds) {
+            lrThresholds = {
+              global: data.thresholds.global ?? 0.5,
+              perCategory: data.thresholds.perCategory ?? {},
+            };
+          }
+
+          centroids = data.centroids ?? {};
+
+          if (data.calibration) {
+            calibration = {
+              crossValAccuracy: data.calibration.crossValAccuracy ?? 0,
+              perCategoryAccuracy: data.calibration.perCategoryAccuracy ?? {},
+            };
+          }
+
+          trainedAt = data.trainedAt ?? null;
+
+          console.log(`[Classifier] LR weights loaded during reinit: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}`);
+        } else {
+          console.log('[Classifier] No classifier-weights.json found during reinit — LR classifier not loaded');
+        }
+      } catch (weightsErr) {
+        console.warn('[Classifier] Could not load classifier-weights.json during reinit:', weightsErr);
+      }
+
       // Atomic swap — readers see either the old state or the complete new state (FR-007)
-      _state = { examples, embeddings, initDurationMs };
+      _state = {
+        examples,
+        embeddings,
+        initDurationMs,
+        lrWeights,
+        lrThresholds,
+        centroids,
+        calibration,
+        trainedAt,
+      };
       _initialized = true;
       console.log(`[Classifier] Re-initialized: ${examples.length} examples (${newExamples.length} from DB), ${initDurationMs}ms`);
     } catch (err) {

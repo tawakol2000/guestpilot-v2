@@ -1757,6 +1757,7 @@ export async function generateAndSendAiReply(
           classifierLabels: classifierMeta.labels,
           classifierMethod: classifierMeta.method,
           classifierTopSim: classifierMeta.topSimilarity,
+          confidence: classifierMeta.confidence,
           neighbors: classifierMeta.neighbors,
           aiResponse: guestMessage,
           tier2Labels: tier2ResolvedLabels,
