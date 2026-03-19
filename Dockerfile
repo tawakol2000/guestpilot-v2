@@ -12,7 +12,7 @@ WORKDIR /app
 COPY backend/ ./
 
 # Install Node dependencies
-RUN npm ci
+RUN npm install
 
 # Build
 RUN npx prisma generate && npm run build
