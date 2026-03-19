@@ -194,6 +194,8 @@ export function aiPipelineRouter(prisma: PrismaClient) {
             // Tier 1 details
             classifierLabels: ragCtx?.classifierLabels || [],
             classifierTopSim: ragCtx?.classifierTopSim ?? null,
+            classifierConfidence: ragCtx?.classifierConfidence ?? null,
+            confidenceTier: ragCtx?.confidenceTier || null,
             classifierMethod: ragCtx?.classifierMethod || null,
             // Tier 3 details
             tier3Reinjected: ragCtx?.tier3Reinjected ?? false,
