@@ -929,8 +929,9 @@ Check-out: ${checkOut}
 Number of Guests: ${guestCount}
 `;
 
-  // Only include access info for confirmed/checked-in guests — NEVER for inquiries
-  if (reservationStatus !== 'INQUIRY') {
+  // SECURITY: Only include access codes for CONFIRMED or CHECKED_IN guests.
+  // Allowlist approach — any other status (INQUIRY, CANCELLED, CHECKED_OUT, unknown) is blocked.
+  if (reservationStatus === 'CONFIRMED' || reservationStatus === 'CHECKED_IN') {
     info += '\n### ACCESS & CONNECTIVITY\n';
     if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
       info += `Door Code: ${listing.doorSecurityCode}\n`;

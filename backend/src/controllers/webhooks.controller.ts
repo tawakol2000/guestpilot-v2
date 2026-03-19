@@ -55,7 +55,10 @@ function toHostawayCommunicationType(channel: Channel): string {
 }
 
 function mapReservationStatus(status?: string): ReservationStatus {
-  if (!status) return ReservationStatus.CONFIRMED;
+  // SECURITY: Default to INQUIRY (most restrictive) — never default to CONFIRMED.
+  // CONFIRMED exposes door codes and WiFi to the guest. An unknown or missing status
+  // must NOT grant access to sensitive information.
+  if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
     case 'inquiry':
     case 'pending':
@@ -71,7 +74,8 @@ function mapReservationStatus(status?: string): ReservationStatus {
     case 'canceled':
       return ReservationStatus.CANCELLED;
     default:
-      return ReservationStatus.CONFIRMED;
+      console.warn(`[Webhook] Unknown reservation status "${status}" — defaulting to INQUIRY (safe)`);
+      return ReservationStatus.INQUIRY;
   }
 }
 
