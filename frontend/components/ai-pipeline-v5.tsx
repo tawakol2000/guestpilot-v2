@@ -7,7 +7,7 @@ import {
   ArrowRight, Layers, Target, Shield, Sparkles, BarChart3, TrendingUp, Radio,
   Camera,
 } from 'lucide-react'
-import { apiFetchAccuracy, apiGenerateSnapshot, apiGetClassifierStatus, type AccuracyMetrics } from '../lib/api'
+import { apiFetchAccuracy, apiGenerateSnapshot, type AccuracyMetrics } from '../lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
