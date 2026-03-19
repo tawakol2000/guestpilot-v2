@@ -975,7 +975,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                     )}
                   </div>
                 </>
-              )}
+              ) : null}
             </div>
           </TimelineStep>
 
