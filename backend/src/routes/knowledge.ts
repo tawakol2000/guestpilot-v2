@@ -623,6 +623,69 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // POST /api/knowledge/dedup-conversations
+  // One-time cleanup: finds reservations with duplicate conversations and removes the empty ones.
+  // Idempotent — safe to call multiple times. Required before adding @@unique constraint migration.
+  router.post('/dedup-conversations', async (req: any, res) => {
+    const tenantId = req.tenantId as string;
+    try {
+      // Find reservationIds that have more than one conversation for this tenant
+      const groups = await prisma.$queryRaw<Array<{ reservationId: string; cnt: bigint }>>`
+        SELECT "reservationId", COUNT(*) as cnt
+        FROM "Conversation"
+        WHERE "tenantId" = ${tenantId}
+        GROUP BY "reservationId"
+        HAVING COUNT(*) > 1
+      `;
+
+      const details: Array<{
+        reservationId: string;
+        winnerId: string;
+        removedIds: string[];
+        winnerMessageCount: number;
+        removedMessageCounts: number[];
+      }> = [];
+      let totalRemoved = 0;
+
+      for (const group of groups) {
+        const convs = await prisma.conversation.findMany({
+          where: { tenantId, reservationId: group.reservationId },
+          include: { _count: { select: { messages: true } } },
+          orderBy: [{ createdAt: 'desc' }],
+        });
+
+        // Sort: most messages first, then most recent
+        convs.sort((a, b) =>
+          b._count.messages - a._count.messages || b.createdAt.getTime() - a.createdAt.getTime()
+        );
+
+        const [winner, ...losers] = convs;
+        const loserIds = losers.map(c => c.id);
+
+        // Cancel pending AI replies on losers before deleting
+        await prisma.pendingAiReply.deleteMany({ where: { conversationId: { in: loserIds } } });
+
+        // Delete loser conversations
+        await prisma.conversation.deleteMany({ where: { id: { in: loserIds } } });
+
+        details.push({
+          reservationId: group.reservationId,
+          winnerId: winner.id,
+          removedIds: loserIds,
+          winnerMessageCount: winner._count.messages,
+          removedMessageCounts: losers.map(c => c._count.messages),
+        });
+        totalRemoved += loserIds.length;
+        console.log(`[Dedup] [${tenantId}] Reservation ${group.reservationId}: kept ${winner.id} (${winner._count.messages} msgs), removed ${loserIds.join(', ')}`);
+      }
+
+      res.json({ duplicatesFound: groups.length, conversationsRemoved: totalRemoved, details });
+    } catch (err) {
+      console.error('[Dedup] dedup-conversations failed:', err);
+      res.status(500).json({ error: 'Dedup failed' });
+    }
+  });
+
   router.get('/', ((req, res) => ctrl.list(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/', ((req, res) => ctrl.create(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/detect-gaps', ((req, res) => ctrl.detectGaps(req as unknown as AuthenticatedRequest, res)) as RequestHandler);

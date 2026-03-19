@@ -127,6 +127,7 @@ model Conversation {
   tasks                  Task[]
   knowledgeSuggestions   KnowledgeSuggestion[]
 
+  @@unique([tenantId, reservationId])
   @@index([tenantId])
   @@index([tenantId, lastMessageAt(sort: Desc)])
 }

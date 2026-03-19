@@ -515,11 +515,11 @@ async function handleNewReservation(
     },
   });
 
-  // G1: Create Conversation if one doesn't exist for this reservation
-  const existingConv = await prisma.conversation.findFirst({
-    where: { tenantId, reservationId: reservation.id },
-  });
-  if (!existingConv) {
+  // G1: Create Conversation if one doesn't exist for this reservation.
+  // Use create + P2002 catch instead of findFirst + create to avoid a race condition:
+  // reservation.created and message.received can both fire within milliseconds of each other,
+  // both pass the findFirst check before either commits, and both create a conversation.
+  try {
     await prisma.conversation.create({
       data: {
         tenantId,
@@ -532,6 +532,14 @@ async function handleNewReservation(
         lastMessageAt: new Date(),
       },
     });
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      // Unique constraint violation — another concurrent handler already created this conversation.
+      // This is expected when reservation.created and message.received race. Safe to ignore.
+      console.log(`[Webhook] [${tenantId}] Conversation for reservation ${reservation.id} already exists (concurrent create) — skipping`);
+    } else {
+      throw err;
+    }
   }
 
   // G8: SSE broadcast

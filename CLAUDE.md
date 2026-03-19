@@ -119,6 +119,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM + file-based weights JSON (003-ai-engine-fix)
 - TypeScript 5.x on Node.js 18+ (inference) + Python 3 (training) + Express 4.x, Prisma ORM, Cohere SDK, sklearn (Python), numpy (003-ai-engine-fix)
 - PostgreSQL (shared with existing service) + file-based LR weights JSON (003-ai-engine-fix)
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, PostgreSQL (004-fix-duplicate-convos)
+- PostgreSQL (existing) — one schema constraint change only (004-fix-duplicate-convos)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ
