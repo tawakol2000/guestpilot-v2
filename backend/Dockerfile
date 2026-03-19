@@ -11,11 +11,12 @@ RUN pip3 install --no-cache-dir scikit-learn numpy cohere
 
 WORKDIR /app
 
-# Copy backend files
-COPY backend/package*.json ./
-COPY backend/prisma ./prisma/
-COPY backend/src ./src/
-COPY backend/tsconfig.json ./
+# Copy files (context is backend/ directory)
+COPY package*.json ./
+COPY prisma ./prisma/
+COPY src ./src/
+COPY scripts ./scripts/
+COPY tsconfig.json ./
 
 # Install Node packages
 RUN npm install
