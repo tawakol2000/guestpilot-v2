@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
 import { addExample, getExampleByText } from './classifier-store.service';
 import { reinitializeClassifier, getMaxSimilarityForLabels } from './classifier.service';
+import { getTenantAiConfig } from './tenant-config.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -209,10 +210,21 @@ export interface JudgeResult {
  */
 export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient): Promise<void> {
   try {
-    // Tier 3 re-injections should NOT become training examples.
-    // "friend" with sop-visitor-policy is contextual — Tier 1 correctly returns [] for it.
+    // ── Fetch tenant config for judgeMode ──────────────────────────────
+    const tenantConfig = await getTenantAiConfig(input.tenantId, prisma);
+    const judgeMode: 'evaluate_all' | 'sampling' =
+      (tenantConfig as any).judgeMode === 'sampling' ? 'sampling' : 'evaluate_all';
+
+    // ── Tier 3 re-injected — skip in ALL modes ─────────────────────────
+    // Contextual messages shouldn't become Tier 1 training data.
     if (input.tier3Reinjected) {
+      console.log(`[Judge] Mode: ${judgeMode} — skipping (tier3 re-injected)`);
+      await saveSkipRecord(input, 'tier3_contextual', prisma);
       return;
+    }
+
+    if (judgeMode === 'evaluate_all') {
+      console.log(`[Judge] Mode: evaluate_all — evaluating (tier3=${!!input.tier3Reinjected})`);
     }
 
     // ── Tier 2 feedback path (FREE — no judge call) ─────────────────────
@@ -274,16 +286,30 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
     // Load per-tenant thresholds (cached)
     const thresholds = await getThresholds(input.tenantId, prisma);
 
-    // Skip if topSim is above the judge threshold — trusted result
-    if (input.classifierTopSim >= thresholds.judgeThreshold) {
-      return;
-    }
+    // ── Mode-dependent skip logic ─────────────────────────────────────
+    if (judgeMode === 'sampling') {
+      // In sampling mode: keep existing skip conditions, but 30% random sample of skips
+      let skipReason: string | null = null;
 
-    // Skip if all winning labels have majority support (≥2/3 neighbors agree) —
-    // the classifier is consistent even at lower similarity, no judge needed
-    if (hasMajorityNeighborSupport(input.classifierLabels, input.neighbors)) {
-      return;
+      if (input.classifierTopSim >= thresholds.judgeThreshold) {
+        skipReason = 'confident_skip';
+      } else if (hasMajorityNeighborSupport(input.classifierLabels, input.neighbors)) {
+        skipReason = 'neighbor_agreement_skip';
+      }
+
+      if (skipReason) {
+        // 30% random sampling: evaluate anyway for quality monitoring
+        if (Math.random() < 0.30) {
+          console.log(`[Judge] Mode: sampling — random sample triggered (would have skipped: ${skipReason})`);
+          // Fall through to standard judge path
+        } else {
+          console.log(`[Judge] Mode: sampling — skipping (${skipReason}, sim=${input.classifierTopSim.toFixed(3)})`);
+          await saveSkipRecord(input, skipReason as any, prisma);
+          return;
+        }
+      }
     }
+    // In evaluate_all mode: skip conditions are removed — always evaluate
 
     // ── Standard judge path ───────────────────────────────────────────────
     // Step 1: Call the judge
@@ -368,6 +394,29 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
   } catch (err) {
     console.warn('[Judge] evaluateAndImprove failed (non-fatal):', err);
   }
+}
+
+/**
+ * T019 — Save a ClassifierEvaluation record when the judge skips evaluation,
+ * recording the skip reason for observability.
+ */
+async function saveSkipRecord(
+  input: JudgeInput,
+  skipReason: 'tier3_contextual' | 'confident_skip' | 'neighbor_agreement_skip' | 'sampling_skip',
+  prisma: PrismaClient,
+): Promise<void> {
+  await prisma.classifierEvaluation.create({
+    data: {
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      guestMessage: input.guestMessage,
+      classifierLabels: input.classifierLabels,
+      classifierMethod: input.classifierMethod,
+      classifierTopSim: input.classifierTopSim,
+      skipReason,
+      retrievalCorrect: true, // default — we don't know since we skipped
+    },
+  }).catch(err => console.warn(`[Judge] Failed to save skip record (${skipReason}):`, err));
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {

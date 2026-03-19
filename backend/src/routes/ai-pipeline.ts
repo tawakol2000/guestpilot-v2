@@ -4,9 +4,132 @@ import { authMiddleware } from '../middleware/auth';
 import { getTopicCacheStats } from '../services/topic-state.service';
 import { getTier2Stats } from '../services/intent-extractor.service';
 import { getClassifierStatus } from '../services/classifier.service';
+import { generatePipelineSnapshot } from '../services/snapshot.service';
+
+// In-memory cache for /accuracy endpoint (60s TTL)
+const accuracyCache = new Map<string, { data: any; expiresAt: number }>();
 
 export function aiPipelineRouter(prisma: PrismaClient) {
   const router = Router();
+
+  // Accuracy: classifier & judge accuracy metrics
+  router.get('/accuracy', authMiddleware as any, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId;
+      const period = req.query.period === '7d' ? '7d' : '30d';
+      const periodMs = period === '7d' ? 7 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+      const periodStart = new Date(Date.now() - periodMs);
+
+      // Check cache
+      const cacheKey = `${tenantId}:${period}`;
+      const cached = accuracyCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.data);
+      }
+
+      // 1. Overall accuracy (only evaluated, not skipped)
+      const [overallCorrect, overallTotal] = await Promise.all([
+        prisma.classifierEvaluation.count({
+          where: { tenantId, createdAt: { gte: periodStart }, skipReason: null, retrievalCorrect: true },
+        }),
+        prisma.classifierEvaluation.count({
+          where: { tenantId, createdAt: { gte: periodStart }, skipReason: null },
+        }),
+      ]);
+
+      // 2. Empty-label rate
+      const [emptyLabelCount, totalEvalsInPeriod] = await Promise.all([
+        prisma.classifierEvaluation.count({
+          where: { tenantId, createdAt: { gte: periodStart }, classifierLabels: { isEmpty: true } },
+        }),
+        prisma.classifierEvaluation.count({
+          where: { tenantId, createdAt: { gte: periodStart } },
+        }),
+      ]);
+
+      // 3. Per-category accuracy — fetch evaluated records and aggregate in code
+      const evaluatedRecords = await prisma.classifierEvaluation.findMany({
+        where: { tenantId, createdAt: { gte: periodStart }, skipReason: null },
+        select: { judgeCorrectLabels: true, classifierLabels: true, retrievalCorrect: true },
+      });
+
+      const categoryStats = new Map<string, { correct: number; total: number }>();
+      for (const rec of evaluatedRecords) {
+        const correctSet = new Set(rec.judgeCorrectLabels || []);
+        const classifierSet = new Set(rec.classifierLabels || []);
+        // Count each label that appears in judgeCorrectLabels
+        for (const label of correctSet) {
+          if (!categoryStats.has(label)) categoryStats.set(label, { correct: 0, total: 0 });
+          const stat = categoryStats.get(label)!;
+          stat.total++;
+          if (classifierSet.has(label)) stat.correct++;
+        }
+        // Also count classifier labels not in judgeCorrectLabels as incorrect
+        for (const label of classifierSet) {
+          if (!correctSet.has(label)) {
+            if (!categoryStats.has(label)) categoryStats.set(label, { correct: 0, total: 0 });
+            categoryStats.get(label)!.total++;
+          }
+        }
+      }
+
+      const perCategory = Array.from(categoryStats.entries())
+        .map(([category, { correct, total }]) => ({
+          category,
+          correct,
+          total,
+          accuracy: total > 0 ? Math.round((correct / total) * 1000) / 1000 : 0,
+        }))
+        .sort((a, b) => b.total - a.total);
+
+      // 4. Self-improvement stats
+      const activeExamples = await prisma.classifierExample.findMany({
+        where: { tenantId, active: true },
+        select: { source: true, createdAt: true },
+      });
+
+      const totalActive = activeExamples.length;
+      const bySource: Record<string, number> = {};
+      let addedThisPeriod = 0;
+      for (const ex of activeExamples) {
+        bySource[ex.source] = (bySource[ex.source] || 0) + 1;
+        if (ex.createdAt >= periodStart) addedThisPeriod++;
+      }
+
+      // 5. Judge mode from TenantAiConfig
+      const config = await prisma.tenantAiConfig.findUnique({
+        where: { tenantId },
+        select: { judgeMode: true },
+      });
+
+      const result = {
+        overall: {
+          correct: overallCorrect,
+          total: overallTotal,
+          accuracy: overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 1000) / 1000 : 0,
+        },
+        emptyLabelRate: totalEvalsInPeriod > 0
+          ? Math.round((emptyLabelCount / totalEvalsInPeriod) * 1000) / 1000
+          : 0,
+        perCategory,
+        selfImprovement: {
+          totalActive,
+          bySource,
+          addedThisPeriod,
+        },
+        judgeMode: config?.judgeMode || 'evaluate_all',
+        period,
+      };
+
+      // Cache for 60 seconds
+      accuracyCache.set(cacheKey, { data: result, expiresAt: Date.now() + 60_000 });
+
+      res.json(result);
+    } catch (err) {
+      console.error('[Pipeline] Accuracy query failed:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
 
   // Feed: recent messages with full pipeline data
   router.get('/feed', authMiddleware as any, async (req: any, res) => {
@@ -100,6 +223,7 @@ export function aiPipelineRouter(prisma: PrismaClient) {
             judgeReasoning: matchingEval.judgeReasoning,
             autoFixed: matchingEval.autoFixed,
             judgeCost: matchingEval.judgeCost,
+            skipReason: matchingEval.skipReason || null,
           } : null,
         };
       });
@@ -183,6 +307,19 @@ export function aiPipelineRouter(prisma: PrismaClient) {
     } catch (err) {
       console.error('[Pipeline] Stats query failed:', err);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Snapshot: generate pipeline health snapshot (FR-007)
+  router.post('/snapshot', authMiddleware as any, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const markdown = await generatePipelineSnapshot(tenantId, prisma);
+      res.setHeader('Content-Type', 'text/markdown');
+      res.send(markdown);
+    } catch (err) {
+      console.error('[Pipeline] Snapshot generation failed:', err);
+      res.status(500).json({ error: 'Snapshot generation failed' });
     }
   });
 

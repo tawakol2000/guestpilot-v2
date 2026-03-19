@@ -92,6 +92,17 @@ const T = {
   },
 } as const
 
+// ─── SOP Labels (for correction popover) ──────────────────────────────────────
+
+const SOP_LABELS = [
+  'sop-cleaning', 'sop-amenity-request', 'sop-maintenance', 'sop-wifi-doorcode',
+  'sop-visitor-policy', 'sop-early-checkin', 'sop-late-checkout', 'sop-escalation-info',
+  'sop-booking-inquiry', 'pricing-negotiation', 'pre-arrival-logistics',
+  'sop-booking-modification', 'sop-booking-confirmation', 'payment-issues',
+  'post-stay-issues', 'sop-long-term-rental', 'sop-booking-cancellation',
+  'sop-property-viewing', 'non-actionable',
+] as const
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AiMode = 'autopilot' | 'copilot' | 'off'
@@ -1035,6 +1046,9 @@ export default function InboxV5() {
   const [sendChannel, setSendChannel] = useState<string>('channel')
 
   const [messageRatings, setMessageRatings] = useState<Record<string, 'positive' | 'negative'>>({})
+  const [correctionMsgId, setCorrectionMsgId] = useState<string | null>(null)
+  const [correctionLabels, setCorrectionLabels] = useState<string[]>([])
+  const [correctionSubmitted, setCorrectionSubmitted] = useState<Record<string, boolean>>({})
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null)
 
   // Panel reorder state
@@ -2969,14 +2983,15 @@ export default function InboxV5() {
                             </span>
                             {/* AI message rating buttons */}
                             {isAI && (
-                              <span style={{ display: 'flex', gap: 2, marginLeft: 2 }}>
+                              <span style={{ display: 'flex', gap: 2, marginLeft: 2, alignItems: 'center' }}>
                                 <button
                                   onClick={() => {
                                     const newRating = 'positive' as const
                                     setMessageRatings(r => ({ ...r, [msg.id]: newRating }))
+                                    setCorrectionMsgId(null)
                                     apiRateMessage(msg.id, newRating).catch(() => {})
                                   }}
-                                  title="Good response"
+                                  title="Good response (reinforces AI learning)"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -2996,8 +3011,15 @@ export default function InboxV5() {
                                     const newRating = 'negative' as const
                                     setMessageRatings(r => ({ ...r, [msg.id]: newRating }))
                                     apiRateMessage(msg.id, newRating).catch(() => {})
+                                    // Toggle correction popover
+                                    if (correctionMsgId === msg.id) {
+                                      setCorrectionMsgId(null)
+                                    } else {
+                                      setCorrectionMsgId(msg.id)
+                                      setCorrectionLabels([])
+                                    }
                                   }}
-                                  title="Poor response"
+                                  title="Poor response (click to add correction labels)"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -3012,7 +3034,94 @@ export default function InboxV5() {
                                 >
                                   <ArrowUp size={10} strokeWidth={2.5} style={{ transform: 'rotate(180deg)' }} />
                                 </button>
+                                {correctionSubmitted[msg.id] && (
+                                  <span style={{ fontSize: 9, color: T.status.green, fontFamily: T.font.mono }}>
+                                    correction saved
+                                  </span>
+                                )}
                               </span>
+                            )}
+                            {/* Correction popover — appears below thumbs-down for AI messages */}
+                            {isAI && correctionMsgId === msg.id && !correctionSubmitted[msg.id] && (
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  padding: '6px 8px',
+                                  background: '#FFF',
+                                  border: `1px solid ${T.border.default}`,
+                                  borderRadius: 6,
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                                  maxWidth: 320,
+                                }}
+                              >
+                                <div style={{ fontSize: 10, fontWeight: 600, color: T.text.secondary, marginBottom: 4 }}>
+                                  Correct classification (select SOPs):
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 6 }}>
+                                  {SOP_LABELS.map(label => {
+                                    const sel = correctionLabels.includes(label)
+                                    return (
+                                      <button
+                                        key={label}
+                                        onClick={() => {
+                                          setCorrectionLabels(prev =>
+                                            sel ? prev.filter(l => l !== label) : [...prev, label]
+                                          )
+                                        }}
+                                        style={{
+                                          fontSize: 9,
+                                          padding: '2px 5px',
+                                          borderRadius: 3,
+                                          border: `1px solid ${sel ? T.accent : T.border.default}`,
+                                          background: sel ? T.accent + '15' : 'transparent',
+                                          color: sel ? T.accent : T.text.secondary,
+                                          cursor: 'pointer',
+                                          fontFamily: T.font.mono,
+                                          transition: 'all 0.1s ease',
+                                        }}
+                                      >
+                                        {label.replace('sop-', '')}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <button
+                                    disabled={correctionLabels.length === 0}
+                                    onClick={() => {
+                                      apiRateMessage(msg.id, 'negative', correctionLabels).catch(() => {})
+                                      setCorrectionSubmitted(s => ({ ...s, [msg.id]: true }))
+                                      setCorrectionMsgId(null)
+                                    }}
+                                    style={{
+                                      fontSize: 10,
+                                      padding: '3px 8px',
+                                      borderRadius: 4,
+                                      border: 'none',
+                                      background: correctionLabels.length > 0 ? T.accent : T.bg.tertiary,
+                                      color: correctionLabels.length > 0 ? '#FFF' : T.text.tertiary,
+                                      cursor: correctionLabels.length > 0 ? 'pointer' : 'not-allowed',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Submit correction ({correctionLabels.length})
+                                  </button>
+                                  <button
+                                    onClick={() => setCorrectionMsgId(null)}
+                                    style={{
+                                      fontSize: 10,
+                                      padding: '3px 8px',
+                                      borderRadius: 4,
+                                      border: `1px solid ${T.border.default}`,
+                                      background: 'transparent',
+                                      color: T.text.secondary,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>

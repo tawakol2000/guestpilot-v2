@@ -93,6 +93,25 @@ export async function updateTenantAiConfig(
       throw err;
     }
   }
+  if (
+    updates.judgeMode !== undefined &&
+    !['evaluate_all', 'sampling'].includes(updates.judgeMode)
+  ) {
+    const err = new Error('judgeMode must be "evaluate_all" or "sampling"') as any;
+    err.field = 'judgeMode';
+    throw err;
+  }
+  if (updates.sopOverrides !== undefined) {
+    if (
+      typeof updates.sopOverrides !== 'object' ||
+      updates.sopOverrides === null ||
+      Array.isArray(updates.sopOverrides)
+    ) {
+      const err = new Error('sopOverrides must be a JSON object') as any;
+      err.field = 'sopOverrides';
+      throw err;
+    }
+  }
 
   // Strip non-updatable system fields
   const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, ...safeUpdates } = updates as any;

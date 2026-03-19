@@ -5,7 +5,9 @@ import {
   Activity, Zap, Brain, RefreshCw, ChevronDown, ChevronRight,
   Clock, DollarSign, AlertTriangle, CheckCircle2, XCircle, Minus,
   ArrowRight, Layers, Target, Shield, Sparkles, BarChart3, TrendingUp, Radio,
+  Camera,
 } from 'lucide-react'
+import { apiFetchAccuracy, apiGenerateSnapshot, type AccuracyMetrics } from '../lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -135,6 +137,7 @@ interface PipelineFeedEntry {
     judgeReasoning: string
     autoFixed: boolean
     judgeCost: number
+    skipReason: string | null
   } | null
 }
 
@@ -703,6 +706,26 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
           <JudgeIcon />
         </div>
 
+        {/* Skip reason badge (T021) */}
+        {ev?.skipReason && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              background: '#FEF3C7',
+              color: '#92400E',
+              padding: '2px 6px',
+              borderRadius: 999,
+              whiteSpace: 'nowrap',
+              border: '1px solid rgba(146,64,14,0.15)',
+              flexShrink: 0,
+            }}
+          >
+            Skipped: {ev.skipReason.replace(/_/g, ' ')}
+          </span>
+        )}
+
         {/* Expand chevron */}
         <div
           style={{
@@ -1164,7 +1187,25 @@ export default function AiPipelineV5(): React.ReactElement {
   const PAGE_SIZE = 50
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Accuracy metrics state (T009/T010/T011)
+  const [accuracy, setAccuracy] = useState<AccuracyMetrics | null>(null)
+  const [accuracyPeriod, setAccuracyPeriod] = useState<'7d' | '30d'>('30d')
+  const [accuracyLoading, setAccuracyLoading] = useState(false)
+
+  // Snapshot state (T026)
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const [snapshotMessage, setSnapshotMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
   useEffect(() => { ensureStyles() }, [])
+
+  // Fetch accuracy metrics when period changes
+  useEffect(() => {
+    setAccuracyLoading(true)
+    apiFetchAccuracy(accuracyPeriod)
+      .then(data => setAccuracy(data))
+      .catch(() => setAccuracy(null))
+      .finally(() => setAccuracyLoading(false))
+  }, [accuracyPeriod])
 
   const loadAll = useCallback(async (offset = 0) => {
     try {
@@ -1399,6 +1440,338 @@ export default function AiPipelineV5(): React.ReactElement {
               animIdx={5}
             />
           </>
+        )}
+      </div>
+
+      {/* ─── T009: Accuracy Metrics + T026: Snapshot Button ─── */}
+      <div
+        style={{
+          background: T.bg.card,
+          border: `1px solid ${T.border.default}`,
+          borderRadius: T.radius.md,
+          boxShadow: T.shadow.sm,
+          padding: '16px 20px',
+          flexShrink: 0,
+          animation: 'fadeInUp 0.4s ease-out both',
+          animationDelay: '0.15s',
+        }}
+      >
+        {/* Header row with period toggle + snapshot button */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Target size={13} color={T.text.secondary} />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: T.text.secondary,
+                fontFamily: T.font.sans,
+              }}
+            >
+              Classifier Accuracy
+            </span>
+            {/* Period toggle */}
+            <div style={{ display: 'flex', gap: 2, marginLeft: 8 }}>
+              {(['7d', '30d'] as const).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setAccuracyPeriod(p)}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: accuracyPeriod === p ? 700 : 500,
+                    fontFamily: T.font.mono,
+                    padding: '2px 8px',
+                    borderRadius: T.radius.sm,
+                    border: `1px solid ${accuracyPeriod === p ? '#1C1917' : T.border.default}`,
+                    background: accuracyPeriod === p ? '#1C1917' : T.bg.card,
+                    color: accuracyPeriod === p ? '#FFFFFF' : T.text.secondary,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* T026: Snapshot button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {snapshotMessage && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontFamily: T.font.sans,
+                  fontWeight: 500,
+                  color: snapshotMessage.type === 'success' ? T.status.green : T.status.red,
+                  animation: 'fadeInUp 0.2s ease-out both',
+                }}
+              >
+                {snapshotMessage.text}
+              </span>
+            )}
+            <button
+              onClick={async () => {
+                setSnapshotLoading(true)
+                setSnapshotMessage(null)
+                try {
+                  await apiGenerateSnapshot()
+                  setSnapshotMessage({ type: 'success', text: 'Snapshot generated successfully' })
+                  setTimeout(() => setSnapshotMessage(null), 5000)
+                } catch (err: any) {
+                  setSnapshotMessage({ type: 'error', text: err.message || 'Snapshot failed' })
+                  setTimeout(() => setSnapshotMessage(null), 5000)
+                } finally {
+                  setSnapshotLoading(false)
+                }
+              }}
+              disabled={snapshotLoading}
+              style={{
+                height: 28,
+                padding: '0 10px',
+                fontSize: 10,
+                fontWeight: 600,
+                border: `1px solid ${T.border.default}`,
+                cursor: snapshotLoading ? 'default' : 'pointer',
+                borderRadius: T.radius.sm,
+                background: T.bg.card,
+                color: T.text.secondary,
+                fontFamily: T.font.sans,
+                opacity: snapshotLoading ? 0.6 : 1,
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+            >
+              <Camera
+                size={11}
+                style={snapshotLoading ? { animation: 'spin 1s linear infinite' } : undefined}
+              />
+              Generate Snapshot
+            </button>
+          </div>
+        </div>
+
+        {/* Accuracy cards row */}
+        {accuracyLoading ? (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : accuracy ? (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+              {/* Card 1: Classifier Accuracy */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 160,
+                  background: T.bg.secondary,
+                  border: `1px solid ${T.border.default}`,
+                  borderRadius: T.radius.md,
+                  padding: '12px 16px',
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 4 }}>
+                  Classifier Accuracy
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: accuracy.overall.accuracy >= 0.8 ? T.status.green : accuracy.overall.accuracy >= 0.6 ? T.status.amber : T.status.red, fontFamily: T.font.sans, lineHeight: 1.1 }}>
+                  {(accuracy.overall.accuracy * 100).toFixed(1)}%
+                </div>
+                <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 3 }}>
+                  {accuracy.overall.correct}/{accuracy.overall.total} correct
+                </div>
+              </div>
+
+              {/* Card 2: Empty Label Rate */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 160,
+                  background: T.bg.secondary,
+                  border: `1px solid ${T.border.default}`,
+                  borderRadius: T.radius.md,
+                  padding: '12px 16px',
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 4 }}>
+                  Empty Label Rate
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: accuracy.emptyLabelRate <= 0.1 ? T.status.green : accuracy.emptyLabelRate <= 0.25 ? T.status.amber : T.status.red, fontFamily: T.font.sans, lineHeight: 1.1 }}>
+                  {(accuracy.emptyLabelRate * 100).toFixed(1)}%
+                </div>
+                <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 3 }}>
+                  messages with no labels
+                </div>
+              </div>
+
+              {/* Card 3: Judge Mode */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 160,
+                  background: T.bg.secondary,
+                  border: `1px solid ${T.border.default}`,
+                  borderRadius: T.radius.md,
+                  padding: '12px 16px',
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 4 }}>
+                  Judge Mode
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                  <span
+                    style={{
+                      background: accuracy.judgeMode === 'evaluate_all' ? '#DCFCE7' : accuracy.judgeMode === 'sampling' ? '#DBEAFE' : '#F3F4F6',
+                      color: accuracy.judgeMode === 'evaluate_all' ? T.status.green : accuracy.judgeMode === 'sampling' ? T.status.blue : T.text.secondary,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: T.font.sans,
+                      padding: '4px 12px',
+                      borderRadius: 999,
+                      border: `1px solid ${accuracy.judgeMode === 'evaluate_all' ? 'rgba(21,128,61,0.2)' : accuracy.judgeMode === 'sampling' ? 'rgba(37,99,235,0.2)' : T.border.default}`,
+                    }}
+                  >
+                    {accuracy.judgeMode}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 6 }}>
+                  period: {accuracy.period}
+                </div>
+              </div>
+            </div>
+
+            {/* T010: Per-category breakdown table */}
+            {accuracy.perCategory.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 8 }}>
+                  Per-Category Breakdown
+                </div>
+                <div
+                  style={{
+                    border: `1px solid ${T.border.default}`,
+                    borderRadius: T.radius.sm,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Table header */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 70px 70px 80px',
+                      padding: '6px 12px',
+                      background: T.bg.secondary,
+                      borderBottom: `1px solid ${T.border.default}`,
+                      fontSize: 9,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      color: T.text.tertiary,
+                      fontFamily: T.font.sans,
+                    }}
+                  >
+                    <span>Category</span>
+                    <span style={{ textAlign: 'center' }}>Correct</span>
+                    <span style={{ textAlign: 'center' }}>Total</span>
+                    <span style={{ textAlign: 'right' }}>Accuracy</span>
+                  </div>
+                  {/* Table rows — sorted worst first */}
+                  {[...accuracy.perCategory]
+                    .sort((a, b) => a.accuracy - b.accuracy)
+                    .map((cat, i) => {
+                      const sc = sopBadgeColor(cat.category)
+                      return (
+                        <div
+                          key={cat.category}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 70px 70px 80px',
+                            padding: '5px 12px',
+                            background: i % 2 === 0 ? T.bg.card : T.bg.secondary,
+                            borderBottom: i < accuracy.perCategory.length - 1 ? `1px solid ${T.border.default}` : 'none',
+                            fontSize: 11,
+                            fontFamily: T.font.sans,
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span>
+                            <span
+                              style={{
+                                background: sc.bg,
+                                color: sc.fg,
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: '1px 8px',
+                                borderRadius: 999,
+                                border: `1px solid ${sc.fg}20`,
+                              }}
+                            >
+                              {cat.category}
+                            </span>
+                          </span>
+                          <span style={{ textAlign: 'center', fontFamily: T.font.mono, fontSize: 10, color: T.text.secondary }}>
+                            {cat.correct}
+                          </span>
+                          <span style={{ textAlign: 'center', fontFamily: T.font.mono, fontSize: 10, color: T.text.secondary }}>
+                            {cat.total}
+                          </span>
+                          <span
+                            style={{
+                              textAlign: 'right',
+                              fontFamily: T.font.mono,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: cat.accuracy < 0.6 ? T.status.red : cat.accuracy < 0.8 ? T.status.amber : T.status.green,
+                            }}
+                          >
+                            {(cat.accuracy * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* T011: Self-improvement stats */}
+            <div
+              style={{
+                display: 'flex',
+                gap: 16,
+                paddingTop: 12,
+                borderTop: `1px solid ${T.border.default}`,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={12} color={PURPLE} />
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans }}>
+                  Self-Improvement
+                </span>
+              </div>
+              <MetaPill label="active examples:" value={String(accuracy.selfImprovement.totalActive)} color={PURPLE} />
+              <MetaPill label="added this period:" value={String(accuracy.selfImprovement.addedThisPeriod)} color={T.status.green} />
+              {Object.entries(accuracy.selfImprovement.bySource).map(([source, count]) => (
+                <MetaPill key={source} label={`${source}:`} value={String(count)} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.mono, textAlign: 'center', padding: '16px 0' }}>
+            No accuracy data available
+          </div>
         )}
       </div>
 

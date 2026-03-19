@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw, Search, X, Activity, CheckCircle, AlertTriangle, Wrench,
   ChevronRight, Plus, Trash2, Play, Brain, DollarSign, TrendingUp, TrendingDown,
-  Settings2, Save, Minus,
+  Settings2, Save, Minus, FileText,
 } from 'lucide-react'
 import {
   apiGetClassifierStatus,
@@ -17,8 +17,12 @@ import {
   apiReinitializeClassifier,
   apiGetClassifierThresholds,
   apiSetClassifierThresholds,
+  apiBatchClassify,
+  apiGetTenantAiConfig,
+  apiUpdateTenantAiConfig,
   type ClassifierEvaluation,
   type ClassifierExampleItem,
+  type BatchClassifyResult,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -77,6 +81,25 @@ const LABEL_COLORS: Record<string, string> = {
 }
 const ALL_LABEL_IDS = Object.keys(LABEL_COLORS)
 function labelColor(l: string) { return LABEL_COLORS[l] ?? '#57534E' }
+
+// ─── SOP categories ──────────────────────────────────────────────────────────
+const ALL_SOP_CATEGORIES = [
+  'sop-cleaning', 'sop-amenity-request', 'sop-maintenance', 'sop-wifi-doorcode',
+  'sop-visitor-policy', 'sop-early-checkin', 'sop-late-checkout', 'sop-complaint',
+  'sop-booking-inquiry', 'sop-booking-modification', 'sop-booking-confirmation',
+  'sop-long-term-rental', 'sop-booking-cancellation', 'sop-property-viewing',
+  'pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues',
+] as const
+
+type SopOverrideEntry = { enabled: boolean; override: string }
+type SopOverrides = Record<string, SopOverrideEntry>
+
+function formatSopName(key: string): string {
+  return key
+    .replace(/^sop-/, '')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
 
 // ─── Sim color ────────────────────────────────────────────────────────────────
 function simColor(s: number) {
@@ -822,6 +845,9 @@ function ThresholdSettings() {
   const [voteVal, setVoteVal] = useState(0.30)
   const [ctxGateVal, setCtxGateVal] = useState(0.85)
   const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
+  const [judgeModeVal, setJudgeModeVal] = useState<'evaluate_all' | 'sampling'>('evaluate_all')
+  const [judgeModesSaving, setJudeModeSaving] = useState(false)
+  const [judgeModeSavedMsg, setJudgeModeSavedMsg] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -836,7 +862,26 @@ function ThresholdSettings() {
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
+    apiGetTenantAiConfig()
+      .then(cfg => {
+        if ((cfg as any).judgeMode) setJudgeModeVal((cfg as any).judgeMode)
+      })
+      .catch(() => {})
   }, [])
+
+  async function saveJudgeMode(mode: 'evaluate_all' | 'sampling') {
+    setJudgeModeVal(mode)
+    setJudeModeSaving(true); setJudgeModeSavedMsg('')
+    try {
+      await apiUpdateTenantAiConfig({ judgeMode: mode } as any)
+      setJudgeModeSavedMsg('Saved')
+      setTimeout(() => setJudgeModeSavedMsg(''), 3000)
+    } catch (e: any) {
+      setJudgeModeSavedMsg(e.message || 'Error')
+    } finally {
+      setJudeModeSaving(false)
+    }
+  }
 
   const dirty = loaded  // always show save once loaded
   const autoFixErr = autoFixVal >= judgeVal
@@ -1043,6 +1088,413 @@ function ThresholdSettings() {
             {' '}Switching re-embeds all data (~30s).
           </div>
         </div>
+
+        {/* Judge Mode toggle */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Judge Mode
+            </div>
+            {judgeModeSavedMsg && (
+              <span style={{
+                fontSize: 10, fontFamily: T.font.mono,
+                color: judgeModeSavedMsg === 'Saved' ? T.status.green : T.status.red,
+              }}>{judgeModeSavedMsg}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {([
+              { value: 'evaluate_all' as const, label: 'Evaluate All' },
+              { value: 'sampling' as const, label: 'Sampling (30%)' },
+            ]).map(opt => (
+              <button key={opt.value} onClick={() => saveJudgeMode(opt.value)} disabled={judgeModesSaving} style={{
+                flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                background: judgeModeVal === opt.value ? T.border.strong : T.bg.secondary,
+                color: judgeModeVal === opt.value ? '#fff' : T.text.secondary,
+                border: `1px solid ${judgeModeVal === opt.value ? T.border.strong : T.border.default}`,
+                borderRadius: T.radius.sm, cursor: judgeModesSaving ? 'default' : 'pointer',
+                transition: 'all 0.15s', opacity: judgeModesSaving ? 0.6 : 1,
+              }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 8, lineHeight: 1.5 }}>
+            Evaluate All: judge checks every AI response. Sampling: judge checks ~30% of responses.
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Section: Batch Classification Test (T024)
+// ═════════════════════════════════════════════════════════════════════════════
+function BatchClassificationTest() {
+  const [thresholdInput, setThresholdInput] = useState('0.30')
+  const [testMessages, setTestMessages] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [results, setResults] = useState<BatchClassifyResult | null>(null)
+  const [err, setErr] = useState('')
+  const [thresholdFocused, setThresholdFocused] = useState(false)
+  const [textareaFocused, setTextareaFocused] = useState(false)
+
+  // Load current vote threshold as default
+  useEffect(() => {
+    apiGetClassifierThresholds()
+      .then(d => {
+        if (d.classifierVoteThreshold != null) setThresholdInput(d.classifierVoteThreshold.toFixed(2))
+      })
+      .catch(() => {})
+  }, [])
+
+  async function runBatch() {
+    const messages = testMessages.split('\n').map(l => l.trim()).filter(Boolean)
+    if (messages.length === 0 || loading) return
+    setLoading(true); setErr(''); setResults(null)
+    try {
+      const data = await apiBatchClassify(messages, parseFloat(thresholdInput))
+      setResults(data)
+    } catch (e: any) {
+      setErr(e.message || 'Batch classification failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<Play size={14} color={T.text.secondary} />}
+        title="Batch Classification Test"
+        sub="paste messages and test classification at a given threshold"
+      />
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Threshold input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, fontFamily: T.font.sans, color: T.text.primary, whiteSpace: 'nowrap' }}>
+            Vote Threshold Override
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.05"
+            max="0.99"
+            value={thresholdInput}
+            onChange={e => setThresholdInput(e.target.value)}
+            onFocus={() => setThresholdFocused(true)}
+            onBlur={() => setThresholdFocused(false)}
+            style={{
+              width: 80, height: 34, padding: '0 10px', fontSize: 13,
+              fontFamily: T.font.mono, fontWeight: 700, color: T.accent,
+              border: `1px solid ${thresholdFocused ? T.accent : T.border.default}`,
+              borderRadius: T.radius.sm, outline: 'none', background: T.bg.primary,
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              boxShadow: thresholdFocused ? '0 0 0 3px rgba(29,78,216,0.08)' : 'none',
+              textAlign: 'center',
+            }}
+          />
+        </div>
+
+        {/* Messages textarea */}
+        <textarea
+          value={testMessages}
+          onChange={e => setTestMessages(e.target.value)}
+          onFocus={() => setTextareaFocused(true)}
+          onBlur={() => setTextareaFocused(false)}
+          placeholder="Paste test messages here, one per line...&#10;e.g. Can we get cleaning today?&#10;The WiFi is not working&#10;What time is checkout?"
+          rows={6}
+          style={{
+            width: '100%', padding: '10px 12px', fontSize: 12,
+            fontFamily: T.font.sans, color: T.text.primary, lineHeight: 1.6,
+            border: `1px solid ${textareaFocused ? T.accent : T.border.default}`,
+            borderRadius: T.radius.sm, outline: 'none', background: T.bg.primary,
+            resize: 'vertical',
+            transition: 'border-color 0.15s, box-shadow 0.15s',
+            boxShadow: textareaFocused ? '0 0 0 3px rgba(29,78,216,0.08)' : 'none',
+          }}
+        />
+
+        {/* Run button */}
+        <button
+          onClick={runBatch}
+          disabled={!testMessages.trim() || loading}
+          style={{
+            alignSelf: 'flex-start', height: 36, padding: '0 20px',
+            fontSize: 12, fontWeight: 700,
+            border: `1px solid ${T.border.strong}`, borderRadius: T.radius.sm,
+            background: T.border.strong, color: '#fff',
+            cursor: !testMessages.trim() || loading ? 'default' : 'pointer',
+            fontFamily: T.font.sans, opacity: !testMessages.trim() || loading ? 0.5 : 1,
+            display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s',
+          }}
+        >
+          {loading
+            ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            : <Play size={12} />}
+          Run Batch Test
+        </button>
+
+        {err && (
+          <div style={{
+            fontSize: 11, color: T.status.red, fontFamily: T.font.mono,
+            padding: '6px 10px', background: 'rgba(220,38,38,0.06)',
+            borderRadius: T.radius.sm, border: '1px solid rgba(220,38,38,0.12)',
+          }}>{err}</div>
+        )}
+
+        {/* Results table */}
+        {results && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, animation: 'fadeInUp 0.25s ease-out both' }}>
+            {/* Summary */}
+            <div style={{
+              fontSize: 11, fontFamily: T.font.mono, color: T.text.secondary,
+              padding: '8px 12px', background: T.bg.secondary,
+              borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`,
+            }}>
+              {results.results.length}/{results.totalMessages} messages classified
+              ({results.emptyLabelCount} empty labels)
+              {' '}&middot; threshold: {results.threshold.toFixed(2)}
+            </div>
+
+            {/* Table */}
+            <div style={{ border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr auto auto auto',
+                gap: 12, padding: '8px 12px', background: T.bg.tertiary,
+                fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+                color: T.text.tertiary, fontFamily: T.font.sans,
+              }}>
+                <span>Message</span>
+                <span>Labels</span>
+                <span>Similarity</span>
+                <span>Method</span>
+              </div>
+              {/* Rows */}
+              <div className="cls-scroll" style={{ maxHeight: 380, overflowY: 'auto' }}>
+                {results.results.map((r, i) => (
+                  <div key={i} style={{
+                    display: 'grid', gridTemplateColumns: '1fr auto auto auto',
+                    alignItems: 'center', gap: 12, padding: '7px 12px',
+                    borderTop: `1px solid ${T.border.default}`,
+                    background: i % 2 === 0 ? T.bg.secondary : T.bg.primary,
+                    animation: 'fadeInUp 0.2s ease-out both',
+                    animationDelay: `${Math.min(i * 0.015, 0.3)}s`,
+                  }}>
+                    <span style={{
+                      fontSize: 11, fontFamily: T.font.sans, color: T.text.primary,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{r.message}</span>
+                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', flexShrink: 0 }}>
+                      {r.labels.length === 0
+                        ? <span style={{ fontSize: 9, fontFamily: T.font.mono, color: T.text.tertiary }}>---</span>
+                        : r.labels.map(l => <LabelPill key={l} label={l} size="xs" />)}
+                    </div>
+                    <SimBar value={r.topSimilarity} />
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, whiteSpace: 'nowrap' }}>
+                      {r.method}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Section: SOP Configuration (T036)
+// ═════════════════════════════════════════════════════════════════════════════
+function SOPConfigurationSection() {
+  const [overrides, setOverrides] = useState<SopOverrides>({})
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  useEffect(() => {
+    apiGetTenantAiConfig()
+      .then(cfg => {
+        const existing = (cfg as any).sopOverrides
+        if (existing && typeof existing === 'object') {
+          setOverrides(existing)
+        }
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  function toggleSop(key: string) {
+    setOverrides(prev => {
+      const current = prev[key]
+      if (!current) {
+        // Currently enabled (default) -> disable it
+        return { ...prev, [key]: { enabled: false, override: '' } }
+      } else if (!current.enabled) {
+        // Currently disabled -> remove the override (back to default = enabled)
+        const next = { ...prev }
+        delete next[key]
+        return next
+      } else {
+        // Explicitly enabled -> disable it
+        return { ...prev, [key]: { enabled: false, override: current.override || '' } }
+      }
+    })
+  }
+
+  function setOverrideText(key: string, text: string) {
+    setOverrides(prev => ({
+      ...prev,
+      [key]: { enabled: prev[key]?.enabled ?? false, override: text },
+    }))
+  }
+
+  function isEnabled(key: string): boolean {
+    const entry = overrides[key]
+    return !entry || entry.enabled !== false
+  }
+
+  async function handleSave() {
+    if (saving) return
+    setSaving(true); setSavedMsg('')
+    try {
+      // Only send entries that differ from defaults (disabled ones)
+      const toSend: SopOverrides = {}
+      for (const [key, val] of Object.entries(overrides)) {
+        if (val.enabled === false) {
+          toSend[key] = val
+        }
+      }
+      await apiUpdateTenantAiConfig({ sopOverrides: toSend } as any)
+      setSavedMsg('Saved')
+      setTimeout(() => setSavedMsg(''), 3000)
+    } catch (e: any) {
+      setSavedMsg(e.message || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const disabledCount = ALL_SOP_CATEGORIES.filter(k => !isEnabled(k)).length
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<FileText size={14} color={T.text.secondary} />}
+        title="SOP Configuration"
+        sub={`${ALL_SOP_CATEGORIES.length} categories${disabledCount > 0 ? ` · ${disabledCount} disabled` : ''}`}
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {savedMsg && (
+              <span style={{
+                fontSize: 10, fontFamily: T.font.mono,
+                color: savedMsg === 'Saved' ? T.status.green : T.status.red,
+              }}>{savedMsg}</span>
+            )}
+            <button onClick={handleSave} disabled={saving} style={{
+              height: 28, padding: '0 12px',
+              display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 11, fontWeight: 600,
+              border: `1px solid ${T.border.strong}`,
+              borderRadius: T.radius.sm,
+              background: T.border.strong, color: '#fff',
+              cursor: saving ? 'default' : 'pointer',
+              fontFamily: T.font.sans, opacity: saving ? 0.6 : 1,
+              transition: 'all 0.15s',
+            }}>
+              {saving
+                ? <RefreshCw size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Save size={11} />}
+              Save
+            </button>
+          </div>
+        }
+      />
+
+      <div className="cls-scroll" style={{ maxHeight: 520, overflowY: 'auto' }}>
+        {ALL_SOP_CATEGORIES.map((sop, i) => {
+          const enabled = isEnabled(sop)
+          const entry = overrides[sop]
+          const c = labelColor(sop)
+          return (
+            <div key={sop} style={{
+              padding: '10px 20px',
+              borderBottom: i < ALL_SOP_CATEGORIES.length - 1 ? `1px solid ${T.border.default}` : 'none',
+              background: !enabled ? 'rgba(220,38,38,0.025)' : 'transparent',
+              transition: 'background 0.15s',
+              animation: 'fadeInUp 0.2s ease-out both',
+              animationDelay: `${Math.min(i * 0.02, 0.3)}s`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {/* SOP name */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                    color: enabled ? T.text.primary : T.text.tertiary,
+                    transition: 'color 0.15s',
+                  }}>
+                    {formatSopName(sop)}
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, marginLeft: 8,
+                  }}>
+                    {sop}
+                  </span>
+                </div>
+
+                {/* Toggle */}
+                <button
+                  onClick={() => toggleSop(sop)}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, border: 'none',
+                    background: enabled ? T.status.green : T.bg.tertiary,
+                    cursor: 'pointer', position: 'relative',
+                    transition: 'background 0.2s', flexShrink: 0, padding: 0,
+                  }}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                    position: 'absolute', top: 3,
+                    left: enabled ? 23 : 3,
+                    transition: 'left 0.2s',
+                  }} />
+                </button>
+              </div>
+
+              {/* Override text input — shown when disabled */}
+              {!enabled && (
+                <div style={{
+                  marginTop: 8,
+                  animation: 'fadeInUp 0.2s ease-out both',
+                }}>
+                  <input
+                    value={entry?.override ?? ''}
+                    onChange={e => setOverrideText(sop, e.target.value)}
+                    placeholder={`Override message, e.g. "We don't offer ${formatSopName(sop).toLowerCase()} services."`}
+                    style={{
+                      width: '100%', height: 32, padding: '0 10px', fontSize: 11,
+                      fontFamily: T.font.sans, color: T.text.primary,
+                      border: `1px solid ${T.border.default}`,
+                      borderRadius: T.radius.sm, outline: 'none',
+                      background: T.bg.primary, transition: 'border-color 0.15s',
+                    }}
+                    onFocus={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(29,78,216,0.08)' }}
+                    onBlur={e => { e.currentTarget.style.borderColor = T.border.default; e.currentTarget.style.boxShadow = 'none' }}
+                  />
+                  <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 4 }}>
+                    When disabled, this text will be sent instead of the SOP response.
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </Card>
   )
@@ -1176,6 +1628,8 @@ export function ClassifierV5(): React.ReactElement {
         )}
 
         <ThresholdSettings />
+        <BatchClassificationTest />
+        <SOPConfigurationSection />
         <LiveTestSection />
         <EvaluationLogSection />
         <TrainingExamplesSection />

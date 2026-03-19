@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds } from '../services/classifier.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
@@ -525,6 +525,85 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] classifier-reinitialize failed:', err);
       res.status(500).json({ error: 'Failed to reinitialize classifier' });
+    }
+  });
+
+  // POST /api/knowledge/gap-analysis — T012: classifier gap analysis
+  router.post('/gap-analysis', ((req, res) => ctrl.gapAnalysis(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // POST /api/knowledge/classifier-examples/:id/approve — T014: approve a pending example
+  router.post('/classifier-examples/:id/approve', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params as { id: string };
+
+      const existing = await prisma.classifierExample.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) {
+        res.status(404).json({ error: 'Example not found' });
+        return;
+      }
+
+      await prisma.classifierExample.update({
+        where: { id },
+        data: { active: true },
+      });
+
+      // Re-initialize classifier to pick up the newly approved example
+      reinitializeClassifier(tenantId, prisma).catch(err =>
+        console.error('[Knowledge] classifier reinit after approve failed:', err)
+      );
+
+      res.json({ id, active: true });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples approve failed:', err);
+      res.status(500).json({ error: 'Failed to approve classifier example' });
+    }
+  });
+
+  // POST /api/knowledge/classifier-examples/:id/reject — T015: reject and delete a pending example
+  router.post('/classifier-examples/:id/reject', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params as { id: string };
+
+      const existing = await prisma.classifierExample.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) {
+        res.status(404).json({ error: 'Example not found' });
+        return;
+      }
+
+      await prisma.classifierExample.delete({ where: { id } });
+
+      res.json({ deleted: true });
+    } catch (err) {
+      console.error('[Knowledge] classifier-examples reject failed:', err);
+      res.status(500).json({ error: 'Failed to reject classifier example' });
+    }
+  });
+
+  // POST /api/knowledge/batch-classify — T022-T023: batch classify messages
+  router.post('/batch-classify', async (req: any, res) => {
+    try {
+      const { messages, voteThreshold } = req.body as { messages?: string[]; voteThreshold?: number };
+
+      if (!Array.isArray(messages) || messages.length === 0) {
+        res.status(400).json({ error: 'messages must be a non-empty array of strings' });
+        return;
+      }
+
+      if (!isClassifierInitialized()) {
+        await initializeClassifier();
+      }
+
+      const result = await batchClassify(messages, voteThreshold);
+      res.json(result);
+    } catch (err) {
+      console.error('[Knowledge] batch-classify failed:', err);
+      res.status(500).json({ error: 'Batch classification failed' });
     }
   });
 

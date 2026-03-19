@@ -9,7 +9,9 @@
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch, getEmbeddingProvider } from './embeddings.service';
 import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier } from './classifier.service';
+import { BAKED_IN_CHUNKS } from './classifier-data';
 import { rerank, isRerankEnabled } from './rerank.service';
+import { getTenantAiConfig } from './tenant-config.service';
 
 /** Returns the DB column name for the active embedding provider. */
 function embCol(): string {
@@ -336,7 +338,7 @@ export async function retrieveRelevantKnowledge(
       console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method})`);
 
       // Look up SOP content from in-memory map
-      const sopChunks = classifierResult.labels
+      let sopChunks = classifierResult.labels
         .map(label => {
           const content = getSopContent(label);
           return content ? {
@@ -348,6 +350,37 @@ export async function retrieveRelevantKnowledge(
           } : null;
         })
         .filter((c): c is NonNullable<typeof c> => c !== null);
+
+      // Apply per-tenant SOP overrides (skip/replace) — baked-in SOPs are exempt
+      try {
+        const tenantConfig = await getTenantAiConfig(tenantId, prisma);
+        const sopOverrides = tenantConfig.sopOverrides as Record<string, { enabled?: boolean; override?: string }> | null;
+        if (sopOverrides && typeof sopOverrides === 'object') {
+          sopChunks = sopChunks.filter(chunk => {
+            // Baked-in SOPs are never affected by tenant overrides
+            if (BAKED_IN_CHUNKS.has(chunk.category)) return true;
+
+            const override = sopOverrides[chunk.category];
+            if (!override) return true; // no override configured — keep default
+
+            // Tenant disabled this SOP entirely
+            if (override.enabled === false) {
+              console.log(`[RAG] SOP "${chunk.category}" disabled by tenant override`);
+              return false;
+            }
+
+            // Tenant provided replacement content
+            if (override.override) {
+              chunk.content = override.override;
+              console.log(`[RAG] SOP "${chunk.category}" replaced by tenant override`);
+            }
+
+            return true;
+          });
+        }
+      } catch (err) {
+        console.warn('[RAG] Failed to load tenant SOP overrides, using defaults:', err);
+      }
 
       // Also get property-specific chunks via pgvector
       const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);

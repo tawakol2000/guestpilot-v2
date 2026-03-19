@@ -726,10 +726,14 @@ export async function apiDetectKnowledgeGaps(): Promise<Array<{ question: string
   })
 }
 
-export async function apiRateMessage(messageId: string, rating: 'positive' | 'negative'): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/messages/${messageId}/rate`, {
+export async function apiRateMessage(
+  messageId: string,
+  rating: 'positive' | 'negative',
+  correction?: string[]
+): Promise<{ ok: boolean; exampleCreated?: boolean }> {
+  return apiFetch<{ ok: boolean; exampleCreated?: boolean }>(`/api/messages/${messageId}/rate`, {
     method: 'POST',
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify({ rating, ...(correction ? { correction } : {}) }),
   })
 }
 
@@ -974,4 +978,73 @@ export async function apiGetOpusReport(id: string): Promise<OpusReportDetail> {
 
 export async function apiGetOpusReportRaw(id: string): Promise<Record<string, unknown>> {
   return apiFetch(`/api/opus/reports/${id}/raw`)
+}
+
+// ─── Pipeline Accuracy & Snapshot ─────────────────────────────────────────────
+
+export interface AccuracyMetrics {
+  overall: { correct: number; total: number; accuracy: number }
+  emptyLabelRate: number
+  perCategory: Array<{ category: string; correct: number; total: number; accuracy: number }>
+  selfImprovement: {
+    totalActive: number
+    bySource: Record<string, number>
+    addedThisPeriod: number
+  }
+  judgeMode: string
+  period: string
+}
+
+export async function apiFetchAccuracy(period: '7d' | '30d' = '30d'): Promise<AccuracyMetrics> {
+  return apiFetch(`/api/ai-pipeline/accuracy?period=${period}`)
+}
+
+export async function apiGenerateSnapshot(): Promise<string> {
+  const res = await fetch(`${BASE_URL}/api/ai-pipeline/snapshot`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+    },
+  })
+  if (!res.ok) throw new Error(`Snapshot failed: ${res.status}`)
+  return res.text()
+}
+
+// ─── Gap Analysis & Suggested Examples ────────────────────────────────────────
+
+export interface GapAnalysisResult {
+  emptyLabelMessages: number
+  underrepresentedCategories: Array<{ category: string; count: number }>
+  languageDistribution: Record<string, number>
+  suggestedExamples: number
+  message: string
+}
+
+export async function apiRunGapAnalysis(): Promise<GapAnalysisResult> {
+  return apiFetch('/api/knowledge/gap-analysis', { method: 'POST' })
+}
+
+export async function apiApproveExample(id: string): Promise<{ id: string; active: boolean }> {
+  return apiFetch(`/api/knowledge/classifier-examples/${id}/approve`, { method: 'POST' })
+}
+
+export async function apiRejectExample(id: string): Promise<{ deleted: boolean }> {
+  return apiFetch(`/api/knowledge/classifier-examples/${id}/reject`, { method: 'POST' })
+}
+
+// ─── Batch Classification ─────────────────────────────────────────────────────
+
+export interface BatchClassifyResult {
+  results: Array<{ message: string; labels: string[]; topSimilarity: number; method: string }>
+  threshold: number
+  emptyLabelCount: number
+  totalMessages: number
+}
+
+export async function apiBatchClassify(messages: string[], voteThreshold?: number): Promise<BatchClassifyResult> {
+  return apiFetch('/api/knowledge/batch-classify', {
+    method: 'POST',
+    body: JSON.stringify({ messages, voteThreshold }),
+  })
 }

@@ -3,8 +3,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   GripVertical, Plus, Search, RefreshCw, Lock, Check, X,
-  Layers, Tag, Trash2, ChevronDown,
+  Layers, Tag, Trash2, ChevronDown, Sparkles, ThumbsUp, ThumbsDown, Zap,
 } from 'lucide-react'
+import {
+  apiRunGapAnalysis, apiApproveExample, apiRejectExample,
+  apiGetClassifierExamples, apiReinitializeClassifier,
+  type ClassifierExampleItem, type GapAnalysisResult,
+} from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -86,6 +91,7 @@ const SOURCE_COLORS: Record<string, { bg: string; fg: string }> = {
   manual: { bg: '#DBEAFE', fg: '#2563EB' },
   'tier2-feedback': { bg: '#FEF3C7', fg: '#D97706' },
   'low-sim-reinforce': { bg: '#DCFCE7', fg: '#15803D' },
+  'gap-analysis': { bg: '#FFF7ED', fg: '#EA580C' },
 }
 
 function sourceColor(src: string) {
@@ -96,6 +102,7 @@ function sourceLabel(src: string) {
   if (src === 'llm-judge') return 'judge'
   if (src === 'tier2-feedback') return 'tier2'
   if (src === 'low-sim-reinforce') return 'reinforce'
+  if (src === 'gap-analysis') return 'gap-analysis'
   return src
 }
 
@@ -221,6 +228,14 @@ export default function ExamplesEditorV5() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [dropSuccessSop, setDropSuccessSop] = useState<string | null>(null)
 
+  // Suggested tab state
+  const [activeTab, setActiveTab] = useState<'active' | 'suggested'>('active')
+  const [suggestedExamples, setSuggestedExamples] = useState<ClassifierExampleItem[]>([])
+  const [suggestedLoading, setSuggestedLoading] = useState(false)
+  const [gapAnalysisRunning, setGapAnalysisRunning] = useState(false)
+  const [gapAnalysisResult, setGapAnalysisResult] = useState<GapAnalysisResult | null>(null)
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
+
   const toastIdRef = useRef(0)
   const mainGridRef = useRef<HTMLDivElement>(null)
 
@@ -254,6 +269,88 @@ export default function ExamplesEditorV5() {
   }, [addToast])
 
   useEffect(() => { fetchExamples() }, [fetchExamples])
+
+  // -- Fetch suggested examples (inactive, gap-analysis source)
+  const fetchSuggestedExamples = useCallback(async () => {
+    setSuggestedLoading(true)
+    try {
+      const data = await apiGetClassifierExamples({ source: 'gap-analysis', limit: 500 })
+      // Filter to only inactive (suggested) ones
+      const suggested = data.examples.filter(e => !e.active)
+      setSuggestedExamples(suggested)
+    } catch (err) {
+      console.error('[ExamplesEditor] fetch suggested failed:', err)
+    } finally {
+      setSuggestedLoading(false)
+    }
+  }, [])
+
+  // Fetch suggested examples when switching to the tab or on mount
+  useEffect(() => {
+    if (activeTab === 'suggested') {
+      fetchSuggestedExamples()
+    }
+  }, [activeTab, fetchSuggestedExamples])
+
+  // -- Approve suggested example
+  const handleApproveExample = useCallback(async (id: string) => {
+    setProcessingIds(prev => new Set(prev).add(id))
+    try {
+      await apiApproveExample(id)
+      setSuggestedExamples(prev => prev.filter(e => e.id !== id))
+      addToast('Example approved and activated', 'success')
+      // Reinitialize classifier since a new example is now active
+      try {
+        setReinitializing(true)
+        await apiReinitializeClassifier()
+      } catch {} finally {
+        setReinitializing(false)
+      }
+    } catch (err) {
+      addToast('Failed to approve example', 'error')
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [addToast])
+
+  // -- Reject suggested example
+  const handleRejectExample = useCallback(async (id: string) => {
+    setProcessingIds(prev => new Set(prev).add(id))
+    try {
+      await apiRejectExample(id)
+      setSuggestedExamples(prev => prev.filter(e => e.id !== id))
+      addToast('Example rejected and removed', 'success')
+    } catch (err) {
+      addToast('Failed to reject example', 'error')
+    } finally {
+      setProcessingIds(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [addToast])
+
+  // -- Run Gap Analysis
+  const handleRunGapAnalysis = useCallback(async () => {
+    setGapAnalysisRunning(true)
+    setGapAnalysisResult(null)
+    try {
+      const result = await apiRunGapAnalysis()
+      setGapAnalysisResult(result)
+      addToast(`Gap analysis complete: ${result.suggestedExamples} examples suggested`, 'success')
+      // Refresh suggested examples list
+      await fetchSuggestedExamples()
+    } catch (err) {
+      addToast('Gap analysis failed', 'error')
+    } finally {
+      setGapAnalysisRunning(false)
+    }
+  }, [addToast, fetchSuggestedExamples])
 
   // -- Derived: all unique SOP labels, sorted by count desc
   const sopCategories = useMemo(() => {
@@ -881,7 +978,73 @@ export default function ExamplesEditorV5() {
           )}
         </div>
 
-        {/* ─── Two-Panel Layout ─────────────────────────────────────────── */}
+        {/* ─── Tab Bar ─────────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0,
+          borderBottom: `1px solid ${T.border.default}`,
+          background: T.bg.card,
+          flexShrink: 0,
+          paddingLeft: 20,
+        }}>
+          {(['active', 'suggested'] as const).map(tab => {
+            const isActive = activeTab === tab
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '10px 18px',
+                  fontSize: 13,
+                  fontWeight: isActive ? 700 : 500,
+                  fontFamily: T.font.sans,
+                  color: isActive ? T.accent : T.text.secondary,
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = T.text.primary }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = T.text.secondary }}
+              >
+                {tab === 'active' ? (
+                  <>
+                    <Layers size={14} />
+                    Active
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    Suggested
+                    {suggestedExamples.length > 0 && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: T.text.inverse,
+                        background: T.status.amber,
+                        padding: '1px 6px',
+                        borderRadius: 99,
+                        lineHeight: '16px',
+                        minWidth: 18,
+                        textAlign: 'center',
+                      }}>
+                        {suggestedExamples.length}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ─── Two-Panel Layout (Active tab) ─────────────────────────────── */}
+        {activeTab === 'active' && (
         <div style={{
           flex: 1,
           display: 'flex',
@@ -1172,6 +1335,187 @@ export default function ExamplesEditorV5() {
             )}
           </div>
         </div>
+        )}
+
+        {/* ─── Suggested Tab ───────────────────────────────────────────── */}
+        {activeTab === 'suggested' && (
+          <div className="ee-scroll" style={{
+            flex: 1,
+            overflowY: 'auto',
+            background: T.bg.primary,
+          }}>
+            {/* Toolbar */}
+            <div style={{
+              padding: '12px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: `1px solid ${T.border.default}`,
+              background: T.bg.card,
+              flexShrink: 0,
+              gap: 12,
+              flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 13, color: T.text.secondary, fontWeight: 500 }}>
+                {suggestedLoading ? 'Loading...' : (
+                  <>
+                    <strong style={{ color: T.text.primary }}>{suggestedExamples.length}</strong>
+                    {' '}suggested example{suggestedExamples.length !== 1 ? 's' : ''} pending review
+                  </>
+                )}
+              </span>
+
+              <button
+                onClick={handleRunGapAnalysis}
+                disabled={gapAnalysisRunning}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 16px',
+                  borderRadius: T.radius.sm,
+                  border: 'none',
+                  background: gapAnalysisRunning ? T.bg.tertiary : '#EA580C',
+                  color: gapAnalysisRunning ? T.text.secondary : T.text.inverse,
+                  fontFamily: T.font.sans,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: gapAnalysisRunning ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s',
+                  boxShadow: T.shadow.sm,
+                  opacity: gapAnalysisRunning ? 0.8 : 1,
+                }}
+                onMouseEnter={e => { if (!gapAnalysisRunning) e.currentTarget.style.opacity = '0.9' }}
+                onMouseLeave={e => { if (!gapAnalysisRunning) e.currentTarget.style.opacity = '1' }}
+              >
+                {gapAnalysisRunning ? (
+                  <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Zap size={14} />
+                )}
+                {gapAnalysisRunning ? 'Analyzing...' : 'Run Gap Analysis'}
+              </button>
+            </div>
+
+            {/* Gap Analysis Result Summary */}
+            {gapAnalysisResult && (
+              <div style={{
+                margin: '12px 20px 0',
+                padding: 14,
+                background: '#FFF7ED',
+                borderRadius: T.radius.md,
+                border: '1px solid #FDBA7440',
+                animation: 'scaleIn 0.2s ease both',
+              }}>
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#EA580C',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  <Sparkles size={14} />
+                  Gap Analysis Results
+                  <button
+                    onClick={() => setGapAnalysisResult(null)}
+                    style={{
+                      marginLeft: 'auto',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#EA580C',
+                      opacity: 0.6,
+                      padding: 2,
+                      display: 'flex',
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  gap: 16,
+                  flexWrap: 'wrap',
+                  fontSize: 12,
+                  color: T.text.secondary,
+                }}>
+                  <div>
+                    <span style={{ fontWeight: 600, color: T.text.primary }}>
+                      {gapAnalysisResult.emptyLabelMessages}
+                    </span>
+                    {' '}empty-label messages found
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: 600, color: T.text.primary }}>
+                      {gapAnalysisResult.suggestedExamples}
+                    </span>
+                    {' '}examples suggested
+                  </div>
+                  {Object.keys(gapAnalysisResult.languageDistribution).length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      Languages:{' '}
+                      {Object.entries(gapAnalysisResult.languageDistribution).map(([lang, count]) => (
+                        <span
+                          key={lang}
+                          style={{
+                            padding: '1px 6px',
+                            borderRadius: 3,
+                            background: '#FEF3C7',
+                            color: '#D97706',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            fontFamily: T.font.sans,
+                          }}
+                        >
+                          {lang}: {count}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Suggested examples list */}
+            {suggestedLoading ? (
+              <SkeletonCards />
+            ) : suggestedExamples.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 300,
+                gap: 10,
+                color: T.text.tertiary,
+                padding: 40,
+              }}>
+                <Sparkles size={32} style={{ opacity: 0.3 }} />
+                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, textAlign: 'center' }}>
+                  No suggested examples pending review
+                </p>
+                <p style={{ fontSize: 12, margin: 0, textAlign: 'center', maxWidth: 360 }}>
+                  Run Gap Analysis to scan recent messages and generate training example suggestions.
+                </p>
+              </div>
+            ) : (
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {suggestedExamples.map((ex, idx) => (
+                  <SuggestedExampleRow
+                    key={ex.id}
+                    example={ex}
+                    processing={processingIds.has(ex.id)}
+                    onApprove={() => handleApproveExample(ex.id)}
+                    onReject={() => handleRejectExample(ex.id)}
+                    animationDelay={idx < 30 ? idx * 25 : 0}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ─── Toasts ──────────────────────────────────────────────────────── */}
@@ -1324,6 +1668,185 @@ const ExampleCard = React.memo(function ExampleCard({
         }}>
           {sourceLabel(example.source)}
         </span>
+      </div>
+    </div>
+  )
+})
+
+// ─── Suggested Example Row (memoized) ────────────────────────────────────────
+const SuggestedExampleRow = React.memo(function SuggestedExampleRow({
+  example,
+  processing,
+  onApprove,
+  onReject,
+  animationDelay,
+}: {
+  example: ClassifierExampleItem
+  processing: boolean
+  onApprove: () => void
+  onReject: () => void
+  animationDelay: number
+}) {
+  const [hovered, setHovered] = useState(false)
+  const sc = sourceColor(example.source)
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: T.bg.card,
+        borderRadius: T.radius.sm,
+        border: `1px solid ${T.border.default}`,
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        transition: 'all 0.15s ease',
+        boxShadow: hovered ? T.shadow.md : T.shadow.sm,
+        animation: animationDelay > 0 ? `fadeInUp 0.3s ease both` : undefined,
+        animationDelay: animationDelay > 0 ? `${animationDelay}ms` : undefined,
+        opacity: processing ? 0.5 : 1,
+        pointerEvents: processing ? 'none' : 'auto',
+      }}
+    >
+      {/* Text content */}
+      <p
+        dir="auto"
+        style={{
+          margin: 0,
+          fontSize: 13,
+          fontFamily: T.font.mono,
+          color: T.text.primary,
+          lineHeight: 1.45,
+          flex: 1,
+          overflow: 'hidden',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          minWidth: 0,
+        }}
+      >
+        {example.text}
+      </p>
+
+      {/* Labels */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
+        flexWrap: 'wrap',
+        flexShrink: 0,
+        maxWidth: 200,
+      }}>
+        {example.labels.map(label => {
+          const colors = sopBadgeColor(label)
+          return (
+            <span key={label} style={{
+              display: 'inline-block',
+              padding: '1px 5px',
+              borderRadius: 3,
+              background: colors.bg,
+              color: colors.fg,
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              letterSpacing: '0.01em',
+              whiteSpace: 'nowrap',
+              lineHeight: '16px',
+            }}>
+              {label}
+            </span>
+          )
+        })}
+        {example.labels.length === 0 && (
+          <span style={{
+            display: 'inline-block',
+            padding: '1px 5px',
+            borderRadius: 3,
+            background: '#FEF3C7',
+            color: '#D97706',
+            fontSize: 9,
+            fontWeight: 600,
+            fontFamily: T.font.sans,
+            lineHeight: '16px',
+          }}>
+            contextual
+          </span>
+        )}
+      </div>
+
+      {/* Source badge */}
+      <span style={{
+        display: 'inline-block',
+        padding: '2px 6px',
+        borderRadius: 3,
+        background: sc.bg,
+        color: sc.fg,
+        fontSize: 9,
+        fontWeight: 600,
+        fontFamily: T.font.sans,
+        lineHeight: '16px',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}>
+        {sourceLabel(example.source)}
+      </span>
+
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button
+          onClick={onApprove}
+          disabled={processing}
+          title="Approve — activate this example"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '5px 10px',
+            borderRadius: T.radius.sm,
+            border: `1px solid ${T.status.green}40`,
+            background: `${T.status.green}0A`,
+            color: T.status.green,
+            fontFamily: T.font.sans,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = `${T.status.green}18` }}
+          onMouseLeave={e => { e.currentTarget.style.background = `${T.status.green}0A` }}
+        >
+          <ThumbsUp size={12} />
+          Approve
+        </button>
+        <button
+          onClick={onReject}
+          disabled={processing}
+          title="Reject — delete this suggestion"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '5px 10px',
+            borderRadius: T.radius.sm,
+            border: `1px solid ${T.status.red}40`,
+            background: `${T.status.red}0A`,
+            color: T.status.red,
+            fontFamily: T.font.sans,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = `${T.status.red}18` }}
+          onMouseLeave={e => { e.currentTarget.style.background = `${T.status.red}0A` }}
+        >
+          <ThumbsDown size={12} />
+          Reject
+        </button>
       </div>
     </div>
   )

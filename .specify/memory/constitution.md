@@ -1,18 +1,13 @@
 <!--
 Sync Impact Report
 ===================
-Version change: N/A → 1.0.0 (initial ratification)
-Modified principles: N/A (first version)
-Added sections:
-  - Core Principles (7 principles)
-  - Security & Data Protection
-  - Development Workflow
-  - Governance
-Removed sections: N/A
-Templates requiring updates:
-  - .specify/templates/plan-template.md — ✅ compatible (Constitution Check section is generic)
-  - .specify/templates/spec-template.md — ✅ compatible (no principle-specific sections)
-  - .specify/templates/tasks-template.md — ✅ compatible (no principle-specific task types)
+Version change: 1.0.0 → 1.1.1
+Modified principles:
+  - §II Multi-Tenant Isolation: added carve-out for global classifier training data
+  - §VII Self-Improvement with Guardrails: added judgeMode toggle exception
+Modified sections:
+  - Security & Data Protection: JWT expiry updated from 90d to 30d
+Templates requiring updates: None (changes are additive)
 Follow-up TODOs: None
 -->
 
@@ -45,7 +40,10 @@ Every database query, API response, and background job MUST be scoped to
 the authenticated tenant. Data leakage between tenants is a critical
 security violation.
 
-- Every Prisma model includes `tenantId`. All queries MUST filter by it.
+- Every Prisma model includes `tenantId`. All queries MUST filter by it,
+  with one exception: classifier training examples are shared globally
+  across tenants (hospitality language is universal). SOP content
+  retrieved for each classification label remains per-tenant.
 - JWT tokens carry `tenantId` and `plan` — the auth middleware injects
   these into every authenticated request.
 - Background jobs (debounce poll, BullMQ workers) MUST resolve tenant
@@ -147,7 +145,10 @@ operate within strict safety bounds to prevent training data corruption.
 - Judge evaluation MUST be fire-and-forget — failures MUST NOT affect
   the already-sent guest response.
 - The judge MUST skip evaluation when the classifier is already confident
-  (topSimilarity >= judgeThreshold, majority neighbor agreement).
+  (topSimilarity >= judgeThreshold, majority neighbor agreement) —
+  unless `judgeMode` is set to `evaluate_all`, in which case the judge
+  evaluates every non-contextual AI response. The operator manually
+  switches to `sampling` mode when the training set is mature.
 - Low-similarity reinforcement (topSim < 0.40, judge says correct) adds
   examples to boost Tier 1 without changing classification behavior.
 
@@ -159,8 +160,8 @@ and skip conditions prevent the system from poisoning its own training data.
 
 - **Secrets MUST never be committed** to version control — `.env` files,
   API keys, credentials, and webhook secrets are excluded via `.gitignore`.
-- **JWT tokens** expire after 90 days. The `JWT_SECRET` environment variable
-  is required; the fallback value `changeme` MUST only exist in development.
+- **JWT tokens** expire after 30 days. The `JWT_SECRET` environment variable
+  is required and MUST be explicitly set — no fallback value.
 - **Webhook endpoints** (`/webhooks/hostaway/:tenantId`) are public-facing.
   Hostaway webhook secrets MUST be validated when configured. The tenantId
   in the URL path MUST match the authenticated tenant context.
@@ -216,4 +217,4 @@ be consulted when architectural trade-offs arise.
   development guide. This constitution governs the principles that those
   documents implement.
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-19 | **Last Amended**: 2026-03-19
+**Version**: 1.1.1 | **Ratified**: 2026-03-19 | **Last Amended**: 2026-03-19

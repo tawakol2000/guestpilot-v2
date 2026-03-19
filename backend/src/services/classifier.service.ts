@@ -129,7 +129,7 @@ export async function initializeClassifier(): Promise<void> {
  * Classify a guest message and return the SOP chunk IDs to retrieve.
  * Returns empty labels if classifier not initialized (graceful degradation).
  */
-export async function classifyMessage(query: string): Promise<{
+export async function classifyMessage(query: string, overrideVoteThreshold?: number): Promise<{
   labels: string[];
   method: string;
   topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
@@ -212,9 +212,10 @@ export async function classifyMessage(query: string): Promise<{
   const totalWeight = topK.reduce((sum, { similarity }) => sum + similarity, 0);
 
   // Step 3: Filter by vote threshold AND neighbor agreement
+  const effectiveThreshold = overrideVoteThreshold ?? _voteThreshold;
   const candidateLabels = Object.entries(votes)
     .filter(([label, weight]) =>
-      weight / totalWeight > _voteThreshold &&
+      weight / totalWeight > effectiveThreshold &&
       (labelCounts[label] || 0) >= MIN_NEIGHBOR_AGREEMENT
     )
     .sort((a, b) => b[1] - a[1])
@@ -336,4 +337,31 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
 
   _reinitPromise = doReinit().finally(() => { _reinitPromise = null; });
   return _reinitPromise;
+}
+
+/**
+ * Batch classify multiple messages. Used by the gap analysis and testing UIs.
+ * Optionally override the vote threshold for experimentation.
+ */
+export async function batchClassify(
+  messages: string[],
+  overrideVoteThreshold?: number
+): Promise<{
+  results: Array<{ message: string; labels: string[]; topSimilarity: number; method: string }>;
+  threshold: number;
+  emptyLabelCount: number;
+  totalMessages: number;
+}> {
+  const results = [];
+  for (const msg of messages) {
+    const result = await classifyMessage(msg, overrideVoteThreshold);
+    results.push({
+      message: msg,
+      labels: result.labels,
+      topSimilarity: result.topSimilarity,
+      method: result.method,
+    });
+  }
+  const emptyLabelCount = results.filter(r => r.labels.length === 0).length;
+  return { results, threshold: overrideVoteThreshold ?? _voteThreshold, emptyLabelCount, totalMessages: messages.length };
 }

@@ -369,6 +369,8 @@ model TenantAiConfig {
   workingHoursStart    String   @default("08:00")
   workingHoursEnd      String   @default("01:00")
   workingHoursTimezone String   @default("UTC")
+  judgeMode            String   @default("evaluate_all")
+  sopOverrides         Json     @default("{}")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -411,6 +413,7 @@ model ClassifierEvaluation {
   judgeInputTokens    Int      @default(0)
   judgeOutputTokens   Int      @default(0)
   judgeCost           Float    @default(0)
+  skipReason          String?
   createdAt           DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
