@@ -4,20 +4,15 @@ FROM node:18-bullseye
 RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip install scikit-learn numpy cohere
+RUN pip install --no-cache-dir scikit-learn numpy cohere
 
 WORKDIR /app
 
-# Copy package files
-COPY backend/package*.json ./
-COPY backend/prisma ./prisma
+# Copy entire backend directory
+COPY backend/ ./
 
 # Install Node dependencies
 RUN npm ci
-
-# Copy backend source
-COPY backend/src ./src
-COPY backend/tsconfig.json ./
 
 # Build
 RUN npx prisma generate && npm run build
