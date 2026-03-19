@@ -4,6 +4,6 @@
   "outputDirectory": ".next",
   "installCommand": "npm install",
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://backend-advanced-ai-production.up.railway.app"
+    "NEXT_PUBLIC_API_URL": "https://guestpilot-v2-production.up.railway.app"
   }
 }
