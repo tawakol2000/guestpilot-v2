@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { execFile } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { AuthenticatedRequest } from '../types';
 import { appendLearnedAnswer } from '../services/rag.service';
@@ -368,6 +369,23 @@ export function makeKnowledgeController(prisma: PrismaClient) {
 
         // 5. Reload LR weights metadata
         loadLrWeightsMetadata();
+
+        // 5b. Persist weights to DB (survives container restarts)
+        try {
+          const weightsJson = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
+          await prisma.classifierWeights.create({
+            data: {
+              tenantId,
+              weights: weightsJson,
+              accuracy: summary.crossValAccuracy || null,
+              classes: summary.classes || 0,
+              examples: summary.exampleCount || 0,
+            },
+          });
+          console.log(`[retrainClassifier] Weights persisted to DB (accuracy: ${summary.crossValAccuracy}, classes: ${summary.classes})`);
+        } catch (dbErr) {
+          console.warn('[retrainClassifier] Failed to persist weights to DB (non-fatal):', dbErr);
+        }
 
         // 6. Trigger atomic swap reinit of the LR classifier
         await reinitializeClassifier(tenantId, prisma);

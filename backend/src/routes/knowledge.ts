@@ -34,12 +34,20 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const status = getClassifierStatus();
       const config = await getTenantAiConfig(tenantId, prisma);
+      const retrainCount = await prisma.classifierWeights.count({ where: { tenantId } });
+      const latestWeights = await prisma.classifierWeights.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, accuracy: true, classes: true, examples: true },
+      });
       res.json({
         ...status,
         classifierType: 'lr',
-        lrAccuracy: status.lrAccuracy,
-        lastTrainedAt: status.lastTrainedAt,
+        lrAccuracy: status.lrAccuracy || latestWeights?.accuracy || null,
+        lastTrainedAt: status.lastTrainedAt || latestWeights?.createdAt?.toISOString() || null,
         retrainAvailable: true,
+        retrainCount,
+        weightsSource: status.lrAccuracy ? 'file' : (latestWeights ? 'database' : 'none'),
         confidenceTiers: {
           highThreshold: (config as any).highConfidenceThreshold || 0.85,
           lowThreshold: (config as any).lowConfidenceThreshold || 0.55,

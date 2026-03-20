@@ -36,6 +36,7 @@ model Tenant {
   classifierExamples      ClassifierExample[]
   classifierEvaluations   ClassifierEvaluation[]
   opusReports             OpusReport[]
+  classifierWeights       ClassifierWeights[]
 }
 
 model Property {
@@ -462,4 +463,20 @@ model AiConfigVersion {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, version(sort: Desc)])
+}
+
+// ─── Classifier Weights (persisted across deploys) ───────────────────────────
+
+model ClassifierWeights {
+  id         String   @id @default(cuid())
+  tenantId   String
+  weights    Json     // Full classifier-weights.json content
+  accuracy   Float?   // LOO-CV accuracy
+  classes    Int      @default(0)  // Number of classes
+  examples   Int      @default(0)  // Number of training examples
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
 }

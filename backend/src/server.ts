@@ -72,12 +72,15 @@ async function main() {
         console.log(`[Startup] Re-embedded ${properties.length} property chunk sets for tenant ${tenant.id}`);
       }
 
-      // Initialize the KNN classifier for SOP routing
+      // Initialize the LR classifier for SOP routing
       try {
         await initializeClassifier();
-        console.log('[Startup] KNN classifier initialized');
+        // If file weights missing, try loading from DB (survives container restarts)
+        const { loadLrWeightsMetadata } = await import('./services/classifier.service');
+        await loadLrWeightsMetadata(prisma);
+        console.log('[Startup] LR classifier initialized');
       } catch (err) {
-        console.warn('[Startup] KNN classifier init failed (non-fatal):', err);
+        console.warn('[Startup] LR classifier init failed (non-fatal):', err);
       }
     } catch (err) {
       console.warn('[Startup] Background re-embed failed (non-fatal):', err);

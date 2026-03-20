@@ -139,19 +139,43 @@ export function getClassifierCalibration(): {
 }
 
 /**
- * Load full LR weights + metadata from classifier-weights.json (if it exists).
+ * Load full LR weights + metadata from classifier-weights.json OR database.
+ * File takes priority (fastest). If file missing, loads latest from ClassifierWeights table.
  * Populates lrWeights, lrThresholds, centroids, calibration, trainedAt on the current state.
  * Called after training completes and on startup/reinit.
  */
-export function loadLrWeightsMetadata(): void {
+export async function loadLrWeightsMetadata(prisma?: any): Promise<void> {
   try {
     const weightsPath = path.join(__dirname, '../config/classifier-weights.json');
-    if (!fs.existsSync(weightsPath)) {
-      console.log('[Classifier] No classifier-weights.json found — LR classifier not loaded');
-      return;
+    let data: any = null;
+
+    // Try file first (fastest)
+    if (fs.existsSync(weightsPath)) {
+      data = JSON.parse(fs.readFileSync(weightsPath, 'utf-8'));
+      console.log('[Classifier] LR weights loaded from file');
     }
 
-    const data = JSON.parse(fs.readFileSync(weightsPath, 'utf-8'));
+    // Fallback: load from database (survives container restarts)
+    if (!data && prisma) {
+      try {
+        const dbWeights = await prisma.classifierWeights.findFirst({
+          orderBy: { createdAt: 'desc' },
+        });
+        if (dbWeights) {
+          data = dbWeights.weights;
+          // Also write to file for next load (cache)
+          fs.writeFileSync(weightsPath, JSON.stringify(data, null, 2));
+          console.log(`[Classifier] LR weights loaded from DB (trained ${dbWeights.createdAt.toISOString()}) — cached to file`);
+        }
+      } catch (dbErr) {
+        console.warn('[Classifier] Could not load weights from DB:', dbErr);
+      }
+    }
+
+    if (!data) {
+      console.log('[Classifier] No classifier weights found (file or DB) — LR classifier not loaded');
+      return;
+    }
 
     const lrWeights = (data.classes && data.coefficients && data.intercepts) ? {
       classes: data.classes as string[],
@@ -231,8 +255,8 @@ export async function initializeClassifier(): Promise<void> {
         trainedAt: null,
       };
       _initialized = true;
-      // T030: Load LR weights from classifier-weights.json after initialization
-      loadLrWeightsMetadata();
+      // T030: Load LR weights from file or DB after initialization
+      await loadLrWeightsMetadata();
       console.log(`[Classifier] Initialized: ${examples.length} examples, ${initDurationMs}ms`);
     } catch (err) {
       console.error('[Classifier] Initialization failed:', err);

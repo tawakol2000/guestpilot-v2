@@ -859,6 +859,8 @@ function ThresholdSettings() {
   const [retraining, setRetraining] = useState(false)
   const [retrainMsg, setRetrainMsg] = useState('')
   const [retrainErr, setRetrainErr] = useState('')
+  const [retrainCount, setRetrainCount] = useState<number | null>(null)
+  const [weightsSource, setWeightsSource] = useState<string | null>(null)
   const [calibration, setCalibration] = useState<{
     lrAccuracy: number
     perCategory: Array<{ category: string; accuracy: number; total: number; correct: number }>
@@ -891,6 +893,8 @@ function ThresholdSettings() {
             perCategory: s.perCategory ?? [],
           })
         }
+        if (s.retrainCount != null) setRetrainCount(s.retrainCount)
+        if (s.weightsSource) setWeightsSource(s.weightsSource)
       })
       .catch(() => {})
   }, [])
@@ -1219,6 +1223,25 @@ function ThresholdSettings() {
                   : <Zap size={14} />}
                 {retraining ? 'Retraining...' : 'Retrain Classifier'}
               </button>
+              {(retrainCount != null || weightsSource) && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
+                  {retrainCount != null && (
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                      {retrainCount} retrain{retrainCount === 1 ? '' : 's'} saved
+                    </span>
+                  )}
+                  {weightsSource && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
+                      padding: '2px 6px', borderRadius: 999,
+                      background: weightsSource === 'file' ? '#DCFCE7' : weightsSource === 'database' ? '#DBEAFE' : '#FEE2E2',
+                      color: weightsSource === 'file' ? '#166534' : weightsSource === 'database' ? '#1E40AF' : '#991B1B',
+                    }}>
+                      weights: {weightsSource}
+                    </span>
+                  )}
+                </div>
+              )}
               {retrainMsg && (
                 <div style={{
                   marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
