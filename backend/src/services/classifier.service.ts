@@ -872,6 +872,9 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
       let centroids: ClassifierState['centroids'] = {};
       let calibration: ClassifierState['calibration'] = null;
       let trainedAt: ClassifierState['trainedAt'] = null;
+      let descEmbeddings: ClassifierState['descriptionEmbeddings'] = null;
+      let descCategories: ClassifierState['descriptionCategories'] = null;
+      let descFeaturesActive = false;
 
       try {
         const weightsPath = path.join(__dirname, '../config/classifier-weights.json');
@@ -905,6 +908,28 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
           trainedAt = data.trainedAt ?? null;
 
           console.log(`[Classifier] LR weights loaded during reinit: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}`);
+
+          // T014: Dimension detection for description features
+          if (lrWeights && lrWeights.coefficients.length > 0) {
+            const dim = lrWeights.coefficients[0].length;
+            if (dim === 1044) {
+              descFeaturesActive = true;
+              console.log('[Classifier] Description features ACTIVE during reinit — augmented weights (1044-dim)');
+            } else if (dim === 1024) {
+              console.warn('[Classifier] Description features DISABLED during reinit — old weights (1024-dim), retrain required');
+            }
+          }
+
+          // Load description embeddings from weights if available
+          if (data.descriptionEmbeddings && data.featureSchema?.descriptionCategories) {
+            const descEmbs = new Map<string, number[][]>();
+            for (const [cat, embs] of Object.entries(data.descriptionEmbeddings as Record<string, { en: number[][]; ar: number[][] }>)) {
+              descEmbs.set(cat, [...(embs.en || []), ...(embs.ar || [])]);
+            }
+            descEmbeddings = descEmbs;
+            descCategories = data.featureSchema.descriptionCategories as string[];
+            console.log(`[Classifier] Description embeddings loaded from weights during reinit: ${descEmbs.size} categories`);
+          }
         } else {
           console.log('[Classifier] No classifier-weights.json found during reinit — LR classifier not loaded');
         }
@@ -922,12 +947,12 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
         centroids,
         calibration,
         trainedAt,
-        descriptionEmbeddings: null,
-        descriptionCategories: null,
-        descriptionFeaturesActive: false,
+        descriptionEmbeddings: descEmbeddings,
+        descriptionCategories: descCategories,
+        descriptionFeaturesActive: descFeaturesActive,
       };
       _initialized = true;
-      // Load description embeddings after reinit
+      // Load description embeddings from JSON if not already loaded from weights
       await loadDescriptionEmbeddings();
       console.log(`[Classifier] Re-initialized: ${examples.length} examples (${newExamples.length} from DB), ${initDurationMs}ms`);
     } catch (err) {
