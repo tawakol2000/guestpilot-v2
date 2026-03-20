@@ -217,12 +217,12 @@ export async function loadLrWeightsMetadata(prisma?: any): Promise<void> {
       _state.calibration = calibration;
       _state.trainedAt = trainedAt;
 
-      // T014: Dimension detection — 20-dim = description-only LR, 1024-dim = legacy embedding LR
+      // T014: Dimension detection — 1044 = description-enhanced (scaling absorbed), 1024 = legacy
       if (lrWeights && lrWeights.coefficients.length > 0) {
         const dim = lrWeights.coefficients[0].length;
-        if (dim === 20) {
+        if (dim === 1044) {
           _state.descriptionFeaturesActive = true;
-          console.log('[Classifier] Description features ACTIVE — 20-dim description-only LR');
+          console.log('[Classifier] Description features ACTIVE — 1044-dim (scaling absorbed in weights)');
         } else if (dim === 1024) {
           _state.descriptionFeaturesActive = false;
           console.warn('[Classifier] Description features DISABLED — legacy 1024-dim weights, retrain required');
@@ -613,15 +613,15 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
   const descResult = computeDescriptionSimilarities(queryEmbedding, state);
   const topDescriptionMatches = descResult?.topDescriptionMatches || [];
 
-  // T015: LR uses ONLY description similarities (20-dim) when active
-  // KNN boost handles exact matches via 1024-dim embeddings separately
+  // T015: Concatenate [1024-dim embedding, 20-dim description sims] when active
+  // Scaling is absorbed into the LR weights during training (StandardScaler)
   let lrInput: number[];
   let method: string;
   if (state.descriptionFeaturesActive && descResult) {
-    lrInput = descResult.featureVector;  // 20-dim only, NOT concatenated
+    lrInput = [...queryEmbedding, ...descResult.featureVector];
     method = 'lr_desc';
   } else {
-    lrInput = queryEmbedding;  // fallback: 1024-dim when no descriptions
+    lrInput = queryEmbedding;
     method = 'lr_sigmoid';
   }
 
@@ -803,7 +803,7 @@ export async function classifyDetailed(query: string): Promise<{
   let lrInput: number[];
   let lrMethod: string;
   if (state.descriptionFeaturesActive && descResult) {
-    lrInput = descResult.featureVector;
+    lrInput = [...queryEmbedding, ...descResult.featureVector];
     lrMethod = 'lr_desc';
   } else if (state.lrWeights) {
     lrInput = queryEmbedding;
@@ -994,12 +994,12 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
 
           console.log(`[Classifier] LR weights loaded during reinit: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}`);
 
-          // T014: Dimension detection — 20-dim = description-only LR
+          // T014: Dimension detection — 1044 = description-enhanced (scaling absorbed)
           if (lrWeights && lrWeights.coefficients.length > 0) {
             const dim = lrWeights.coefficients[0].length;
-            if (dim === 20) {
+            if (dim === 1044) {
               descFeaturesActive = true;
-              console.log('[Classifier] Description features ACTIVE during reinit — 20-dim description-only LR');
+              console.log('[Classifier] Description features ACTIVE during reinit — 1044-dim (scaling absorbed)');
             } else if (dim === 1024) {
               console.warn('[Classifier] Description features DISABLED during reinit — legacy 1024-dim weights');
             }

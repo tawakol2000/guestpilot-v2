@@ -66,7 +66,14 @@ def compute_description_similarities(query_embedding, desc_embeddings, desc_cate
 
 
 def train_lr(embeddings, label_matrix, mlb):
-    """Train OneVsRestClassifier with LogisticRegression."""
+    """Train OneVsRestClassifier with LogisticRegression.
+    Uses StandardScaler internally and absorbs scaling into coefficients
+    so inference code needs no scaling step."""
+    from sklearn.preprocessing import StandardScaler
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(embeddings)
+
     clf = OneVsRestClassifier(
         LogisticRegression(
             max_iter=1000,
@@ -76,7 +83,17 @@ def train_lr(embeddings, label_matrix, mlb):
         ),
         n_jobs=-1
     )
-    clf.fit(embeddings, label_matrix)
+    clf.fit(X_scaled, label_matrix)
+
+    # Absorb scaling into coefficients: w' = w/std, b' = b - w·mean/std
+    for estimator in clf.estimators_:
+        w = estimator.coef_[0]           # (n_features,)
+        b = estimator.intercept_[0]      # scalar
+        adjusted_w = w / scaler.scale_
+        adjusted_b = b - np.dot(w, scaler.mean_ / scaler.scale_)
+        estimator.coef_[0] = adjusted_w
+        estimator.intercept_[0] = adjusted_b
+
     return clf
 
 
@@ -99,14 +116,19 @@ def cross_validate(embeddings, label_matrix, mlb, n_folds=5):
         X_test = embeddings[test_idx]
         y_test = label_matrix[test_idx]
 
+        from sklearn.preprocessing import StandardScaler
+        fold_scaler = StandardScaler()
+        X_train_scaled = fold_scaler.fit_transform(X_train)
+        X_test_scaled = fold_scaler.transform(X_test)
+
         clf = OneVsRestClassifier(
             LogisticRegression(max_iter=500, C=1.0, solver='lbfgs', class_weight='balanced'),
             n_jobs=-1
         )
-        clf.fit(X_train, y_train)
+        clf.fit(X_train_scaled, y_train)
 
-        y_pred = clf.predict(X_test)
-        proba = clf.predict_proba(X_test) if hasattr(clf, 'predict_proba') else None
+        y_pred = clf.predict(X_test_scaled)
+        proba = clf.predict_proba(X_test_scaled) if hasattr(clf, 'predict_proba') else None
 
         for j in range(len(test_idx)):
             true_labels = set(np.where(y_test[j] == 1)[0])
@@ -226,10 +248,8 @@ def main():
 
             desc_features = np.array(desc_features)
 
-            # LR trains on description similarities ONLY (20-dim)
-            # KNN boost handles exact matches using full 1024-dim embeddings
-            augmented_embeddings = desc_features  # 20-dim, NOT concatenated with embeddings
-            print(f"[train] LR feature vectors: {augmented_embeddings.shape[1]}-dim (description similarities only)", file=sys.stderr)
+            augmented_embeddings = np.concatenate([embeddings, desc_features], axis=1)
+            print(f"[train] Augmented vectors: {augmented_embeddings.shape[1]}-dim ({embeddings.shape[1]} + {desc_features.shape[1]})", file=sys.stderr)
 
             # Build output description embeddings (for runtime cold start)
             desc_embeddings_output = {}
