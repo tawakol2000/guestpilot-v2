@@ -184,11 +184,11 @@ export function aiPipelineRouter(prisma: PrismaClient) {
           outputTokens: log.outputTokens,
           costUsd: log.costUsd,
           durationMs: log.durationMs,
-          responseText: log.responseText?.substring(0, 500) || '',
+          responseText: log.responseText || '',
           error: log.error,
           // Pipeline routing data from ragContext
           pipeline: {
-            query: ragCtx?.query?.substring(0, 200) || '',
+            query: ragCtx?.query || '',
             tier: ragCtx?.tier || 'unknown',
             topSimilarity: ragCtx?.topSimilarity ?? null,
             // Tier 1 details

@@ -1249,7 +1249,7 @@ export async function generateAndSendAiReply(
     });
     const openTasksText = openTasks.length > 0
       ? openTasks.map(t => {
-          const notePreview = t.note ? `\n  → ${t.note.substring(0, 300)}` : '';
+          const notePreview = t.note ? `\n  → ${t.note}` : '';
           return `[${t.id}] ${t.title} (${t.urgency})${notePreview}`;
         }).join('\n')
       : 'No open tasks.';
@@ -1464,7 +1464,7 @@ export async function generateAndSendAiReply(
     const ragContext: any = {
       query: ragQuery,
       chunks: retrievedChunks.map((c: any) => ({
-        content: c.content?.substring(0, 2000),  // Capped at 2000 chars for DB storage (was 200, now reasonable for debugging — AUD-057)
+        content: c.content,  // Full content — no truncation
         category: c.category,
         similarity: c.similarity,
         sourceKey: c.sourceKey || '',
