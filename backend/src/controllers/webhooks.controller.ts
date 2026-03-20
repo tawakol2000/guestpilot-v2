@@ -208,15 +208,10 @@ async function handleNewMessage(
   });
 
   // Fallback: look up via reservationId when hostawayConversationId doesn't match
-  if (!conversation && data.reservationId) {
-    const reservation = await prisma.reservation.findUnique({
-      where: {
-        tenantId_hostawayReservationId: {
-          tenantId,
-          hostawayReservationId: String(data.reservationId),
-        },
-      },
-    });
+  // Try all ID formats (webhook compound vs import short numeric)
+  if (!conversation && (data.reservationId || data.id)) {
+    const found = await findReservationByAnyId(tenantId, data, prisma);
+    const reservation = found?.reservation || null;
     if (reservation) {
       conversation = await prisma.conversation.findFirst({
         where: { tenantId, reservationId: reservation.id },
@@ -244,10 +239,9 @@ async function handleNewMessage(
         include: { reservation: true, guest: true },
       });
       if (!conversation) {
-        // Try by reservationId
-        const res = await prisma.reservation.findUnique({
-          where: { tenantId_hostawayReservationId: { tenantId, hostawayReservationId: String(data.reservationId) } },
-        });
+        // Try by reservationId (all ID formats)
+        const foundRes = await findReservationByAnyId(tenantId, data, prisma);
+        const res = foundRes?.reservation || null;
         if (res) {
           conversation = await prisma.conversation.findFirst({
             where: { tenantId, reservationId: res.id },
@@ -435,6 +429,59 @@ async function handleNewMessage(
   });
 }
 
+// ── Reservation ID resolution ─────────────────────────────────────────────────
+// Hostaway uses different ID formats:
+//   - REST API (import): short numeric ID like "56333389"
+//   - Webhook payload: compound ID like "162575-426150-2013-5793830996"
+// The import stores the short ID. Webhooks send the compound. We must find
+// the reservation regardless of which format arrives.
+
+async function findReservationByAnyId(
+  tenantId: string,
+  data: HostawayWebhookPayload['data'],
+  prisma: PrismaClient
+): Promise<{ reservation: any; hostawayReservationId: string } | null> {
+  // Collect all candidate IDs to try
+  const candidates: string[] = [];
+
+  // 1. Compound reservationId (webhook format)
+  if (data.reservationId) candidates.push(String(data.reservationId));
+
+  // 2. Short numeric id (API format)
+  if (data.id && String(data.id) !== String(data.reservationId)) {
+    candidates.push(String(data.id));
+  }
+
+  // 3. Extract last segment of compound ID (sometimes the actual reservation number)
+  if (data.reservationId && String(data.reservationId).includes('-')) {
+    const segments = String(data.reservationId).split('-');
+    const lastSegment = segments[segments.length - 1];
+    if (lastSegment && !candidates.includes(lastSegment)) {
+      candidates.push(lastSegment);
+    }
+  }
+
+  // Try each candidate
+  for (const candidateId of candidates) {
+    const reservation = await prisma.reservation.findUnique({
+      where: { tenantId_hostawayReservationId: { tenantId, hostawayReservationId: candidateId } },
+    });
+    if (reservation) {
+      return { reservation, hostawayReservationId: candidateId };
+    }
+  }
+
+  return null;
+}
+
+// The canonical ID to use when creating a new reservation — prefer short numeric ID
+function getCanonicalReservationId(data: HostawayWebhookPayload['data']): string {
+  // Prefer data.id (short numeric from Hostaway API) over data.reservationId (compound from webhook)
+  // This matches what the import service stores
+  if (data.id) return String(data.id);
+  return String(data.reservationId || '');
+}
+
 // ── handleNewReservation ──────────────────────────────────────────────────────
 // G1: Create Conversation if one doesn't exist
 // G8: SSE broadcast for new reservations
@@ -446,7 +493,9 @@ async function handleNewReservation(
 ): Promise<void> {
   if (!data.reservationId && !data.id) return;
 
-  const hostawayReservationId = String(data.reservationId || data.id);
+  // Check if reservation already exists under any ID format (import vs webhook)
+  const existing = await findReservationByAnyId(tenantId, data, prisma);
+  const hostawayReservationId = existing?.hostawayReservationId || getCanonicalReservationId(data);
   const hostawayListingId = String(data.listingMapId || '');
 
   const property = hostawayListingId
@@ -567,20 +616,22 @@ async function handleReservationUpdated(
   data: HostawayWebhookPayload['data'],
   prisma: PrismaClient
 ): Promise<void> {
-  const hostawayReservationId = String(data.reservationId || data.id || '');
-  if (!hostawayReservationId) return;
+  if (!data.reservationId && !data.id) return;
 
-  const reservation = await prisma.reservation.findUnique({
-    where: { tenantId_hostawayReservationId: { tenantId, hostawayReservationId } },
-  });
+  // Try all ID formats (webhook sends compound, import stores short numeric)
+  const found = await findReservationByAnyId(tenantId, data, prisma);
 
   // G7: Fall back to handleNewReservation if reservation doesn't exist (out-of-order)
-  if (!reservation) {
+  if (!found) {
+    const fallbackId = String(data.reservationId || data.id || '');
     console.warn(
-      `[Webhook] [${tenantId}] Reservation ${hostawayReservationId} not found for update — treating as create`
+      `[Webhook] [${tenantId}] Reservation not found for update (tried all ID formats: ${data.reservationId}, ${data.id}) — treating as create`
     );
     return handleNewReservation(tenantId, data, prisma);
   }
+
+  const { reservation, hostawayReservationId } = found;
+  console.log(`[Webhook] [${tenantId}] Matched reservation ${hostawayReservationId} for update (webhook sent: ${data.reservationId || data.id})`);
 
   // S3/S6: If existing guest is still "Unknown Guest", enrich from API now
   const existingGuest = await prisma.guest.findUnique({ where: { id: reservation.guestId } });
