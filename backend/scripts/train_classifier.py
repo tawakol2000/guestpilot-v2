@@ -35,7 +35,8 @@ def embed_texts(texts, api_key, input_type="classification", batch_size=96):
             texts=batch,
             model="embed-v4.0",
             input_type=input_type,
-            embedding_types=["float"]
+            embedding_types=["float"],
+            output_dimension=1024
         )
         all_embeddings.extend(response.embeddings.float)
         if i + batch_size < len(texts):
