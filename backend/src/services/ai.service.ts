@@ -1197,9 +1197,13 @@ export async function generateAndSendAiReply(
       m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'
     );
 
-    // Upgrade 4: Tiered memory — summary for old messages + verbatim recent 10
+    // Conversation history: last 6 messages (guest + host combined), oldest to newest.
+    // For longer conversations with memory summary enabled, prepend a summary of older messages.
     let historyText: string;
-    if (tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10) {
+    const HISTORY_MESSAGE_COUNT = 6;
+    const recentMsgs = allMsgs.slice(-HISTORY_MESSAGE_COUNT);
+
+    if (tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > HISTORY_MESSAGE_COUNT) {
       const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
       if (conversation) {
         const tiered = await buildTieredContext({
@@ -1209,29 +1213,25 @@ export async function generateAndSendAiReply(
           prisma,
           anthropicClient: anthropic,
         }).catch(() => ({
-          recentMessagesText: allMsgs.slice(-10).map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n'),
+          recentMessagesText: recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n'),
           summaryText: null,
           totalMessageCount: allMsgs.length,
         }));
         historyText = formatConversationContext(tiered);
       } else {
-        historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
+        historyText = recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
       }
     } else {
-      historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
+      historyText = recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
     }
 
-    // Current messages = only GUEST messages received during this debounce window.
-    // Buffer extends 30 min back from windowStartedAt to handle Hostaway webhook delivery delays:
-    // Hostaway timestamps `data.date` as when the guest sent the message, but webhooks can arrive
-    // 5–30 min late. Without a large enough buffer, sentAt < windowStart → AI skips responding.
-    const WEBHOOK_DELIVERY_BUFFER_MS = 10 * 60 * 1000; // Reduced from 30min to 10min (AUD-041)
-    const windowStart = context.windowStartedAt
-      ? new Date(context.windowStartedAt.getTime() - WEBHOOK_DELIVERY_BUFFER_MS)
-      : null;
-    const currentMsgs = windowStart
-      ? allMsgs.filter(m => m.role === 'GUEST' && m.sentAt >= windowStart)
-      : allMsgs.slice(-5).filter(m => m.role === 'GUEST');
+    // Current messages = GUEST messages received during THIS debounce window only.
+    // windowStartedAt is when the debounce timer started (first message in this batch).
+    // No buffer needed — these are the exact messages the AI needs to respond to.
+    const windowStartedAt = context.windowStartedAt;
+    const currentMsgs = windowStartedAt
+      ? allMsgs.filter(m => m.role === 'GUEST' && m.sentAt >= windowStartedAt)
+      : allMsgs.slice(-1).filter(m => m.role === 'GUEST');
     const currentMsgsText = currentMsgs
       .map(m => `Guest: ${m.content}`)
       .join('\n');
