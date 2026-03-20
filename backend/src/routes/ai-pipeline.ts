@@ -197,6 +197,15 @@ export function aiPipelineRouter(prisma: PrismaClient) {
             classifierConfidence: ragCtx?.classifierConfidence ?? null,
             confidenceTier: ragCtx?.confidenceTier || null,
             classifierMethod: ragCtx?.classifierMethod || null,
+            // T022: Boost + Description fields
+            boostApplied: ragCtx?.boostApplied ?? null,
+            boostSimilarity: ragCtx?.boostSimilarity ?? null,
+            boostLabels: ragCtx?.boostLabels ?? null,
+            originalLrConfidence: ragCtx?.originalLrConfidence ?? null,
+            originalLrLabels: ragCtx?.originalLrLabels ?? null,
+            descriptionFeaturesActive: ragCtx?.descriptionFeaturesActive ?? null,
+            topDescriptionMatches: ragCtx?.topDescriptionMatches ?? null,
+            topCandidates: ragCtx?.topCandidates ?? null,
             // Tier 3 details
             tier3Reinjected: ragCtx?.tier3Reinjected ?? false,
             tier3TopicSwitch: ragCtx?.tier3TopicSwitch ?? false,

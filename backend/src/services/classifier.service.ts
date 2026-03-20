@@ -1,5 +1,5 @@
 /**
- * LR Sigmoid Classifier (with KNN diagnostic for observability) for guest message routing.
+ * LR Sigmoid Classifier (with Similarity Boost for observability) for guest message routing.
  * Ported from run_embedding_eval_v2.py (v7, 99/100 score).
  *
  * Architecture:
@@ -70,6 +70,10 @@ interface ClassifierState {
     perCategoryAccuracy: Record<string, number>;
   } | null;
   trainedAt: string | null;
+  // T004: Description embeddings for description-enhanced LR
+  descriptionEmbeddings: Map<string, number[][]> | null;  // category → array of embeddings
+  descriptionCategories: string[] | null;                   // Sorted category names (canonical order)
+  descriptionFeaturesActive: boolean;                       // true if weights match augmented dimension
 }
 
 // ─── Exported result types ──────────────────────────────────────────────
@@ -80,14 +84,23 @@ export interface ClassificationResult {
   confidence: number;
   tier: 'high' | 'medium' | 'low';
   topCandidates: Array<{ label: string; confidence: number }>;
-  method: string;  // 'lr_sigmoid'
-  // KNN diagnostic (for pipeline display)
-  knnDiagnostic: {
+  method: string;  // 'lr_sigmoid' | 'lr_boost' | 'lr_desc' | 'embedding_failed' | 'classifier_not_initialized'
+  // Similarity Boost (renamed from knnDiagnostic — T003)
+  similarityBoost: {
     topSimilarity: number;
-    method: string;
+    method: string;  // 'similarity_boost'
     labels: string[];
     neighbors: Array<{ text: string; labels: string[]; similarity: number }>;
   };
+  // Boost decision metadata (T003)
+  boostApplied: boolean;
+  boostSimilarity: number;
+  boostLabels: string[];
+  originalLrConfidence: number;
+  originalLrLabels: string[];
+  // Description feature metadata (T003)
+  descriptionFeaturesActive: boolean;
+  topDescriptionMatches: Array<{ label: string; similarity: number }>;
   // Backward-compat surface (consumed by rag.service, knowledge routes, batchClassify)
   topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
   neighbors: Array<{ labels: string[]; similarity: number }>;
@@ -203,6 +216,32 @@ export async function loadLrWeightsMetadata(prisma?: any): Promise<void> {
       _state.centroids = centroids;
       _state.calibration = calibration;
       _state.trainedAt = trainedAt;
+
+      // T014: Dimension detection — check if weights are augmented (1044-dim) or legacy (1024-dim)
+      if (lrWeights && lrWeights.coefficients.length > 0) {
+        const dim = lrWeights.coefficients[0].length;
+        if (dim === 1044) {
+          _state.descriptionFeaturesActive = true;
+          console.log('[Classifier] Description features ACTIVE — augmented weights (1044-dim)');
+        } else if (dim === 1024) {
+          _state.descriptionFeaturesActive = false;
+          console.warn('[Classifier] Description features DISABLED — old weights (1024-dim), retrain required');
+        } else {
+          _state.descriptionFeaturesActive = false;
+          console.error(`[Classifier] Unexpected weight dimension: ${dim} — description features disabled`);
+        }
+      }
+
+      // T012: Load description embeddings from weights file if available
+      if (data.descriptionEmbeddings && data.featureSchema?.descriptionCategories) {
+        const descEmbs = new Map<string, number[][]>();
+        for (const [cat, embs] of Object.entries(data.descriptionEmbeddings as Record<string, { en: number[][]; ar: number[][] }>)) {
+          descEmbs.set(cat, [...(embs.en || []), ...(embs.ar || [])]);
+        }
+        _state.descriptionEmbeddings = descEmbs;
+        _state.descriptionCategories = data.featureSchema.descriptionCategories as string[];
+        console.log(`[Classifier] Description embeddings loaded from weights: ${descEmbs.size} categories`);
+      }
     }
 
     console.log(`[Classifier] LR weights loaded: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}, trainedAt=${trainedAt}`);
@@ -253,10 +292,15 @@ export async function initializeClassifier(): Promise<void> {
         centroids: {},
         calibration: null,
         trainedAt: null,
+        descriptionEmbeddings: null,
+        descriptionCategories: null,
+        descriptionFeaturesActive: false,
       };
       _initialized = true;
       // T030: Load LR weights from file or DB after initialization
       await loadLrWeightsMetadata();
+      // T012: Load description embeddings
+      await loadDescriptionEmbeddings();
       console.log(`[Classifier] Initialized: ${examples.length} examples, ${initDurationMs}ms`);
     } catch (err) {
       console.error('[Classifier] Initialization failed:', err);
@@ -265,6 +309,120 @@ export async function initializeClassifier(): Promise<void> {
   })();
 
   return _initializingPromise;
+}
+
+// ─── T008: Boost + Cap/Gap config from topic_state_config.json ────────────
+
+let _boostConfig: {
+  boostSimilarityThreshold: number;
+  boostMinAgreement: number;
+  lrHardCap: number;
+  lrGapFilter: number;
+} = { boostSimilarityThreshold: 0.80, boostMinAgreement: 3, lrHardCap: 3, lrGapFilter: 0.10 };
+
+try {
+  const cfgPath = path.join(__dirname, '../../config/topic_state_config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  _boostConfig = {
+    boostSimilarityThreshold: cfg.global_settings?.boost_similarity_threshold ?? 0.80,
+    boostMinAgreement: cfg.global_settings?.boost_min_agreement ?? 3,
+    lrHardCap: cfg.global_settings?.lr_hard_cap ?? 3,
+    lrGapFilter: cfg.global_settings?.lr_gap_filter ?? 0.10,
+  };
+  console.log(`[Classifier] Boost config loaded: threshold=${_boostConfig.boostSimilarityThreshold}, agreement=${_boostConfig.boostMinAgreement}, hardCap=${_boostConfig.lrHardCap}, gapFilter=${_boostConfig.lrGapFilter}`);
+} catch { /* defaults */ }
+
+// ─── T012: Load SOP description embeddings at startup ─────────────────────
+
+async function loadDescriptionEmbeddings(): Promise<void> {
+  if (!_state) return;
+
+  // If already loaded from weights file, skip API call
+  if (_state.descriptionEmbeddings && _state.descriptionEmbeddings.size > 0) return;
+
+  try {
+    const descPath = path.join(__dirname, '../config/sop_descriptions.json');
+    if (!fs.existsSync(descPath)) {
+      console.warn('[Classifier] sop_descriptions.json not found — description features unavailable');
+      return;
+    }
+    const descData = JSON.parse(fs.readFileSync(descPath, 'utf-8'));
+    const categories = Object.keys(descData.categories || {}).sort();
+
+    // Flatten all description texts for batch embedding
+    const textsToEmbed: string[] = [];
+    const textMap: Array<{ category: string; index: number }> = [];
+
+    for (const cat of categories) {
+      const catData = descData.categories[cat];
+      const allDescs = [...(catData.descriptions?.en || []), ...(catData.descriptions?.ar || [])];
+      for (const desc of allDescs) {
+        textMap.push({ category: cat, index: textsToEmbed.length });
+        textsToEmbed.push(desc);
+      }
+    }
+
+    if (textsToEmbed.length === 0) {
+      console.warn('[Classifier] No descriptions found in sop_descriptions.json');
+      return;
+    }
+
+    console.log(`[Classifier] Embedding ${textsToEmbed.length} SOP descriptions...`);
+    const embeddings = await embedBatch(textsToEmbed, 'classification');
+
+    // Build Map<category, number[][]>
+    const descEmbs = new Map<string, number[][]>();
+    for (const { category, index } of textMap) {
+      const emb = embeddings[index];
+      if (!emb || emb.length === 0) continue;
+      if (!descEmbs.has(category)) descEmbs.set(category, []);
+      descEmbs.get(category)!.push(emb);
+    }
+
+    _state.descriptionEmbeddings = descEmbs;
+    _state.descriptionCategories = categories;
+    console.log(`[Classifier] Description embeddings loaded: ${descEmbs.size} categories, ${textsToEmbed.length} descriptions`);
+  } catch (err) {
+    console.warn('[Classifier] Failed to load description embeddings (non-fatal):', err);
+  }
+}
+
+// ─── T013: Compute description similarities (20-dim feature vector) ────────
+
+function computeDescriptionSimilarities(
+  queryEmbedding: number[],
+  state: ClassifierState
+): {
+  featureVector: number[];
+  topDescriptionMatches: Array<{ label: string; similarity: number }>;
+} | null {
+  if (!state.descriptionEmbeddings || !state.descriptionCategories) return null;
+
+  const categories = state.descriptionCategories;
+  const featureVector: number[] = [];
+  const allMatches: Array<{ label: string; similarity: number }> = [];
+
+  for (const cat of categories) {
+    const embeddings = state.descriptionEmbeddings.get(cat);
+    if (!embeddings || embeddings.length === 0) {
+      featureVector.push(0);
+      continue;
+    }
+    // Max similarity across all EN+AR description embeddings for this category
+    let maxSim = 0;
+    for (const emb of embeddings) {
+      const sim = cosineSimilarity(queryEmbedding, emb);
+      if (sim > maxSim) maxSim = sim;
+    }
+    featureVector.push(maxSim);
+    allMatches.push({ label: cat, similarity: maxSim });
+  }
+
+  // Top 3 description matches
+  allMatches.sort((a, b) => b.similarity - a.similarity);
+  const topDescriptionMatches = allMatches.slice(0, 3);
+
+  return { featureVector, topDescriptionMatches };
 }
 
 // ─── LR Inference (T006) ──────────────────────────────────────────────────
@@ -307,11 +465,31 @@ function classifyWithLR(
   scores.sort((a, b) => b.confidence - a.confidence);
 
   // Get labels above per-category threshold
-  const labels = scores
+  let labels = scores
     .filter(s => s.confidence >= (perCatThresholds[s.label] || state.lrThresholds?.global || 0.5))
     .map(s => s.label);
 
   const maxConfidence = scores.length > 0 ? scores[0].confidence : 0;
+
+  // T018 (US3): Gap filter — only keep labels within lr_gap_filter of top score
+  if (labels.length > 1 && maxConfidence > 0) {
+    const gapThreshold = maxConfidence - _boostConfig.lrGapFilter;
+    labels = labels.filter(l => {
+      const score = scores.find(s => s.label === l);
+      return score ? score.confidence >= gapThreshold : false;
+    });
+  }
+
+  // T018 (US3): Hard cap — max lr_hard_cap labels
+  if (labels.length > _boostConfig.lrHardCap) {
+    labels = labels.slice(0, _boostConfig.lrHardCap);
+  }
+
+  // Ensure at least top-1 is always returned (FR-013)
+  if (labels.length === 0 && scores.length > 0) {
+    labels = [scores[0].label];
+  }
+
   const tier: 'high' | 'medium' | 'low' =
     maxConfidence >= highThreshold ? 'high' :
     maxConfidence >= lowThreshold ? 'medium' : 'low';
@@ -319,14 +497,14 @@ function classifyWithLR(
   return {
     labels,
     confidence: maxConfidence,
-    topCandidates: scores.slice(0, 5),  // top 5 for logging
+    topCandidates: scores,  // all SOP scores for pipeline display
     tier,
   };
 }
 
-// ─── KNN Diagnostic (internal — runs alongside LR for pipeline display) ──
+// ─── Similarity Diagnostic (T019: renamed from KNN Diagnostic) ──────────
 
-function runKnnDiagnostic(
+function runSimilarityDiagnostic(
   queryEmbedding: number[],
   state: ClassifierState,
   overrideVoteThreshold?: number
@@ -348,7 +526,7 @@ function runKnnDiagnostic(
 
   // KNN-3 cosine-only (diagnostic — no async rerank)
   const topK = similarities.slice(0, K);
-  const knnMethod = 'knn_vote';
+  const knnMethod = 'similarity_boost';
 
   const topKDetails = topK.map(({ index, similarity }) => ({
     index,
@@ -399,25 +577,30 @@ function runKnnDiagnostic(
  * Returns empty labels if classifier not initialized (graceful degradation).
  * Requires LR weights to be loaded — throws if not trained.
  */
-export async function classifyMessage(query: string, overrideVoteThreshold?: number): Promise<ClassificationResult> {
+export async function classifyMessage(query: string, overrideVoteThreshold?: number, cachedTopicLabel?: string): Promise<ClassificationResult> {
+  const emptyBoost = { topSimilarity: 0, method: 'none', labels: [] as string[], neighbors: [] as Array<{ text: string; labels: string[]; similarity: number }> };
+  const emptyResult: ClassificationResult = {
+    labels: [], confidence: 0, tier: 'low', topCandidates: [], method: 'classifier_not_initialized',
+    similarityBoost: emptyBoost,
+    boostApplied: false, boostSimilarity: 0, boostLabels: [], originalLrConfidence: 0, originalLrLabels: [],
+    descriptionFeaturesActive: false, topDescriptionMatches: [],
+    topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0,
+  };
+
   // Snapshot state for thread-safe reads during classification (FR-007)
   const state = _state;
-  if (!state || state.embeddings.length === 0) {
-    return {
-      labels: [], confidence: 0, tier: 'low', topCandidates: [], method: 'classifier_not_initialized',
-      knnDiagnostic: { topSimilarity: 0, method: 'none', labels: [], neighbors: [] },
-      topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0,
-    };
-  }
+  if (!state || state.embeddings.length === 0) return emptyResult;
+
+  // T027: Short message augmentation — prepend context for messages < 4 words
+  const wordCount = query.trim().split(/\s+/).length;
+  const embeddingInput = wordCount < 4
+    ? `In a ${cachedTopicLabel || 'general inquiry'} conversation, the guest says: ${query}`
+    : query;
 
   // Embed the query (classification mode for Cohere input_type)
-  const queryEmbedding = await embedText(query, 'classification');
+  const queryEmbedding = await embedText(embeddingInput, 'classification');
   if (!queryEmbedding || queryEmbedding.length === 0) {
-    return {
-      labels: [], confidence: 0, tier: 'low', topCandidates: [], method: 'embedding_failed',
-      knnDiagnostic: { topSimilarity: 0, method: 'none', labels: [], neighbors: [] },
-      topK: [], neighbors: [], tokensUsed: 0, topSimilarity: 0,
-    };
+    return { ...emptyResult, method: 'embedding_failed' };
   }
 
   // Require LR weights — fail loudly if not trained
@@ -425,37 +608,90 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
     throw new Error('LR classifier not trained. Run POST /api/knowledge/retrain-classifier first.');
   }
 
+  // T013: Compute description similarities (always, for observability)
+  const descResult = computeDescriptionSimilarities(queryEmbedding, state);
+  const topDescriptionMatches = descResult?.topDescriptionMatches || [];
+
+  // T015: Build augmented feature vector if description features active
+  let lrInput: number[];
+  let method: string;
+  if (state.descriptionFeaturesActive && descResult) {
+    lrInput = [...queryEmbedding, ...descResult.featureVector];
+    method = 'lr_desc';
+  } else {
+    lrInput = queryEmbedding;
+    method = 'lr_sigmoid';
+  }
+
   // Primary: LR sigmoid classification (T006)
-  const lrResult = classifyWithLR(queryEmbedding, state);
+  const lrResult = classifyWithLR(lrInput, state);
 
-  // Diagnostic: KNN (for pipeline display, kept for backward compat)
-  const knnDiag = runKnnDiagnostic(queryEmbedding, state, overrideVoteThreshold);
+  // Similarity diagnostic (renamed from KNN)
+  const simDiag = runSimilarityDiagnostic(queryEmbedding, state, overrideVoteThreshold);
 
-  // Apply token budget to LR labels
-  const { labels: budgetedLabels, tokensUsed } = applyTokenBudget(lrResult.labels);
+  // T009: Similarity Boost — if top neighbor is near-exact match with full agreement, override LR
+  let boostApplied = false;
+  let boostSimilarity = simDiag.topSimilarity;
+  let boostLabels: string[] = [];
+  const originalLrConfidence = lrResult.confidence;
+  const originalLrLabels = [...lrResult.labels];
 
-  // Backward-compat neighbors surface (from KNN diagnostic)
-  const neighbors = knnDiag.topK.map(n => ({ labels: n.labels, similarity: n.similarity }));
+  let finalLabels = lrResult.labels;
+  let finalConfidence = lrResult.confidence;
+  let finalTier = lrResult.tier;
+
+  if (
+    simDiag.topSimilarity >= _boostConfig.boostSimilarityThreshold &&
+    simDiag.neighbors.length >= _boostConfig.boostMinAgreement
+  ) {
+    // Check all K neighbors share at least one common label
+    const labelSets = simDiag.neighbors.slice(0, _boostConfig.boostMinAgreement).map(n => new Set(n.labels));
+    const commonLabels = [...labelSets[0]].filter(l => labelSets.every(s => s.has(l)));
+
+    if (commonLabels.length > 0) {
+      boostApplied = true;
+      boostLabels = commonLabels;
+      finalLabels = commonLabels;
+      finalConfidence = simDiag.topSimilarity;
+      method = 'lr_boost';
+      // Recompute tier from boosted confidence
+      finalTier = finalConfidence >= 0.85 ? 'high' : finalConfidence >= 0.55 ? 'medium' : 'low';
+    }
+  }
+
+  // Apply token budget
+  const { labels: budgetedLabels, tokensUsed } = applyTokenBudget(finalLabels);
+
+  // Backward-compat neighbors surface
+  const neighbors = simDiag.topK.map(n => ({ labels: n.labels, similarity: n.similarity }));
 
   return {
-    // LR decision (primary)
     labels: budgetedLabels,
-    confidence: lrResult.confidence,
-    tier: lrResult.tier,
+    confidence: finalConfidence,
+    tier: finalTier,
     topCandidates: lrResult.topCandidates,
-    method: 'lr_sigmoid',
-    // KNN diagnostic
-    knnDiagnostic: {
-      topSimilarity: knnDiag.topSimilarity,
-      method: knnDiag.method,
-      labels: knnDiag.labels,
-      neighbors: knnDiag.neighbors,
+    method,
+    // T007: Renamed from knnDiagnostic
+    similarityBoost: {
+      topSimilarity: simDiag.topSimilarity,
+      method: 'similarity_boost',
+      labels: simDiag.labels,
+      neighbors: simDiag.neighbors,
     },
+    // T010: Boost metadata
+    boostApplied,
+    boostSimilarity,
+    boostLabels,
+    originalLrConfidence,
+    originalLrLabels,
+    // T015: Description metadata
+    descriptionFeaturesActive: state.descriptionFeaturesActive,
+    topDescriptionMatches,
     // Backward-compat surface
-    topK: knnDiag.topK,
+    topK: simDiag.topK,
     neighbors,
     tokensUsed,
-    topSimilarity: knnDiag.topSimilarity,
+    topSimilarity: simDiag.topSimilarity,
     queryEmbedding,
   };
 }
@@ -522,6 +758,48 @@ export function getExampleCountPerLabel(): Record<string, number> {
     }
   }
   return counts;
+}
+
+// ─── T027: Description matrix diagnostic ──────────────────────────────────
+
+export function getDescriptionMatrix(): {
+  matrix: Array<{ category1: string; category2: string; similarity: number; flagged: boolean }>;
+  flaggedCount: number;
+  totalPairs: number;
+} | null {
+  if (!_state?.descriptionEmbeddings || !_state?.descriptionCategories) return null;
+
+  const categories = _state.descriptionCategories;
+  const matrix: Array<{ category1: string; category2: string; similarity: number; flagged: boolean }> = [];
+
+  // Compute representative embedding per category (max across all description embeddings)
+  const reps: Map<string, number[]> = new Map();
+  for (const cat of categories) {
+    const embs = _state.descriptionEmbeddings.get(cat);
+    if (!embs || embs.length === 0) continue;
+    // Use first embedding as representative (mean would be better but this is diagnostic)
+    reps.set(cat, embs[0]);
+  }
+
+  let flaggedCount = 0;
+  for (let i = 0; i < categories.length; i++) {
+    for (let j = i + 1; j < categories.length; j++) {
+      const emb1 = reps.get(categories[i]);
+      const emb2 = reps.get(categories[j]);
+      if (!emb1 || !emb2) continue;
+      const sim = cosineSimilarity(emb1, emb2);
+      const flagged = sim > 0.70;
+      if (flagged) flaggedCount++;
+      matrix.push({
+        category1: categories[i],
+        category2: categories[j],
+        similarity: Math.round(sim * 1000) / 1000,
+        flagged,
+      });
+    }
+  }
+
+  return { matrix, flaggedCount, totalPairs: matrix.length };
 }
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -644,8 +922,13 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
         centroids,
         calibration,
         trainedAt,
+        descriptionEmbeddings: null,
+        descriptionCategories: null,
+        descriptionFeaturesActive: false,
       };
       _initialized = true;
+      // Load description embeddings after reinit
+      await loadDescriptionEmbeddings();
       console.log(`[Classifier] Re-initialized: ${examples.length} examples (${newExamples.length} from DB), ${initDurationMs}ms`);
     } catch (err) {
       console.error('[Classifier] Re-initialization failed:', err);

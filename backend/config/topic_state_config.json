@@ -188,7 +188,12 @@
     "reset_on_new_tier1_classification": true,
     "centroid_switch_threshold": 0.60,
     "centroid_min_examples": 3,
+    "boost_similarity_threshold": 0.80,
+    "boost_min_agreement": 3,
+    "lr_hard_cap": 3,
+    "lr_gap_filter": 0.10,
     "_note": "reset_on_new_tier1_classification means: if Tier 1 confidently classifies a new message into a DIFFERENT category than the cached one, reset cache to the new category",
-    "_note_centroid": "centroid_switch_threshold: cosine similarity below which a topic switch is detected via centroid distance. centroid_min_examples: minimum training examples per category before trusting centroid distance."
+    "_note_centroid": "centroid_switch_threshold: cosine similarity below which a topic switch is detected via centroid distance. centroid_min_examples: minimum training examples per category before trusting centroid distance.",
+    "_note_boost": "boost_similarity_threshold: KNN top sim above which boost fires. boost_min_agreement: all K neighbors must agree. lr_hard_cap: max labels returned. lr_gap_filter: max absolute pp distance from top score."
   }
 }

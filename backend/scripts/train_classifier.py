@@ -3,12 +3,15 @@
 LR Classifier Training Script for GuestPilot.
 
 Reads training examples from stdin as JSON, embeds with Cohere,
-trains OneVsRestClassifier(LogisticRegression), runs leave-one-out
+trains OneVsRestClassifier(LogisticRegression), runs 5-fold
 cross-validation, computes centroids and per-category thresholds,
 and writes classifier-weights.json.
 
+T016: Supports description-enhanced training (1044-dim augmented vectors)
+when descriptions are provided in the input.
+
 Usage:
-  echo '{"examples": [...], "cohereApiKey": "..."}' | python3 train_classifier.py --output ./classifier-weights.json
+  echo '{"examples": [...], "cohereApiKey": "...", "descriptions": {...}}' | python3 train_classifier.py --output ./classifier-weights.json
 """
 
 import sys
@@ -38,6 +41,28 @@ def embed_texts(texts, api_key, input_type="classification", batch_size=96):
         if i + batch_size < len(texts):
             time.sleep(0.1)  # Rate limit courtesy
     return np.array(all_embeddings)
+
+
+def cosine_similarity(a, b):
+    """Compute cosine similarity between two vectors."""
+    dot = np.dot(a, b)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    return dot / (norm_a * norm_b + 1e-10)
+
+
+def compute_description_similarities(query_embedding, desc_embeddings, desc_categories):
+    """Compute per-category max cosine similarity against description embeddings.
+    Returns a feature vector of length len(desc_categories) in alphabetical order."""
+    features = []
+    for cat in desc_categories:
+        embs = desc_embeddings.get(cat, [])
+        if not embs:
+            features.append(0.0)
+            continue
+        max_sim = max(cosine_similarity(query_embedding, emb) for emb in embs)
+        features.append(float(max_sim))
+    return features
 
 
 def train_lr(embeddings, label_matrix, mlb):
@@ -145,6 +170,7 @@ def main():
     input_data = json.load(sys.stdin)
     examples = input_data['examples']
     api_key = input_data['cohereApiKey']
+    descriptions = input_data.get('descriptions')  # T016: optional SOP descriptions
 
     if not examples:
         print(json.dumps({"error": "No training examples provided"}))
@@ -161,22 +187,84 @@ def main():
     embed_duration = time.time() - start_time
     print(f"[train] Embedded in {embed_duration:.1f}s", file=sys.stderr)
 
+    # T016: Embed descriptions and compute augmented features if descriptions provided
+    desc_embeddings_output = None
+    feature_schema = None
+    augmented_embeddings = embeddings  # default: plain 1024-dim
+
+    if descriptions and isinstance(descriptions, dict):
+        print(f"[train] Embedding SOP descriptions for description-enhanced LR...", file=sys.stderr)
+        desc_categories = sorted(descriptions.keys())
+
+        # Flatten all description texts
+        desc_texts = []
+        desc_text_map = []  # (category, local_index)
+        for cat in desc_categories:
+            cat_data = descriptions[cat]
+            all_descs = cat_data.get('en', []) + cat_data.get('ar', [])
+            for desc in all_descs:
+                desc_text_map.append((cat, len(desc_texts)))
+                desc_texts.append(desc)
+
+        if desc_texts:
+            desc_raw_embeddings = embed_texts(desc_texts, api_key)
+            print(f"[train] Embedded {len(desc_texts)} descriptions", file=sys.stderr)
+
+            # Build per-category embedding map
+            desc_emb_map = defaultdict(list)
+            for (cat, _), emb in zip(desc_text_map, desc_raw_embeddings):
+                desc_emb_map[cat].append(emb)
+
+            # Compute description similarities for each training example
+            print(f"[train] Computing description similarity features ({len(desc_categories)}-dim)...", file=sys.stderr)
+            desc_features = []
+            for i in range(len(embeddings)):
+                features = compute_description_similarities(
+                    embeddings[i], desc_emb_map, desc_categories
+                )
+                desc_features.append(features)
+
+            desc_features = np.array(desc_features)
+            augmented_embeddings = np.concatenate([embeddings, desc_features], axis=1)
+            print(f"[train] Augmented vectors: {augmented_embeddings.shape[1]}-dim ({embeddings.shape[1]} + {desc_features.shape[1]})", file=sys.stderr)
+
+            # Build output description embeddings (for runtime cold start)
+            desc_embeddings_output = {}
+            for cat in desc_categories:
+                cat_data = descriptions[cat]
+                en_descs = cat_data.get('en', [])
+                ar_descs = cat_data.get('ar', [])
+                cat_embs = desc_emb_map[cat]
+                n_en = len(en_descs)
+                desc_embeddings_output[cat] = {
+                    "en": [emb.tolist() for emb in cat_embs[:n_en]],
+                    "ar": [emb.tolist() for emb in cat_embs[n_en:]]
+                }
+
+            feature_schema = {
+                "embeddingDim": int(embeddings.shape[1]),
+                "descriptionDim": len(desc_categories),
+                "totalDim": int(augmented_embeddings.shape[1]),
+                "descriptionCategories": desc_categories
+            }
+
     # Prepare multi-label matrix
     mlb = MultiLabelBinarizer()
     label_matrix = mlb.fit_transform(labels_list)
     all_classes = list(mlb.classes_)
 
-    print(f"[train] Training OneVsRestClassifier on {len(all_classes)} classes...", file=sys.stderr)
-    clf = train_lr(embeddings, label_matrix, mlb)
+    print(f"[train] Training OneVsRestClassifier on {len(all_classes)} classes ({augmented_embeddings.shape[1]}-dim)...", file=sys.stderr)
+    clf = train_lr(augmented_embeddings, label_matrix, mlb)
     train_duration = time.time() - start_time - embed_duration
 
     print(f"[train] Running 5-fold cross-validation...", file=sys.stderr)
     cv_accuracy, per_category_accuracy, confidences_per_category = cross_validate(
-        embeddings, label_matrix, mlb, n_folds=5
+        augmented_embeddings, label_matrix, mlb, n_folds=5
     )
     cv_duration = time.time() - start_time - embed_duration - train_duration
 
     print(f"[train] Computing centroids and thresholds...", file=sys.stderr)
+    # Centroids are computed on the raw 1024-dim embeddings (for topic-state centroid distance)
     centroids = compute_centroids(embeddings, labels_list, all_classes)
     per_category_thresholds = compute_thresholds(confidences_per_category)
 
@@ -187,7 +275,6 @@ def main():
         global_threshold = 0.5
 
     # Extract weights from the trained classifier
-    # OneVsRestClassifier wraps individual LogisticRegression estimators
     coefficients = []
     intercepts = []
     for estimator in clf.estimators_:
@@ -222,6 +309,12 @@ def main():
         }
     }
 
+    # T016: Add description embeddings and feature schema if descriptions were used
+    if desc_embeddings_output:
+        output["descriptionEmbeddings"] = desc_embeddings_output
+    if feature_schema:
+        output["featureSchema"] = feature_schema
+
     # Write to file
     with open(args.output, 'w') as f:
         json.dump(output, f, indent=2)
@@ -234,7 +327,9 @@ def main():
         "crossValAccuracy": round(cv_accuracy, 4),
         "globalThreshold": round(global_threshold, 4),
         "trainDurationMs": int(total_duration * 1000),
-        "message": f"Classifier retrained: {len(examples)} examples, {len(all_classes)} classes, {cv_accuracy*100:.1f}% CV accuracy"
+        "featureDim": int(augmented_embeddings.shape[1]),
+        "descriptionEnhanced": desc_embeddings_output is not None,
+        "message": f"Classifier retrained: {len(examples)} examples, {len(all_classes)} classes, {cv_accuracy*100:.1f}% CV accuracy, {augmented_embeddings.shape[1]}-dim features"
     }
     print(json.dumps(summary))
 

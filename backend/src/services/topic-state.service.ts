@@ -1,10 +1,13 @@
 /**
  * Tier 3: Topic State Cache — Config-driven from topic_state_config.json
  *
+ * T024-T026: Multi-slot cache with exponential confidence decay.
+ * Each conversation holds up to 3 topic slots with independent decay.
+ *
  * CRITICAL DESIGN: Always re-inject by default. Only STOP when:
  * 1. Topic switch keyword detected (clear cache)
  * 2. Centroid distance check detects semantic topic change (clear cache)
- * 3. Cache expired (per-category TTL)
+ * 3. All slots expired (confidence below floor)
  * 4. Tier 1 confidently classified into a DIFFERENT category (reset to new)
  */
 
@@ -22,13 +25,25 @@ try {
   console.warn('[TopicState] Config not found, using defaults');
 }
 
-interface TopicState {
-  labels: string[];
-  updatedAt: number;
-  reinjectCount: number;
+// ─── Multi-slot cache types ────────────────────────────────────────────
+
+interface TopicCacheSlot {
+  label: string;
+  confidence: number;   // initial confidence (decays over time)
+  updatedAt: number;     // timestamp when slot was last updated
+  reinjectCount: number; // per-slot reinject counter
 }
 
-const _cache = new Map<string, TopicState>();
+interface TopicCache {
+  slots: TopicCacheSlot[];  // max 3 slots
+}
+
+const MAX_SLOTS = 3;
+const CONFIDENCE_FLOOR = 0.01;  // slots below this are expired
+const DEFAULT_HALF_LIFE_MS = (CONFIG?.global_settings?.half_life_minutes || 10) * 60 * 1000;
+const RETURN_BOOST_MULTIPLIER = CONFIG?.global_settings?.return_boost_multiplier ?? 1.5;
+
+const _cache = new Map<string, TopicCache>();
 
 // Build keyword lists from config
 const SWITCH_KEYWORDS_EN: string[] = CONFIG?.topic_switch_keywords?.explicit_en || [
@@ -49,42 +64,88 @@ const NOT_SWITCH_SIGNALS: string[] = [
   ...(CONFIG?.not_switch_signals?.selection_responses || []),
 ];
 
-const DEFAULT_DECAY_MS = (CONFIG?.global_settings?.default_decay_minutes || 30) * 60 * 1000;
 const MAX_REINJECT = CONFIG?.global_settings?.max_reinject_count || 5;
 const CENTROID_SWITCH_THRESHOLD = CONFIG?.global_settings?.centroid_switch_threshold ?? 0.60;
 const CENTROID_MIN_EXAMPLES = CONFIG?.global_settings?.centroid_min_examples ?? 3;
 
-function getDecayMs(labels: string[]): number {
-  if (!CONFIG?.per_category_rules || labels.length === 0) return DEFAULT_DECAY_MS;
-  // Use the longest TTL among all active labels
-  let maxDecay = DEFAULT_DECAY_MS;
-  for (const label of labels) {
-    const rule = CONFIG.per_category_rules[label];
-    if (rule?.decay_minutes) {
-      maxDecay = Math.max(maxDecay, rule.decay_minutes * 60 * 1000);
-    }
-  }
-  return maxDecay;
+// ─── Half-life helpers ─────────────────────────────────────────────────
+
+function getHalfLifeMs(label: string): number {
+  const rule = CONFIG?.per_category_rules?.[label];
+  if (rule?.half_life_minutes) return rule.half_life_minutes * 60 * 1000;
+  // Backward compat: use decay_minutes as half-life if half_life_minutes not set
+  if (rule?.decay_minutes) return rule.decay_minutes * 60 * 1000;
+  return DEFAULT_HALF_LIFE_MS;
 }
+
+/** Compute decayed confidence: conf(0) * 2^(-t / halfLife) */
+function decayedConfidence(slot: TopicCacheSlot): number {
+  const elapsed = Date.now() - slot.updatedAt;
+  const halfLife = getHalfLifeMs(slot.label);
+  return slot.confidence * Math.pow(2, -elapsed / halfLife);
+}
+
+/** Get live (decayed) slots sorted by confidence desc, filtering expired ones */
+function getLiveSlots(cache: TopicCache): TopicCacheSlot[] {
+  return cache.slots
+    .filter(s => decayedConfidence(s) >= CONFIDENCE_FLOOR)
+    .sort((a, b) => decayedConfidence(b) - decayedConfidence(a));
+}
+
+// ─── Cache size management ─────────────────────────────────────────────
 
 const CACHE_MAX_SIZE = 10000;
 
-export function updateTopicState(conversationId: string, labels: string[]): void {
-  if (!labels || labels.length === 0) return;
-  _cache.set(conversationId, { labels, updatedAt: Date.now(), reinjectCount: 0 });
-
-  // T033: LRU cap — evict oldest entry when cache exceeds max size
+function evictOldestIfNeeded(): void {
   if (_cache.size > CACHE_MAX_SIZE) {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
     for (const [key, entry] of _cache.entries()) {
-      if (entry.updatedAt < oldestTime) {
-        oldestTime = entry.updatedAt;
+      const maxUpdated = Math.max(...entry.slots.map(s => s.updatedAt));
+      if (maxUpdated < oldestTime) {
+        oldestTime = maxUpdated;
         oldestKey = key;
       }
     }
     if (oldestKey) _cache.delete(oldestKey);
   }
+}
+
+// ─── Public API ────────────────────────────────────────────────────────
+
+export function updateTopicState(conversationId: string, labels: string[]): void {
+  if (!labels || labels.length === 0) return;
+
+  let cache = _cache.get(conversationId);
+  if (!cache) {
+    cache = { slots: [] };
+    _cache.set(conversationId, cache);
+  }
+
+  for (const label of labels) {
+    // Check if this label already exists in a slot
+    const existingIdx = cache.slots.findIndex(s => s.label === label);
+    if (existingIdx >= 0) {
+      // Boost existing slot — return to previous topic
+      cache.slots[existingIdx].confidence = Math.min(1.0, decayedConfidence(cache.slots[existingIdx]) * RETURN_BOOST_MULTIPLIER);
+      cache.slots[existingIdx].updatedAt = Date.now();
+      cache.slots[existingIdx].reinjectCount = 0;
+    } else {
+      // Insert new slot
+      cache.slots.push({ label, confidence: 1.0, updatedAt: Date.now(), reinjectCount: 0 });
+    }
+  }
+
+  // Evict expired slots
+  cache.slots = cache.slots.filter(s => decayedConfidence(s) >= CONFIDENCE_FLOOR);
+
+  // If more than MAX_SLOTS, evict lowest-confidence
+  if (cache.slots.length > MAX_SLOTS) {
+    cache.slots.sort((a, b) => decayedConfidence(b) - decayedConfidence(a));
+    cache.slots = cache.slots.slice(0, MAX_SLOTS);
+  }
+
+  evictOldestIfNeeded();
 }
 
 export function getReinjectedLabels(conversationId: string, messageText: string, messageEmbedding?: number[]): {
@@ -97,18 +158,19 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
 } {
   const noResult = { labels: [] as string[], reinjected: false, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null as 'keyword' | 'centroid' | null };
 
-  const state = _cache.get(conversationId);
-  if (!state) return noResult;
+  const cache = _cache.get(conversationId);
+  if (!cache) return noResult;
 
-  // Check expiry using per-category TTL
-  const decayMs = getDecayMs(state.labels);
-  if (Date.now() - state.updatedAt > decayMs) {
+  // Get live (non-expired) slots sorted by decayed confidence
+  const liveSlots = getLiveSlots(cache);
+  if (liveSlots.length === 0) {
     _cache.delete(conversationId);
     return noResult;
   }
 
-  // Check max reinject count
-  if (state.reinjectCount >= MAX_REINJECT) {
+  // Check max reinject on primary slot
+  const primarySlot = liveSlots[0];
+  if (primarySlot.reinjectCount >= MAX_REINJECT) {
     _cache.delete(conversationId);
     return noResult;
   }
@@ -116,15 +178,15 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
   const textLower = messageText.toLowerCase().trim();
 
   // Check if message is a "not-switch" signal first (short confirmations, etc.)
-  // These should ALWAYS re-inject, never treated as a switch
   const isNotSwitch = NOT_SWITCH_SIGNALS.some(sig => textLower === sig.toLowerCase());
   if (isNotSwitch) {
-    state.reinjectCount++;
-    console.log(`[TopicState] Not-switch signal, re-injecting [${state.labels.join(', ')}]: "${messageText.substring(0, 40)}"`);
-    return { labels: state.labels, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
+    primarySlot.reinjectCount++;
+    const labelsToReinject = liveSlots.map(s => s.label);
+    console.log(`[TopicState] Not-switch signal, re-injecting [${labelsToReinject.join(', ')}]: "${messageText.substring(0, 40)}"`);
+    return { labels: labelsToReinject, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
   }
 
-  // T007: Centroid check runs FIRST (primary switch detection)
+  // Centroid check — check against ALL cached slots, not just primary
   if (messageEmbedding && messageEmbedding.length > 0) {
     const centroids = getCentroids();
     if (centroids) {
@@ -132,23 +194,23 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
       let maxSim = -1;
       let checkedAny = false;
 
-      for (const label of state.labels) {
-        const centroid = centroids[label];
+      for (const slot of liveSlots) {
+        const centroid = centroids[slot.label];
         if (!centroid) continue;
-        // Skip unreliable centroids (too few training examples)
-        if ((exampleCounts[label] || 0) < CENTROID_MIN_EXAMPLES) continue;
+        if ((exampleCounts[slot.label] || 0) < CENTROID_MIN_EXAMPLES) continue;
         checkedAny = true;
         const sim = cosineSimilarity(messageEmbedding, centroid);
         if (sim > maxSim) maxSim = sim;
       }
 
       if (checkedAny && maxSim >= 0 && maxSim < CENTROID_SWITCH_THRESHOLD) {
+        // All cached slots fail centroid check → topic switch
         _cache.delete(conversationId);
         console.log(`[TopicState] Centroid topic switch detected (sim=${maxSim.toFixed(3)} < threshold=${CENTROID_SWITCH_THRESHOLD}): "${messageText.substring(0, 50)}"`);
         return { labels: [], reinjected: false, topicSwitchDetected: true, centroidSimilarity: maxSim, centroidThreshold: CENTROID_SWITCH_THRESHOLD, switchMethod: 'centroid' };
       }
     } else {
-      // T007: Keyword check only fires as fallback when no centroids available
+      // No centroids available — keyword fallback
       const topicSwitchDetected = ALL_SWITCH_KEYWORDS.some(kw => textLower.includes(kw.toLowerCase()));
       if (topicSwitchDetected) {
         _cache.delete(conversationId);
@@ -166,10 +228,19 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
     }
   }
 
-  // DEFAULT: re-inject
-  state.reinjectCount++;
-  console.log(`[TopicState] Re-injecting [${state.labels.join(', ')}] (#${state.reinjectCount}): "${messageText.substring(0, 40)}"`);
-  return { labels: state.labels, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
+  // DEFAULT: re-inject all live slot labels (primary first)
+  primarySlot.reinjectCount++;
+  const labelsToReinject = liveSlots.map(s => s.label);
+  console.log(`[TopicState] Re-injecting [${labelsToReinject.join(', ')}] (#${primarySlot.reinjectCount}): "${messageText.substring(0, 40)}"`);
+  return { labels: labelsToReinject, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
+}
+
+/** Get current cached topic label for a conversation (for short message augmentation) */
+export function getCachedTopicLabel(conversationId: string): string | undefined {
+  const cache = _cache.get(conversationId);
+  if (!cache) return undefined;
+  const liveSlots = getLiveSlots(cache);
+  return liveSlots.length > 0 ? liveSlots[0].label : undefined;
 }
 
 export function clearTopicState(conversationId: string): void {
@@ -178,11 +249,9 @@ export function clearTopicState(conversationId: string): void {
 
 // Periodic cleanup of expired cache entries (every 5 minutes)
 const _cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [id, state] of _cache.entries()) {
-    if (now - state.updatedAt > getDecayMs(state.labels)) {
-      _cache.delete(id);
-    }
+  for (const [id, cache] of _cache.entries()) {
+    cache.slots = cache.slots.filter(s => decayedConfidence(s) >= CONFIDENCE_FLOOR);
+    if (cache.slots.length === 0) _cache.delete(id);
   }
 }, 5 * 60 * 1000);
 
@@ -192,9 +261,10 @@ export function stopTopicStateCleanup(): void {
 }
 
 export function getTopicCacheStats(): { size: number; conversationIds: string[] } {
-  const now = Date.now();
-  for (const [id, state] of _cache.entries()) {
-    if (now - state.updatedAt > getDecayMs(state.labels)) _cache.delete(id);
+  // Clean up first
+  for (const [id, cache] of _cache.entries()) {
+    cache.slots = cache.slots.filter(s => decayedConfidence(s) >= CONFIDENCE_FLOOR);
+    if (cache.slots.length === 0) _cache.delete(id);
   }
   return { size: _cache.size, conversationIds: Array.from(_cache.keys()) };
 }

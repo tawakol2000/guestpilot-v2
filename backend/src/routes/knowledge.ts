@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify } from '../services/classifier.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify, getDescriptionMatrix } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
@@ -613,6 +613,22 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
 
   // POST /api/knowledge/retrain-classifier — T003: retrain LR classifier from all examples
   router.post('/retrain-classifier', ((req, res) => ctrl.retrainClassifier(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // GET /api/knowledge/training-distribution — T018: show training data distribution
+  router.get('/training-distribution', ((req, res) => ctrl.trainingDistribution(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // POST /api/knowledge/generate-paraphrases — T019: generate paraphrases for under-represented categories
+  router.post('/generate-paraphrases', ((req, res) => ctrl.generateParaphrases(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // GET /api/classifier/description-matrix — T027/T028: cross-class similarity diagnostic
+  router.get('/description-matrix', ((_req, res) => {
+    const result = getDescriptionMatrix();
+    if (!result) {
+      res.status(503).json({ error: 'Description embeddings not loaded — classifier not initialized or descriptions not available' });
+      return;
+    }
+    res.json({ ...result, timestamp: new Date().toISOString() });
+  }) as RequestHandler);
 
   // POST /api/knowledge/batch-classify — T022-T023: batch classify messages
   router.post('/batch-classify', async (req: any, res) => {

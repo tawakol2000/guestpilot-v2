@@ -48,28 +48,28 @@
 
 ---
 
-## Phase 6: US4 Rebalance Training Data (Priority: P1) — TODO
+## Phase 6: US4 Rebalance Training Data (Priority: P1) — COMPLETE
 
-- [ ] T018 [P] [US4] Create rebalancing script/endpoint
-- [ ] T019 [P] [US4] Generate Arabic paraphrases for under-represented categories
-- [ ] T020 [US4] Run retrain after rebalancing
+- [x] T018 [P] [US4] Create rebalancing script/endpoint (GET /training-distribution + POST /generate-paraphrases)
+- [x] T019 [P] [US4] Generate Arabic paraphrases for under-represented categories (Haiku paraphrase endpoint)
+- [ ] T020 [US4] Run retrain after rebalancing (manual step — generate paraphrases for under-represented categories, then retrain)
 
-## Phase 7: US5 Semantic Topic Switch (Priority: P1) — TODO
+## Phase 7: US5 Semantic Topic Switch (Priority: P1) — COMPLETE
 
-- [ ] T021 [US5] Modify topic-state.service.ts: centroid-based switch detection
-- [ ] T022 [US5] Update function signature + call site for message embedding
-- [ ] T023 [US5] Log topic switch method in ragContext
+- [x] T021 [US5] Modify topic-state.service.ts: centroid-based switch detection (already implemented)
+- [x] T022 [US5] Update function signature + call site for message embedding (already implemented)
+- [x] T023 [US5] Log topic switch method in ragContext (centroidSimilarity, centroidThreshold, switchMethod added to pipeline log)
 
-## Phase 8: US6 Multi-Slot Topic Cache (Priority: P2) — TODO
+## Phase 8: US6 Multi-Slot Topic Cache (Priority: P2) — COMPLETE
 
-- [ ] T024 [US6] Rewrite cache: 3-slot with TopicCacheSlot structure
-- [ ] T025 [US6] Implement confidence decay + boost on return
-- [ ] T026 [US6] Update getReinjectedLabels() to check all 3 slots
+- [x] T024 [US6] Rewrite cache: 3-slot with TopicCacheSlot structure
+- [x] T025 [US6] Implement confidence decay + boost on return (exponential half-life decay + return boost multiplier)
+- [x] T026 [US6] Update getReinjectedLabels() to check all 3 slots (checks all live slots for centroid + reinjects all)
 
-## Phase 9: US7 Short Message Augmentation (Priority: P2) — TODO
+## Phase 9: US7 Short Message Augmentation (Priority: P2) — COMPLETE
 
-- [ ] T027 [US7] Prepend context for messages < 4 words before embedding
-- [ ] T028 [US7] Update classifyMessage() signature for cachedTopicLabel
+- [x] T027 [US7] Prepend context for messages < 4 words before embedding
+- [x] T028 [US7] Update classifyMessage() signature for cachedTopicLabel
 
 ## Phase 11: Deployment & Verification — TODO
 

@@ -122,6 +122,14 @@ interface PipelineFeedEntry {
     topCandidates?: Array<{ label: string; confidence: number }> | null
     classifierPick?: string | null
     llmPick?: string | null
+    // T023: Boost + Description fields
+    boostApplied?: boolean | null
+    boostSimilarity?: number | null
+    boostLabels?: string[] | null
+    originalLrConfidence?: number | null
+    originalLrLabels?: string[] | null
+    descriptionFeaturesActive?: boolean | null
+    topDescriptionMatches?: Array<{ label: string; similarity: number }> | null
     // Tier 3
     tier3Reinjected: boolean
     tier3TopicSwitch: boolean
@@ -728,6 +736,25 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             LLM Override
           </span>
         )}
+        {/* T026: Boost badge in collapsed row */}
+        {p.boostApplied && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              background: '#DCFCE7',
+              color: '#15803D',
+              padding: '2px 6px',
+              borderRadius: 999,
+              border: '1px solid rgba(21,128,61,0.2)',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Boosted
+          </span>
+        )}
 
         {/* SOP count */}
         <span
@@ -881,6 +908,55 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                     ) : null
                   })()}
 
+                  {/* Per-SOP LR sigmoid scores */}
+                  {p.topCandidates && p.topCandidates.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ per-SOP scores:</span>
+                      {p.topCandidates.map((c: { label: string; confidence: number }, i: number) => {
+                        const sc = sopBadgeColor(c.label)
+                        const pct = Math.max(0, Math.min(100, c.confidence * 100))
+                        const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : []
+                        const isSelected = labels.includes(c.label)
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontFamily: T.font.mono,
+                              color: isSelected ? sc.fg : T.text.tertiary,
+                              fontWeight: isSelected ? 600 : 400,
+                              minWidth: 180,
+                              textAlign: 'right',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {c.label}
+                            </span>
+                            <div style={{ width: 100, height: 5, background: T.bg.tertiary, borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
+                              <div style={{
+                                width: `${pct}%`,
+                                height: '100%',
+                                borderRadius: 3,
+                                background: isSelected ? sc.fg : T.text.tertiary,
+                                opacity: isSelected ? 1 : 0.4,
+                                transition: 'width 0.3s ease',
+                              }} />
+                            </div>
+                            <span style={{
+                              fontSize: 10,
+                              fontFamily: T.font.mono,
+                              fontWeight: 600,
+                              color: isSelected ? sc.fg : T.text.tertiary,
+                              minWidth: 32,
+                            }}>
+                              {pct.toFixed(0)}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   {/* LLM Override indicator */}
                   {p.llmOverride && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -931,7 +1007,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                     )}
                   </div>
 
-                  {/* Collapsible KNN Diagnostic section */}
+                  {/* T021/T024: Similarity Boost section (renamed from Embedding Diagnostic) */}
                   <div style={{ marginTop: 4 }}>
                     <div
                       onClick={(e) => { e.stopPropagation(); setDiagnosticsExpanded(v => !v) }}
@@ -954,11 +1030,20 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                         <ChevronRight size={12} color={T.text.tertiary} />
                       </div>
                       <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Embedding Diagnostic
+                        Similarity Boost
                       </span>
                       {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
                         <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
                           (sim: {(p.classifierTopSim ?? ev?.classifierTopSim ?? 0).toFixed(2)})
+                        </span>
+                      )}
+                      {p.boostApplied && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, fontFamily: T.font.sans,
+                          background: '#DCFCE7', color: '#15803D', padding: '1px 6px',
+                          borderRadius: 999, border: '1px solid rgba(21,128,61,0.2)',
+                        }}>
+                          Boosted
                         </span>
                       )}
                     </div>
@@ -970,15 +1055,58 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                           )}
                           {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>classifier sim:</span>
+                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>top neighbor sim:</span>
                               <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
                             </div>
                           )}
                         </div>
-                        {p.topSimilarity != null && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>top similarity:</span>
-                            <SimilarityBar score={p.topSimilarity} width={80} />
+                        {/* T024: Boost decision details */}
+                        {p.boostApplied ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.status.green }}>
+                                boost fired — 3/3 neighbors agree
+                              </span>
+                            </div>
+                            {p.originalLrConfidence != null && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>original LR:</span>
+                                <SimilarityBar score={p.originalLrConfidence} width={60} />
+                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→</span>
+                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.status.green }}>boosted: {((p.boostSimilarity ?? 0) * 100).toFixed(0)}%</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (p.classifierTopSim != null && (
+                          <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                            no boost — {(p.classifierTopSim ?? 0) < 0.80 ? 'below threshold' : 'neighbors disagree'}
+                          </span>
+                        ))}
+                        {/* T025: Description Matches */}
+                        {p.topDescriptionMatches && p.topDescriptionMatches.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono }}>
+                                description matches
+                              </span>
+                              {p.descriptionFeaturesActive != null && (
+                                <span style={{
+                                  fontSize: 8, fontFamily: T.font.mono, padding: '1px 4px', borderRadius: 3,
+                                  background: p.descriptionFeaturesActive ? '#DCFCE7' : '#FEE2E2',
+                                  color: p.descriptionFeaturesActive ? '#15803D' : '#DC2626',
+                                }}>
+                                  {p.descriptionFeaturesActive ? 'active' : 'disabled'}
+                                </span>
+                              )}
+                            </div>
+                            {p.topDescriptionMatches.map((m: { label: string; similarity: number }, i: number) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, minWidth: 140, textAlign: 'right' }}>
+                                  {m.label}
+                                </span>
+                                <SimilarityBar score={m.similarity} width={60} />
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>

@@ -45,6 +45,14 @@ let _lastClassifierResult: {
   tier: 'high' | 'medium' | 'low';
   topCandidates: Array<{ label: string; confidence: number }>;
   queryEmbedding?: number[];
+  // T005: Similarity Boost + Description fields
+  boostApplied?: boolean;
+  boostSimilarity?: number;
+  boostLabels?: string[];
+  originalLrConfidence?: number;
+  originalLrLabels?: string[];
+  descriptionFeaturesActive?: boolean;
+  topDescriptionMatches?: Array<{ label: string; similarity: number }>;
 } | null = null;
 
 /**
@@ -339,7 +347,8 @@ export async function retrieveRelevantKnowledge(
   agentType?: 'guestCoordinator' | 'screeningAI',
   conversationId?: string,
   recentMessages?: Array<{ role: string; content: string }>,
-  propertyAmenities?: string
+  propertyAmenities?: string,
+  cachedTopicLabel?: string
 ): Promise<{
   chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
   topSimilarity: number;
@@ -364,16 +373,24 @@ export async function retrieveRelevantKnowledge(
   // For guestCoordinator: use LR classifier for SOPs + pgvector for property chunks only
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
     try {
-      const classifierResult = await classifyMessage(query);
+      const classifierResult = await classifyMessage(query, undefined, cachedTopicLabel);
       _lastClassifierResult = {
         method: classifierResult.method,
         labels: classifierResult.labels,
         topSimilarity: classifierResult.topSimilarity,
-        confidence: classifierResult.confidence,  // LR sigmoid confidence
+        confidence: classifierResult.confidence,
         neighbors: classifierResult.neighbors,
         tier: classifierResult.tier,
         topCandidates: classifierResult.topCandidates,
         queryEmbedding: classifierResult.queryEmbedding,
+        // T005: Boost + Description fields
+        boostApplied: classifierResult.boostApplied,
+        boostSimilarity: classifierResult.boostSimilarity,
+        boostLabels: classifierResult.boostLabels,
+        originalLrConfidence: classifierResult.originalLrConfidence,
+        originalLrLabels: classifierResult.originalLrLabels,
+        descriptionFeaturesActive: classifierResult.descriptionFeaturesActive,
+        topDescriptionMatches: classifierResult.topDescriptionMatches,
       };
       console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method}, confidence=${classifierResult.confidence.toFixed(3)}, tier=${classifierResult.tier})`);
 

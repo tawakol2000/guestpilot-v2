@@ -19,7 +19,7 @@ import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
-import { updateTopicState, getReinjectedLabels } from './topic-state.service';
+import { updateTopicState, getReinjectedLabels, getCachedTopicLabel } from './topic-state.service';
 import { extractIntent } from './intent-extractor.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 
@@ -1292,12 +1292,13 @@ export async function generateAndSendAiReply(
       role: m.role === 'GUEST' ? 'guest' : 'host',
       content: m.content,
     }));
+    const cachedTopicLabel = getCachedTopicLabel(conversationId);
     const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
       ? await retrieveRelevantKnowledge(
           tenantId, context.propertyId, ragQuery, prisma, 8,
           context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator',
           conversationId, recentForRag,
-          propertyAmenities
+          propertyAmenities, cachedTopicLabel
         ).catch(() => ({ chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier2_needed' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined }))
       : { chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier1' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined };
     let retrievedChunks = ragResult.chunks;
@@ -1317,6 +1318,9 @@ export async function generateAndSendAiReply(
     let tier3Reinjected = false;
     let tier3TopicSwitch = false;
     let tier3ReinjectedLabels: string[] = [];
+    let tier3CentroidSimilarity: number | null = null;
+    let tier3CentroidThreshold: number | null = null;
+    let tier3SwitchMethod: 'keyword' | 'centroid' | null = null;
 
     if (retrievedSopLabels.length > 0) {
       updateTopicState(conversationId, retrievedSopLabels);
@@ -1326,6 +1330,9 @@ export async function generateAndSendAiReply(
       const tier3Result = getReinjectedLabels(conversationId, ragQuery, classifierSnap?.queryEmbedding);
       tier3Reinjected = tier3Result.reinjected;
       tier3TopicSwitch = tier3Result.topicSwitchDetected;
+      tier3CentroidSimilarity = tier3Result.centroidSimilarity;
+      tier3CentroidThreshold = tier3Result.centroidThreshold;
+      tier3SwitchMethod = tier3Result.switchMethod;
 
       if (tier3Result.reinjected && tier3Result.labels.length > 0) {
         // Direct SOP lookup — no redundant vector search needed
@@ -1489,10 +1496,21 @@ export async function generateAndSendAiReply(
       classifierTopSim: classifierSnap?.topSimilarity ?? null,
       classifierMethod: classifierSnap?.method || null,
       classifierConfidence: classifierSnap?.confidence ?? null,
+      // T006: Boost + Description fields
+      boostApplied: classifierSnap?.boostApplied ?? null,
+      boostSimilarity: classifierSnap?.boostSimilarity ?? null,
+      boostLabels: classifierSnap?.boostLabels ?? null,
+      originalLrConfidence: classifierSnap?.originalLrConfidence ?? null,
+      originalLrLabels: classifierSnap?.originalLrLabels ?? null,
+      descriptionFeaturesActive: classifierSnap?.descriptionFeaturesActive ?? null,
+      topDescriptionMatches: classifierSnap?.topDescriptionMatches ?? null,
       // Tier 3 details
       tier3Reinjected,
       tier3TopicSwitch,
       tier3ReinjectedLabels,
+      centroidSimilarity: tier3CentroidSimilarity,
+      centroidThreshold: tier3CentroidThreshold,
+      switchMethod: tier3SwitchMethod,
       // Tier 2 details
       tier2Output,
       // Escalation
