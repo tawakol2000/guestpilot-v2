@@ -1,0 +1,245 @@
+{
+  "version": "1.0.0",
+  "categories": {
+    "payment-issues": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests report technical payment problems such as failed transactions, declined credit cards, broken payment links, or double charges on their account. They ask about payment methods, request receipts or invoices, inquire about the status of a pending refund, or report that a security deposit has not been returned. Typical phrasings include \"the payment didn't go through\", \"I was overcharged\", \"where's my refund\", \"can I get a receipt\", or \"I sent the bank transfer but it's not showing\"."
+        ],
+        "ar": [
+          "يُبلغ الضيوف عن مشكلات تقنية في الدفع مثل فشل المعاملات المالية، أو رفض بطاقة الائتمان، أو عدم عمل رابط الدفع، أو خصم المبلغ مرتين من حسابهم. يسألون عن طرق الدفع المتاحة، أو يطلبون إيصالاً أو فاتورة، أو يستفسرون عن حالة استرداد مبلغ معلّق أو إرجاع مبلغ التأمين. من العبارات الشائعة: \"الدفع ما تم\"، \"خصمتوا مبلغ زيادة\"، \"وين المبلغ المسترد\"، أو \"حوّلت المبلغ عن طريق البنك\"."
+        ]
+      }
+    },
+    "post-stay-issues": {
+      "broad": true,
+      "descriptions": {
+        "en": [
+          "Guests contact after checkout because they forgot personal belongings in the apartment such as a phone charger, laptop, bag, clothing, or groceries in the fridge. They ask the host to check if the item is still there and arrange retrieval or shipping. Typical phrasings include \"I left my charger in the apartment\", \"we checked out but forgot a bag\", \"can someone check if my laptop is still there\", or \"we left groceries in the fridge\".",
+          "Guests follow up after checkout about final billing, security deposit returns, or unexpected charges on their account. They dispute a damage claim, ask when their deposit will be refunded, or question a charge that appeared after their stay ended. Typical phrasings include \"when do I get my deposit back\", \"why was I charged extra after checkout\", \"my deposit hasn't been returned\", or \"I disagree with the damage assessment\".",
+          "Guests reach out after their stay to share feedback, file a formal complaint about their experience, or discuss a review they plan to leave. They reflect on issues they experienced during the stay and want acknowledgment or resolution after departure. Typical phrasings include \"I want to file a complaint about my stay\", \"the apartment was not as advertised\", \"I'm writing to follow up on the issues we had\", or \"I'd like to share feedback about our experience\"."
+        ],
+        "ar": [
+          "يتواصل الضيوف بعد المغادرة لأنهم نسوا أغراضاً شخصية في الشقة مثل شاحن الهاتف أو اللابتوب أو حقيبة أو ملابس أو مشتريات في الثلاجة. يطلبون من المضيف التحقق مما إذا كان الغرض لا يزال موجوداً وترتيب استرجاعه أو شحنه. من العبارات الشائعة: \"نسيت الشاحن في الشقة\"، \"طلعنا ونسينا شنطة\"، \"ممكن حد يشوف لابتوبي لسه في الشقة؟\"، أو \"نسينا أغراض في الثلاجة\".",
+          "يتابع الضيوف بعد المغادرة بشأن الفاتورة النهائية أو إرجاع مبلغ التأمين أو رسوم غير متوقعة ظهرت في حسابهم. يعترضون على مطالبة بالأضرار، أو يسألون متى سيُعاد مبلغ التأمين، أو يستفسرون عن رسوم ظهرت بعد انتهاء إقامتهم. من العبارات الشائعة: \"متى يرجع مبلغ التأمين\"، \"ليش خصمتوا مبلغ إضافي بعد ما طلعنا\"، \"مبلغ التأمين ما رجع لحد الآن\"، أو \"مش موافق على تقييم الأضرار\".",
+          "يتواصل الضيوف بعد إقامتهم لمشاركة ملاحظاتهم أو تقديم شكوى رسمية عن تجربتهم أو مناقشة التقييم الذي ينوون كتابته. يتأملون المشكلات التي واجهوها خلال الإقامة ويريدون اعترافاً أو حلاً بعد المغادرة. من العبارات الشائعة: \"أبي أقدّم شكوى عن إقامتي\"، \"الشقة ما كانت زي ما هي معلنة\"، \"أتواصل معكم بخصوص المشاكل اللي واجهناها\"، أو \"أبي أشارك ملاحظاتي عن التجربة\"."
+        ]
+      }
+    },
+    "pre-arrival-logistics": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests coordinate their arrival by asking for directions to the property, requesting the Google Maps pin or exact address, sharing their estimated arrival time, or inquiring about transportation from the airport. They ask about airport pickup services, Uber availability, parking options near the building, or whether someone can meet them at the entrance. Typical phrasings include \"how do I get there from the airport\", \"can you send me the location\", \"we arrive at 9pm\", or \"is there parking available\"."
+        ],
+        "ar": [
+          "يُنسّق الضيوف وصولهم بالسؤال عن الاتجاهات إلى العقار، أو طلب موقع خرائط جوجل أو العنوان الدقيق، أو مشاركة وقت وصولهم المتوقع، أو الاستفسار عن المواصلات من المطار. يسألون عن خدمة التوصيل من المطار، أو توفّر سيارات الأجرة، أو أماكن ركن السيارات بالقرب من المبنى، أو إمكانية استقبالهم عند المدخل. من العبارات الشائعة: \"كيف أوصل من المطار\"، \"ممكن تبعتلي اللوكيشن\"، \"بنوصل الساعة 9 بالليل\"، أو \"في موقف سيارات قريب؟\"."
+        ]
+      }
+    },
+    "pricing-negotiation": {
+      "broad": true,
+      "descriptions": {
+        "en": [
+          "Guests ask for a discount, a better deal, or a reduced nightly rate for their stay at the serviced apartment. They request special offers, promotional pricing, or a lower rate because they are on a tight budget. Typical phrasings include \"can you give me a better price\", \"do you have a discount\", \"that's too expensive\", \"what's the best you can do\", or \"we're on a budget, any cheaper options\".",
+          "Guests compare the listed price against other platforms or similar properties and question whether the rate is fair or competitive. They mention seeing a lower price on Airbnb or Booking.com, ask what the nightly rate includes, or express that the property seems overpriced for what it offers. Typical phrasings include \"can you match the Airbnb price\", \"how much per night\", \"what's the nightly rate\", or \"is that the final price\".",
+          "Guests negotiate a reduced rate for longer stays, group bookings, or corporate arrangements. They ask about weekly rates, monthly discounts, or whether corporate pricing applies for extended business travel. Typical phrasings include \"is there a weekly rate\", \"do you have a monthly discount\", \"do corporate rates apply\", \"what's the rate for 5 nights\", or \"we're booking for a large group, any deals\"."
+        ],
+        "ar": [
+          "يطلب الضيوف تخفيضاً أو سعراً أفضل أو عرضاً خاصاً للإقامة في الشقة المفروشة. يبحثون عن أسعار ترويجية أو تخفيض لأن ميزانيتهم محدودة. من العبارات الشائعة: \"ممكن سعر أحسن\"، \"عندكم خصم\"، \"غالي شوية\"، \"وش أحسن سعر عندكم\"، أو \"ميزانيتنا محدودة، في خيار أرخص؟\".",
+          "يُقارن الضيوف السعر المعروض مع منصات أخرى أو عقارات مشابهة ويتساءلون عن مدى عدالة السعر أو تنافسيته. يذكرون أنهم رأوا سعراً أقل على إير بي إن بي أو بوكينج، أو يسألون عمّا يشمله سعر الليلة. من العبارات الشائعة: \"ممكن تطابقون سعر إير بي إن بي\"، \"كم سعر الليلة\"، \"الأسعار عندكم غالية مقارنة بغيركم\"، أو \"هل هذا السعر النهائي؟\".",
+          "يتفاوض الضيوف على أسعار مخفّضة للإقامات الطويلة أو الحجوزات الجماعية أو ترتيبات الشركات. يسألون عن أسعار أسبوعية أو خصومات شهرية أو ما إذا كانت أسعار الشركات تنطبق على سفر العمل المطوّل. من العبارات الشائعة: \"في سعر أسبوعي\"، \"كم السعر الشهري\"، \"هل في أسعار خاصة للشركات\"، أو \"نبي نحجز لمجموعة كبيرة، في عرض؟\"."
+        ]
+      }
+    },
+    "property-description": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask for an overview or summary of what the apartment looks like, its room layout, and its defining features. They want to know the overall feel of the property, how rooms are arranged, what the living space and bedroom setup looks like, or whether the unit has a balcony, pool access, or gym. Typical phrasings include asking to describe the apartment, what the place is like, how many rooms there are and how they are laid out, or whether the property has outdoor space or shared recreational facilities."
+        ],
+        "ar": [
+          "يطلب الضيوف نظرة عامة أو ملخصاً عن شكل الشقة وتوزيع الغرف ومميزاتها الرئيسية. يريدون معرفة الانطباع العام عن العقار وكيفية ترتيب الغرف وشكل مساحة المعيشة وتجهيزات غرف النوم أو ما إذا كانت الوحدة تحتوي على شرفة أو وصول إلى مسبح أو صالة رياضية. تشمل العبارات الشائعة طلب وصف الشقة أو السؤال عن طبيعة المكان أو عدد الغرف وطريقة توزيعها أو ما إذا كان العقار يضم مساحة خارجية أو مرافق ترفيهية مشتركة."
+        ]
+      }
+    },
+    "property-info": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask specific factual questions about the property such as what floor the apartment is on, how many bedrooms it has, the exact address or location, check-in and check-out times, or parking availability. They seek concrete details about house rules, building facilities, or neighborhood landmarks. Typical questions include asking for the street address, which floor the unit is on, whether the building has an elevator, or how far the property is from a specific landmark."
+        ],
+        "ar": [
+          "يطرح الضيوف أسئلة محددة وواقعية عن العقار مثل الطابق الذي تقع فيه الشقة وعدد غرف النوم والعنوان الدقيق أو الموقع وأوقات تسجيل الوصول والمغادرة أو توفر مواقف السيارات. يبحثون عن تفاصيل ملموسة حول قواعد المنزل أو مرافق المبنى أو معالم الحي. تشمل الأسئلة الشائعة طلب عنوان الشارع أو السؤال عن الطابق الذي تقع فيه الوحدة أو ما إذا كان المبنى يحتوي على مصعد أو المسافة بين العقار ومعلم معين."
+        ]
+      }
+    },
+    "sop-amenity-request": {
+      "broad": true,
+      "descriptions": {
+        "en": [
+          "Guests request bedding and linen items for their apartment. They ask for extra pillows, additional blankets, more towels, fresh bed sheets, or a baby crib. Common phrasings include needing a softer pillow, requesting extra bath towels, or asking for a spare duvet because they feel cold at night.",
+          "Guests ask about appliances, devices, and electronics in the apartment. They inquire whether there is an iron, a hairdryer, a blender, an espresso machine, a microwave, a dishwasher, or a washing machine available. They also ask for a phone charger, hangers, or request a specific appliance they expected to find in the unit.",
+          "Guests request consumable supplies, toiletries, and kitchen items. They ask for things like kids plates and cups, cooking utensils, dish soap, coffee capsules, or bathroom toiletries such as shampoo and soap. They may also ask what amenities the apartment comes with or what is available in the kitchen and bathroom."
+        ],
+        "ar": [
+          "يطلب الضيوف مستلزمات الفراش والأغطية للشقة. يسألون عن وسائد إضافية أو بطانيات أو مزيد من المناشف أو شراشف نظيفة أو سرير أطفال. تشمل الطلبات الشائعة الحاجة إلى وسادة أنعم أو طلب مناشف حمام إضافية أو طلب لحاف احتياطي لأنهم يشعرون بالبرد ليلاً.",
+          "يستفسر الضيوف عن الأجهزة والإلكترونيات المتوفرة في الشقة. يسألون عن وجود مكواة أو مجفف شعر أو خلاط أو ماكينة قهوة أو ميكرويف أو غسالة صحون أو غسالة ملابس. كما يطلبون شاحن هاتف أو علّاقات ملابس أو يسألون عن جهاز معين توقعوا وجوده في الوحدة.",
+          "يطلب الضيوف المواد الاستهلاكية ومستلزمات المطبخ والحمام. يسألون عن أطباق وأكواب الأطفال وأدوات الطبخ وسائل غسيل الأطباق وكبسولات القهوة ومستلزمات الحمام مثل الشامبو والصابون. كما يستفسرون عن المرافق التي تتضمنها الشقة أو ما هو متوفر في المطبخ والحمام."
+        ]
+      }
+    },
+    "sop-booking-cancellation": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask about booking cancellation when they want to cancel an existing reservation or learn about the cancellation policy. They explain that something came up and they can no longer make their trip, ask how to cancel, inquire about the deadline for free cancellation, or want to know if they will receive a refund after cancelling. Common phrasings include needing to cancel their reservation, asking about the cancellation rules for Airbnb or Booking.com bookings, or stating that their plans fell through and they want to withdraw their booking."
+        ],
+        "ar": [
+          "يسأل الضيوف عن إلغاء الحجز عندما يرغبون في إلغاء حجز قائم أو الاستفسار عن سياسة الإلغاء. يوضحون أن ظرفاً طارئاً حدث ولن يتمكنوا من القدوم، أو يسألون عن كيفية الإلغاء، أو يستفسرون عن الموعد النهائي للإلغاء المجاني، أو يريدون معرفة ما إذا كانوا سيحصلون على استرداد المبلغ بعد الإلغاء. تشمل العبارات الشائعة الحاجة إلى إلغاء الحجز أو السؤال عن قواعد الإلغاء لحجوزات أير بي إن بي أو بوكينغ دوت كوم أو الإفادة بأن خططهم تغيّرت ويرغبون في سحب حجزهم."
+        ]
+      }
+    },
+    "sop-booking-confirmation": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask for booking confirmation when they have already made a reservation and want to verify that it was received and processed. They check whether their Airbnb or Booking.com reservation is showing in the system, share their confirmation number, ask to review their booking dates and unit details, or simply want reassurance that their reservation went through. Common phrasings include asking if their booking is confirmed, mentioning they booked a certain time ago, or requesting the host to verify their reservation status."
+        ],
+        "ar": [
+          "يسأل الضيوف عن تأكيد الحجز عندما يكونون قد أتمّوا الحجز بالفعل ويرغبون في التحقق من استلامه ومعالجته. يتحققون مما إذا كان حجزهم عبر أير بي إن بي أو بوكينغ دوت كوم ظاهراً في النظام، أو يشاركون رقم التأكيد، أو يطلبون مراجعة تواريخ الحجز وتفاصيل الوحدة، أو يريدون ببساطة التأكد من أن حجزهم قد تمّ بنجاح. تشمل العبارات الشائعة السؤال عمّا إذا كان الحجز مؤكداً أو ذكر أنهم حجزوا منذ فترة أو طلب التحقق من حالة الحجز."
+        ]
+      }
+    },
+    "sop-booking-inquiry": {
+      "broad": true,
+      "descriptions": {
+        "en": [
+          "Guests ask about availability when they do not yet have a reservation and want to know if a property is free for specific dates. They mention desired check-in and checkout dates, ask whether units are available tonight or next weekend, inquire about openings for a certain number of nights, or check if a particular apartment type is free for their travel window. Common phrasings include asking for availability from one date to another, wanting to book for a set number of nights, or checking if there is anything open for a last-minute stay.",
+          "Guests inquire about pricing before booking when they want to understand the cost of staying at a serviced apartment. They ask about the nightly rate for a specific unit, whether there are weekly or long-stay discounts for pre-booking purposes, how much it would cost for their desired dates, or request a price quote before committing to a reservation. Common phrasings include asking how much per night, requesting a rate for a certain number of nights, or wanting to compare the cost across different unit types before deciding.",
+          "Guests ask about property features before booking when they want to understand what the apartment offers and whether it suits their needs. They inquire about the number of bedrooms, whether the unit has a balcony or a view, the apartment layout and size, its proximity to landmarks or transport, or whether it can accommodate families with children. Common phrasings include asking if there is a two-bedroom option, whether the property has a pool or gym, requesting details about the apartment configuration, or checking if the unit is suitable for a group of a specific size."
+        ],
+        "ar": [
+          "يسأل الضيوف عن التوفر عندما لا يكون لديهم حجز بعد ويرغبون في معرفة ما إذا كانت الشقة متاحة لتواريخ محددة. يذكرون تواريخ الوصول والمغادرة المطلوبة، أو يسألون عمّا إذا كانت هناك وحدات متاحة الليلة أو نهاية الأسبوع القادم، أو يستفسرون عن الأماكن المتاحة لعدد معين من الليالي، أو يتحققون مما إذا كان نوع شقة معين متاحاً خلال فترة سفرهم. تشمل العبارات الشائعة السؤال عن التوفر من تاريخ إلى آخر أو الرغبة في الحجز لعدد محدد من الليالي أو التحقق من وجود خيارات متاحة لإقامة في اللحظة الأخيرة.",
+          "يستفسر الضيوف عن الأسعار قبل الحجز عندما يرغبون في معرفة تكلفة الإقامة في الشقة الفندقية. يسألون عن سعر الليلة لوحدة محددة، أو عمّا إذا كانت هناك خصومات للإقامات الأسبوعية قبل الحجز، أو كم ستكون التكلفة للتواريخ المطلوبة، أو يطلبون عرض سعر قبل تأكيد الحجز. تشمل العبارات الشائعة السؤال عن السعر لكل ليلة أو طلب تسعيرة لعدد معين من الليالي أو الرغبة في مقارنة التكاليف بين أنواع الوحدات المختلفة قبل اتخاذ القرار.",
+          "يسأل الضيوف عن مواصفات العقار قبل الحجز عندما يرغبون في فهم ما تقدمه الشقة وما إذا كانت تناسب احتياجاتهم. يستفسرون عن عدد غرف النوم، أو ما إذا كانت الوحدة تحتوي على شرفة أو إطلالة، أو تصميم الشقة ومساحتها، أو قربها من المعالم أو وسائل النقل، أو ما إذا كانت تستوعب عائلات مع أطفال. تشمل العبارات الشائعة السؤال عمّا إذا كان هناك خيار بغرفتي نوم أو ما إذا كانت هناك مسبح أو صالة رياضية أو طلب تفاصيل عن تجهيزات الشقة أو التحقق من ملاءمة الوحدة لمجموعة بحجم معين."
+        ]
+      }
+    },
+    "sop-booking-modification": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests request a booking modification when they already have a confirmed reservation and want to change its details. They ask to extend their stay by adding extra nights, shorten their booking by removing nights, shift their check-in or checkout dates, switch to a different apartment or unit size, or update the number of guests on the reservation. Common phrasings include wanting to add more nights, changing dates to a different range, moving to a bigger unit, or adjusting the guest count after plans change."
+        ],
+        "ar": [
+          "يطلب الضيوف تعديل الحجز عندما يكون لديهم حجز مؤكد ويرغبون في تغيير تفاصيله. يسألون عن تمديد إقامتهم بإضافة ليالٍ إضافية، أو تقصير الحجز بحذف ليالٍ، أو تغيير تواريخ الوصول والمغادرة، أو الانتقال إلى شقة أخرى بحجم مختلف، أو تحديث عدد الضيوف في الحجز. تشمل العبارات الشائعة الرغبة في إضافة ليالٍ أو تغيير التواريخ إلى نطاق مختلف أو الانتقال إلى وحدة أكبر أو تعديل عدد الأشخاص بسبب تغيّر الخطط."
+        ]
+      }
+    },
+    "sop-cleaning": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests request cleaning, housekeeping, or maid service for their apartment. They ask for someone to tidy up, mop the floors, or clean the unit on a specific day. Common phrasings include asking about the cost of cleaning, requesting recurring cleaning sessions every few days, or demanding immediate cleaning because the apartment feels dirty or untidy."
+        ],
+        "ar": [
+          "يطلب الضيوف تنظيف الشقة أو خدمة التدبير المنزلي. يسألون عن إمكانية إرسال شخص لتنظيف الوحدة أو مسح الأرضيات في يوم محدد. تشمل الطلبات الشائعة الاستفسار عن تكلفة التنظيف أو طلب تنظيف دوري كل يومين أو المطالبة بتنظيف فوري لأن الشقة متسخة أو غير مرتبة."
+        ]
+      }
+    },
+    "sop-complaint": {
+      "broad": true,
+      "descriptions": {
+        "en": [
+          "Guests complain about the cleanliness or physical condition of the apartment upon arrival or during their stay. They express shock or disgust at finding the place dirty, dusty, stained, or poorly maintained compared to listing photos. Typical phrasings include \"this place is filthy\", \"the apartment is nothing like the photos\", \"the bed sheets are stained\", or \"the apartment is not clean at all\".",
+          "Guests express frustration about noise disturbances, disruptive neighbors, or uncomfortable environmental conditions in the building. They report loud neighbors keeping them awake, construction noise early in the morning, uncomfortable temperatures despite working appliances, or unpleasant smells from neighboring units. Typical phrasings include \"the neighbors are so loud we can't sleep\", \"there's construction noise at 7am every day\", or \"the building hallway smells terrible\".",
+          "Guests voice dissatisfaction with the host's service, communication, or overall experience and may demand to speak with a manager or threaten negative reviews. They feel ignored, misled by the listing description, or that the property is not worth the price paid. Typical phrasings include \"I want to speak to a manager\", \"I'm going to leave a terrible review\", \"this is unacceptable nobody is helping\", \"I expected much better\", or \"not satisfied at all\"."
+        ],
+        "ar": [
+          "يشتكي الضيوف من نظافة الشقة أو حالتها المادية عند الوصول أو أثناء الإقامة. يعبّرون عن صدمتهم أو استيائهم من وجود أوساخ أو غبار أو بقع أو سوء صيانة مقارنةً بصور الإعلان. من العبارات الشائعة: \"الشقة مش نظيفة أبداً\"، \"المكان مش زي الصور\"، \"الشراشف متّسخة\"، أو \"الشقة وسخة ومحتاجة تنظيف فوراً\".",
+          "يعبّر الضيوف عن انزعاجهم من الضوضاء أو إزعاج الجيران أو ظروف البيئة المحيطة غير المريحة في المبنى. يُبلغون عن جيران صاخبين يمنعونهم من النوم، أو أصوات بناء في الصباح الباكر، أو روائح كريهة من الوحدات المجاورة. من العبارات الشائعة: \"الجيران صوتهم عالي ما نقدر ننام\"، \"في أصوات بناء من الساعة 7 الصبح\"، أو \"ريحة وحشة من برا الشقة\".",
+          "يُعبّر الضيوف عن عدم رضاهم عن مستوى الخدمة أو التواصل مع المضيف أو التجربة بشكل عام، وقد يطالبون بالتحدث مع المدير أو يهددون بكتابة تقييم سلبي. يشعرون بالتجاهل أو أن الوصف في الإعلان كان مضللاً أو أن العقار لا يستحق المبلغ المدفوع. من العبارات الشائعة: \"أبي أكلّم المدير\"، \"بكتب تقييم سيء\"، \"مش مقبول محد يساعدنا\"، أو \"مش راضي عن الخدمة أبداً\"."
+        ]
+      }
+    },
+    "sop-early-checkin": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests request early check-in when they want to arrive at the apartment before the standard 3pm check-in time. They mention early flights landing in the morning, wanting to drop off luggage before check-in, or ask whether they can access the unit ahead of schedule. Common phrasings include asking about check-in time, requesting to come at a specific early hour, or explaining that their travel itinerary means they will reach the property hours before the official arrival window."
+        ],
+        "ar": [
+          "يطلب الضيوف تسجيل الوصول المبكر عندما يرغبون في الوصول إلى الشقة قبل موعد تسجيل الوصول المحدد الساعة الثالثة مساءً. يذكرون وصول رحلتهم في الصباح الباكر، أو يسألون عن إمكانية ترك الأمتعة قبل الموعد الرسمي، أو يستفسرون عن وقت تسجيل الوصول. تشمل العبارات الشائعة طلب الدخول في ساعة مبكرة محددة أو توضيح أن جدول سفرهم يعني وصولهم قبل الموعد بساعات."
+        ]
+      }
+    },
+    "sop-late-checkout": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests request late checkout when they want to stay in the apartment past the standard 11am checkout time on their departure day. They ask to leave at a later hour such as 2pm or 3pm, inquire about checkout time, or explain that their flight departs in the evening and they need to remain in the unit longer. Common phrasings include requesting to extend their last morning, asking what time they must vacate, or wanting to delay their departure from the property."
+        ],
+        "ar": [
+          "يطلب الضيوف تأخير تسجيل المغادرة عندما يرغبون في البقاء في الشقة بعد موعد المغادرة المحدد الساعة الحادية عشرة صباحاً في يوم رحيلهم. يسألون عن إمكانية المغادرة في وقت متأخر مثل الثانية أو الثالثة ظهراً، أو يستفسرون عن موعد تسليم الشقة، أو يوضحون أن رحلتهم في المساء ويحتاجون للبقاء لفترة أطول. تشمل العبارات الشائعة طلب تمديد صباح يوم المغادرة أو السؤال عن وقت إخلاء الوحدة."
+        ]
+      }
+    },
+    "sop-long-term-rental": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests inquire about monthly stays, extended bookings, or long-term rental arrangements lasting several weeks or months. They ask about monthly rates, corporate housing for relocations, or pricing for stays longer than three weeks. Typical phrasings include asking what the monthly rate is, mentioning they are relocating for work and need an apartment for two or three months, or requesting corporate accommodation for an extended assignment."
+        ],
+        "ar": [
+          "يستفسر الضيوف عن الإقامات الشهرية أو الحجوزات الطويلة أو ترتيبات الإيجار طويل الأمد التي تمتد لعدة أسابيع أو أشهر. يسألون عن الأسعار الشهرية أو السكن المؤسسي لأغراض الانتقال للعمل أو تكلفة الإقامة لأكثر من ثلاثة أسابيع. تشمل العبارات الشائعة السؤال عن سعر الشهر أو ذكر أنهم ينتقلون للعمل ويحتاجون شقة لمدة شهرين أو ثلاثة أو طلب سكن مؤسسي لمهمة عمل طويلة."
+        ]
+      }
+    },
+    "sop-maintenance": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests report something broken, malfunctioning, or in need of repair inside the apartment. They describe appliances that stopped working like the AC not cooling, the washing machine not spinning, the fridge not cold, or the oven not turning on. They also report plumbing problems such as clogged toilets, water leaks under sinks, dripping ceilings, low water pressure, or no hot water, as well as electrical faults like flickering lights, power outages, and dead outlets. Pest sightings including cockroaches, ants, and insects, along with mold or bad smells from drains, fall into this category."
+        ],
+        "ar": [
+          "يبلغ الضيوف عن أعطال أو أشياء مكسورة أو تحتاج إلى إصلاح داخل الشقة. يصفون أجهزة توقفت عن العمل مثل التكييف الذي لا يبرد أو الغسالة التي لا تدور أو الثلاجة التي لا تبرد أو الفرن الذي لا يعمل. كما يبلغون عن مشاكل السباكة مثل انسداد المرحاض وتسريب المياه تحت الحوض أو من السقف وانخفاض ضغط الماء أو انقطاع الماء الساخن، بالإضافة إلى أعطال الكهرباء مثل تذبذب الإضاءة وانقطاع التيار الكهربائي. كما يشمل ذلك مشاهدة الحشرات كالصراصير والنمل والعفن والروائح الكريهة من المصارف."
+        ]
+      }
+    },
+    "sop-property-viewing": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests want to physically visit, tour, or inspect the apartment in person before making a booking decision. They ask if they can come see the unit first, request to schedule a viewing appointment, or inquire about doing a walkthrough of the property. Guests may also ask for a video tour, request additional photos of specific rooms like the kitchen or bathroom, or ask about permission to film or do a photoshoot inside the apartment."
+        ],
+        "ar": [
+          "يرغب الضيوف في زيارة الشقة شخصياً أو القيام بجولة تفقدية داخلها قبل اتخاذ قرار الحجز. يسألون عن إمكانية رؤية الوحدة أولاً أو يطلبون تحديد موعد لمعاينة العقار أو يستفسرون عن التجول داخل الشقة. كما قد يطلبون جولة مصورة بالفيديو أو صوراً إضافية لغرف محددة كالمطبخ أو الحمام أو يسألون عن إذن التصوير أو إجراء جلسة تصوير داخل الشقة."
+        ]
+      }
+    },
+    "sop-visitor-policy": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask about having visitors, inviting friends or family members to the apartment, or inquire about the visitor policy. They mention wanting a friend to come over for dinner, a colleague needing to drop something off, a sibling or relative staying overnight, or a family member coming to visit. Guests sometimes push back on visitor restrictions, arguing that the visit is brief or the visitor is a close friend."
+        ],
+        "ar": [
+          "يسأل الضيوف عن إمكانية استقبال زوار أو دعوة أصدقاء أو أفراد من العائلة إلى الشقة أو يستفسرون عن سياسة الزيارات. يذكرون رغبتهم في أن يأتي صديق لتناول العشاء أو أن زميلاً يحتاج لتسليم شيء أو أن أخاً أو قريباً يريد المبيت أو أن فرداً من العائلة قادم للزيارة. أحياناً يعترض الضيوف على قيود الزيارات ويحتجون بأن الزيارة قصيرة أو أن الزائر صديق مقرب."
+        ]
+      }
+    },
+    "sop-wifi-doorcode": {
+      "broad": false,
+      "descriptions": {
+        "en": [
+          "Guests ask about WiFi credentials, door access codes, or building entry instructions. They request the WiFi password or network name, ask how to connect to the internet, or inquire about the door code and how to get into the building. Guests also report WiFi connectivity problems such as slow internet, the WiFi keeps disconnecting, or being told the password is wrong. Lockout situations where the guest cannot open the door or the entry code fails to work also belong here."
+        ],
+        "ar": [
+          "يسأل الضيوف عن كلمة مرور الواي فاي أو اسم الشبكة أو رمز الباب أو طريقة دخول المبنى. يستفسرون عن كيفية الاتصال بالإنترنت أو يطلبون رمز الدخول للشقة. كما يبلغون عن مشاكل الاتصال بالإنترنت مثل بطء السرعة أو انقطاع الواي فاي المتكرر أو رفض كلمة المرور. تشمل هذه الفئة أيضاً حالات الإغلاق حيث لا يستطيع الضيف فتح الباب أو عندما لا يعمل رمز الدخول."
+        ]
+      }
+    }
+  }
+}

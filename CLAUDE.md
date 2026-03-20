@@ -123,6 +123,14 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL (existing) — one schema constraint change only (004-fix-duplicate-convos)
 - TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK (005-remove-knn-legacy)
 - No schema changes — configuration via `topic_state_config.json` (005-remove-knn-legacy)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ (006-ai-flow-audit)
+- PostgreSQL + pgvector + Prisma ORM + file-based weights JSON (006-ai-flow-audit)
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK (Haiku) (007-smart-escalation)
+- No schema changes — uses existing Task model (007-smart-escalation)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Existing classifier.service.ts infrastructure (009-similarity-boost)
+- No schema changes — ragContext JSON field gets new keys (009-similarity-boost)
+- TypeScript 5.x on Node.js 18+ (backend), Python 3 (training script), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Cohere SDK (`cohere-ai@^7.20.0`), Anthropic SDK, scikit-learn + numpy (Python) (009-similarity-boost)
+- PostgreSQL + pgvector + Prisma ORM + file-based `classifier-weights.json` (009-similarity-boost)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ
