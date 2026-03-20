@@ -55,21 +55,24 @@ def train_lr(embeddings, label_matrix, mlb):
     return clf
 
 
-def leave_one_out_cv(embeddings, label_matrix, mlb):
-    """Leave-one-out cross-validation. Uses cached embeddings (no extra API calls)."""
+def cross_validate(embeddings, label_matrix, mlb, n_folds=5):
+    """K-fold cross-validation. Much faster and less memory than LOO-CV.
+    Uses cached embeddings (no extra API calls)."""
+    from sklearn.model_selection import KFold
     n = len(embeddings)
     correct = 0
+    total_tested = 0
     per_category_correct = defaultdict(int)
     per_category_total = defaultdict(int)
     confidences_per_category = defaultdict(list)
 
-    for i in range(n):
-        # Train on all except i
-        train_idx = list(range(0, i)) + list(range(i+1, n))
+    kf = KFold(n_splits=min(n_folds, n), shuffle=True, random_state=42)
+
+    for train_idx, test_idx in kf.split(embeddings):
         X_train = embeddings[train_idx]
         y_train = label_matrix[train_idx]
-        X_test = embeddings[i:i+1]
-        y_true = label_matrix[i]
+        X_test = embeddings[test_idx]
+        y_test = label_matrix[test_idx]
 
         clf = OneVsRestClassifier(
             LogisticRegression(max_iter=500, C=1.0, solver='lbfgs', class_weight='balanced'),
@@ -77,27 +80,26 @@ def leave_one_out_cv(embeddings, label_matrix, mlb):
         )
         clf.fit(X_train, y_train)
 
-        # Predict
-        y_pred = clf.predict(X_test)[0]
-        proba = clf.predict_proba(X_test)[0] if hasattr(clf, 'predict_proba') else None
+        y_pred = clf.predict(X_test)
+        proba = clf.predict_proba(X_test) if hasattr(clf, 'predict_proba') else None
 
-        # Check if prediction matches (at least one correct label)
-        true_labels = set(np.where(y_true == 1)[0])
-        pred_labels = set(np.where(y_pred == 1)[0])
+        for j in range(len(test_idx)):
+            true_labels = set(np.where(y_test[j] == 1)[0])
+            pred_labels = set(np.where(y_pred[j] == 1)[0])
 
-        if true_labels & pred_labels:  # At least one overlap
-            correct += 1
+            if true_labels & pred_labels:
+                correct += 1
+            total_tested += 1
 
-        # Per-category tracking
-        for label_idx in true_labels:
-            label_name = mlb.classes_[label_idx]
-            per_category_total[label_name] += 1
-            if label_idx in pred_labels:
-                per_category_correct[label_name] += 1
-            if proba is not None:
-                confidences_per_category[label_name].append(float(proba[label_idx]))
+            for label_idx in true_labels:
+                label_name = mlb.classes_[label_idx]
+                per_category_total[label_name] += 1
+                if label_idx in pred_labels:
+                    per_category_correct[label_name] += 1
+                if proba is not None:
+                    confidences_per_category[label_name].append(float(proba[j][label_idx]))
 
-    accuracy = correct / n if n > 0 else 0
+    accuracy = correct / total_tested if total_tested > 0 else 0
 
     per_category_accuracy = {}
     for cat in per_category_total:
@@ -168,9 +170,9 @@ def main():
     clf = train_lr(embeddings, label_matrix, mlb)
     train_duration = time.time() - start_time - embed_duration
 
-    print(f"[train] Running leave-one-out cross-validation...", file=sys.stderr)
-    cv_accuracy, per_category_accuracy, confidences_per_category = leave_one_out_cv(
-        embeddings, label_matrix, mlb
+    print(f"[train] Running 5-fold cross-validation...", file=sys.stderr)
+    cv_accuracy, per_category_accuracy, confidences_per_category = cross_validate(
+        embeddings, label_matrix, mlb, n_folds=5
     )
     cv_duration = time.time() - start_time - embed_duration - train_duration
 
