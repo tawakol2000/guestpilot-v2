@@ -25,9 +25,9 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from collections import defaultdict
 
 def embed_texts(texts, api_key, input_type="classification", batch_size=96):
-    """Embed texts using Cohere API."""
+    """Embed texts using Cohere API (ClientV2 for embed-v4.0 + output_dimension)."""
     import cohere
-    co = cohere.Client(api_key)
+    co = cohere.ClientV2(api_key)
     all_embeddings = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i+batch_size]
