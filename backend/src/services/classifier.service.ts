@@ -217,15 +217,15 @@ export async function loadLrWeightsMetadata(prisma?: any): Promise<void> {
       _state.calibration = calibration;
       _state.trainedAt = trainedAt;
 
-      // T014: Dimension detection — check if weights are augmented (1044-dim) or legacy (1024-dim)
+      // T014: Dimension detection — 20-dim = description-only LR, 1024-dim = legacy embedding LR
       if (lrWeights && lrWeights.coefficients.length > 0) {
         const dim = lrWeights.coefficients[0].length;
-        if (dim === 1044) {
+        if (dim === 20) {
           _state.descriptionFeaturesActive = true;
-          console.log('[Classifier] Description features ACTIVE — augmented weights (1044-dim)');
+          console.log('[Classifier] Description features ACTIVE — 20-dim description-only LR');
         } else if (dim === 1024) {
           _state.descriptionFeaturesActive = false;
-          console.warn('[Classifier] Description features DISABLED — old weights (1024-dim), retrain required');
+          console.warn('[Classifier] Description features DISABLED — legacy 1024-dim weights, retrain required');
         } else {
           _state.descriptionFeaturesActive = false;
           console.error(`[Classifier] Unexpected weight dimension: ${dim} — description features disabled`);
@@ -612,14 +612,15 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
   const descResult = computeDescriptionSimilarities(queryEmbedding, state);
   const topDescriptionMatches = descResult?.topDescriptionMatches || [];
 
-  // T015: Build augmented feature vector if description features active
+  // T015: LR uses ONLY description similarities (20-dim) when active
+  // KNN boost handles exact matches via 1024-dim embeddings separately
   let lrInput: number[];
   let method: string;
   if (state.descriptionFeaturesActive && descResult) {
-    lrInput = [...queryEmbedding, ...descResult.featureVector];
+    lrInput = descResult.featureVector;  // 20-dim only, NOT concatenated
     method = 'lr_desc';
   } else {
-    lrInput = queryEmbedding;
+    lrInput = queryEmbedding;  // fallback: 1024-dim when no descriptions
     method = 'lr_sigmoid';
   }
 
@@ -909,14 +910,14 @@ export async function reinitializeClassifier(tenantId: string, prisma: PrismaCli
 
           console.log(`[Classifier] LR weights loaded during reinit: ${lrWeights ? lrWeights.classes.length + ' classes' : 'no weights'}, accuracy=${calibration?.crossValAccuracy ?? 'n/a'}`);
 
-          // T014: Dimension detection for description features
+          // T014: Dimension detection — 20-dim = description-only LR
           if (lrWeights && lrWeights.coefficients.length > 0) {
             const dim = lrWeights.coefficients[0].length;
-            if (dim === 1044) {
+            if (dim === 20) {
               descFeaturesActive = true;
-              console.log('[Classifier] Description features ACTIVE during reinit — augmented weights (1044-dim)');
+              console.log('[Classifier] Description features ACTIVE during reinit — 20-dim description-only LR');
             } else if (dim === 1024) {
-              console.warn('[Classifier] Description features DISABLED during reinit — old weights (1024-dim), retrain required');
+              console.warn('[Classifier] Description features DISABLED during reinit — legacy 1024-dim weights');
             }
           }
 

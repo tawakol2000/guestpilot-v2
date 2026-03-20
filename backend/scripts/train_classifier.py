@@ -225,8 +225,11 @@ def main():
                 desc_features.append(features)
 
             desc_features = np.array(desc_features)
-            augmented_embeddings = np.concatenate([embeddings, desc_features], axis=1)
-            print(f"[train] Augmented vectors: {augmented_embeddings.shape[1]}-dim ({embeddings.shape[1]} + {desc_features.shape[1]})", file=sys.stderr)
+
+            # LR trains on description similarities ONLY (20-dim)
+            # KNN boost handles exact matches using full 1024-dim embeddings
+            augmented_embeddings = desc_features  # 20-dim, NOT concatenated with embeddings
+            print(f"[train] LR feature vectors: {augmented_embeddings.shape[1]}-dim (description similarities only)", file=sys.stderr)
 
             # Build output description embeddings (for runtime cold start)
             desc_embeddings_output = {}
