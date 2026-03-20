@@ -1348,9 +1348,12 @@ export async function generateAndSendAiReply(
     }
 
     // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
+    // Fires for ALL non-HIGH messages, even after Tier 3 re-injection.
+    // Tier 2 is the most accurate — it overrides Tier 3 if it returns SOPs.
     let tier2ResolvedLabels: string[] | undefined;
     let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
-    if (ragResult.tier === 'tier2_needed' && !tier3Reinjected && !ragResult.intentExtractorRan) {
+    const originalConfidenceTier = ragResult.confidenceTier;
+    if (originalConfidenceTier !== 'high' && !ragResult.intentExtractorRan) {
       const recentForTier2 = allMsgs.slice(-10).map(m => ({
         role: m.role === 'GUEST' ? 'guest' : 'host',
         content: m.content,
@@ -1377,6 +1380,12 @@ export async function generateAndSendAiReply(
             .filter((c): c is NonNullable<typeof c> => c !== null);
 
           if (tier2Chunks.length > 0) {
+            // If Tier 3 had re-injected, remove those chunks — Tier 2 is more accurate
+            if (tier3Reinjected) {
+              const tier3Labels = new Set(tier3ReinjectedLabels);
+              retrievedChunks = retrievedChunks.filter((c: any) => !tier3Labels.has(c.category));
+              console.log(`[AI] Tier 2 overriding Tier 3 re-injection: removed [${tier3ReinjectedLabels.join(', ')}]`);
+            }
             retrievedChunks.push(...tier2Chunks);
             ragResult.tier = 'tier1'; // Tier 2 resolved it
             ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
@@ -1467,6 +1476,7 @@ export async function generateAndSendAiReply(
       tier: ragResult.tier,
       // Three-tier confidence routing (T013)
       confidenceTier: ragResult.confidenceTier || null,
+      originalConfidenceTier: originalConfidenceTier || null,
       topCandidates: ragResult.topCandidates || null,
       // Tier 1 details
       classifierUsed: context.reservationStatus !== 'INQUIRY',

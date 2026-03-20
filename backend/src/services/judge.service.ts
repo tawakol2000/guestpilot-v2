@@ -220,8 +220,10 @@ export interface JudgeResult {
  */
 export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient): Promise<void> {
   try {
-    // ── Resolve confidence: prefer LR sigmoid, fall back to KNN topSimilarity ──
-    const effectiveConfidence = input.confidence ?? input.classifierTopSim;
+    // ── Resolve confidence: use LR sigmoid only (KNN removed in 005) ──
+    // If confidence is null (screening agent, classifier didn't run), default to 0
+    // so the judge EVALUATES instead of skipping.
+    const effectiveConfidence = input.confidence ?? 0;
 
     // ── Fetch tenant config for judgeMode ──────────────────────────────
     const tenantConfig = await getTenantAiConfig(input.tenantId, prisma);
@@ -316,7 +318,7 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
           console.log(`[Judge] Mode: sampling — random sample triggered (would have skipped: ${skipReason})`);
           // Fall through to standard judge path
         } else {
-          console.log(`[Judge] Mode: sampling — skipping (${skipReason}, lrConf=${effectiveConfidence.toFixed(3)}, knnSim=${input.classifierTopSim.toFixed(3)})`);
+          console.log(`[Judge] Mode: sampling — skipping (${skipReason}, lrConf=${effectiveConfidence.toFixed(3)}, conf=${effectiveConfidence.toFixed(3)})`);
           await saveSkipRecord(input, skipReason as any, prisma);
           return;
         }
@@ -387,7 +389,7 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
         console.log(`[Judge] Self-improvement: added "${input.guestMessage.substring(0, 50)}" → [${validLabels.join(', ')}]`);
       }
     } else if (!judgeResult.retrievalCorrect && effectiveConfidence >= 0.7) {
-      console.log(`[Judge] High-confidence misclassification (lrConf=${effectiveConfidence.toFixed(2)}, knnSim=${input.classifierTopSim.toFixed(2)}), flagged for review: "${input.guestMessage.substring(0, 50)}"`);
+      console.log(`[Judge] High-confidence misclassification (lrConf=${effectiveConfidence.toFixed(2)}, conf=${effectiveConfidence.toFixed(2)}), flagged for review: "${input.guestMessage.substring(0, 50)}"`);
     }
 
     // Step 4: Low-confidence reinforcement — judge says correct but Tier 1 barely recognized it.
@@ -406,7 +408,7 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
           await addExample(input.tenantId, input.guestMessage, reinforceLabels, 'low-sim-reinforce', prisma);
           recordAutoFix(input.tenantId);
           await reinitializeClassifier(input.tenantId, prisma);
-          console.log(`[Judge] Low-conf reinforcement (lrConf=${effectiveConfidence.toFixed(2)}, knnSim=${input.classifierTopSim.toFixed(2)}): "${input.guestMessage.substring(0, 50)}" → [${reinforceLabels.join(', ') || '(contextual)'}]`);
+          console.log(`[Judge] Low-conf reinforcement (lrConf=${effectiveConfidence.toFixed(2)}, conf=${effectiveConfidence.toFixed(2)}): "${input.guestMessage.substring(0, 50)}" → [${reinforceLabels.join(', ') || '(contextual)'}]`);
         }
       }
     }
@@ -450,11 +452,10 @@ async function callJudge(input: JudgeInput): Promise<JudgeResult | null> {
     const client = getJudgeClient();
     if (!client) return null;
 
-    const lrConf = input.confidence ?? input.classifierTopSim;
+    const lrConf = input.confidence ?? 0;
     const userMessage = `GUEST MESSAGE: "${input.guestMessage}"
 CLASSIFIER RETRIEVED: [${input.classifierLabels.join(', ') || 'nothing'}]
 CLASSIFIER CONFIDENCE: ${lrConf.toFixed(3)} (LR sigmoid)
-CLASSIFIER DIAGNOSTIC (KNN): ${input.classifierTopSim.toFixed(3)} (nearest neighbor)
 CLASSIFIER METHOD: ${input.classifierMethod}
 AI RESPONSE: "${input.aiResponse.substring(0, 500)}"
 
