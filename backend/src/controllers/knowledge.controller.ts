@@ -310,6 +310,7 @@ export function makeKnowledgeController(prisma: PrismaClient) {
     async retrainClassifier(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;
+        const includeDescriptions = req.body?.includeDescriptions !== false; // opt-out via body
 
         // 1. Fetch all active ClassifierExample from DB (global — no tenantId filter)
         const dbExamples = await prisma.classifierExample.findMany({
@@ -362,24 +363,28 @@ export function makeKnowledgeController(prisma: PrismaClient) {
             }
           });
 
-          // T017: Load SOP descriptions for description-enhanced training
+          // T017: Load SOP descriptions for description-enhanced training (opt-out via includeDescriptions=false)
           let descriptions: Record<string, { en: string[]; ar: string[] }> | undefined;
-          try {
-            const descPath = path.join(__dirname, '../config/sop_descriptions.json');
-            if (fs.existsSync(descPath)) {
-              const descData = JSON.parse(fs.readFileSync(descPath, 'utf-8'));
-              if (descData.categories) {
-                descriptions = {};
-                for (const [cat, data] of Object.entries(descData.categories as Record<string, any>)) {
-                  descriptions[cat] = {
-                    en: data.descriptions?.en || [],
-                    ar: data.descriptions?.ar || [],
-                  };
+          if (includeDescriptions) {
+            try {
+              const descPath = path.join(__dirname, '../config/sop_descriptions.json');
+              if (fs.existsSync(descPath)) {
+                const descData = JSON.parse(fs.readFileSync(descPath, 'utf-8'));
+                if (descData.categories) {
+                  descriptions = {};
+                  for (const [cat, data] of Object.entries(descData.categories as Record<string, any>)) {
+                    descriptions[cat] = {
+                      en: data.descriptions?.en || [],
+                      ar: data.descriptions?.ar || [],
+                    };
+                  }
                 }
               }
+            } catch (descErr) {
+              console.warn('[retrainClassifier] Could not load SOP descriptions (non-fatal):', descErr);
             }
-          } catch (descErr) {
-            console.warn('[retrainClassifier] Could not load SOP descriptions (non-fatal):', descErr);
+          } else {
+            console.log('[retrainClassifier] Description features disabled — training with 1024-dim only');
           }
 
           // Write input to stdin
