@@ -33,7 +33,7 @@ def embed_texts(texts, api_key, input_type="classification", batch_size=96):
         batch = texts[i:i+batch_size]
         response = co.embed(
             texts=batch,
-            model="embed-multilingual-v3.0",
+            model="embed-v4.0",
             input_type=input_type,
             embedding_types=["float"]
         )
@@ -308,7 +308,7 @@ def main():
 
     # Build output
     output = {
-        "model": "cohere-embed-multilingual-v3.0",
+        "model": "cohere-embed-v4.0",
         "trainedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "exampleCount": len(examples),
         "embeddingDim": int(embeddings.shape[1]),

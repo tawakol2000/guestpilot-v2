@@ -337,8 +337,8 @@ try {
 async function loadDescriptionEmbeddings(): Promise<void> {
   if (!_state) return;
 
-  // If already loaded from weights file, skip API call
-  if (_state.descriptionEmbeddings && _state.descriptionEmbeddings.size > 0) return;
+  // Always embed fresh from sop_descriptions.json using the runtime embeddings service
+  // Do NOT reuse embeddings from weights file — they may be from a different model version
 
   try {
     const descPath = path.join(__dirname, '../config/sop_descriptions.json');
