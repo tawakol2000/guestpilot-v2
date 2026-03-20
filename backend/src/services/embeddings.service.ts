@@ -1,6 +1,6 @@
 /**
  * Dual-provider embeddings service — OpenAI text-embedding-3-small (1536d)
- * or Cohere embed-multilingual-v3.0 (1024d) with input_type support.
+ * or Cohere embed-v4.0 (1024d, outputDimension) with input_type support.
  *
  * Provider is selected at runtime via setEmbeddingProvider().
  * Cohere's input_type parameter optimizes embeddings for classification
