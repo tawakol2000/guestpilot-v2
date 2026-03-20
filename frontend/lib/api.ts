@@ -863,6 +863,7 @@ export async function apiSetClassifierThresholds(data: {
   autoFixThreshold: number
   classifierVoteThreshold: number
   classifierContextualGate: number
+  tier2Threshold?: number
   embeddingProvider: string
 }): Promise<{ ok: boolean }> {
   return apiFetch('/api/knowledge/classifier-thresholds', {

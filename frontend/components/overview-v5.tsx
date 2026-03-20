@@ -31,6 +31,7 @@ type CheckInStatus =
   | 'inquiry'
   | 'cancelled'
   | 'checking-in-today'
+  | 'checking-out-today'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
@@ -83,6 +84,7 @@ const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   'checking-in-today': { label: 'Today', color: T.status.amber },
   'checked-in': { label: 'Checked In', color: T.status.green },
   'checked-out': { label: 'Checked Out', color: T.text.tertiary },
+  'checking-out-today': { label: 'Checkout Today', color: T.status.amber },
   inquiry: { label: 'Inquiry', color: T.accent },
   cancelled: { label: 'Cancelled', color: T.status.red },
 }
