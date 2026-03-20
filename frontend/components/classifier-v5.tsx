@@ -1147,87 +1147,218 @@ function ThresholdSettings() {
       />
 
       <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <SliderRow
-          label="Judge threshold"
-          hint="— run LLM judge below this"
-          value={judgeVal}
-          onChange={v => { setJudgeVal(v); if (v <= autoFixVal) setAutoFixVal(Math.round((v - 0.05) * 100) / 100) }}
-          min={0.40} max={0.99} step={0.01}
-          color={T.status.amber}
-        />
-        <SliderRow
-          label="Auto-fix threshold"
-          hint="— auto-add training example below this"
-          value={autoFixVal}
-          onChange={v => setAutoFixVal(v)}
-          min={0.20} max={0.94} step={0.01}
-          color={T.status.red}
-        />
 
-        {/* Visual range legend */}
-        <div style={{
-          display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
-          overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 2,
-        }}>
-          {[
-            { label: 'auto-fix', color: `${T.status.red}22`, textColor: T.status.red, pct: autoFixVal * 100 },
-            { label: 'judge only', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (judgeVal - autoFixVal) * 100 },
-            { label: 'trusted — skip', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - judgeVal) * 100 },
-          ].map(seg => (
-            <div key={seg.label} style={{
-              width: `${seg.pct}%`, background: seg.color,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              overflow: 'hidden', minWidth: 0,
-            }}>
-              {seg.pct > 8 && (
-                <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
-                  {seg.label}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {autoFixErr && (
-          <div style={{ fontSize: 10, color: T.status.red, fontFamily: T.font.mono }}>
-            Auto-fix threshold must be less than judge threshold
-          </div>
-        )}
-
-        {/* Tier 1 classifier thresholds */}
-        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Tier 1 — Embedding Classifier
+        {/* ── TIER 1 — CLASSIFICATION ──────────────────────────────────────── */}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Tier 1 — Classification
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <SliderRow
-              label="Vote threshold"
-              hint="— label needs this % of weighted vote"
-              value={voteVal}
-              onChange={v => setVoteVal(v)}
-              min={0.10} max={0.60} step={0.01}
-              color={T.accent}
-            />
-            <SliderRow
-              label="Contextual gate"
-              hint="— short-circuit to contextual above this similarity"
-              value={ctxGateVal}
-              onChange={v => setCtxGateVal(v)}
-              min={0.50} max={0.95} step={0.01}
-              color={T.accent}
-            />
-            <SliderRow
-              label="Tier 2 threshold"
-              hint="— fire intent extractor (Haiku) below this similarity"
+              label="KNN Boost Threshold"
+              hint="— similarity above this uses nearest neighbor's label"
               value={tier2Val}
               onChange={v => setTier2Val(v)}
-              min={0.40} max={0.90} step={0.01}
-              color="#F59E0B"
+              min={0.50} max={1.00} step={0.01}
+              color={T.accent}
             />
+            <SliderRow
+              label="High Confidence"
+              hint="— LR above this skips Tier 2, handles alone"
+              value={highConfVal}
+              onChange={v => setHighConfVal(v)}
+              min={0.50} max={1.00} step={0.01}
+              color={T.status.green}
+            />
+            <SliderRow
+              label="Low Confidence"
+              hint="— LR below this routes to Tier 2 (Haiku)"
+              value={lowConfVal}
+              onChange={v => setLowConfVal(v)}
+              min={0.20} max={1.00} step={0.01}
+              color={T.status.amber}
+            />
+          </div>
+          {/* Visual range legend */}
+          <div style={{
+            display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
+            overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 14,
+          }}>
+            {[
+              { label: 'Tier 2 fallback', color: `${T.status.red}22`, textColor: T.status.red, pct: lowConfVal * 100 },
+              { label: 'multi-SOP', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (highConfVal - lowConfVal) * 100 },
+              { label: 'single SOP', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - highConfVal) * 100 },
+            ].map(seg => (
+              <div key={seg.label} style={{
+                width: `${seg.pct}%`, background: seg.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', minWidth: 0,
+              }}>
+                {seg.pct > 12 && (
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
+                    {seg.label}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Embedding provider toggle */}
+        {/* ── SELF-IMPROVEMENT ─────────────────────────────────────────────── */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Self-Improvement (Judge)
+            </div>
+            {judgeModeSavedMsg && (
+              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: judgeModeSavedMsg === 'Saved' ? T.status.green : T.status.red }}>
+                {judgeModeSavedMsg}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <SliderRow
+              label="Judge threshold"
+              hint="— run LLM judge below this"
+              value={judgeVal}
+              onChange={v => { setJudgeVal(v); if (v <= autoFixVal) setAutoFixVal(Math.round((v - 0.05) * 100) / 100) }}
+              min={0.40} max={0.99} step={0.01}
+              color={T.status.amber}
+            />
+            <SliderRow
+              label="Auto-fix threshold"
+              hint="— auto-add training example below this"
+              value={autoFixVal}
+              onChange={v => setAutoFixVal(v)}
+              min={0.20} max={0.94} step={0.01}
+              color={T.status.red}
+            />
+          </div>
+          {/* Visual range legend */}
+          <div style={{
+            display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
+            overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 14,
+          }}>
+            {[
+              { label: 'auto-fix', color: `${T.status.red}22`, textColor: T.status.red, pct: autoFixVal * 100 },
+              { label: 'evaluate', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (judgeVal - autoFixVal) * 100 },
+              { label: 'trusted', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - judgeVal) * 100 },
+            ].map(seg => (
+              <div key={seg.label} style={{
+                width: `${seg.pct}%`, background: seg.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', minWidth: 0,
+              }}>
+                {seg.pct > 8 && (
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
+                    {seg.label}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          {autoFixErr && (
+            <div style={{ fontSize: 10, color: T.status.red, fontFamily: T.font.mono, marginTop: 8 }}>
+              Auto-fix threshold must be less than judge threshold
+            </div>
+          )}
+          {/* Judge Mode */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            {([
+              { value: 'evaluate_all' as const, label: 'Evaluate All' },
+              { value: 'sampling' as const, label: 'Sampling (30%)' },
+            ]).map(opt => (
+              <button key={opt.value} onClick={() => saveJudgeMode(opt.value)} disabled={judgeModesSaving} style={{
+                flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                background: judgeModeVal === opt.value ? T.border.strong : T.bg.secondary,
+                color: judgeModeVal === opt.value ? '#fff' : T.text.secondary,
+                border: `1px solid ${judgeModeVal === opt.value ? T.border.strong : T.border.default}`,
+                borderRadius: T.radius.sm, cursor: judgeModesSaving ? 'default' : 'pointer',
+                transition: 'all 0.15s', opacity: judgeModesSaving ? 0.6 : 1,
+              }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── LR CLASSIFIER ───────────────────────────────────────────────── */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            LR Classifier
+          </div>
+          <button onClick={handleRetrain} disabled={retraining} style={{
+            width: '100%', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            fontSize: 13, fontWeight: 700, fontFamily: T.font.sans,
+            background: retraining ? T.bg.secondary : T.accent,
+            color: retraining ? T.text.tertiary : '#fff',
+            border: `1px solid ${retraining ? T.border.default : T.accent}`,
+            borderRadius: T.radius.sm, cursor: retraining ? 'default' : 'pointer',
+            transition: 'all 0.15s', opacity: retraining ? 0.7 : 1,
+          }}>
+            {retraining
+              ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Zap size={14} />}
+            {retraining ? 'Retraining...' : 'Retrain Classifier'}
+          </button>
+          {(retrainCount != null || weightsSource) && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
+              {retrainCount != null && (
+                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                  {retrainCount} retrain{retrainCount === 1 ? '' : 's'} saved
+                </span>
+              )}
+              {weightsSource && (
+                <span style={{
+                  fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
+                  padding: '2px 6px', borderRadius: 999,
+                  background: weightsSource === 'file' ? '#DCFCE7' : weightsSource === 'database' ? '#DBEAFE' : '#FEE2E2',
+                  color: weightsSource === 'file' ? '#166534' : weightsSource === 'database' ? '#1E40AF' : '#991B1B',
+                }}>
+                  weights: {weightsSource}
+                </span>
+              )}
+            </div>
+          )}
+          {retrainMsg && (
+            <div style={{
+              marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
+              background: `${T.status.green}0A`, border: `1px solid ${T.status.green}28`,
+              fontSize: 11, fontFamily: T.font.mono, color: T.status.green, lineHeight: 1.5,
+            }}>{retrainMsg}</div>
+          )}
+          {retrainErr && (
+            <div style={{
+              marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
+              background: `${T.status.red}0A`, border: `1px solid ${T.status.red}28`,
+              fontSize: 11, fontFamily: T.font.mono, color: T.status.red, lineHeight: 1.5,
+            }}>{retrainErr}</div>
+          )}
+          {/* Calibration */}
+          {calibration && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{
+                padding: '10px 14px', borderRadius: T.radius.sm,
+                background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.font.sans, color: T.text.primary }}>
+                  CV accuracy:{' '}
+                </span>
+                <span style={{
+                  fontSize: 14, fontWeight: 800, fontFamily: T.font.mono,
+                  color: (calibration.lrAccuracy * 100) >= 80 ? T.status.green
+                    : (calibration.lrAccuracy * 100) >= 60 ? T.status.amber
+                    : T.status.red,
+                }}>
+                  {(calibration.lrAccuracy * 100).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── EMBEDDING PROVIDER ──────────────────────────────────────────── */}
         <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Embedding Provider
@@ -1246,219 +1377,7 @@ function ThresholdSettings() {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 8, lineHeight: 1.5 }}>
-            {providerVal === 'cohere'
-              ? 'embed-multilingual-v4.0 — optimized input types for classification + search. Better Arabic accuracy. Rerank enabled.'
-              : 'text-embedding-3-small — default provider.'}
-            {' '}Switching re-embeds all data (~30s).
-          </div>
         </div>
-
-        {/* Judge Mode toggle */}
-        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Judge Mode
-            </div>
-            {judgeModeSavedMsg && (
-              <span style={{
-                fontSize: 10, fontFamily: T.font.mono,
-                color: judgeModeSavedMsg === 'Saved' ? T.status.green : T.status.red,
-              }}>{judgeModeSavedMsg}</span>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {([
-              { value: 'evaluate_all' as const, label: 'Evaluate All' },
-              { value: 'sampling' as const, label: 'Sampling (30%)' },
-            ]).map(opt => (
-              <button key={opt.value} onClick={() => saveJudgeMode(opt.value)} disabled={judgeModesSaving} style={{
-                flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
-                background: judgeModeVal === opt.value ? T.border.strong : T.bg.secondary,
-                color: judgeModeVal === opt.value ? '#fff' : T.text.secondary,
-                border: `1px solid ${judgeModeVal === opt.value ? T.border.strong : T.border.default}`,
-                borderRadius: T.radius.sm, cursor: judgeModesSaving ? 'default' : 'pointer',
-                transition: 'all 0.15s', opacity: judgeModesSaving ? 0.6 : 1,
-              }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 8, lineHeight: 1.5 }}>
-            Evaluate All: judge checks every AI response. Sampling: judge checks ~30% of responses.
-          </div>
-        </div>
-
-        {/* ── LR Sections ──────────────────────────────────────────────────── */}
-        <>
-            {/* Retrain Classifier Button */}
-            <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  LR Classifier
-                </div>
-              </div>
-              <button onClick={handleRetrain} disabled={retraining} style={{
-                width: '100%', height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                fontSize: 13, fontWeight: 700, fontFamily: T.font.sans,
-                background: retraining ? T.bg.secondary : T.accent,
-                color: retraining ? T.text.tertiary : '#fff',
-                border: `1px solid ${retraining ? T.border.default : T.accent}`,
-                borderRadius: T.radius.sm, cursor: retraining ? 'default' : 'pointer',
-                transition: 'all 0.15s', opacity: retraining ? 0.7 : 1,
-              }}>
-                {retraining
-                  ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                  : <Zap size={14} />}
-                {retraining ? 'Retraining...' : 'Retrain Classifier'}
-              </button>
-              {(retrainCount != null || weightsSource) && (
-                <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
-                  {retrainCount != null && (
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                      {retrainCount} retrain{retrainCount === 1 ? '' : 's'} saved
-                    </span>
-                  )}
-                  {weightsSource && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
-                      padding: '2px 6px', borderRadius: 999,
-                      background: weightsSource === 'file' ? '#DCFCE7' : weightsSource === 'database' ? '#DBEAFE' : '#FEE2E2',
-                      color: weightsSource === 'file' ? '#166534' : weightsSource === 'database' ? '#1E40AF' : '#991B1B',
-                    }}>
-                      weights: {weightsSource}
-                    </span>
-                  )}
-                </div>
-              )}
-              {retrainMsg && (
-                <div style={{
-                  marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
-                  background: `${T.status.green}0A`, border: `1px solid ${T.status.green}28`,
-                  fontSize: 11, fontFamily: T.font.mono, color: T.status.green, lineHeight: 1.5,
-                }}>{retrainMsg}</div>
-              )}
-              {retrainErr && (
-                <div style={{
-                  marginTop: 10, padding: '8px 12px', borderRadius: T.radius.sm,
-                  background: `${T.status.red}0A`, border: `1px solid ${T.status.red}28`,
-                  fontSize: 11, fontFamily: T.font.mono, color: T.status.red, lineHeight: 1.5,
-                }}>{retrainErr}</div>
-              )}
-            </div>
-
-            {/* Calibration Results */}
-            {calibration && (
-              <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                  <BarChart3 size={13} color={T.text.tertiary} />
-                  <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    Calibration Results
-                  </div>
-                </div>
-                <div style={{
-                  padding: '10px 14px', borderRadius: T.radius.sm,
-                  background: T.bg.secondary, border: `1px solid ${T.border.default}`,
-                  marginBottom: 12,
-                }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, fontFamily: T.font.sans, color: T.text.primary }}>
-                    Cross-validation accuracy:{' '}
-                  </span>
-                  <span style={{
-                    fontSize: 14, fontWeight: 800, fontFamily: T.font.mono,
-                    color: (calibration.lrAccuracy * 100) >= 80 ? T.status.green
-                      : (calibration.lrAccuracy * 100) >= 60 ? T.status.amber
-                      : T.status.red,
-                  }}>
-                    {(calibration.lrAccuracy * 100).toFixed(1)}%
-                  </span>
-                </div>
-                {calibration.perCategory.length > 0 && (
-                  <div style={{ borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`, overflow: 'hidden' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: T.font.sans, fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ background: T.bg.secondary }}>
-                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Category</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Accuracy</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: 10, fontWeight: 600, color: T.text.tertiary, textTransform: 'uppercase', letterSpacing: 0.3, borderBottom: `1px solid ${T.border.default}` }}>Samples</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...calibration.perCategory]
-                          .sort((a, b) => a.accuracy - b.accuracy)
-                          .map((cat, i) => {
-                            const accPct = cat.accuracy * 100
-                            const rowColor = accPct < 60 ? T.status.red : accPct < 80 ? T.status.amber : T.status.green
-                            return (
-                              <tr key={cat.category} style={{ background: i % 2 === 0 ? T.bg.primary : T.bg.secondary }}>
-                                <td style={{ padding: '5px 10px', fontFamily: T.font.mono, fontSize: 10, color: T.text.primary, borderBottom: `1px solid ${T.border.default}` }}>
-                                  {cat.category}
-                                </td>
-                                <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: T.font.mono, fontSize: 11, fontWeight: 700, color: rowColor, borderBottom: `1px solid ${T.border.default}` }}>
-                                  {accPct.toFixed(1)}%
-                                </td>
-                                <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: T.font.mono, fontSize: 10, color: T.text.tertiary, borderBottom: `1px solid ${T.border.default}` }}>
-                                  {cat.total}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tier Confidence Thresholds (LR only) */}
-            <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                LR Tier Confidence Thresholds
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                <SliderRow
-                  label="High Confidence Threshold"
-                  hint="— messages above this skip to single SOP (Tier 1)"
-                  value={highConfVal}
-                  onChange={v => setHighConfVal(v)}
-                  min={0.70} max={0.95} step={0.01}
-                  color={T.status.green}
-                />
-                <SliderRow
-                  label="Low Confidence Threshold"
-                  hint="— messages below this use intent extractor fallback"
-                  value={lowConfVal}
-                  onChange={v => setLowConfVal(v)}
-                  min={0.30} max={0.70} step={0.01}
-                  color={T.status.amber}
-                />
-              </div>
-              {/* Visual range legend for LR tiers */}
-              <div style={{
-                display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
-                overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 14,
-              }}>
-                {[
-                  { label: 'intent fallback', color: `${T.status.red}22`, textColor: T.status.red, pct: lowConfVal * 100 },
-                  { label: 'multi-SOP', color: `${T.status.amber}18`, textColor: T.status.amber, pct: (highConfVal - lowConfVal) * 100 },
-                  { label: 'single SOP', color: `${T.status.green}12`, textColor: T.status.green, pct: (1 - highConfVal) * 100 },
-                ].map(seg => (
-                  <div key={seg.label} style={{
-                    width: `${seg.pct}%`, background: seg.color,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    overflow: 'hidden', minWidth: 0,
-                  }}>
-                    {seg.pct > 12 && (
-                      <span style={{ fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, color: seg.textColor, whiteSpace: 'nowrap' }}>
-                        {seg.label}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-        </>
       </div>
     </Card>
   )
