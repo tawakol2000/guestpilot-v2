@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify, getDescriptionMatrix } from '../services/classifier.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify, getDescriptionMatrix, classifyDetailed } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
@@ -628,6 +628,26 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       return;
     }
     res.json({ ...result, timestamp: new Date().toISOString() });
+  }) as RequestHandler);
+
+  // POST /api/knowledge/classify-test — live test: detailed KNN + LR breakdown
+  router.post('/classify-test', (async (req: any, res: any) => {
+    try {
+      const { message } = req.body as { message?: string };
+      if (!message || typeof message !== 'string') {
+        res.status(400).json({ error: 'message is required' });
+        return;
+      }
+      if (!isClassifierInitialized()) await initializeClassifier();
+      const result = await classifyDetailed(message);
+      if (!result) {
+        res.status(503).json({ error: 'Classifier not ready' });
+        return;
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Classification failed' });
+    }
   }) as RequestHandler);
 
   // POST /api/knowledge/batch-classify — T022-T023: batch classify messages

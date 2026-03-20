@@ -831,6 +831,36 @@ export async function apiTestClassify(message: string): Promise<{
   })
 }
 
+export async function apiClassifyDetailed(message: string): Promise<{
+  message: string
+  knn: {
+    topSimilarity: number
+    boostFired: boolean
+    neighbors: Array<{ text: string; labels: string[]; similarity: number }>
+  }
+  lr: {
+    method: string
+    descriptionFeaturesActive: boolean
+    descriptionSimilarities: Array<{ label: string; similarity: number }>
+    topCandidates: Array<{ label: string; confidence: number }>
+    labels: string[]
+    confidence: number
+    tier: string
+  }
+  final: {
+    method: string
+    labels: string[]
+    confidence: number
+    tier: string
+    boostApplied: boolean
+  }
+}> {
+  return apiFetch('/api/knowledge/classify-test', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  })
+}
+
 export async function apiGetEvaluationStats(): Promise<{
   total: number
   correct: number

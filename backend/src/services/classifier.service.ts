@@ -442,9 +442,10 @@ function classifyWithLR(
 
   const { classes, coefficients, intercepts } = state.lrWeights;
 
-  // T029: Dimension validation — embedding must match weight dimensions
+  // Dimension validation — non-fatal, returns empty on mismatch (handles stale DB weights)
   if (embedding.length !== coefficients[0].length) {
-    throw new Error('Embedding dimension mismatch: embedding=' + embedding.length + ' weights=' + coefficients[0].length);
+    console.error(`[Classifier] Dimension mismatch: input=${embedding.length} weights=${coefficients[0].length} — skipping LR, retrain required`);
+    return { labels: [], confidence: 0, topCandidates: [], tier: 'low' as const };
   }
   const perCatThresholds = state.lrThresholds?.perCategory || {};
 
@@ -641,23 +642,14 @@ export async function classifyMessage(query: string, overrideVoteThreshold?: num
   let finalConfidence = lrResult.confidence;
   let finalTier = lrResult.tier;
 
-  if (
-    simDiag.topSimilarity >= _boostConfig.boostSimilarityThreshold &&
-    simDiag.neighbors.length >= _boostConfig.boostMinAgreement
-  ) {
-    // Check all K neighbors share at least one common label
-    const labelSets = simDiag.neighbors.slice(0, _boostConfig.boostMinAgreement).map(n => new Set(n.labels));
-    const commonLabels = [...labelSets[0]].filter(l => labelSets.every(s => s.has(l)));
-
-    if (commonLabels.length > 0) {
-      boostApplied = true;
-      boostLabels = commonLabels;
-      finalLabels = commonLabels;
-      finalConfidence = simDiag.topSimilarity;
-      method = 'lr_boost';
-      // Recompute tier from boosted confidence
-      finalTier = finalConfidence >= 0.85 ? 'high' : finalConfidence >= 0.55 ? 'medium' : 'low';
-    }
+  if (simDiag.topSimilarity >= _boostConfig.boostSimilarityThreshold && simDiag.neighbors.length > 0) {
+    // Top neighbor is a near-exact match — use its labels directly
+    boostApplied = true;
+    boostLabels = simDiag.neighbors[0].labels;
+    finalLabels = simDiag.neighbors[0].labels;
+    finalConfidence = simDiag.topSimilarity;
+    method = 'lr_boost';
+    finalTier = finalConfidence >= 0.85 ? 'high' : finalConfidence >= 0.55 ? 'medium' : 'low';
   }
 
   // Apply token budget
@@ -759,6 +751,98 @@ export function getExampleCountPerLabel(): Record<string, number> {
     }
   }
   return counts;
+}
+
+// ─── Live test: detailed classification breakdown ─────────────────────────
+
+export async function classifyDetailed(query: string): Promise<{
+  message: string;
+  knn: {
+    topSimilarity: number;
+    boostFired: boolean;
+    neighbors: Array<{ text: string; labels: string[]; similarity: number }>;
+  };
+  lr: {
+    method: string;
+    descriptionFeaturesActive: boolean;
+    descriptionSimilarities: Array<{ label: string; similarity: number }>;
+    topCandidates: Array<{ label: string; confidence: number }>;
+    labels: string[];
+    confidence: number;
+    tier: string;
+  };
+  final: {
+    method: string;
+    labels: string[];
+    confidence: number;
+    tier: string;
+    boostApplied: boolean;
+  };
+} | null> {
+  const state = _state;
+  if (!state || state.embeddings.length === 0) return null;
+
+  const queryEmbedding = await embedText(query, 'classification');
+  if (!queryEmbedding || queryEmbedding.length === 0) return null;
+
+  // KNN diagnostic
+  const simDiag = runSimilarityDiagnostic(queryEmbedding, state);
+
+  // Description similarities
+  const descResult = computeDescriptionSimilarities(queryEmbedding, state);
+  const descSims = descResult
+    ? descResult.topDescriptionMatches.length > 0
+      ? [...(state.descriptionCategories || [])].map((cat, i) => ({
+          label: cat,
+          similarity: descResult.featureVector[i] || 0,
+        })).sort((a, b) => b.similarity - a.similarity)
+      : []
+    : [];
+
+  // LR on description features (or fallback to embedding)
+  let lrInput: number[];
+  let lrMethod: string;
+  if (state.descriptionFeaturesActive && descResult) {
+    lrInput = descResult.featureVector;
+    lrMethod = 'lr_desc';
+  } else if (state.lrWeights) {
+    lrInput = queryEmbedding;
+    lrMethod = 'lr_sigmoid';
+  } else {
+    return null;
+  }
+
+  const lrResult = classifyWithLR(lrInput, state);
+
+  // Boost check
+  const boostFired = simDiag.topSimilarity >= _boostConfig.boostSimilarityThreshold && simDiag.neighbors.length > 0;
+
+  return {
+    message: query,
+    knn: {
+      topSimilarity: simDiag.topSimilarity,
+      boostFired,
+      neighbors: simDiag.neighbors.slice(0, 5),
+    },
+    lr: {
+      method: lrMethod,
+      descriptionFeaturesActive: state.descriptionFeaturesActive,
+      descriptionSimilarities: descSims,
+      topCandidates: lrResult.topCandidates.slice(0, 10),
+      labels: lrResult.labels,
+      confidence: lrResult.confidence,
+      tier: lrResult.tier,
+    },
+    final: {
+      method: boostFired ? 'lr_boost' : lrMethod,
+      labels: boostFired ? simDiag.neighbors[0].labels : lrResult.labels,
+      confidence: boostFired ? simDiag.topSimilarity : lrResult.confidence,
+      tier: boostFired
+        ? (simDiag.topSimilarity >= 0.85 ? 'high' : simDiag.topSimilarity >= 0.55 ? 'medium' : 'low')
+        : lrResult.tier,
+      boostApplied: boostFired,
+    },
+  };
 }
 
 // ─── T027: Description matrix diagnostic ──────────────────────────────────

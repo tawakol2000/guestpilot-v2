@@ -9,6 +9,7 @@ import {
 import {
   apiGetClassifierStatus,
   apiTestClassify,
+  apiClassifyDetailed,
   apiGetEvaluationStats,
   apiGetEvaluations,
   apiGetClassifierExamples,
@@ -253,23 +254,19 @@ function RefreshBtn({ loading, onClick }: { loading: boolean; onClick: () => voi
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Section 1: Live Test
+// Section 1: Live Test — KNN + LR dual breakdown
 // ═════════════════════════════════════════════════════════════════════════════
 function LiveTestSection() {
   const [msg, setMsg] = useState('')
   const [focused, setFocused] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{
-    labels: string[]; method: string;
-    topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>;
-    tokensUsed: number; topSimilarity: number
-  } | null>(null)
+  const [result, setResult] = useState<Awaited<ReturnType<typeof apiClassifyDetailed>> | null>(null)
   const [err, setErr] = useState('')
 
   async function classify() {
     if (!msg.trim() || loading) return
     setLoading(true); setErr('')
-    try { setResult(await apiTestClassify(msg.trim())) }
+    try { setResult(await apiClassifyDetailed(msg.trim())) }
     catch (e: any) { setErr(e.message || 'Classification failed') }
     finally { setLoading(false) }
   }
@@ -279,7 +276,7 @@ function LiveTestSection() {
       <CardHeader
         icon={<Play size={14} color={T.text.secondary} />}
         title="Live Test"
-        sub="type a guest message and see what the classifier returns"
+        sub="type a message — see KNN boost and LR description scores side by side"
       />
       <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Input row */}
@@ -290,7 +287,7 @@ function LiveTestSection() {
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={e => { if (e.key === 'Enter') classify() }}
-            placeholder={`e.g. "Can we get cleaning today?" or "The AC isn't working"`}
+            placeholder={`e.g. "I need a pillow" or "التكييف ما يشتغل"`}
             style={{
               flex: 1, height: 38, padding: '0 12px', fontSize: 13,
               border: `1px solid ${focused ? T.accent : T.border.default}`,
@@ -327,59 +324,152 @@ function LiveTestSection() {
         )}
 
         {result && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, animation: 'fadeInUp 0.25s ease-out both' }}>
-            {/* Result summary */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: 'fadeInUp 0.25s ease-out both' }}>
+            {/* Final result banner */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-              padding: '10px 14px', background: T.bg.secondary,
-              borderRadius: T.radius.sm, border: `1px solid ${T.border.default}`,
+              padding: '10px 14px', background: result.final.boostApplied ? '#F0FDF4' : T.bg.secondary,
+              borderRadius: T.radius.sm,
+              border: `1px solid ${result.final.boostApplied ? 'rgba(21,128,61,0.2)' : T.border.default}`,
             }}>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
-                {result.labels.length === 0
-                  ? <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>∅ no labels returned</span>
-                  : result.labels.map(l => <LabelPill key={l} label={l} />)}
-              </div>
-              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, whiteSpace: 'nowrap' }}>
-                {result.method}
+              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: T.font.sans, color: T.text.tertiary, textTransform: 'uppercase' }}>
+                Final:
               </span>
-              <SimBar value={result.topSimilarity} />
-              {result.tokensUsed > 0 && (
-                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, whiteSpace: 'nowrap' }}>
-                  {result.tokensUsed} tok
-                </span>
-              )}
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
+                {result.final.labels.length === 0
+                  ? <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>no labels</span>
+                  : result.final.labels.map(l => <LabelPill key={l} label={l} />)}
+              </div>
+              <span style={{
+                fontSize: 10, fontWeight: 600, fontFamily: T.font.mono, padding: '2px 8px', borderRadius: 999,
+                background: result.final.boostApplied ? '#DCFCE7' : 'rgba(29,78,216,0.08)',
+                color: result.final.boostApplied ? '#15803D' : T.accent,
+              }}>
+                {result.final.method}
+              </span>
+              <SimBar value={result.final.confidence} />
+              <span style={{
+                fontSize: 9, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 6px', borderRadius: 999,
+                background: result.final.tier === 'high' ? '#DCFCE7' : result.final.tier === 'medium' ? '#FEF3C7' : '#FEE2E2',
+                color: result.final.tier === 'high' ? '#15803D' : result.final.tier === 'medium' ? '#B45309' : '#DC2626',
+              }}>
+                {result.final.tier}
+              </span>
             </div>
 
-            {/* Nearest neighbors */}
-            {result.topK.length > 0 && (
-              <div>
+            {/* Two-column layout: KNN | LR */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* KNN Panel */}
+              <div style={{ border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, overflow: 'hidden' }}>
                 <div style={{
-                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em',
-                  color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 6,
-                }}>Top {result.topK.length} Nearest Neighbors</div>
-                <div style={{ border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, overflow: 'hidden' }}>
-                  {result.topK.map((n, i) => (
+                  padding: '8px 12px', background: result.knn.boostFired ? '#F0FDF4' : T.bg.secondary,
+                  borderBottom: `1px solid ${T.border.default}`,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: T.font.sans, color: T.text.primary }}>
+                    KNN Boost
+                  </span>
+                  <SimBar value={result.knn.topSimilarity} />
+                  {result.knn.boostFired ? (
+                    <span style={{ fontSize: 9, fontWeight: 700, background: '#DCFCE7', color: '#15803D', padding: '2px 6px', borderRadius: 999 }}>FIRED</span>
+                  ) : (
+                    <span style={{ fontSize: 9, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono }}>below 0.80</span>
+                  )}
+                </div>
+                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                  {result.knn.neighbors.map((n, i) => (
                     <div key={i} style={{
-                      display: 'grid', gridTemplateColumns: 'auto auto 1fr',
-                      alignItems: 'center', gap: 12, padding: '8px 12px',
-                      borderBottom: i < result.topK.length - 1 ? `1px solid ${T.border.default}` : 'none',
-                      background: i % 2 === 0 ? T.bg.secondary : T.bg.primary,
+                      display: 'flex', flexDirection: 'column', gap: 3, padding: '6px 12px',
+                      borderBottom: i < result.knn.neighbors.length - 1 ? `1px solid ${T.border.default}` : 'none',
+                      background: i === 0 && result.knn.boostFired ? '#F0FDF4' : i % 2 === 0 ? T.bg.secondary : T.bg.primary,
                     }}>
-                      <SimBar value={n.similarity} />
-                      <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                        {n.labels.length === 0
-                          ? <span style={{ fontSize: 9, color: T.text.tertiary, fontFamily: T.font.mono }}>—</span>
-                          : n.labels.map(l => <LabelPill key={l} label={l} size="xs" />)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <SimBar value={n.similarity} />
+                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                          {n.labels.map(l => <LabelPill key={l} label={l} size="xs" />)}
+                        </div>
                       </div>
-                      <span style={{
-                        fontFamily: T.font.mono, fontSize: 11, color: T.text.secondary,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{n.text}</span>
+                      <span style={{ fontFamily: T.font.mono, fontSize: 10, color: T.text.tertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {n.text}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
+
+              {/* LR Panel */}
+              <div style={{ border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm, overflow: 'hidden' }}>
+                <div style={{
+                  padding: '8px 12px', background: T.bg.secondary,
+                  borderBottom: `1px solid ${T.border.default}`,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: T.font.sans, color: T.text.primary }}>
+                    LR ({result.lr.method})
+                  </span>
+                  <SimBar value={result.lr.confidence} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, fontFamily: T.font.mono, padding: '2px 6px', borderRadius: 999,
+                    background: result.lr.descriptionFeaturesActive ? '#DCFCE7' : '#FEE2E2',
+                    color: result.lr.descriptionFeaturesActive ? '#15803D' : '#DC2626',
+                  }}>
+                    desc: {result.lr.descriptionFeaturesActive ? 'on' : 'off'}
+                  </span>
+                </div>
+                <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                  {/* LR per-SOP scores */}
+                  {result.lr.topCandidates.map((c, i) => {
+                    const pct = Math.max(0, Math.min(100, c.confidence * 100))
+                    const isSelected = result.lr.labels.includes(c.label)
+                    return (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px',
+                        borderBottom: i < result.lr.topCandidates.length - 1 ? `1px solid ${T.border.default}` : 'none',
+                        background: isSelected ? 'rgba(29,78,216,0.04)' : 'transparent',
+                      }}>
+                        <span style={{
+                          fontSize: 10, fontFamily: T.font.mono, minWidth: 140, textAlign: 'right',
+                          color: isSelected ? T.accent : T.text.tertiary,
+                          fontWeight: isSelected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{c.label}</span>
+                        <div style={{ width: 80, height: 4, background: T.bg.tertiary, borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                          <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: isSelected ? T.accent : T.text.tertiary, opacity: isSelected ? 1 : 0.3 }} />
+                        </div>
+                        <span style={{ fontSize: 10, fontFamily: T.font.mono, fontWeight: 600, color: isSelected ? T.accent : T.text.tertiary, minWidth: 28 }}>
+                          {pct.toFixed(0)}%
+                        </span>
+                      </div>
+                    )
+                  })}
+                  {/* Description similarities */}
+                  {result.lr.descriptionSimilarities.length > 0 && (
+                    <>
+                      <div style={{ padding: '6px 12px', borderBottom: `1px solid ${T.border.default}`, borderTop: `1px solid ${T.border.default}` }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: T.text.tertiary, fontFamily: T.font.sans }}>
+                          Description Similarities (20-dim input)
+                        </span>
+                      </div>
+                      {result.lr.descriptionSimilarities.slice(0, 10).map((d, i) => {
+                        const pct = Math.max(0, Math.min(100, d.similarity * 100))
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 12px' }}>
+                            <span style={{ fontSize: 10, fontFamily: T.font.mono, minWidth: 140, textAlign: 'right', color: T.text.tertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {d.label}
+                            </span>
+                            <div style={{ width: 80, height: 4, background: T.bg.tertiary, borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: '#8B5CF6', opacity: 0.6 }} />
+                            </div>
+                            <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, minWidth: 28 }}>
+                              {pct.toFixed(0)}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
