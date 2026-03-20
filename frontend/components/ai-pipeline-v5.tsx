@@ -905,20 +905,27 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                     </div>
                   )}
 
-                  {/* Verdict */}
+                  {/* Verdict — use confidenceTier (LR) not backward-compat tier */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {p.tier === 'tier1' ? (
+                    {p.confidenceTier === 'high' ? (
                       <>
                         <CheckCircle2 size={13} color={T.status.green} />
                         <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
                           Confident
                         </span>
                       </>
-                    ) : (
+                    ) : p.confidenceTier === 'medium' ? (
                       <>
                         <AlertTriangle size={13} color={T.status.amber} />
                         <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
-                          Low confidence — routed to {p.tier === 'tier3_cache' ? 'Tier 3' : p.tier === 'tier2_needed' ? 'Tier 2' : 'fallback'}
+                          Medium confidence — top 3 SOPs injected
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle size={13} color={T.status.red} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.red, fontFamily: T.font.sans }}>
+                          Low confidence — {p.tier === 'tier3_cache' ? 'Tier 3 re-injected' : 'routed to Tier 2'}
                         </span>
                       </>
                     )}
@@ -989,7 +996,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             color={TIER_COLORS.tier3_cache.fg}
             dimmed={p.tier === 'tier1' && !p.tier3Reinjected}
           >
-            {p.tier === 'tier1' && !p.tier3Reinjected && !p.tier3TopicSwitch ? (
+            {p.confidenceTier === 'high' && !p.tier3Reinjected && !p.tier3TopicSwitch ? (
               <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
                 -- Skipped (Tier 1 confident)
               </span>
@@ -1040,7 +1047,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
           >
             {p.tier !== 'tier2_needed' && !p.tier2Output ? (
               <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                -- Skipped ({p.tier === 'tier1' ? 'Tier 1 confident' : 'Tier 3 handled'})
+                -- Skipped ({p.confidenceTier === 'high' ? 'Tier 1 confident' : p.tier === 'tier3_cache' ? 'Tier 3 handled' : 'not needed'})
               </span>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
