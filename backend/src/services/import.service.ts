@@ -43,13 +43,16 @@ function mapChannel(channelName?: string): Channel {
 }
 
 function mapReservationStatus(status?: string): ReservationStatus {
-  if (!status) return ReservationStatus.CONFIRMED;
+  // SECURITY: Default to INQUIRY (most restrictive) — never default to CONFIRMED.
+  // Same policy as webhooks.controller.ts mapReservationStatus().
+  if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
     case 'inquiry':
     case 'pending':
       return ReservationStatus.INQUIRY;
     case 'new':
     case 'confirmed':
+    case 'accepted':
       return ReservationStatus.CONFIRMED;
     case 'checkedin':
     case 'checked_in':
@@ -61,7 +64,8 @@ function mapReservationStatus(status?: string): ReservationStatus {
     case 'canceled':
       return ReservationStatus.CANCELLED;
     default:
-      return ReservationStatus.CONFIRMED;
+      console.warn(`[Import] Unknown reservation status "${status}" — defaulting to INQUIRY (safe)`);
+      return ReservationStatus.INQUIRY;
   }
 }
 

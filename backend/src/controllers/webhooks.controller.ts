@@ -65,6 +65,7 @@ function mapReservationStatus(status?: string): ReservationStatus {
       return ReservationStatus.INQUIRY;
     case 'new':
     case 'confirmed':
+    case 'accepted':
       return ReservationStatus.CONFIRMED;
     case 'checkedin':
       return ReservationStatus.CHECKED_IN;
@@ -157,7 +158,11 @@ async function processWebhook(
   prisma: PrismaClient
 ): Promise<void> {
   const { event, data } = payload;
-  console.log(`[Webhook] [${tenantId}] Event: ${event} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests}`);
+  console.log(`[Webhook] [${tenantId}] Event: ${event} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests} channel=${data.channelName} listing=${data.listingMapId}`);
+  // Debug: log full payload for reservation events to diagnose status mapping
+  if (event.startsWith('reservation.')) {
+    console.log(`[Webhook] [${tenantId}] Full reservation payload:`, JSON.stringify(data).substring(0, 500));
+  }
 
   switch (event) {
     case 'message.received':
@@ -173,7 +178,7 @@ async function processWebhook(
       await handleReservationUpdated(tenantId, data, prisma);
       break;
     default:
-      console.log(`[Webhook] [${tenantId}] Unhandled event: ${event}`);
+      console.log(`[Webhook] [${tenantId}] Unhandled event: ${event} | payload: ${JSON.stringify(data).substring(0, 300)}`);
   }
 }
 
