@@ -34,12 +34,17 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const status = getClassifierStatus();
       const config = await getTenantAiConfig(tenantId, prisma);
-      const retrainCount = await prisma.classifierWeights.count({ where: { tenantId } });
-      const latestWeights = await prisma.classifierWeights.findFirst({
-        where: { tenantId },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true, accuracy: true, classes: true, examples: true },
-      });
+      // ClassifierWeights table may not exist yet — handle gracefully
+      let retrainCount = 0;
+      let latestWeights: { createdAt: Date; accuracy: number | null; classes: number; examples: number } | null = null;
+      try {
+        retrainCount = await prisma.classifierWeights.count({ where: { tenantId } });
+        latestWeights = await prisma.classifierWeights.findFirst({
+          where: { tenantId },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true, accuracy: true, classes: true, examples: true },
+        });
+      } catch { /* table doesn't exist yet — that's fine */ }
       res.json({
         ...status,
         classifierType: 'lr',

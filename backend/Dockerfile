@@ -29,4 +29,4 @@ RUN npx prisma generate
 RUN npm run build
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss 2>&1 || echo '[Prisma] db push failed — starting anyway' && node dist/server.js"]
+CMD ["sh", "-c", "echo '[Deploy] Starting server...' && node dist/server.js"]
