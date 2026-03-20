@@ -147,7 +147,7 @@ model Message {
   tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
 
-  @@unique([conversationId, hostawayMessageId])
+  // TODO: Add @@unique([conversationId, hostawayMessageId]) AFTER cleaning up existing empty/duplicate hostawayMessageIds
   @@index([conversationId])
   @@index([tenantId])
 }
