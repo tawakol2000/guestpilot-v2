@@ -341,7 +341,7 @@ export function makeKnowledgeController(prisma: PrismaClient) {
 
         const summary = await new Promise<any>((resolve, reject) => {
           const child = execFile('python3', [scriptPath, '--output', outputPath], {
-            timeout: 120000, // 2 min max
+            timeout: 600000, // 10 min max — LOO-CV with 363+ examples is CPU-intensive
           }, (error, stdout, stderr) => {
             if (error) {
               console.error('[retrainClassifier] Script error:', error.message);
