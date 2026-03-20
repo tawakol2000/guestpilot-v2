@@ -1275,12 +1275,12 @@ export async function generateAndSendAiReply(
       ? String(context.customKnowledgeBase.amenities) : undefined;
 
     // Upgrade 5c: RAG — retrieve relevant property knowledge for this query.
-    // Use LAST guest message for classification (cleaner signal for KNN — accumulated
-    // messages dilute intent, e.g., "brother" + "Saudi Arabia" oscillates between
-    // visitor-policy and non-actionable). AI still sees ALL messages in content blocks.
+    // When multiple messages are batched (guest sent several in debounce window),
+    // concatenate ALL of them for classification. The old approach (last message only)
+    // missed context: "Can I get cleaning?" + "at 10am please" → only classified "at 10am please".
     const ragQuery = currentMsgs.length > 0
-      ? currentMsgs[currentMsgs.length - 1].content
-      : currentMsgs.map((m: { content: string }) => m.content).join(' ');
+      ? currentMsgs.map((m: { content: string }) => m.content).join(' ')
+      : '';
     const ragStart = Date.now();
     // Pass conversationId + recent messages for low-tier intent extraction fallback (T013)
     const recentForRag = allMsgs.slice(-10).map(m => ({
