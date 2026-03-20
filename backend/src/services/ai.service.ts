@@ -16,6 +16,7 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from './rag.service';
 import { getSopContent } from './classifier.service';
 import { evaluateAndImprove } from './judge.service';
+import { evaluateEscalation } from './task-manager.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
 import { updateTopicState, getReinjectedLabels } from './topic-state.service';
@@ -992,7 +993,8 @@ async function handleEscalation(
   note: string,
   urgency: string,
   updateTaskId?: string | null,
-  resolveTaskId?: string | null
+  resolveTaskId?: string | null,
+  guestMessage?: string
 ): Promise<void> {
   try {
     let task;
@@ -1029,16 +1031,70 @@ async function handleEscalation(
         broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
       }
     } else if (title) {
-      task = await createTask(prisma, {
+      // Task Manager: check if this escalation duplicates an existing open task
+      const openTasks = await prisma.task.findMany({
+        where: { conversationId, status: 'open' },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      });
+
+      const tmResult = await evaluateEscalation({
         tenantId,
         conversationId,
-        propertyId,
-        title,
-        note,
-        urgency,
-        source: 'ai',
+        newEscalation: { title, note, urgency },
+        openTasks: openTasks.map(t => ({
+          id: t.id, title: t.title, note: t.note, urgency: t.urgency, createdAt: t.createdAt,
+        })),
+        guestMessage: guestMessage || '',
       });
-      broadcastToTenant(tenantId, 'new_task', { conversationId, task });
+
+      console.log(`[AI] Task Manager: ${tmResult.action}${tmResult.taskId ? ` → ${tmResult.taskId}` : ''} (${tmResult.reason})`);
+
+      if (tmResult.action === 'update' && tmResult.taskId) {
+        // Append note to existing task (preserve history)
+        const existingTask = openTasks.find(t => t.id === tmResult.taskId);
+        const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' });
+        let updatedNote = (existingTask?.note || '') + `\n[Update ${timeStr}] ${note}`;
+        // Cap at 2000 chars — trim oldest [Update] entries if exceeded
+        if (updatedNote.length > 2000) {
+          const lines = updatedNote.split('\n');
+          while (updatedNote.length > 2000 && lines.length > 2) {
+            // Remove the second line (first [Update] entry, keep [Original])
+            const idx = lines.findIndex((l, i) => i > 0 && l.startsWith('[Update'));
+            if (idx > 0) lines.splice(idx, 1);
+            else break;
+            updatedNote = lines.join('\n');
+          }
+        }
+        task = await prisma.task.update({
+          where: { id: tmResult.taskId },
+          data: { note: updatedNote, urgency },
+        });
+        broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
+      } else if (tmResult.action === 'resolve' && tmResult.taskId) {
+        // Close existing task
+        task = await prisma.task.update({
+          where: { id: tmResult.taskId },
+          data: { status: 'completed', completedAt: new Date() },
+        });
+        broadcastToTenant(tenantId, 'task_updated', { conversationId, task });
+      } else if (tmResult.action === 'skip') {
+        // Log and return — no task action
+        console.log(`[AI] Task Manager: skipped redundant escalation for conv ${conversationId}`);
+        return;
+      } else {
+        // CREATE (default) — existing behavior
+        task = await createTask(prisma, {
+          tenantId,
+          conversationId,
+          propertyId,
+          title,
+          note,
+          urgency,
+          source: 'ai',
+        });
+        broadcastToTenant(tenantId, 'new_task', { conversationId, task });
+      }
 
       // Auto-create knowledge suggestion for info_request escalations
       if (urgency === 'info_request') {
@@ -1192,7 +1248,10 @@ export async function generateAndSendAiReply(
       take: 10,
     });
     const openTasksText = openTasks.length > 0
-      ? openTasks.map(t => `[${t.id}] ${t.title} (${t.urgency})`).join('\n')
+      ? openTasks.map(t => {
+          const notePreview = t.note ? `\n  → ${t.note.substring(0, 300)}` : '';
+          return `[${t.id}] ${t.title} (${t.urgency})${notePreview}`;
+        }).join('\n')
       : 'No open tasks.';
 
     // Fetch approved knowledge base for this property
@@ -1550,7 +1609,7 @@ export async function generateAndSendAiReply(
             await handleEscalation(
               prisma, tenantId, conversationId, context.propertyId,
               parsed.escalation.title, parsed.escalation.note, parsed.escalation.urgency,
-              parsed.updateTaskId, parsed.resolveTaskId
+              parsed.updateTaskId, parsed.resolveTaskId, ragQuery
             );
             traceEscalation({
               tenantId, conversationId, agentName: effectiveAgentName,
@@ -1663,7 +1722,7 @@ export async function generateAndSendAiReply(
             await handleEscalation(
               prisma, tenantId, conversationId, context.propertyId,
               parsed.escalation.title, parsed.escalation.note, parsed.escalation.urgency,
-              parsed.updateTaskId, parsed.resolveTaskId
+              parsed.updateTaskId, parsed.resolveTaskId, ragQuery
             );
             traceEscalation({
               tenantId, conversationId, agentName: effectiveAgentName,
