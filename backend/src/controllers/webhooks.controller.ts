@@ -193,7 +193,7 @@ async function handleNewMessage(
   const hasAttachment = data.attachments && data.attachments.length > 0;
   if (!hasBody && !hasAttachment) return;
 
-  const hostawayConvId = String(data.conversationId || '');
+  const hostawayConvId = String(data.conversationId ?? '');
   if (!hostawayConvId) return;
 
   // G2: Conversation lookup with fallback chain
@@ -348,15 +348,8 @@ async function handleNewMessage(
     }
   }
 
-  const hostawayMsgId = String(data.id || '');
-
-  // Deduplicate: check if message already saved
-  if (hostawayMsgId) {
-    const existing = await prisma.message.findFirst({
-      where: { conversationId: conversation.id, hostawayMessageId: hostawayMsgId },
-    });
-    if (existing) return;
-  }
+  // Generate a unique hostawayMessageId even when Hostaway sends empty/missing id
+  const hostawayMsgId = data.id ? String(data.id) : `empty-${Date.now()}`;
 
   // Determine the channel for this specific message (WhatsApp overrides conversation channel)
   const msgChannel = data.communicationType?.toLowerCase() === 'whatsapp'
@@ -366,7 +359,7 @@ async function handleNewMessage(
   // G5: Use conditional role — GUEST for incoming, HOST for outgoing
   const role = isGuest ? MessageRole.GUEST : MessageRole.HOST;
 
-  // Save message (with duplicate guard for unique constraint on hostawayMessageId)
+  // Deduplicate via create + P2002 catch (atomic, no race window)
   try {
     await prisma.message.create({
       data: {
@@ -400,8 +393,8 @@ async function handleNewMessage(
       },
     });
 
-    // Schedule AI reply if aiEnabled
-    if (conversation.reservation.aiEnabled) {
+    // Schedule AI reply if aiEnabled and aiMode is not off
+    if (conversation.reservation.aiEnabled && conversation.reservation.aiMode !== 'off') {
       await scheduleAiReply(conversation.id, tenantId, prisma);
       console.log(`[Webhook] [${tenantId}] AI reply scheduled for conv ${conversation.id} (aiMode=${conversation.reservation.aiMode})`);
     } else {
@@ -413,6 +406,10 @@ async function handleNewMessage(
       where: { id: conversation.id },
       data: { lastMessageAt: new Date() },
     });
+
+    // T022: Cancel pending AI reply when host sends — host has taken over
+    await cancelPendingAiReply(conversation.id, prisma);
+    broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId: conversation.id });
   }
 
   // Push real-time event to connected browser tabs

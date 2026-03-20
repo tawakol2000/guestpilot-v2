@@ -118,13 +118,16 @@ interface PipelineFeedEntry {
     // LR classifier fields
     classifierConfidence?: number | null
     confidenceTier?: 'high' | 'medium' | 'low' | null
-    lmOverride?: boolean
+    llmOverride?: boolean
+    topCandidates?: Array<{ label: string; confidence: number }> | null
     classifierPick?: string | null
     llmPick?: string | null
     // Tier 3
     tier3Reinjected: boolean
     tier3TopicSwitch: boolean
     tier3ReinjectedLabels: string[]
+    centroidSimilarity?: number | null
+    centroidThreshold?: number | null
     // Tier 2
     tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null
     // Other
@@ -593,8 +596,8 @@ function MetaPill({ label, value, color }: { label: string; value: string; color
 function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const [knnDiagExpanded, setKnnDiagExpanded] = useState(false)
-  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, classifierLabels: [] as string[], classifierTopSim: null as number | null, classifierMethod: null as string | null, classifierConfidence: null as number | null, confidenceTier: null as string | null, lmOverride: false, classifierPick: null as string | null, llmPick: null as string | null, tier3Reinjected: false, tier3TopicSwitch: false, tier3ReinjectedLabels: [] as string[], tier2Output: null as any, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false)
+  const p = entry.pipeline || { query: '', tier: 'unknown' as const, topSimilarity: null, classifierLabels: [] as string[], classifierTopSim: null as number | null, classifierMethod: null as string | null, classifierConfidence: null as number | null, confidenceTier: null as string | null, llmOverride: false, classifierPick: null as string | null, llmPick: null as string | null, topCandidates: null as Array<{ label: string; confidence: number }> | null, tier3Reinjected: false, tier3TopicSwitch: false, tier3ReinjectedLabels: [] as string[], tier2Output: null as any, escalationSignals: [] as string[], chunksRetrieved: 0, chunks: [] as Array<{ category: string; similarity: number; sourceKey: string; isGlobal: boolean }>, ragDurationMs: 0 }
   const ev = entry.evaluation
   const hasError = !!entry.error
   const tierKey = (p.tier || 'unknown') as keyof typeof TIER_COLORS
@@ -707,7 +710,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             {p.confidenceTier}
           </span>
         )}
-        {p.lmOverride && (
+        {p.llmOverride && (
           <span
             style={{
               fontSize: 9,
@@ -879,7 +882,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                   })()}
 
                   {/* LLM Override indicator */}
-                  {p.lmOverride && (
+                  {p.llmOverride && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span
                         style={{
@@ -924,7 +927,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                   {/* Collapsible KNN Diagnostic section */}
                   <div style={{ marginTop: 4 }}>
                     <div
-                      onClick={(e) => { e.stopPropagation(); setKnnDiagExpanded(v => !v) }}
+                      onClick={(e) => { e.stopPropagation(); setDiagnosticsExpanded(v => !v) }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -936,7 +939,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                       <div
                         style={{
                           transition: 'transform 0.2s ease',
-                          transform: knnDiagExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transform: diagnosticsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                           display: 'flex',
                           alignItems: 'center',
                         }}
@@ -952,7 +955,7 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                         </span>
                       )}
                     </div>
-                    {knnDiagExpanded && (
+                    {diagnosticsExpanded && (
                       <div style={{ paddingLeft: 18, paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 6, animation: 'fadeInUp 0.2s ease-out both' }}>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                           {(p.classifierMethod || ev?.classifierMethod) && (
@@ -1017,6 +1020,13 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                     {p.tier3TopicSwitch ? 'Yes' : 'No'}
                   </span>
                 </div>
+                {p.centroidSimilarity != null && p.centroidThreshold != null && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                      centroid: {p.centroidSimilarity.toFixed(2)} {p.centroidSimilarity < p.centroidThreshold ? '<' : '>'} {p.centroidThreshold.toFixed(2)} → {p.centroidSimilarity < p.centroidThreshold ? 'switch detected' : 'same topic'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </TimelineStep>
@@ -1349,15 +1359,12 @@ export default function AiPipelineV5(): React.ReactElement {
   const [accuracyLoading, setAccuracyLoading] = useState(false)
 
   // Engine type: always LR (KNN legacy removed in 005-remove-knn-legacy)
-  const engineType = 'lr' as const
 
   // Snapshot state (T026)
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [snapshotMessage, setSnapshotMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => { ensureStyles() }, [])
-
-  // Engine type detection no longer needed — always LR
 
   // Fetch accuracy metrics when period changes
   useEffect(() => {
@@ -1638,7 +1645,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 fontFamily: T.font.sans,
               }}
             >
-              {engineType === 'lr' ? 'LR Confidence' : 'Classifier Accuracy'}
+              LR Confidence
             </span>
             {/* Engine type badge */}
             <span
@@ -1646,11 +1653,11 @@ export default function AiPipelineV5(): React.ReactElement {
                 fontSize: 9,
                 fontWeight: 600,
                 fontFamily: T.font.mono,
-                background: engineType === 'lr' ? '#EDE9FE' : '#DCFCE7',
-                color: engineType === 'lr' ? PURPLE : T.status.green,
+                background: '#EDE9FE',
+                color: PURPLE,
                 padding: '2px 6px',
                 borderRadius: 999,
-                border: `1px solid ${engineType === 'lr' ? `${PURPLE}30` : 'rgba(21,128,61,0.2)'}`,
+                border: `1px solid ${PURPLE}30`,
               }}
             >
               LR Engine
@@ -1781,7 +1788,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 }}
               >
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.tertiary, fontFamily: T.font.sans, marginBottom: 4 }}>
-                  {engineType === 'lr' ? 'LR Confidence' : 'Classifier Accuracy'}
+                  LR Confidence
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: accuracy.overall.accuracy >= 0.8 ? T.status.green : accuracy.overall.accuracy >= 0.6 ? T.status.amber : T.status.red, fontFamily: T.font.sans, lineHeight: 1.1 }}>
                   {(accuracy.overall.accuracy * 100).toFixed(1)}%

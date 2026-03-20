@@ -33,17 +33,31 @@ function generateId(): string {
 let _pgvectorAvailable: boolean | null = null;
 
 // Last classifier result — stashed for judge service evaluation
+// Per-request classifier result — captured immediately after classification, consumed by the same request.
+// NOTE: This is a module-global for backward compat. For thread safety, callers MUST snapshot
+// via getAndClearLastClassifierResult() immediately after retrieveRelevantKnowledge() returns.
 let _lastClassifierResult: {
   method: string;
   labels: string[];
   topSimilarity: number;
-  confidence: number;  // LR sigmoid confidence (primary metric)
+  confidence: number;
   neighbors: Array<{ labels: string[]; similarity: number }>;
   tier: 'high' | 'medium' | 'low';
   topCandidates: Array<{ label: string; confidence: number }>;
   queryEmbedding?: number[];
 } | null = null;
 
+/**
+ * Atomically get and clear the last classifier result.
+ * Prevents a concurrent request from reading stale data.
+ */
+export function getAndClearLastClassifierResult(): typeof _lastClassifierResult {
+  const result = _lastClassifierResult;
+  _lastClassifierResult = null;
+  return result;
+}
+
+/** @deprecated Use getAndClearLastClassifierResult() for thread safety */
 export function getLastClassifierResult(): typeof _lastClassifierResult {
   return _lastClassifierResult;
 }
@@ -324,13 +338,15 @@ export async function retrieveRelevantKnowledge(
   topK = 8,
   agentType?: 'guestCoordinator' | 'screeningAI',
   conversationId?: string,
-  recentMessages?: Array<{ role: string; content: string }>
+  recentMessages?: Array<{ role: string; content: string }>,
+  propertyAmenities?: string
 ): Promise<{
   chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
   topSimilarity: number;
   tier: 'tier1' | 'tier2_needed' | 'tier3_cache';
   confidenceTier?: 'high' | 'medium' | 'low';
   topCandidates?: Array<{ label: string; confidence: number }>;
+  intentExtractorRan?: boolean;
 }> {
   // Three-tier confidence thresholds — configurable per tenant via UI
   let HIGH_CONFIDENCE_THRESHOLD = 0.85;
@@ -371,10 +387,10 @@ export async function retrieveRelevantKnowledge(
       let sopChunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }> = [];
 
       if (confidenceTier === 'high') {
-        // HIGH tier: inject single top SOP (existing behavior)
+        // HIGH tier: inject single top SOP
         sopChunks = classifierResult.labels
           .map(label => {
-            const content = getSopContent(label);
+            const content = getSopContent(label, propertyAmenities);
             return content ? {
               content,
               category: label,
@@ -390,7 +406,7 @@ export async function retrieveRelevantKnowledge(
         const top3 = classifierResult.topCandidates.slice(0, 3);
         sopChunks = top3
           .map((candidate, idx) => {
-            const content = getSopContent(candidate.label);
+            const content = getSopContent(candidate.label, propertyAmenities);
             if (!content) return null;
             return {
               content: `CANDIDATE ${idx + 1} (classifier confidence: ${candidate.confidence.toFixed(2)}): ${content}`,
@@ -430,7 +446,7 @@ export async function retrieveRelevantKnowledge(
           // Intent extractor returned SOPs — look them up
           sopChunks = intentResult.sops
             .map(label => {
-              const content = getSopContent(label);
+              const content = getSopContent(label, propertyAmenities);
               return content ? {
                 content,
                 category: label,
@@ -451,6 +467,7 @@ export async function retrieveRelevantKnowledge(
             tier: 'tier2_needed' as const,
             confidenceTier: 'low',
             topCandidates: classifierResult.topCandidates,
+            intentExtractorRan: true,
           };
         }
       }

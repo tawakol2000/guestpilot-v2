@@ -201,8 +201,13 @@ export function aiPipelineRouter(prisma: PrismaClient) {
             tier3Reinjected: ragCtx?.tier3Reinjected ?? false,
             tier3TopicSwitch: ragCtx?.tier3TopicSwitch ?? false,
             tier3ReinjectedLabels: ragCtx?.tier3ReinjectedLabels || [],
+            centroidSimilarity: ragCtx?.centroidSimilarity ?? null,
+            centroidThreshold: ragCtx?.centroidThreshold ?? null,
+            switchMethod: ragCtx?.switchMethod ?? null,
             // Tier 2 details
             tier2Output: ragCtx?.tier2Output || null,
+            // LLM override (medium confidence)
+            llmOverride: ragCtx?.llmOverride ?? null,
             // Escalation
             escalationSignals: ragCtx?.escalationSignals || [],
             chunksRetrieved: ragCtx?.totalRetrieved ?? 0,

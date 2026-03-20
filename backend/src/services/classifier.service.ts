@@ -231,6 +231,8 @@ export async function initializeClassifier(): Promise<void> {
         trainedAt: null,
       };
       _initialized = true;
+      // T030: Load LR weights from classifier-weights.json after initialization
+      loadLrWeightsMetadata();
       console.log(`[Classifier] Initialized: ${examples.length} examples, ${initDurationMs}ms`);
     } catch (err) {
       console.error('[Classifier] Initialization failed:', err);
@@ -257,6 +259,11 @@ function classifyWithLR(
   if (!state.lrWeights) throw new Error('LR classifier not trained. Run retrain first.');
 
   const { classes, coefficients, intercepts } = state.lrWeights;
+
+  // T029: Dimension validation — embedding must match weight dimensions
+  if (embedding.length !== coefficients[0].length) {
+    throw new Error('Embedding dimension mismatch: embedding=' + embedding.length + ' weights=' + coefficients[0].length);
+  }
   const perCatThresholds = state.lrThresholds?.perCategory || {};
 
   // Compute sigmoid scores per label (OneVsRest)
@@ -496,6 +503,10 @@ export function getExampleCountPerLabel(): Record<string, number> {
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
 export function cosineSimilarity(a: number[], b: number[]): number {
+  // T029: Vector dimension validation
+  if (a.length !== b.length) {
+    throw new Error('Vector dimension mismatch');
+  }
   let dot = 0;
   let normA = 0;
   let normB = 0;

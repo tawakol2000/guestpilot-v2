@@ -7,7 +7,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { getDuePendingReplies, markFired } from '../services/debounce.service';
+import { getDuePendingReplies } from '../services/debounce.service';
 import { generateAndSendAiReply } from '../services/ai.service';
 
 const POLL_INTERVAL_MS = 30 * 1000; // 30 seconds
@@ -23,8 +23,12 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
       console.log(`[AiDebounceJob] Processing ${due.length} pending replies`);
 
       for (const pending of due) {
-        // Mark fired immediately to prevent double-firing
-        await markFired(pending.id, prisma);
+        // T025: Atomic claim guard — prevents double-firing across overlapping polls
+        const claimed = await prisma.pendingAiReply.updateMany({
+          where: { id: pending.id, fired: false },
+          data: { fired: true },
+        });
+        if (claimed.count === 0) { console.log('[AiDebounceJob] Already claimed, skipping'); continue; }
 
         const { conversation } = pending;
         if (!conversation) continue;
@@ -32,9 +36,9 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
         const reservation = conversation.reservation;
         if (!reservation) continue;
 
-        // Respect aiEnabled flag and aiMode
-        if (!reservation.aiEnabled || reservation.aiMode === 'off') {
-          console.log(`[AiDebounceJob] AI disabled for conversation ${conversation.id} — skipping`);
+        // Respect aiEnabled flag and aiMode (whitelist valid modes)
+        if (!reservation.aiEnabled || !['autopilot', 'auto', 'copilot'].includes(reservation.aiMode)) {
+          console.log(`[AiDebounceJob] AI disabled for conversation ${conversation.id} (aiEnabled=${reservation.aiEnabled}, aiMode=${reservation.aiMode}) — skipping`);
           continue;
         }
 

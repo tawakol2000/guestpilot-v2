@@ -11,7 +11,15 @@ import { addExample, getExampleByText } from './classifier-store.service';
 import { reinitializeClassifier, getMaxSimilarityForLabels } from './classifier.service';
 import { getTenantAiConfig } from './tenant-config.service';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let _anthropic: Anthropic | null = null;
+function getJudgeClient(): Anthropic | null {
+  if (!_anthropic) {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) { console.warn('[Judge] No ANTHROPIC_API_KEY — judge disabled'); return null; }
+    _anthropic = new Anthropic({ apiKey: key });
+  }
+  return _anthropic;
+}
 
 // Per-tenant threshold cache (5-min TTL) — avoids a DB hit on every message
 const _thresholdCache = new Map<string, { judgeThreshold: number; autoFixThreshold: number; expiresAt: number }>();
@@ -350,31 +358,34 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
       // Verify the labels are valid
       const validLabels = judgeResult.correctLabels.filter(l => VALID_CHUNK_IDS.includes(l));
 
-      // Check for duplicate
-      const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
-      if (existing) {
-        console.log(`[Judge] Example already exists for: "${input.guestMessage.substring(0, 50)}"`);
-        return;
+      // T028: Guard — don't add example with empty labels
+      if (validLabels.length > 0) {
+        // Check for duplicate
+        const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
+        if (existing) {
+          console.log(`[Judge] Example already exists for: "${input.guestMessage.substring(0, 50)}"`);
+          return;
+        }
+
+        // Add the actual guest message as a new training example
+        await addExample(input.tenantId, input.guestMessage, validLabels, 'llm-judge', prisma);
+        recordAutoFix(input.tenantId);
+
+        // Mark evaluation as auto-fixed
+        await prisma.classifierEvaluation.updateMany({
+          where: {
+            tenantId: input.tenantId,
+            guestMessage: input.guestMessage,
+            autoFixed: false,
+          },
+          data: { autoFixed: true },
+        }).catch(() => {});
+
+        // Re-initialize the classifier with the new example
+        await reinitializeClassifier(input.tenantId, prisma);
+
+        console.log(`[Judge] Self-improvement: added "${input.guestMessage.substring(0, 50)}" → [${validLabels.join(', ')}]`);
       }
-
-      // Add the actual guest message as a new training example
-      await addExample(input.tenantId, input.guestMessage, validLabels, 'llm-judge', prisma);
-      recordAutoFix(input.tenantId);
-
-      // Mark evaluation as auto-fixed
-      await prisma.classifierEvaluation.updateMany({
-        where: {
-          tenantId: input.tenantId,
-          guestMessage: input.guestMessage,
-          autoFixed: false,
-        },
-        data: { autoFixed: true },
-      }).catch(() => {});
-
-      // Re-initialize the classifier with the new example
-      await reinitializeClassifier(input.tenantId, prisma);
-
-      console.log(`[Judge] Self-improvement: added "${input.guestMessage.substring(0, 50)}" → [${validLabels.join(', ')}]`);
     } else if (!judgeResult.retrievalCorrect && effectiveConfidence >= 0.7) {
       console.log(`[Judge] High-confidence misclassification (lrConf=${effectiveConfidence.toFixed(2)}, knnSim=${input.classifierTopSim.toFixed(2)}), flagged for review: "${input.guestMessage.substring(0, 50)}"`);
     }
@@ -390,10 +401,13 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
       const existing = await getExampleByText(input.tenantId, input.guestMessage, prisma);
       if (!existing) {
         const reinforceLabels = judgeResult.correctLabels.filter(l => VALID_CHUNK_IDS.includes(l));
-        await addExample(input.tenantId, input.guestMessage, reinforceLabels, 'low-sim-reinforce', prisma);
-        recordAutoFix(input.tenantId);
-        await reinitializeClassifier(input.tenantId, prisma);
-        console.log(`[Judge] Low-conf reinforcement (lrConf=${effectiveConfidence.toFixed(2)}, knnSim=${input.classifierTopSim.toFixed(2)}): "${input.guestMessage.substring(0, 50)}" → [${reinforceLabels.join(', ') || '(contextual)'}]`);
+        // T028: Guard — don't add example with empty labels
+        if (reinforceLabels.length > 0) {
+          await addExample(input.tenantId, input.guestMessage, reinforceLabels, 'low-sim-reinforce', prisma);
+          recordAutoFix(input.tenantId);
+          await reinitializeClassifier(input.tenantId, prisma);
+          console.log(`[Judge] Low-conf reinforcement (lrConf=${effectiveConfidence.toFixed(2)}, knnSim=${input.classifierTopSim.toFixed(2)}): "${input.guestMessage.substring(0, 50)}" → [${reinforceLabels.join(', ') || '(contextual)'}]`);
+        }
       }
     }
   } catch (err) {
@@ -433,6 +447,9 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 async function callJudge(input: JudgeInput): Promise<JudgeResult | null> {
   try {
+    const client = getJudgeClient();
+    if (!client) return null;
+
     const lrConf = input.confidence ?? input.classifierTopSim;
     const userMessage = `GUEST MESSAGE: "${input.guestMessage}"
 CLASSIFIER RETRIEVED: [${input.classifierLabels.join(', ') || 'nothing'}]
@@ -443,7 +460,7 @@ AI RESPONSE: "${input.aiResponse.substring(0, 500)}"
 
 Was the retrieval correct? If not, what should have been retrieved?`;
 
-    const response = await anthropic.messages.create({
+    const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
       temperature: 0,

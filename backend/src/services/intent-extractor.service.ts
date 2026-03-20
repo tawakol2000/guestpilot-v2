@@ -49,6 +49,10 @@ let _tier2CallCount = 0;
 let _tier2SuccessCount = 0;
 let _tier2FailCount = 0;
 
+// T034: Rate limiting — max concurrent Tier 2 calls
+const MAX_CONCURRENT_TIER2 = 10;
+let _concurrentCalls = 0;
+
 // Initialize Anthropic client — use the same API key as the main Omar call
 let _anthropic: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -67,6 +71,12 @@ export async function extractIntent(
 ): Promise<IntentExtraction | null> {
   _tier2CallCount++;
 
+  // T034: Rate limiting — graceful degradation when too many concurrent calls
+  if (_concurrentCalls >= MAX_CONCURRENT_TIER2) {
+    console.warn(`[IntentExtractor] Rate limited (${_concurrentCalls}/${MAX_CONCURRENT_TIER2} concurrent), skipping conv ${conversationId}`);
+    return null;
+  }
+
   if (!INTENT_PROMPT) {
     console.log(`[IntentExtractor] Tier 2 disabled (no prompt), call #${_tier2CallCount}`);
     return null;
@@ -82,6 +92,7 @@ export async function extractIntent(
     conversationContext += `${msg.role.toUpperCase()}: ${msg.content}\n`;
   }
 
+  _concurrentCalls++;
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -122,6 +133,8 @@ export async function extractIntent(
     _tier2FailCount++;
     console.warn(`[IntentExtractor] Haiku call failed (non-fatal): ${err.message}`);
     return null;
+  } finally {
+    _concurrentCalls--;
   }
 }
 

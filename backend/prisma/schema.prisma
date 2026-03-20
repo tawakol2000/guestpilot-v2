@@ -147,6 +147,7 @@ model Message {
   tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
 
+  @@unique([conversationId, hostawayMessageId])
   @@index([conversationId])
   @@index([tenantId])
 }
@@ -323,6 +324,7 @@ model AiApiLog {
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([tenantId, agentName])
+  @@index([tenantId, conversationId])
 }
 
 // ─── Property Knowledge Chunks (pgvector RAG) ────────────────────────────────

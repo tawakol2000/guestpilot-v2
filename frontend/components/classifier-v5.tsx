@@ -856,7 +856,6 @@ function ThresholdSettings() {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
-  const [classifierType, setClassifierType] = useState<'knn' | 'lr' | null>(null)
   const [retraining, setRetraining] = useState(false)
   const [retrainMsg, setRetrainMsg] = useState('')
   const [retrainErr, setRetrainErr] = useState('')
@@ -886,8 +885,6 @@ function ThresholdSettings() {
     // Detect classifier type and load calibration data
     apiGetClassifierStatus()
       .then((s: any) => {
-        if (s.classifierType) setClassifierType(s.classifierType)
-        else if (s.lrAccuracy != null) setClassifierType('lr')
         if (s.lrAccuracy != null || s.perCategory) {
           setCalibration({
             lrAccuracy: s.lrAccuracy ?? 0,
@@ -926,12 +923,10 @@ function ThresholdSettings() {
         embeddingProvider: providerVal,
       })
       // Save tier threshold values to tenant config
-      if (classifierType === 'lr') {
-        await apiUpdateTenantAiConfig({
-          highConfidenceThreshold: highConfVal,
-          lowConfidenceThreshold: lowConfVal,
-        } as any)
-      }
+      await apiUpdateTenantAiConfig({
+        highConfidenceThreshold: highConfVal,
+        lowConfidenceThreshold: lowConfVal,
+      } as any)
       setSavedMsg('Saved')
       setTimeout(() => setSavedMsg(''), 3000)
     } catch (e: any) {
@@ -1201,9 +1196,8 @@ function ThresholdSettings() {
           </div>
         </div>
 
-        {/* ── LR-Only Sections ─────────────────────────────────────────────── */}
-        {classifierType === 'lr' && (
-          <>
+        {/* ── LR Sections ──────────────────────────────────────────────────── */}
+        <>
             {/* Retrain Classifier Button */}
             <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -1351,8 +1345,7 @@ function ThresholdSettings() {
                 ))}
               </div>
             </div>
-          </>
-        )}
+        </>
       </div>
     </Card>
   )

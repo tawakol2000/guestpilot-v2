@@ -67,30 +67,50 @@ function getDecayMs(labels: string[]): number {
   return maxDecay;
 }
 
+const CACHE_MAX_SIZE = 10000;
+
 export function updateTopicState(conversationId: string, labels: string[]): void {
   if (!labels || labels.length === 0) return;
   _cache.set(conversationId, { labels, updatedAt: Date.now(), reinjectCount: 0 });
+
+  // T033: LRU cap — evict oldest entry when cache exceeds max size
+  if (_cache.size > CACHE_MAX_SIZE) {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [key, entry] of _cache.entries()) {
+      if (entry.updatedAt < oldestTime) {
+        oldestTime = entry.updatedAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) _cache.delete(oldestKey);
+  }
 }
 
 export function getReinjectedLabels(conversationId: string, messageText: string, messageEmbedding?: number[]): {
   labels: string[];
   reinjected: boolean;
   topicSwitchDetected: boolean;
+  centroidSimilarity: number | null;
+  centroidThreshold: number | null;
+  switchMethod: 'keyword' | 'centroid' | null;
 } {
+  const noResult = { labels: [] as string[], reinjected: false, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null as 'keyword' | 'centroid' | null };
+
   const state = _cache.get(conversationId);
-  if (!state) return { labels: [], reinjected: false, topicSwitchDetected: false };
+  if (!state) return noResult;
 
   // Check expiry using per-category TTL
   const decayMs = getDecayMs(state.labels);
   if (Date.now() - state.updatedAt > decayMs) {
     _cache.delete(conversationId);
-    return { labels: [], reinjected: false, topicSwitchDetected: false };
+    return noResult;
   }
 
   // Check max reinject count
   if (state.reinjectCount >= MAX_REINJECT) {
     _cache.delete(conversationId);
-    return { labels: [], reinjected: false, topicSwitchDetected: false };
+    return noResult;
   }
 
   const textLower = messageText.toLowerCase().trim();
@@ -101,19 +121,10 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
   if (isNotSwitch) {
     state.reinjectCount++;
     console.log(`[TopicState] Not-switch signal, re-injecting [${state.labels.join(', ')}]: "${messageText.substring(0, 40)}"`);
-    return { labels: state.labels, reinjected: true, topicSwitchDetected: false };
+    return { labels: state.labels, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
   }
 
-  // Check for topic switch keywords
-  const topicSwitchDetected = ALL_SWITCH_KEYWORDS.some(kw => textLower.includes(kw.toLowerCase()));
-  if (topicSwitchDetected) {
-    _cache.delete(conversationId);
-    console.log(`[TopicState] Keyword topic switch detected: "${messageText.substring(0, 50)}"`);
-    return { labels: [], reinjected: false, topicSwitchDetected: true };
-  }
-
-  // Centroid-based semantic topic switch detection
-  // If the message embedding is far from all active topic centroids, the guest silently changed topics
+  // T007: Centroid check runs FIRST (primary switch detection)
   if (messageEmbedding && messageEmbedding.length > 0) {
     const centroids = getCentroids();
     if (centroids) {
@@ -134,15 +145,31 @@ export function getReinjectedLabels(conversationId: string, messageText: string,
       if (checkedAny && maxSim >= 0 && maxSim < CENTROID_SWITCH_THRESHOLD) {
         _cache.delete(conversationId);
         console.log(`[TopicState] Centroid topic switch detected (sim=${maxSim.toFixed(3)} < threshold=${CENTROID_SWITCH_THRESHOLD}): "${messageText.substring(0, 50)}"`);
-        return { labels: [], reinjected: false, topicSwitchDetected: true };
+        return { labels: [], reinjected: false, topicSwitchDetected: true, centroidSimilarity: maxSim, centroidThreshold: CENTROID_SWITCH_THRESHOLD, switchMethod: 'centroid' };
       }
+    } else {
+      // T007: Keyword check only fires as fallback when no centroids available
+      const topicSwitchDetected = ALL_SWITCH_KEYWORDS.some(kw => textLower.includes(kw.toLowerCase()));
+      if (topicSwitchDetected) {
+        _cache.delete(conversationId);
+        console.log(`[TopicState] Keyword topic switch detected (fallback, no centroids): "${messageText.substring(0, 50)}"`);
+        return { labels: [], reinjected: false, topicSwitchDetected: true, centroidSimilarity: null, centroidThreshold: null, switchMethod: 'keyword' };
+      }
+    }
+  } else {
+    // No embedding available — keyword fallback
+    const topicSwitchDetected = ALL_SWITCH_KEYWORDS.some(kw => textLower.includes(kw.toLowerCase()));
+    if (topicSwitchDetected) {
+      _cache.delete(conversationId);
+      console.log(`[TopicState] Keyword topic switch detected (fallback, no embedding): "${messageText.substring(0, 50)}"`);
+      return { labels: [], reinjected: false, topicSwitchDetected: true, centroidSimilarity: null, centroidThreshold: null, switchMethod: 'keyword' };
     }
   }
 
   // DEFAULT: re-inject
   state.reinjectCount++;
   console.log(`[TopicState] Re-injecting [${state.labels.join(', ')}] (#${state.reinjectCount}): "${messageText.substring(0, 40)}"`);
-  return { labels: state.labels, reinjected: true, topicSwitchDetected: false };
+  return { labels: state.labels, reinjected: true, topicSwitchDetected: false, centroidSimilarity: null, centroidThreshold: null, switchMethod: null };
 }
 
 export function clearTopicState(conversationId: string): void {

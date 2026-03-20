@@ -13,7 +13,7 @@ import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
-import { retrieveRelevantKnowledge, getLastClassifierResult } from './rag.service';
+import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from './rag.service';
 import { getSopContent } from './classifier.service';
 import { evaluateAndImprove } from './judge.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
@@ -1169,7 +1169,7 @@ export async function generateAndSendAiReply(
     // Buffer extends 30 min back from windowStartedAt to handle Hostaway webhook delivery delays:
     // Hostaway timestamps `data.date` as when the guest sent the message, but webhooks can arrive
     // 5–30 min late. Without a large enough buffer, sentAt < windowStart → AI skips responding.
-    const WEBHOOK_DELIVERY_BUFFER_MS = 30 * 60 * 1000;
+    const WEBHOOK_DELIVERY_BUFFER_MS = 10 * 60 * 1000; // Reduced from 30min to 10min (AUD-041)
     const windowStart = context.windowStartedAt
       ? new Date(context.windowStartedAt.getTime() - WEBHOOK_DELIVERY_BUFFER_MS)
       : null;
@@ -1232,14 +1232,16 @@ export async function generateAndSendAiReply(
       ? await retrieveRelevantKnowledge(
           tenantId, context.propertyId, ragQuery, prisma, 8,
           context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator',
-          conversationId, recentForRag
-        ).catch(() => ({ chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined }))
-      : { chunks: [], topSimilarity: 0, tier: 'tier1' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined };
+          conversationId, recentForRag,
+          propertyAmenities
+        ).catch(() => ({ chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier2_needed' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined }))
+      : { chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier1' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined };
     let retrievedChunks = ragResult.chunks;
     const ragDurationMs = Date.now() - ragStart;
 
     // Capture classifier metadata right after RAG retrieval (for ragContext logging)
-    const classifierSnap = getLastClassifierResult();
+    // Atomically snapshot + clear to prevent concurrent request from reading stale data
+    const classifierSnap = getAndClearLastClassifierResult();
 
     // —— Tier 3: Topic State Cache ——————————————————————————
     // Only SOP labels drive topic state — property-* and learned-answers are passive context
@@ -1289,7 +1291,7 @@ export async function generateAndSendAiReply(
     // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
     let tier2ResolvedLabels: string[] | undefined;
     let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
-    if (ragResult.tier === 'tier2_needed' && !tier3Reinjected) {
+    if (ragResult.tier === 'tier2_needed' && !tier3Reinjected && !ragResult.intentExtractorRan) {
       const recentForTier2 = allMsgs.slice(-10).map(m => ({
         role: m.role === 'GUEST' ? 'guest' : 'host',
         content: m.content,
@@ -1373,6 +1375,18 @@ export async function generateAndSendAiReply(
       }
     }
 
+    // —— Cross-tier deduplication (T004 / FR-001) ——————————————
+    // SOPs can be added by Tier 1 (RAG), Tier 3 (re-injection), and Tier 2 (intent extractor).
+    // Deduplicate by category to prevent the same SOP appearing multiple times in the prompt.
+    {
+      const seenCategories = new Set<string>();
+      retrievedChunks = retrievedChunks.filter((c: any) => {
+        if (seenCategories.has(c.category)) return false;
+        seenCategories.add(c.category);
+        return true;
+      });
+    }
+
     // —— Escalation enrichment (post-routing) ——————————————
     const escalationSignals = detectEscalationSignals(ragQuery);
     if (escalationSignals.length > 0) {
@@ -1382,7 +1396,7 @@ export async function generateAndSendAiReply(
     const ragContext: any = {
       query: ragQuery,
       chunks: retrievedChunks.map((c: any) => ({
-        content: c.content.substring(0, 200),
+        content: c.content?.substring(0, 2000),  // Capped at 2000 chars for DB storage (was 200, now reasonable for debugging — AUD-057)
         category: c.category,
         similarity: c.similarity,
         sourceKey: c.sourceKey || '',
@@ -1419,7 +1433,7 @@ export async function generateAndSendAiReply(
       console.log(`[AI] [${conversationId}] Classification failure escalation — both LR and intent extractor returned empty`);
     }
 
-    const propertyInfo = buildPropertyInfo(
+    let propertyInfo = buildPropertyInfo(
       context.guestName,
       context.checkIn,
       context.checkOut,
@@ -1428,6 +1442,13 @@ export async function generateAndSendAiReply(
       retrievedChunks,
       context.reservationStatus
     );
+
+    // T014 / FR-012: Inject escalation signals into prompt so Claude can factor them in
+    if (escalationSignals.length > 0) {
+      propertyInfo += '\n### SYSTEM SIGNALS\n';
+      propertyInfo += escalationSignals.map(s => `⚠ ${s.signal}`).join('\n');
+      propertyInfo += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.\n';
+    }
 
     // Check for image attachments in current window messages (from DB imageUrls field)
     const hasImages = currentMsgs.some(m => m.imageUrls && m.imageUrls.length > 0);
@@ -1813,17 +1834,17 @@ export async function generateAndSendAiReply(
     // Fire-and-forget: LLM-as-judge evaluation + self-improvement
     // NEVER awaited — runs in background after response is already sent
     if (!isInquiry) {
-      const classifierMeta = getLastClassifierResult();
-      if (classifierMeta) {
+      // Use classifierSnap captured at line ~1242 (already cleared from global)
+      if (classifierSnap) {
         evaluateAndImprove({
           tenantId,
           conversationId,
           guestMessage: ragQuery,
-          classifierLabels: classifierMeta.labels,
-          classifierMethod: classifierMeta.method,
-          classifierTopSim: classifierMeta.topSimilarity,
-          confidence: classifierMeta.confidence,
-          neighbors: classifierMeta.neighbors,
+          classifierLabels: classifierSnap.labels,
+          classifierMethod: classifierSnap.method,
+          classifierTopSim: classifierSnap.topSimilarity,
+          confidence: classifierSnap.confidence,
+          neighbors: classifierSnap.neighbors,
           aiResponse: guestMessage,
           tier2Labels: tier2ResolvedLabels,
           tier3Reinjected,
