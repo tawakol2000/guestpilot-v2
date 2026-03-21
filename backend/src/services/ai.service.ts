@@ -846,16 +846,16 @@ You have access to a \`search_available_properties\` tool that can find alternat
 - Guest is asking about pricing — you cannot quote prices, direct them to the booking link
 
 **HOW to present results:**
-- Briefly acknowledge the current property doesn't have what they want.
-- ALWAYS include the booking_link URL for each property in your message — the guest needs a clickable link. This is the most important part of the response.
-- Use the property name from the tool result (it's already guest-friendly — do NOT use internal names like "Apartment 105").
-- Format: list each property with its name, key highlights, and booking link.
+- The tool result contains a \`suggested_message\` field with pre-formatted property names and booking links. You MUST copy this text into your guest message. Do NOT rewrite it, do NOT invent your own property names, and do NOT drop the URLs.
+- Add a brief intro before the suggested_message (e.g., "We have X properties with pools available for your dates:").
 - Never quote specific prices — the booking link shows live pricing.
-- If a booking_link is null or missing: list the property by name, then say "I'll have our team send you the booking link directly" and set manager needed to true.
-- NEVER say "I'll send the links shortly" or "the links are coming" — you cannot generate booking URLs yourself.
+- NEVER say "I don't have links" or "let me check" — the links ARE in the tool result. Use them.
 
-**Example response when tool returns results:**
-{"guest message":"We have 2 properties with pools available for your dates:\\n\\n1. 3-Bedroom Apartment with Pool (sleeps 6): https://www.airbnb.com/rooms/123456\\n2. 2-Bedroom Apartment with Pool (sleeps 4): https://www.airbnb.com/rooms/789012\\n\\nYou can check availability and book directly through those links!","manager":{"needed":false,"title":"","note":""}}
+**Example — tool returns suggested_message:**
+Tool result: {"found":true,"count":2,"suggested_message":"1. 2-Bedroom Apartment with Pool (sleeps 4) — Book here: https://www.airbnb.com/rooms/123\\n2. 2-Bedroom Apartment with Pool (sleeps 4) — Book here: https://www.airbnb.com/rooms/456"}
+
+Your response:
+{"guest message":"We have 2 properties with pools for your dates (March 22–25):\\n\\n1. 2-Bedroom Apartment with Pool (sleeps 4) — Book here: https://www.airbnb.com/rooms/123\\n2. 2-Bedroom Apartment with Pool (sleeps 4) — Book here: https://www.airbnb.com/rooms/456","manager":{"needed":false,"title":"","note":""}}
 
 The guest MUST receive the link in the FIRST message that mentions the property. Do not make them ask for links separately.
 

@@ -264,12 +264,26 @@ export async function searchAvailableProperties(
     };
   });
 
-  const result: SearchResult = {
+  // Build a pre-formatted message the AI MUST use — prevents hallucinated names and dropped links
+  const suggestedMessage = properties.length > 0
+    ? properties.map((p, i) => {
+        const linkPart = p.booking_link
+          ? `Book here: ${p.booking_link}`
+          : 'Contact us for booking details';
+        return `${i + 1}. ${p.name} (sleeps ${p.capacity}) — ${linkPart}`;
+      }).join('\n')
+    : '';
+
+  const result = {
     found: properties.length > 0,
     count: properties.length,
     properties,
     dates_checked: `${checkIn} to ${checkOut}`,
     city: currentCity || 'unknown',
+    // CRITICAL: This field contains the exact text the AI should include in its response.
+    // The AI must use the property names and booking links exactly as shown here.
+    // Do NOT invent property names or say you don't have links — they are right here.
+    suggested_message: suggestedMessage,
   };
 
   console.log(`[PropertySearch] Result: ${properties.length} properties, links: ${properties.map(p => p.booking_link || 'NULL').join(', ')}`);
