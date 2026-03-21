@@ -1388,6 +1388,10 @@ export async function generateAndSendAiReply(
     // Atomically snapshot + clear to prevent concurrent request from reading stale data
     const classifierSnap = getAndClearLastClassifierResult();
 
+    // ─── Load tier mode settings ────────────────────────────────────────────
+    const tier2Mode: string = (tenantConfig as any)?.tier2Mode || 'active';
+    const tier3Mode: string = (tenantConfig as any)?.tier3Mode || 'active';
+
     // —— Tier 3: Topic State Cache ——————————————————————————
     // Only SOP labels drive topic state — property-* and learned-answers are passive context
     const retrievedLabels = retrievedChunks.map((c: any) => c.category)
@@ -1402,7 +1406,13 @@ export async function generateAndSendAiReply(
     let tier3CentroidThreshold: number | null = null;
     let tier3SwitchMethod: 'keyword' | 'centroid' | null = null;
 
-    if (retrievedSopLabels.length > 0) {
+    if (tier3Mode === 'off') {
+      // Tier 3 OFF — skip entirely, still update topic state for tracking
+      if (retrievedSopLabels.length > 0) {
+        updateTopicState(conversationId, retrievedSopLabels);
+      }
+      console.log(`[AI] Tier 3 OFF — skipping topic state re-injection`);
+    } else if (retrievedSopLabels.length > 0) {
       updateTopicState(conversationId, retrievedSopLabels);
     } else if (ragResult.tier !== 'tier1') {
       // Only check Tier 3 when Tier 1 wasn't confident.
@@ -1414,8 +1424,16 @@ export async function generateAndSendAiReply(
       tier3CentroidThreshold = tier3Result.centroidThreshold;
       tier3SwitchMethod = tier3Result.switchMethod;
 
-      if (tier3Result.reinjected && tier3Result.labels.length > 0) {
-        // Direct SOP lookup — no redundant vector search needed
+      if (tier3Mode === 'ghost') {
+        // Tier 3 GHOST — ran for tracking/observability, but don't inject chunks
+        if (tier3Result.reinjected && tier3Result.labels.length > 0) {
+          tier3ReinjectedLabels = tier3Result.labels;
+          // Still update topic state for tracking, but don't add chunks
+          updateTopicState(conversationId, tier3Result.labels);
+          console.log(`[AI] Tier 3 GHOST — would have re-injected [${tier3Result.labels.join(', ')}] but suppressed for routing`);
+        }
+      } else if (tier3Result.reinjected && tier3Result.labels.length > 0) {
+        // Tier 3 ACTIVE — inject chunks as normal
         const reinjectedChunks = tier3Result.labels
           .map(label => {
             const content = getSopContent(label, propertyAmenities);
@@ -1445,7 +1463,7 @@ export async function generateAndSendAiReply(
     let tier2ResolvedLabels: string[] | undefined;
     let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
     const originalConfidenceTier = ragResult.confidenceTier;
-    if (originalConfidenceTier !== 'high' && !ragResult.intentExtractorRan) {
+    if (originalConfidenceTier !== 'high' && !ragResult.intentExtractorRan && tier2Mode !== 'off') {
       const recentForTier2 = allMsgs.slice(-10).map(m => ({
         role: m.role === 'GUEST' ? 'guest' : 'host',
         content: m.content,
@@ -1456,7 +1474,14 @@ export async function generateAndSendAiReply(
         if (tier2Result) {
           tier2Output = { topic: tier2Result.topic, status: tier2Result.status, urgency: tier2Result.urgency, sops: tier2Result.sops };
         }
-        if (tier2Result && tier2Result.sops.length > 0) {
+
+        // Tier 2 ghost mode: run extractor, log output, but don't inject SOPs
+        if (tier2Mode === 'ghost') {
+          if (tier2Result) {
+            console.log(`[AI] Tier 2 GHOST — intent extractor ran: topic=${tier2Result.topic}, sops=[${tier2Result.sops.join(', ')}], but not injecting`);
+          }
+          // Skip the routing — tier2Output is still populated for ragContext logging
+        } else if (tier2Result && tier2Result.sops.length > 0) {
           // Direct SOP lookup — no redundant vector search needed
           const tier2Chunks = tier2Result.sops
             .map(label => {
@@ -1533,6 +1558,8 @@ export async function generateAndSendAiReply(
       } catch (err) {
         console.warn(`[AI] Tier 2 failed (non-fatal):`, err);
       }
+    } else if (tier2Mode === 'off' && originalConfidenceTier !== 'high') {
+      console.log(`[AI] Tier 2 OFF — skipping intent extractor for conv ${conversationId}`);
     }
 
     // —— Cross-tier deduplication (T004 / FR-001) ——————————————
@@ -1593,6 +1620,12 @@ export async function generateAndSendAiReply(
       switchMethod: tier3SwitchMethod,
       // Tier 2 details
       tier2Output,
+      // Tier mode settings
+      tierModes: {
+        tier1: (tenantConfig as any)?.tier1Mode || 'active',
+        tier2: tier2Mode,
+        tier3: tier3Mode,
+      },
       // Escalation
       escalationSignals: escalationSignals.map(s => s.signal),
     };

@@ -361,6 +361,8 @@ export async function retrieveRelevantKnowledge(
   // Three-tier confidence thresholds — configurable per tenant via UI
   let HIGH_CONFIDENCE_THRESHOLD = 0.85;
   let LOW_CONFIDENCE_THRESHOLD = 0.55;
+  let tier1Mode: 'active' | 'ghost' | 'off' = 'active';
+  let tier2Mode: 'active' | 'ghost' | 'off' = 'active';
   try {
     const cfg = await getTenantAiConfig(tenantId, prisma);
     if (cfg.highConfidenceThreshold !== undefined && cfg.highConfidenceThreshold !== null) {
@@ -369,7 +371,27 @@ export async function retrieveRelevantKnowledge(
     if (cfg.lowConfidenceThreshold !== undefined && cfg.lowConfidenceThreshold !== null) {
       LOW_CONFIDENCE_THRESHOLD = cfg.lowConfidenceThreshold;
     }
+    if ((cfg as any).tier1Mode && ['active', 'ghost', 'off'].includes((cfg as any).tier1Mode)) {
+      tier1Mode = (cfg as any).tier1Mode;
+    }
+    if ((cfg as any).tier2Mode && ['active', 'ghost', 'off'].includes((cfg as any).tier2Mode)) {
+      tier2Mode = (cfg as any).tier2Mode;
+    }
   } catch { /* use default */ }
+
+  // ─── Tier 1 OFF mode: skip classifier entirely ────────────────────────
+  if (tier1Mode === 'off' && agentType === 'guestCoordinator') {
+    console.log(`[RAG] Tier 1 OFF — skipping classifier, forcing low confidence for Tier 2 fallback`);
+    const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
+    return {
+      chunks: propertyChunks,
+      topSimilarity: 0,
+      tier: 'tier2_needed' as const,
+      confidenceTier: 'low',
+      topCandidates: [],
+      intentExtractorRan: false,
+    };
+  }
 
   // For guestCoordinator: use LR classifier for SOPs + pgvector for property chunks only
   if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
@@ -398,9 +420,17 @@ export async function retrieveRelevantKnowledge(
       // ─── Three-tier confidence routing (T013) ─────────────────────────
       // Determine confidence tier using LR sigmoid confidence (NOT cosine similarity)
       const lrConfidence = classifierResult.confidence;
-      const confidenceTier: 'high' | 'medium' | 'low' =
+      // Actual confidence tier — logged for observability even in ghost mode
+      const actualConfidenceTier: 'high' | 'medium' | 'low' =
         lrConfidence >= HIGH_CONFIDENCE_THRESHOLD ? 'high' :
         lrConfidence >= LOW_CONFIDENCE_THRESHOLD ? 'medium' : 'low';
+      // Routing confidence tier — in ghost mode, always forced to 'low' so Tier 2 decides
+      const confidenceTier: 'high' | 'medium' | 'low' =
+        tier1Mode === 'ghost' ? 'low' : actualConfidenceTier;
+
+      if (tier1Mode === 'ghost') {
+        console.log(`[RAG] Tier 1 GHOST — classifier ran (actual=${actualConfidenceTier}), forcing routing to low for Tier 2`);
+      }
 
       let sopChunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }> = [];
 
@@ -450,14 +480,22 @@ export async function retrieveRelevantKnowledge(
 
       } else {
         // LOW tier: fire intent extractor as fallback
-        console.log(`[RAG] Low confidence (${lrConfidence.toFixed(3)}) — firing Tier 2 intent extractor`);
+        console.log(`[RAG] Low confidence (${lrConfidence.toFixed(3)}) — firing Tier 2 intent extractor (tier2Mode=${tier2Mode})`);
         let intentResult = null;
-        try {
-          if (conversationId && recentMessages && recentMessages.length > 0) {
-            intentResult = await extractIntent(recentMessages, tenantId, conversationId);
+        if (tier2Mode !== 'off') {
+          try {
+            if (conversationId && recentMessages && recentMessages.length > 0) {
+              intentResult = await extractIntent(recentMessages, tenantId, conversationId);
+            }
+          } catch (err) {
+            console.warn('[RAG] Intent extractor failed in low-tier fallback (non-fatal):', err);
           }
-        } catch (err) {
-          console.warn('[RAG] Intent extractor failed in low-tier fallback (non-fatal):', err);
+          if (tier2Mode === 'ghost' && intentResult) {
+            console.log(`[RAG] Tier 2 GHOST — intent extractor ran: [${intentResult.sops.join(', ')}], but not using for routing`);
+            intentResult = null; // Don't use results for routing in ghost mode
+          }
+        } else {
+          console.log(`[RAG] Tier 2 OFF — skipping intent extractor`);
         }
 
         if (intentResult && intentResult.sops.length > 0) {

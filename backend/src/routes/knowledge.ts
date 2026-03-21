@@ -8,7 +8,7 @@ import { addExample, getActiveExamples, getExampleByText } from '../services/cla
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
-import { getTenantAiConfig } from '../services/tenant-config.service';
+import { getTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { AuthenticatedRequest } from '../types';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
@@ -295,8 +295,8 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const cfg = await prisma.tenantAiConfig.findUnique({
         where: { tenantId },
-        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true, tier2Threshold: true },
-      });
+        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true, tier2Threshold: true, tier1Mode: true, tier2Mode: true, tier3Mode: true } as any,
+      }) as any;
       res.json({
         judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
         autoFixThreshold: cfg?.autoFixThreshold ?? 0.70,
@@ -304,6 +304,9 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         classifierContextualGate: cfg?.classifierContextualGate ?? 0.85,
         embeddingProvider: cfg?.embeddingProvider ?? 'openai',
         tier2Threshold: cfg?.tier2Threshold ?? 0.80,
+        tier1Mode: cfg?.tier1Mode ?? 'active',
+        tier2Mode: cfg?.tier2Mode ?? 'active',
+        tier3Mode: cfg?.tier3Mode ?? 'active',
       });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds GET failed:', err);
@@ -315,11 +318,27 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
   router.post('/classifier-thresholds', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate, embeddingProvider: newProvider, tier2Threshold } = req.body as {
+      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate, embeddingProvider: newProvider, tier2Threshold, tier1Mode, tier2Mode, tier3Mode } = req.body as {
         judgeThreshold?: number; autoFixThreshold?: number;
         classifierVoteThreshold?: number; classifierContextualGate?: number;
         embeddingProvider?: string; tier2Threshold?: number;
+        tier1Mode?: string; tier2Mode?: string; tier3Mode?: string;
       };
+
+      // Validate tier modes if provided
+      const VALID_TIER_MODES = ['active', 'ghost', 'off'];
+      if (tier1Mode !== undefined && !VALID_TIER_MODES.includes(tier1Mode)) {
+        res.status(400).json({ error: `tier1Mode must be one of: ${VALID_TIER_MODES.join(', ')}` });
+        return;
+      }
+      if (tier2Mode !== undefined && !VALID_TIER_MODES.includes(tier2Mode)) {
+        res.status(400).json({ error: `tier2Mode must be one of: ${VALID_TIER_MODES.join(', ')}` });
+        return;
+      }
+      if (tier3Mode !== undefined && !VALID_TIER_MODES.includes(tier3Mode)) {
+        res.status(400).json({ error: `tier3Mode must be one of: ${VALID_TIER_MODES.join(', ')}` });
+        return;
+      }
 
       if (typeof judgeThreshold !== 'number' || judgeThreshold < 0.3 || judgeThreshold > 1.0) {
         res.status(400).json({ error: 'judgeThreshold must be between 0.3 and 1.0' });
@@ -349,13 +368,20 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
 
       const boostT = typeof tier2Threshold === 'number' ? Math.max(0.50, Math.min(1.00, tier2Threshold)) : undefined;
 
+      // Build tier mode updates — only include if provided
+      const tierModeUpdates: Record<string, string> = {};
+      if (tier1Mode !== undefined) tierModeUpdates.tier1Mode = tier1Mode;
+      if (tier2Mode !== undefined) tierModeUpdates.tier2Mode = tier2Mode;
+      if (tier3Mode !== undefined) tierModeUpdates.tier3Mode = tier3Mode;
+
       await prisma.tenantAiConfig.upsert({
         where: { tenantId },
-        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}) },
-        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}) },
+        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}), ...tierModeUpdates },
+        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}), ...tierModeUpdates },
       });
 
       invalidateThresholdCache(tenantId);
+      invalidateTenantConfigCache(tenantId);
       setClassifierThresholds(voteT, ctxG);
       if (boostT != null) setBoostThreshold(boostT);
 
@@ -378,7 +404,7 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         })();
       }
 
-      res.json({ ok: true, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider });
+      res.json({ ok: true, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...tierModeUpdates });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds POST failed:', err);
       res.status(500).json({ error: 'Failed to save thresholds' });

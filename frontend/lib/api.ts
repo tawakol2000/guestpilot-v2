@@ -895,6 +895,9 @@ export async function apiSetClassifierThresholds(data: {
   classifierContextualGate: number
   tier2Threshold?: number
   embeddingProvider: string
+  tier1Mode?: 'active' | 'ghost' | 'off'
+  tier2Mode?: 'active' | 'ghost' | 'off'
+  tier3Mode?: 'active' | 'ghost' | 'off'
 }): Promise<{ ok: boolean }> {
   return apiFetch('/api/knowledge/classifier-thresholds', {
     method: 'POST',

@@ -940,6 +940,9 @@ function ThresholdSettings() {
   const [highConfVal, setHighConfVal] = useState(0.85)
   const [lowConfVal, setLowConfVal] = useState(0.55)
   const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
+  const [tier1Mode, setTier1Mode] = useState<'active' | 'ghost' | 'off'>('active')
+  const [tier2Mode, setTier2Mode] = useState<'active' | 'ghost' | 'off'>('active')
+  const [tier3Mode, setTier3Mode] = useState<'active' | 'ghost' | 'off'>('active')
   const [judgeModeVal, setJudgeModeVal] = useState<'evaluate_all' | 'sampling'>('evaluate_all')
   const [judgeModesSaving, setJudeModeSaving] = useState(false)
   const [judgeModeSavedMsg, setJudgeModeSavedMsg] = useState('')
@@ -964,6 +967,9 @@ function ThresholdSettings() {
         if (d.classifierContextualGate != null) setCtxGateVal(d.classifierContextualGate)
         if ((d as any).tier2Threshold != null) setTier2Val((d as any).tier2Threshold)
         if (d.embeddingProvider) setProviderVal(d.embeddingProvider as 'openai' | 'cohere')
+        if ((d as any).tier1Mode) setTier1Mode((d as any).tier1Mode)
+        if ((d as any).tier2Mode) setTier2Mode((d as any).tier2Mode)
+        if ((d as any).tier3Mode) setTier3Mode((d as any).tier3Mode)
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
@@ -1015,6 +1021,7 @@ function ThresholdSettings() {
         classifierVoteThreshold: voteVal, classifierContextualGate: ctxGateVal,
         tier2Threshold: tier2Val,
         embeddingProvider: providerVal,
+        tier1Mode, tier2Mode, tier3Mode,
       })
       // Save tier threshold values to tenant config
       await apiUpdateTenantAiConfig({
@@ -1059,6 +1066,47 @@ function ThresholdSettings() {
     } finally {
       setRetraining(false)
     }
+  }
+
+  function TierModeToggle({
+    label, hint, value, onChange,
+  }: {
+    label: string; hint: string; value: 'active' | 'ghost' | 'off'; onChange: (v: 'active' | 'ghost' | 'off') => void
+  }) {
+    const options: Array<{ key: 'active' | 'ghost' | 'off'; label: string; color: string }> = [
+      { key: 'active', label: 'Active', color: T.status.green },
+      { key: 'ghost',  label: 'Ghost',  color: T.status.amber },
+      { key: 'off',    label: 'Off',    color: T.status.red },
+    ]
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 6 }}>
+          {label}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {options.map(opt => {
+            const selected = value === opt.key
+            return (
+              <button key={opt.key} onClick={() => onChange(opt.key)} style={{
+                height: 32, padding: '0 16px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                background: selected ? `${opt.color}18` : T.bg.secondary,
+                color: selected ? opt.color : T.text.tertiary,
+                border: `1px solid ${selected ? `${opt.color}40` : T.border.default}`,
+                borderRadius: T.radius.sm, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}>
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 5 }}>
+          {hint}
+        </div>
+      </div>
+    )
   }
 
   function SliderRow({
@@ -1153,7 +1201,18 @@ function ThresholdSettings() {
           <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Tier 1 — Classification
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <TierModeToggle
+            label="Tier 1: LR / KNN Classifier"
+            hint="ghost: runs for judge monitoring, doesn't route"
+            value={tier1Mode}
+            onChange={setTier1Mode}
+          />
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 18,
+            opacity: tier1Mode === 'off' ? 0.4 : 1,
+            pointerEvents: tier1Mode === 'off' ? 'none' : 'auto',
+            transition: 'opacity 0.2s',
+          }}>
             <SliderRow
               label="KNN Boost Threshold"
               hint="— similarity above this uses nearest neighbor's label"
@@ -1183,6 +1242,8 @@ function ThresholdSettings() {
           <div style={{
             display: 'flex', alignItems: 'stretch', height: 24, borderRadius: T.radius.sm,
             overflow: 'hidden', border: `1px solid ${T.border.default}`, marginTop: 14,
+            opacity: tier1Mode === 'off' ? 0.4 : 1,
+            transition: 'opacity 0.2s',
           }}>
             {[
               { label: 'Tier 2 fallback', color: `${T.status.red}22`, textColor: T.status.red, pct: lowConfVal * 100 },
@@ -1202,6 +1263,32 @@ function ThresholdSettings() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ── TIER 2 — INTENT EXTRACTOR ────────────────────────────────────── */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Tier 2 — Intent Extractor
+          </div>
+          <TierModeToggle
+            label="Tier 2: Intent Extractor (Haiku)"
+            hint="always decides routing when Tier 1 is ghost"
+            value={tier2Mode}
+            onChange={setTier2Mode}
+          />
+        </div>
+
+        {/* ── TIER 3 — TOPIC STATE ─────────────────────────────────────────── */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 16, marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Tier 3 — Topic State
+          </div>
+          <TierModeToggle
+            label="Tier 3: Topic State Cache"
+            hint="ghost: tracks state but doesn't re-inject SOPs"
+            value={tier3Mode}
+            onChange={setTier3Mode}
+          />
         </div>
 
         {/* ── SELF-IMPROVEMENT ─────────────────────────────────────────────── */}

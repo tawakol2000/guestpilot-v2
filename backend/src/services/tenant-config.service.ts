@@ -112,6 +112,14 @@ export async function updateTenantAiConfig(
       throw err;
     }
   }
+  const VALID_TIER_MODES = ['active', 'ghost', 'off'];
+  for (const field of ['tier1Mode', 'tier2Mode', 'tier3Mode'] as const) {
+    if ((updates as any)[field] !== undefined && !VALID_TIER_MODES.includes((updates as any)[field])) {
+      const err = new Error(`${field} must be one of: ${VALID_TIER_MODES.join(', ')}`) as any;
+      err.field = field;
+      throw err;
+    }
+  }
 
   // Strip non-updatable system fields
   const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, ...safeUpdates } = updates as any;
