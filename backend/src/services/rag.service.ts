@@ -133,6 +133,7 @@ export async function ingestPropertyKnowledge(
     if (property.address) lines.push(`Address: ${property.address}`);
     for (const [key, val] of Object.entries(customKb)) {
       if (key === 'amenities') continue; // handled via sop-amenity-request SOP
+      if (key === 'airbnbListingUrl' || key === 'vrboListingUrl' || key === 'bookingEngineUrl') continue; // used by property-search tool, not needed in prompt
       const strVal = String(val ?? '').trim();
       if (!strVal || strVal === 'N/A' || strVal === 'null') continue;
       const label = KEY_LABELS[key] || key;
