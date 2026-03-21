@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Wrench, Search, Clock, CheckCircle, RefreshCw, Activity } from 'lucide-react'
 import { apiGetToolInvocations, type ToolInvocation } from '@/lib/api'
 
-// ─── Design Tokens (matching classifier-v5) ─────────────────────────────────
+// ─── Design Tokens ──────────────────────────────────────────────────────────
 const T = {
   bg: { primary: '#FAFAF9', secondary: '#F5F5F4', tertiary: '#E7E5E4' },
   text: { primary: '#0C0A09', secondary: '#57534E', tertiary: '#A8A29E' },

@@ -16,8 +16,6 @@ import {
   apiSeedSops,
   apiGetProperties,
   apiGetChunkStats,
-  apiGetIntentPrompt,
-  apiUpdateIntentPrompt,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
@@ -1272,8 +1270,6 @@ export function ConfigureAiV5(): React.ReactElement {
               onChange={next => setConfig(prev => prev ? { ...prev, escalation: next } : prev)}
             />
 
-            {/* Tier 2: Intent Extractor Prompt */}
-            <IntentPromptSection />
 
             {/* RAG Knowledge Chunks */}
             <RagChunksSection />
@@ -1513,179 +1509,6 @@ function TenantConfigSection({
   )
 }
 
-// ─── Tier 2: Intent Extractor Prompt ─────────────────────────────────────────
-
-function IntentPromptSection(): React.ReactElement {
-  const [prompt, setPrompt] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-
-  function showToast(type: 'success' | 'error', message: string): void {
-    setToast({ type, message })
-    setTimeout(() => setToast(null), 2500)
-  }
-
-  useEffect(() => {
-    apiGetIntentPrompt()
-      .then(data => {
-        setPrompt(data.prompt)
-        setLoading(false)
-      })
-      .catch(() => {
-        setLoading(false)
-      })
-  }, [])
-
-  async function handleSave(): Promise<void> {
-    setSaving(true)
-    try {
-      await apiUpdateIntentPrompt(prompt)
-      showToast('success', 'Intent prompt saved and reloaded')
-    } catch (err) {
-      showToast('error', `Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const cardStyle: React.CSSProperties = {
-    borderRadius: T.radius.lg,
-    border: `1px solid ${T.border.default}`,
-    background: T.bg.primary,
-    marginBottom: 16,
-    boxShadow: T.shadow.md,
-    overflow: 'hidden',
-    animation: 'fadeInUp 0.4s ease-out both',
-  }
-
-  return (
-    <div style={cardStyle}>
-      {/* Header */}
-      <div style={{
-        padding: '16px 20px',
-        borderBottom: `1px solid ${T.border.default}`,
-        background: T.bg.secondary,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-      }}>
-        <div style={{
-          width: 30, height: 30, borderRadius: T.radius.sm,
-          background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.16)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <Shield size={14} style={{ color: T.status.amber }} />
-        </div>
-        <div>
-          <span style={{
-            fontSize: 15, fontWeight: 700, color: T.text.primary,
-            fontFamily: T.font.sans, letterSpacing: '-0.01em',
-          }}>
-            Tier 2: Intent Extractor Prompt
-          </span>
-          <p style={{
-            fontSize: 12, color: T.text.secondary,
-            margin: '2px 0 0', fontFamily: T.font.sans, lineHeight: 1.4,
-          }}>
-            The prompt sent to Haiku when Tier 1 classifier confidence is low. Controls how guest messages are categorized into SOPs.
-          </p>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div style={{ padding: 20 }}>
-        {loading ? (
-          <div style={{
-            height: 200,
-            background: `linear-gradient(90deg, ${T.bg.tertiary} 25%, ${T.bg.secondary} 50%, ${T.bg.tertiary} 75%)`,
-            backgroundSize: '200% 100%',
-            borderRadius: T.radius.sm,
-            animation: 'shimmer 1.8s ease-in-out infinite',
-          }} />
-        ) : (
-          <>
-            <textarea
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              spellCheck={false}
-              rows={20}
-              onFocus={e => {
-                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(29,78,216,0.15)'
-                e.currentTarget.style.borderColor = T.accent
-                e.currentTarget.style.background = T.bg.primary
-              }}
-              onBlur={e => {
-                e.currentTarget.style.boxShadow = 'none'
-                e.currentTarget.style.borderColor = T.border.default
-                e.currentTarget.style.background = T.bg.secondary
-              }}
-              style={{
-                width: '100%',
-                border: `1px solid ${T.border.default}`,
-                borderRadius: T.radius.sm,
-                padding: '10px 14px',
-                fontSize: 12.5,
-                background: T.bg.secondary,
-                color: T.text.primary,
-                outline: 'none',
-                fontFamily: T.font.mono,
-                resize: 'vertical',
-                boxSizing: 'border-box',
-                lineHeight: 1.65,
-                transition: 'box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease',
-              }}
-            />
-            <div style={{
-              fontSize: 11, color: T.text.tertiary,
-              textAlign: 'right', marginTop: 6,
-              fontFamily: T.font.mono,
-            }}>
-              {prompt.length.toLocaleString()} characters
-            </div>
-
-            {/* Save row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                onMouseEnter={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = '#2D2926'; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.md } }}
-                onMouseLeave={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.background = T.border.strong; (e.currentTarget as HTMLButtonElement).style.boxShadow = T.shadow.sm } }}
-                style={{
-                  background: T.border.strong,
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: T.radius.sm,
-                  padding: '9px 24px',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  opacity: saving ? 0.5 : 1,
-                  fontFamily: T.font.sans,
-                  transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
-                  boxShadow: T.shadow.sm,
-                  letterSpacing: '0.01em',
-                }}
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-
-              {toast && (
-                <span style={{
-                  fontSize: 12, fontWeight: 500,
-                  color: toast.type === 'success' ? T.status.green : T.status.red,
-                  fontFamily: T.font.sans,
-                }}>
-                  {toast.message}
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ─── General Settings ────────────────────────────────────────────────────────
 

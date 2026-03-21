@@ -15,14 +15,12 @@ import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
-import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from './rag.service';
-import { getSopContent } from './classifier.service';
+import { retrieveRelevantKnowledge } from './rag.service';
+import { getSopContent, SOP_TOOL_DEFINITION, SOP_CATEGORIES } from './sop.service';
 import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
-import { updateTopicState, getReinjectedLabels, getCachedTopicLabel } from './topic-state.service';
-import { extractIntent } from './intent-extractor.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -106,6 +104,60 @@ export function getAiApiLog(): AiApiLogEntry[] {
 }
 
 export type ToolHandler = (input: unknown, context: unknown) => Promise<string>;
+
+// ─── SOP Classification via Tool Use ────────────────────────────────────────
+// Single forced tool call to classify each guest message into SOP categories.
+// Replaces the 3-tier pipeline (LR classifier, intent extractor, topic state cache).
+interface SopClassificationResult {
+  categories: string[];
+  confidence: 'high' | 'medium' | 'low';
+  reasoning: string;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+}
+
+async function classifyMessageSop(
+  systemPrompt: string,
+  userContent: Anthropic.ContentBlock[],
+  options: { model?: string; tenantId?: string; conversationId?: string }
+): Promise<SopClassificationResult> {
+  const start = Date.now();
+  try {
+    const response = await anthropic.messages.create({
+      model: options.model || 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      temperature: 0,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: userContent }],
+      tools: [SOP_TOOL_DEFINITION],
+      tool_choice: { type: 'tool' as const, name: 'get_sop' },
+    } as any);
+
+    const durationMs = Date.now() - start;
+    const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use');
+
+    if (toolUseBlock && toolUseBlock.type === 'tool_use') {
+      const input = toolUseBlock.input as { categories: string[]; confidence: string; reasoning: string };
+      console.log(`[AI] SOP classification: [${input.categories.join(', ')}] confidence=${input.confidence} (${durationMs}ms) — ${input.reasoning}`);
+      return {
+        categories: input.categories,
+        confidence: input.confidence as 'high' | 'medium' | 'low',
+        reasoning: input.reasoning,
+        inputTokens: response.usage?.input_tokens || 0,
+        outputTokens: response.usage?.output_tokens || 0,
+        durationMs,
+      };
+    }
+
+    console.warn(`[AI] SOP classification returned no tool_use block — defaulting to none`);
+    return { categories: ['none'], confidence: 'low', reasoning: 'Classification returned no tool_use block', inputTokens: response.usage?.input_tokens || 0, outputTokens: response.usage?.output_tokens || 0, durationMs };
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    console.error(`[AI] SOP classification failed (non-fatal):`, err);
+    return { categories: ['none'], confidence: 'low', reasoning: 'Classification API call failed', inputTokens: 0, outputTokens: 0, durationMs };
+  }
+}
 
 async function createMessage(
   systemPrompt: string,
@@ -1434,207 +1486,67 @@ export async function generateAndSendAiReply(
       role: m.role === 'GUEST' ? 'guest' : 'host',
       content: m.content,
     }));
-    const cachedTopicLabel = getCachedTopicLabel(conversationId);
+    // ─── Property knowledge retrieval (embeddings + reranking only, no SOP routing) ───
     const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
       ? await retrieveRelevantKnowledge(
           tenantId, context.propertyId, ragQuery, prisma, 8,
           context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator',
           conversationId, recentForRag,
-          propertyAmenities, cachedTopicLabel
-        ).catch(() => ({ chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier2_needed' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined }))
-      : { chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'tier1' as const, confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined, topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined, intentExtractorRan: undefined as boolean | undefined };
-    let retrievedChunks = ragResult.chunks;
+          propertyAmenities
+        ).catch(() => ({ chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'property' as const }))
+      : { chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'property' as const };
+    const retrievedChunks = ragResult.chunks;
     const ragDurationMs = Date.now() - ragStart;
 
-    // Capture classifier metadata right after RAG retrieval (for ragContext logging)
-    // Atomically snapshot + clear to prevent concurrent request from reading stale data
-    const classifierSnap = getAndClearLastClassifierResult();
+    // ─── SOP Classification via Tool Use ────────────────────────────────────
+    // Single forced get_sop tool call replaces the 3-tier pipeline.
+    // Claude classifies the message, we retrieve the matching SOP content.
+    const isInquiry = context.reservationStatus === 'INQUIRY';
+    const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
+    const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
+    const effectiveModel = tenantConfig?.model || personaCfg.model;
 
-    // ─── Load tier mode settings ────────────────────────────────────────────
-    const tier1ModeForJudge: string = (tenantConfig as any)?.tier1Mode || 'active';
-    const tier2Mode: string = (tenantConfig as any)?.tier2Mode || 'active';
-    const tier3Mode: string = (tenantConfig as any)?.tier3Mode || 'active';
+    // Build minimal user content for classification (same as what createMessage receives)
+    const classificationUserContent: Anthropic.ContentBlock[] = [{
+      type: 'text',
+      text: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
+    }];
 
-    // —— Tier 3: Topic State Cache ——————————————————————————
-    // Only SOP labels drive topic state — property-* and learned-answers are passive context
-    const retrievedLabels = retrievedChunks.map((c: any) => c.category)
-      .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
-    const retrievedSopLabels = retrievedLabels.filter(
-      (l: string) => !l.startsWith('property-') && l !== 'learned-answers' && l !== 'contextual'
+    const sopClassification = await classifyMessageSop(
+      personaCfg.systemPrompt,
+      classificationUserContent,
+      { model: effectiveModel, tenantId, conversationId }
     );
-    let tier3Reinjected = false;
-    let tier3TopicSwitch = false;
-    let tier3ReinjectedLabels: string[] = [];
-    let tier3CentroidSimilarity: number | null = null;
-    let tier3CentroidThreshold: number | null = null;
-    let tier3SwitchMethod: 'keyword' | 'centroid' | null = null;
 
-    if (tier3Mode === 'off') {
-      // Tier 3 OFF — skip entirely, still update topic state for tracking
-      if (retrievedSopLabels.length > 0) {
-        updateTopicState(conversationId, retrievedSopLabels);
-      }
-      console.log(`[AI] Tier 3 OFF — skipping topic state re-injection`);
-    } else if (retrievedSopLabels.length > 0) {
-      updateTopicState(conversationId, retrievedSopLabels);
-    } else if (ragResult.tier !== 'tier1') {
-      // Only check Tier 3 when Tier 1 wasn't confident.
-      // If Tier 1 returned "contextual" or property-only labels at high confidence, skip Tier 3.
-      const tier3Result = getReinjectedLabels(conversationId, ragQuery, classifierSnap?.queryEmbedding);
-      tier3Reinjected = tier3Result.reinjected;
-      tier3TopicSwitch = tier3Result.topicSwitchDetected;
-      tier3CentroidSimilarity = tier3Result.centroidSimilarity;
-      tier3CentroidThreshold = tier3Result.centroidThreshold;
-      tier3SwitchMethod = tier3Result.switchMethod;
+    // Fetch SOP content for classified categories (skip none, escalate gets SOP if paired with other categories)
+    const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
+    const sopTexts = sopCategories
+      .map(c => getSopContent(c, propertyAmenities))
+      .filter(Boolean);
+    const sopContent = sopTexts.join('\n\n---\n\n');
 
-      if (tier3Mode === 'ghost') {
-        // Tier 3 GHOST — ran for tracking/observability, but don't inject chunks
-        if (tier3Result.reinjected && tier3Result.labels.length > 0) {
-          tier3ReinjectedLabels = tier3Result.labels;
-          // Still update topic state for tracking, but don't add chunks
-          updateTopicState(conversationId, tier3Result.labels);
-          console.log(`[AI] Tier 3 GHOST — would have re-injected [${tier3Result.labels.join(', ')}] but suppressed for routing`);
-        }
-      } else if (tier3Result.reinjected && tier3Result.labels.length > 0) {
-        // Tier 3 ACTIVE — inject chunks as normal
-        const reinjectedChunks = tier3Result.labels
-          .map(label => {
-            const content = getSopContent(label, propertyAmenities);
-            return content ? {
-              content,
-              category: label,
-              similarity: 1.0,
-              sourceKey: label,
-              propertyId: null as string | null,
-            } : null;
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null);
-
-        if (reinjectedChunks.length > 0) {
-          retrievedChunks.push(...reinjectedChunks);
-          ragResult.tier = 'tier3_cache';
-          ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
-          tier3ReinjectedLabels = tier3Result.labels;
-          console.log(`[AI] Tier 3 re-injected ${reinjectedChunks.length} chunks for conv ${conversationId}: [${tier3Result.labels.join(', ')}]`);
-        }
-      }
-    }
-
-    // —— Tier 2: Canonical Intent Extractor (real Haiku call) ——————————
-    // Fires for ALL non-HIGH messages, even after Tier 3 re-injection.
-    // Tier 2 is the most accurate — it overrides Tier 3 if it returns SOPs.
-    let tier2ResolvedLabels: string[] | undefined;
-    let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
-    const originalConfidenceTier = ragResult.confidenceTier;
-    if (originalConfidenceTier !== 'high' && !ragResult.intentExtractorRan && tier2Mode !== 'off') {
-      const recentForTier2 = allMsgs.slice(-10).map(m => ({
-        role: m.role === 'GUEST' ? 'guest' : 'host',
-        content: m.content,
-      }));
-
+    // Handle escalation category
+    if (sopClassification.categories.includes('escalate')) {
       try {
-        const tier2Result = await extractIntent(recentForTier2, tenantId, conversationId);
-        if (tier2Result) {
-          tier2Output = { topic: tier2Result.topic, status: tier2Result.status, urgency: tier2Result.urgency, sops: tier2Result.sops };
-        }
-
-        // Tier 2 ghost mode: run extractor, log output, but don't inject SOPs
-        if (tier2Mode === 'ghost') {
-          if (tier2Result) {
-            console.log(`[AI] Tier 2 GHOST — intent extractor ran: topic=${tier2Result.topic}, sops=[${tier2Result.sops.join(', ')}], but not injecting`);
-          }
-          // Skip the routing — tier2Output is still populated for ragContext logging
-        } else if (tier2Result && tier2Result.sops.length > 0) {
-          // Direct SOP lookup — no redundant vector search needed
-          const tier2Chunks = tier2Result.sops
-            .map(label => {
-              const content = getSopContent(label, propertyAmenities);
-              return content ? {
-                content,
-                category: label,
-                similarity: 1.0,
-                sourceKey: label,
-                propertyId: null as string | null,
-              } : null;
-            })
-            .filter((c): c is NonNullable<typeof c> => c !== null);
-
-          if (tier2Chunks.length > 0) {
-            // If Tier 3 had re-injected, remove those chunks — Tier 2 is more accurate
-            if (tier3Reinjected) {
-              const tier3Labels = new Set(tier3ReinjectedLabels);
-              retrievedChunks = retrievedChunks.filter((c: any) => !tier3Labels.has(c.category));
-              console.log(`[AI] Tier 2 overriding Tier 3 re-injection: removed [${tier3ReinjectedLabels.join(', ')}]`);
-            }
-            retrievedChunks.push(...tier2Chunks);
-            ragResult.tier = 'tier1'; // Tier 2 resolved it
-            ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
-            // Update topic state with Tier 2's classification
-            updateTopicState(conversationId, tier2Result.sops);
-            tier2ResolvedLabels = tier2Result.sops;
-            console.log(`[AI] Tier 2 resolved: ${tier2Result.topic} → [${tier2Result.sops.join(', ')}]`);
-          }
-        } else if (
-          tier2Result &&
-          tier2Result.sops.length === 0 &&
-          ['follow_up', 'ongoing_issue', 'just_chatting'].includes(tier2Result.status)
-        ) {
-          // Tier 2 says this is contextual — re-inject SOPs from previous AI response
-          try {
-            const prevLog = await prisma.aiApiLog.findFirst({
-              where: { tenantId, conversationId },
-              orderBy: { createdAt: 'desc' },
-              select: { ragContext: true },
-            });
-            const prevRag = prevLog?.ragContext as any;
-            const prevSopLabels = (prevRag?.chunks || [])
-              .map((c: any) => c.category)
-              .filter((cat: string) => !cat.startsWith('property-') && cat !== 'learned-answers')
-              .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i) as string[];
-
-            if (prevSopLabels.length > 0) {
-              const contextChunks = prevSopLabels
-                .map(label => {
-                  const content = getSopContent(label, propertyAmenities);
-                  return content ? {
-                    content,
-                    category: label,
-                    similarity: 1.0,
-                    sourceKey: label,
-                    propertyId: null as string | null,
-                  } : null;
-                })
-                .filter((c): c is NonNullable<typeof c> => c !== null);
-
-              if (contextChunks.length > 0) {
-                retrievedChunks.push(...contextChunks);
-                ragResult.tier = 'tier3_cache';
-                ragResult.topSimilarity = Math.max(ragResult.topSimilarity, 1.0);
-                updateTopicState(conversationId, prevSopLabels);
-                console.log(`[AI] Tier 2 contextual → re-injected previous SOPs: [${prevSopLabels.join(', ')}] (status=${tier2Result.status})`);
-              }
-            }
-          } catch (err) {
-            console.warn(`[AI] Tier 2 contextual re-injection failed (non-fatal):`, err);
-          }
-        }
+        await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
+          'sop-tool-escalation', `AI classified as escalate: ${sopClassification.reasoning}`,
+          'immediate');
+        console.log(`[AI] [${conversationId}] Escalation triggered by SOP classification: ${sopClassification.reasoning}`);
       } catch (err) {
-        console.warn(`[AI] Tier 2 failed (non-fatal):`, err);
+        console.warn(`[AI] Escalation task creation failed (non-fatal):`, err);
       }
-    } else if (tier2Mode === 'off' && originalConfidenceTier !== 'high') {
-      console.log(`[AI] Tier 2 OFF — skipping intent extractor for conv ${conversationId}`);
     }
 
-    // —— Cross-tier deduplication (T004 / FR-001) ——————————————
-    // SOPs can be added by Tier 1 (RAG), Tier 3 (re-injection), and Tier 2 (intent extractor).
-    // Deduplicate by category to prevent the same SOP appearing multiple times in the prompt.
-    {
-      const seenCategories = new Set<string>();
-      retrievedChunks = retrievedChunks.filter((c: any) => {
-        if (seenCategories.has(c.category)) return false;
-        seenCategories.add(c.category);
-        return true;
-      });
+    // Handle SOP retrieval failure (in-memory map — only fails on code bugs)
+    if (sopCategories.length > 0 && sopTexts.length === 0) {
+      try {
+        await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
+          'sop-retrieval-failure', `SOP content missing for categories: [${sopCategories.join(', ')}]`,
+          'info_request');
+        console.warn(`[AI] [${conversationId}] SOP retrieval failure — no content for [${sopCategories.join(', ')}]`);
+      } catch (err) {
+        console.warn(`[AI] SOP failure escalation task creation failed:`, err);
+      }
     }
 
     // —— Escalation enrichment (post-routing) ——————————————
@@ -1646,7 +1558,7 @@ export async function generateAndSendAiReply(
     const ragContext: any = {
       query: ragQuery,
       chunks: retrievedChunks.map((c: any) => ({
-        content: c.content,  // Full content — no truncation
+        content: c.content,
         category: c.category,
         similarity: c.similarity,
         sourceKey: c.sourceKey || '',
@@ -1655,51 +1567,16 @@ export async function generateAndSendAiReply(
       totalRetrieved: retrievedChunks.length,
       durationMs: ragDurationMs,
       topSimilarity: ragResult.topSimilarity,
-      tier: ragResult.tier,
-      // Three-tier confidence routing (T013)
-      confidenceTier: ragResult.confidenceTier || null,
-      originalConfidenceTier: originalConfidenceTier || null,
-      topCandidates: ragResult.topCandidates || null,
-      // Tier 1 details
-      classifierUsed: context.reservationStatus !== 'INQUIRY',
-      classifierLabels: classifierSnap?.labels || [],
-      classifierTopSim: classifierSnap?.topSimilarity ?? null,
-      classifierMethod: classifierSnap?.method || null,
-      classifierConfidence: classifierSnap?.confidence ?? null,
-      // T006: Boost + Description fields
-      boostApplied: classifierSnap?.boostApplied ?? null,
-      boostSimilarity: classifierSnap?.boostSimilarity ?? null,
-      boostLabels: classifierSnap?.boostLabels ?? null,
-      originalLrConfidence: classifierSnap?.originalLrConfidence ?? null,
-      originalLrLabels: classifierSnap?.originalLrLabels ?? null,
-      descriptionFeaturesActive: classifierSnap?.descriptionFeaturesActive ?? null,
-      topDescriptionMatches: classifierSnap?.topDescriptionMatches ?? null,
-      // Tier 3 details
-      tier3Reinjected,
-      tier3TopicSwitch,
-      tier3ReinjectedLabels,
-      centroidSimilarity: tier3CentroidSimilarity,
-      centroidThreshold: tier3CentroidThreshold,
-      switchMethod: tier3SwitchMethod,
-      // Tier 2 details
-      tier2Output,
-      // Tier mode settings
-      tierModes: {
-        tier1: (tenantConfig as any)?.tier1Mode || 'active',
-        tier2: tier2Mode,
-        tier3: tier3Mode,
-      },
+      // SOP Tool Classification
+      sopToolUsed: true,
+      sopCategories: sopClassification.categories,
+      sopConfidence: sopClassification.confidence,
+      sopReasoning: sopClassification.reasoning,
+      sopClassificationTokens: { input: sopClassification.inputTokens, output: sopClassification.outputTokens },
+      sopClassificationDurationMs: sopClassification.durationMs,
       // Escalation
       escalationSignals: escalationSignals.map(s => s.signal),
     };
-
-    // T014: Auto-escalate when low tier returns empty (both classifier and intent extractor failed)
-    if (ragResult.confidenceTier === 'low' && ragResult.chunks.length === 0) {
-      await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
-        'classification-failure', 'Both LR classifier and intent extractor failed to classify this message.',
-        'info_request');
-      console.log(`[AI] [${conversationId}] Classification failure escalation — both LR and intent extractor returned empty`);
-    }
 
     let propertyInfo = buildPropertyInfo(
       context.guestName,
@@ -1721,12 +1598,8 @@ export async function generateAndSendAiReply(
     // Check for image attachments in current window messages (from DB imageUrls field)
     const hasImages = currentMsgs.some(m => m.imageUrls && m.imageUrls.length > 0);
 
-    const isInquiry = context.reservationStatus === 'INQUIRY';
-    const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
-    const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
-
     // Upgrade 6d: Overlay tenant-specific settings onto persona config
-    const effectiveModel = tenantConfig?.model || personaCfg.model;
+    // (isInquiry, agentName, personaCfg, effectiveModel defined above in SOP classification block)
     const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
     const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
     const effectiveAgentName = tenantConfig?.agentName || agentName;
@@ -1739,6 +1612,16 @@ export async function generateAndSendAiReply(
     // Append custom instructions if configured
     if (tenantConfig?.customInstructions) {
       effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
+    }
+
+    // Inject SOP content from tool classification into system prompt
+    if (sopContent) {
+      effectiveSystemPrompt += `\n\n## STANDARD OPERATING PROCEDURE\nFollow this procedure for the guest's current request:\n${sopContent}`;
+    } else if (sopClassification.categories.includes('none')) {
+      // No SOP needed — respond from general knowledge
+    } else if (sopCategories.length > 0) {
+      // SOP retrieval failed (content missing) — Claude responds from general knowledge
+      effectiveSystemPrompt += `\n\n## NOTE\nSOP temporarily unavailable. Respond helpfully based on your general knowledge and system instructions.`;
     }
 
     let guestMessage = '';
@@ -2040,51 +1923,7 @@ export async function generateAndSendAiReply(
       }
     }
 
-    // T014: LLM override detection for medium-tier messages
-    // When the classifier was uncertain (medium tier), check if the AI's response
-    // used a different SOP than the classifier's top pick — log the override for analysis
-    if (ragResult.confidenceTier === 'medium' && ragResult.topCandidates && ragResult.topCandidates.length > 0 && guestMessage) {
-      try {
-        const topCandidates = ragResult.topCandidates;
-        const responseLower = guestMessage.toLowerCase();
-
-        // Extract category keywords from SOP labels (e.g., 'sop-cleaning' → 'clean')
-        const labelToKeywords: Record<string, string[]> = {};
-        for (const candidate of topCandidates.slice(0, 3)) {
-          const parts = candidate.label.replace(/^sop-/, '').split('-');
-          labelToKeywords[candidate.label] = parts.map(p => p.toLowerCase());
-        }
-
-        // Detect which SOP the AI actually used by checking response keywords
-        let detectedSop: string | null = null;
-        let bestKeywordHits = 0;
-        for (const [label, keywords] of Object.entries(labelToKeywords)) {
-          const hits = keywords.filter(kw => responseLower.includes(kw)).length;
-          if (hits > bestKeywordHits) {
-            bestKeywordHits = hits;
-            detectedSop = label;
-          }
-        }
-
-        // Log override if the AI chose a different SOP than the classifier's top pick
-        if (detectedSop && detectedSop !== topCandidates[0].label) {
-          ragContext.llmOverride = {
-            classifierPick: topCandidates[0].label,
-            llmPick: detectedSop,
-            confidence: topCandidates[0].confidence,
-          };
-          console.log(`[AI] [${conversationId}] LLM override detected: classifier=${topCandidates[0].label}(${topCandidates[0].confidence.toFixed(2)}) → llm=${detectedSop}`);
-        } else if (!detectedSop) {
-          ragContext.llmOverride = {
-            classifierPick: topCandidates[0].label,
-            llmPick: 'unknown',
-            confidence: topCandidates[0].confidence,
-          };
-        }
-      } catch (err) {
-        console.warn(`[AI] [${conversationId}] LLM override detection failed (non-fatal):`, err);
-      }
-    }
+    // SOP tool classification is already logged in ragContext — no override detection needed
 
     if (!guestMessage.trim()) {
       console.log(`[AI] [${conversationId}] Empty guest message — not sending`);
@@ -2170,29 +2009,20 @@ export async function generateAndSendAiReply(
       );
     }
 
-    // Fire-and-forget: LLM-as-judge evaluation + self-improvement
+    // Fire-and-forget: LLM-as-judge evaluation
     // NEVER awaited — runs in background after response is already sent
     if (!isInquiry) {
-      // Use classifierSnap captured at line ~1242 (already cleared from global)
-      if (classifierSnap) {
-        evaluateAndImprove({
-          tenantId,
-          conversationId,
-          guestMessage: ragQuery,
-          classifierLabels: classifierSnap.labels,
-          classifierMethod: classifierSnap.method,
-          classifierTopSim: classifierSnap.topSimilarity,
-          // In ghost mode, force confidence to 0 so judge always evaluates
-          // (real confidence is still logged in ragContext for observability)
-          confidence: tier1ModeForJudge === 'ghost' ? 0 : classifierSnap.confidence,
-          neighbors: classifierSnap.neighbors,
-          aiResponse: guestMessage,
-          tier2Labels: tier2ResolvedLabels,
-          tier3Reinjected: tier3Mode === 'ghost' ? false : tier3Reinjected, // Ghost tier3 shouldn't suppress judge
-        }, prisma).catch(err =>
-          console.warn('[AI] Judge evaluation failed (non-fatal):', err)
-        );
-      }
+      evaluateAndImprove({
+        tenantId,
+        conversationId,
+        guestMessage: ragQuery,
+        sopCategories: sopClassification.categories,
+        sopConfidence: sopClassification.confidence,
+        sopReasoning: sopClassification.reasoning,
+        aiResponse: guestMessage,
+      }, prisma).catch(err =>
+        console.warn('[AI] Judge evaluation failed (non-fatal):', err)
+      );
     }
 
     console.log(`[AI] [${conversationId}] Done`);

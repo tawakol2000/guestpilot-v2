@@ -3,9 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, setBoostThreshold, batchClassify, getDescriptionMatrix, classifyDetailed } from '../services/classifier.service';
-import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
-import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
 import { getTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
@@ -28,11 +25,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // GET /api/knowledge/classifier-status — classifier health check (LR primary, KNN diagnostic)
+  // GET /api/knowledge/classifier-status — classifier health check
   router.get('/classifier-status', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const status = getClassifierStatus();
       const config = await getTenantAiConfig(tenantId, prisma);
       // ClassifierWeights table may not exist yet — handle gracefully
       let retrainCount = 0;
@@ -46,13 +42,11 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         });
       } catch { /* table doesn't exist yet — that's fine */ }
       res.json({
-        ...status,
         classifierType: 'lr',
-        lrAccuracy: status.lrAccuracy || latestWeights?.accuracy || null,
-        lastTrainedAt: status.lastTrainedAt || latestWeights?.createdAt?.toISOString() || null,
-        retrainAvailable: true,
+        lrAccuracy: latestWeights?.accuracy || null,
+        lastTrainedAt: latestWeights?.createdAt?.toISOString() || null,
         retrainCount,
-        weightsSource: status.lrAccuracy ? 'file' : (latestWeights ? 'database' : 'none'),
+        weightsSource: latestWeights ? 'database' : 'none',
         confidenceTiers: {
           highThreshold: (config as any).highConfidenceThreshold || 0.85,
           lowThreshold: (config as any).lowConfidenceThreshold || 0.55,
@@ -61,28 +55,6 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] classifier-status failed:', err);
       res.status(500).json({ error: 'Failed to get classifier status' });
-    }
-  });
-
-  // POST /api/knowledge/test-classify — test the classifier with a message
-  router.post('/test-classify', async (req: any, res) => {
-    try {
-      const { message } = req.body as { message?: string };
-      if (!message || !message.trim()) {
-        res.status(400).json({ error: 'message is required' });
-        return;
-      }
-
-      if (!isClassifierInitialized()) {
-        // Try to initialize on demand
-        await initializeClassifier();
-      }
-
-      const result = await classifyMessage(message.trim());
-      res.json(result);
-    } catch (err) {
-      console.error('[Knowledge] test-classify failed:', err);
-      res.status(500).json({ error: 'Classification failed' });
     }
   });
 
@@ -228,12 +200,17 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // GET /api/knowledge/evaluation-stats — aggregate metrics
+  // GET /api/knowledge/evaluation-stats — aggregate metrics (includes SOP tool stats)
   router.get('/evaluation-stats', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
 
-      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows] = await Promise.all([
+      const sopWhere = {
+        tenantId,
+        ragContext: { path: ['sopToolUsed'], equals: true },
+      };
+
+      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows, sopLogs, sopTotal] = await Promise.all([
         prisma.classifierEvaluation.count({ where: { tenantId } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
@@ -258,6 +235,13 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
           take: 30,
           select: { classifierTopSim: true },
         }),
+        // SOP tool classification logs for confidence/category breakdown
+        prisma.aiApiLog.findMany({
+          where: sopWhere,
+          select: { ragContext: true },
+          take: 1000,
+        }),
+        prisma.aiApiLog.count({ where: sopWhere }),
       ]);
 
       const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
@@ -268,6 +252,21 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const avgSimPrev = prevSimRows.length > 0
         ? Math.round((prevSimRows.reduce((s, r) => s + r.classifierTopSim, 0) / prevSimRows.length) * 1000) / 1000
         : null;
+
+      // T022: SOP tool-based classification stats
+      const sopConfidenceCounts = { high: 0, medium: 0, low: 0 };
+      const categoryDistribution: Record<string, number> = {};
+      for (const log of sopLogs) {
+        const ctx = log.ragContext as any;
+        if (ctx?.sopConfidence && ctx.sopConfidence in sopConfidenceCounts) {
+          sopConfidenceCounts[ctx.sopConfidence as keyof typeof sopConfidenceCounts]++;
+        }
+        if (ctx?.sopCategories && Array.isArray(ctx.sopCategories)) {
+          for (const cat of ctx.sopCategories) {
+            categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
+          }
+        }
+      }
 
       res.json({
         total,
@@ -282,6 +281,14 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         avgSimRecent,
         avgSimPrev,
         recentSimCount: recentSimRows.length,
+        // SOP tool classification stats (T022)
+        sopClassifications: {
+          total: sopTotal,
+          highConfidence: sopConfidenceCounts.high,
+          mediumConfidence: sopConfidenceCounts.medium,
+          lowConfidence: sopConfidenceCounts.low,
+          categoryDistribution,
+        },
       });
     } catch (err) {
       console.error('[Knowledge] evaluation-stats failed:', err);
@@ -382,13 +389,11 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
 
       invalidateThresholdCache(tenantId);
       invalidateTenantConfigCache(tenantId);
-      setClassifierThresholds(voteT, ctxG);
-      if (boostT != null) setBoostThreshold(boostT);
 
-      // If embedding provider changed, re-embed everything in the background
+      // If embedding provider changed, re-embed RAG chunks in the background
       if (provider !== prevProvider) {
         setEmbeddingProvider(provider);
-        console.log(`[Thresholds] Embedding provider changed: ${prevProvider} → ${provider}. Re-embedding all data...`);
+        console.log(`[Thresholds] Embedding provider changed: ${prevProvider} → ${provider}. Re-embedding RAG data...`);
         (async () => {
           try {
             await seedTenantSops(tenantId, prisma);
@@ -396,7 +401,6 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
             for (const prop of properties) {
               await ingestPropertyKnowledge(tenantId, prop.id, prop, prisma);
             }
-            await initializeClassifier();
             console.log(`[Thresholds] Re-embedding complete for provider=${provider}`);
           } catch (err) {
             console.error('[Thresholds] Re-embedding failed:', err);
@@ -411,296 +415,8 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // GET /api/knowledge/classifier-examples — paginated list of DB examples
-  router.get('/classifier-examples', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { limit: limitStr, offset: offsetStr, source } = req.query as Record<string, string | undefined>;
-      const limit = Math.min(parseInt(limitStr || '100', 10), 500);
-      const offset = parseInt(offsetStr || '0', 10);
-
-      const where: Record<string, unknown> = { tenantId, active: true };
-      if (source) where.source = source;
-
-      const [examples, total] = await Promise.all([
-        prisma.classifierExample.findMany({
-          where: where as any,
-          orderBy: { createdAt: 'asc' },
-          take: limit,
-          skip: offset,
-          select: { id: true, text: true, labels: true, source: true, active: true, createdAt: true },
-        }),
-        prisma.classifierExample.count({ where: where as any }),
-      ]);
-
-      res.json({ examples, total });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples query failed:', err);
-      res.status(500).json({ error: 'Failed to fetch classifier examples' });
-    }
-  });
-
-  // POST /api/knowledge/classifier-examples — add a manual training example
-  router.post('/classifier-examples', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { text, labels } = req.body as { text?: string; labels?: string[] };
-
-      if (!text || !text.trim()) {
-        res.status(400).json({ error: 'text is required' });
-        return;
-      }
-      if (!Array.isArray(labels)) {
-        res.status(400).json({ error: 'labels must be an array' });
-        return;
-      }
-
-      const existing = await getExampleByText(tenantId, text.trim(), prisma);
-      if (existing) {
-        res.status(409).json({ error: 'Example with this text already exists' });
-        return;
-      }
-
-      const created = await addExample(tenantId, text.trim(), labels, 'manual', prisma);
-      res.json({ ok: true, id: created.id });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples create failed:', err);
-      res.status(500).json({ error: 'Failed to create classifier example' });
-    }
-  });
-
-  // DELETE /api/knowledge/classifier-examples/:id — soft-delete (set active=false)
-  router.delete('/classifier-examples/:id', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { id } = req.params as { id: string };
-
-      const existing = await prisma.classifierExample.findFirst({
-        where: { id, tenantId },
-        select: { id: true },
-      });
-      if (!existing) {
-        res.status(404).json({ error: 'Example not found' });
-        return;
-      }
-
-      await prisma.classifierExample.update({
-        where: { id },
-        data: { active: false },
-      });
-
-      res.json({ ok: true });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples delete failed:', err);
-      res.status(500).json({ error: 'Failed to delete classifier example' });
-    }
-  });
-
-  // PATCH /api/knowledge/classifier-examples/:id — update labels for a DB example
-  router.patch('/classifier-examples/:id', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { id } = req.params as { id: string };
-      const { labels } = req.body as { labels?: string[] };
-
-      if (!Array.isArray(labels)) {
-        res.status(400).json({ error: 'labels must be an array' });
-        return;
-      }
-
-      const existing = await prisma.classifierExample.findFirst({
-        where: { id, tenantId },
-        select: { id: true },
-      });
-      if (!existing) {
-        res.status(404).json({ error: 'Example not found' });
-        return;
-      }
-
-      await prisma.classifierExample.update({
-        where: { id },
-        data: { labels },
-      });
-
-      res.json({ ok: true });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples patch failed:', err);
-      res.status(500).json({ error: 'Failed to update classifier example' });
-    }
-  });
-
-  // GET /api/knowledge/all-examples — all training examples (hardcoded + DB) for visual editor
-  router.get('/all-examples', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-
-      // Hardcoded base examples from classifier-data.ts
-      const baseExamples = TRAINING_EXAMPLES.map((ex, i) => ({
-        id: `base-${i}`,
-        text: ex.text,
-        labels: ex.labels,
-        source: 'base' as const,
-        editable: false,
-        createdAt: null as string | null,
-      }));
-
-      // DB examples (judge, manual, tier2-feedback, etc.)
-      const dbExamples = await prisma.classifierExample.findMany({
-        where: { tenantId, active: true },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, text: true, labels: true, source: true, createdAt: true },
-      });
-
-      const dbMapped = dbExamples.map(ex => ({
-        id: ex.id,
-        text: ex.text,
-        labels: ex.labels as string[],
-        source: (ex.source || 'manual') as string,
-        editable: true,
-        createdAt: ex.createdAt?.toISOString() || null,
-      }));
-
-      res.json({
-        examples: [...baseExamples, ...dbMapped],
-        baseCount: baseExamples.length,
-        dbCount: dbMapped.length,
-      });
-    } catch (err) {
-      console.error('[Knowledge] all-examples query failed:', err);
-      res.status(500).json({ error: 'Failed to fetch all examples' });
-    }
-  });
-
-  // POST /api/knowledge/classifier-reinitialize — force re-embed all examples
-  router.post('/classifier-reinitialize', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      await reinitializeClassifier(tenantId, prisma);
-      const status = getClassifierStatus();
-      res.json({ ok: true, exampleCount: status.exampleCount });
-    } catch (err) {
-      console.error('[Knowledge] classifier-reinitialize failed:', err);
-      res.status(500).json({ error: 'Failed to reinitialize classifier' });
-    }
-  });
-
   // POST /api/knowledge/gap-analysis — T012: classifier gap analysis
   router.post('/gap-analysis', ((req, res) => ctrl.gapAnalysis(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-
-  // POST /api/knowledge/classifier-examples/:id/approve — T014: approve a pending example
-  router.post('/classifier-examples/:id/approve', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { id } = req.params as { id: string };
-
-      const existing = await prisma.classifierExample.findFirst({
-        where: { id, tenantId },
-      });
-      if (!existing) {
-        res.status(404).json({ error: 'Example not found' });
-        return;
-      }
-
-      await prisma.classifierExample.update({
-        where: { id },
-        data: { active: true },
-      });
-
-      // Re-initialize classifier to pick up the newly approved example
-      reinitializeClassifier(tenantId, prisma).catch(err =>
-        console.error('[Knowledge] classifier reinit after approve failed:', err)
-      );
-
-      res.json({ id, active: true });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples approve failed:', err);
-      res.status(500).json({ error: 'Failed to approve classifier example' });
-    }
-  });
-
-  // POST /api/knowledge/classifier-examples/:id/reject — T015: reject and delete a pending example
-  router.post('/classifier-examples/:id/reject', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { id } = req.params as { id: string };
-
-      const existing = await prisma.classifierExample.findFirst({
-        where: { id, tenantId },
-      });
-      if (!existing) {
-        res.status(404).json({ error: 'Example not found' });
-        return;
-      }
-
-      await prisma.classifierExample.delete({ where: { id } });
-
-      res.json({ deleted: true });
-    } catch (err) {
-      console.error('[Knowledge] classifier-examples reject failed:', err);
-      res.status(500).json({ error: 'Failed to reject classifier example' });
-    }
-  });
-
-  // POST /api/knowledge/retrain-classifier — T003: retrain LR classifier from all examples
-  router.post('/retrain-classifier', ((req, res) => ctrl.retrainClassifier(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-
-  // GET /api/knowledge/training-distribution — T018: show training data distribution
-  router.get('/training-distribution', ((req, res) => ctrl.trainingDistribution(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-
-  // POST /api/knowledge/generate-paraphrases — T019: generate paraphrases for under-represented categories
-  router.post('/generate-paraphrases', ((req, res) => ctrl.generateParaphrases(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-
-  // GET /api/classifier/description-matrix — T027/T028: cross-class similarity diagnostic
-  router.get('/description-matrix', ((_req, res) => {
-    const result = getDescriptionMatrix();
-    if (!result) {
-      res.status(503).json({ error: 'Description embeddings not loaded — classifier not initialized or descriptions not available' });
-      return;
-    }
-    res.json({ ...result, timestamp: new Date().toISOString() });
-  }) as RequestHandler);
-
-  // POST /api/knowledge/classify-test — live test: detailed KNN + LR breakdown
-  router.post('/classify-test', (async (req: any, res: any) => {
-    try {
-      const { message } = req.body as { message?: string };
-      if (!message || typeof message !== 'string') {
-        res.status(400).json({ error: 'message is required' });
-        return;
-      }
-      if (!isClassifierInitialized()) await initializeClassifier();
-      const result = await classifyDetailed(message);
-      if (!result) {
-        res.status(503).json({ error: 'Classifier not ready' });
-        return;
-      }
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || 'Classification failed' });
-    }
-  }) as RequestHandler);
-
-  // POST /api/knowledge/batch-classify — T022-T023: batch classify messages
-  router.post('/batch-classify', async (req: any, res) => {
-    try {
-      const { messages, voteThreshold } = req.body as { messages?: string[]; voteThreshold?: number };
-
-      if (!Array.isArray(messages) || messages.length === 0) {
-        res.status(400).json({ error: 'messages must be a non-empty array of strings' });
-        return;
-      }
-
-      if (!isClassifierInitialized()) {
-        await initializeClassifier();
-      }
-
-      const result = await batchClassify(messages, voteThreshold);
-      res.json(result);
-    } catch (err) {
-      console.error('[Knowledge] batch-classify failed:', err);
-      res.status(500).json({ error: 'Batch classification failed' });
-    }
-  });
 
   // POST /api/knowledge/dedup-conversations
   // One-time cleanup: finds reservations with duplicate conversations and removes the empty ones.
@@ -762,6 +478,60 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Dedup] dedup-conversations failed:', err);
       res.status(500).json({ error: 'Dedup failed' });
+    }
+  });
+
+  // GET /api/knowledge/sop-classifications — T021: SOP classification monitoring
+  router.get('/sop-classifications', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const confidenceFilter = req.query.confidence as string | undefined;
+
+      const where: any = {
+        tenantId,
+        ragContext: { path: ['sopToolUsed'], equals: true },
+      };
+
+      const [logs, total] = await Promise.all([
+        prisma.aiApiLog.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: offset,
+          take: limit,
+          select: {
+            id: true,
+            createdAt: true,
+            userContent: true,
+            ragContext: true,
+            conversationId: true,
+          },
+        }),
+        prisma.aiApiLog.count({ where }),
+      ]);
+
+      const classifications = logs
+        .map(log => {
+          const ctx = log.ragContext as any;
+          if (!ctx?.sopCategories) return null;
+          return {
+            id: log.id,
+            timestamp: log.createdAt,
+            guestMessage: log.userContent?.substring(0, 500) || null,
+            categories: ctx.sopCategories as string[],
+            confidence: ctx.sopConfidence as string,
+            reasoning: ctx.sopReasoning as string,
+            conversationId: log.conversationId,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+        .filter(c => !confidenceFilter || c.confidence === confidenceFilter);
+
+      res.json({ classifications, total });
+    } catch (err) {
+      console.error('[Knowledge] sop-classifications failed:', err);
+      res.status(500).json({ error: 'Failed to fetch SOP classifications' });
     }
   });
 

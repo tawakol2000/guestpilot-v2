@@ -805,183 +805,6 @@ export async function apiSeedSops(): Promise<{ ok: boolean; inserted: number }> 
   return apiFetch<{ ok: boolean; inserted: number }>('/api/knowledge/seed-sops', { method: 'POST' })
 }
 
-// ─── Classifier & Judge ───────────────────────────────────────────────────────
-
-export async function apiGetClassifierStatus(): Promise<{
-  initialized: boolean
-  exampleCount: number
-  initDurationMs: number
-  sopChunkCount: number
-  bakedInCount: number
-  classifierType?: 'knn' | 'lr'
-}> {
-  return apiFetch('/api/knowledge/classifier-status')
-}
-
-export async function apiTestClassify(message: string): Promise<{
-  labels: string[]
-  method: string
-  topK: Array<{ index: number; similarity: number; text: string; labels: string[] }>
-  tokensUsed: number
-  topSimilarity: number
-}> {
-  return apiFetch('/api/knowledge/test-classify', {
-    method: 'POST',
-    body: JSON.stringify({ message }),
-  })
-}
-
-export async function apiClassifyDetailed(message: string): Promise<{
-  message: string
-  knn: {
-    topSimilarity: number
-    boostFired: boolean
-    neighbors: Array<{ text: string; labels: string[]; similarity: number }>
-  }
-  lr: {
-    method: string
-    descriptionFeaturesActive: boolean
-    descriptionSimilarities: Array<{ label: string; similarity: number }>
-    topCandidates: Array<{ label: string; confidence: number }>
-    labels: string[]
-    confidence: number
-    tier: string
-  }
-  final: {
-    method: string
-    labels: string[]
-    confidence: number
-    tier: string
-    boostApplied: boolean
-  }
-}> {
-  return apiFetch('/api/knowledge/classify-test', {
-    method: 'POST',
-    body: JSON.stringify({ message }),
-  })
-}
-
-export async function apiGetEvaluationStats(): Promise<{
-  total: number
-  correct: number
-  incorrect: number
-  autoFixed: number
-  accuracyPercent: number
-  totalJudgeCost: number
-  avgJudgeCost: number
-  totalInputTokens: number
-  totalOutputTokens: number
-  avgSimRecent: number | null
-  avgSimPrev: number | null
-  recentSimCount: number
-}> {
-  return apiFetch('/api/knowledge/evaluation-stats')
-}
-
-export async function apiGetClassifierThresholds(): Promise<{
-  judgeThreshold: number
-  autoFixThreshold: number
-  classifierVoteThreshold: number
-  classifierContextualGate: number
-  embeddingProvider: string
-}> {
-  return apiFetch('/api/knowledge/classifier-thresholds')
-}
-
-export async function apiSetClassifierThresholds(data: {
-  judgeThreshold: number
-  autoFixThreshold: number
-  classifierVoteThreshold: number
-  classifierContextualGate: number
-  tier2Threshold?: number
-  embeddingProvider: string
-  tier1Mode?: 'active' | 'ghost' | 'off'
-  tier2Mode?: 'active' | 'ghost' | 'off'
-  tier3Mode?: 'active' | 'ghost' | 'off'
-}): Promise<{ ok: boolean }> {
-  return apiFetch('/api/knowledge/classifier-thresholds', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export interface ClassifierEvaluation {
-  id: string
-  tenantId: string
-  conversationId: string | null
-  guestMessage: string
-  classifierLabels: string[]
-  classifierMethod: string
-  classifierTopSim: number
-  judgeCorrectLabels: string[]
-  retrievalCorrect: boolean
-  judgeConfidence: string
-  judgeReasoning: string
-  autoFixed: boolean
-  createdAt: string
-}
-
-export async function apiGetEvaluations(params?: {
-  limit?: number
-  offset?: number
-  correct?: boolean
-}): Promise<{
-  evaluations: ClassifierEvaluation[]
-  total: number
-  limit: number
-  offset: number
-}> {
-  const qs = new URLSearchParams()
-  if (params?.limit) qs.set('limit', String(params.limit))
-  if (params?.offset) qs.set('offset', String(params.offset))
-  if (params?.correct !== undefined) qs.set('correct', String(params.correct))
-  const qsStr = qs.toString()
-  return apiFetch(`/api/knowledge/evaluations${qsStr ? '?' + qsStr : ''}`)
-}
-
-export interface ClassifierExampleItem {
-  id: string
-  text: string
-  labels: string[]
-  source: string
-  active: boolean
-  createdAt: string
-}
-
-export async function apiGetClassifierExamples(params?: {
-  limit?: number
-  offset?: number
-  source?: string
-}): Promise<{
-  examples: ClassifierExampleItem[]
-  total: number
-}> {
-  const qs = new URLSearchParams()
-  if (params?.limit) qs.set('limit', String(params.limit))
-  if (params?.offset) qs.set('offset', String(params.offset))
-  if (params?.source) qs.set('source', params.source)
-  const qsStr = qs.toString()
-  return apiFetch(`/api/knowledge/classifier-examples${qsStr ? '?' + qsStr : ''}`)
-}
-
-export async function apiAddClassifierExample(data: {
-  text: string
-  labels: string[]
-}): Promise<{ ok: boolean }> {
-  return apiFetch('/api/knowledge/classifier-examples', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function apiDeleteClassifierExample(id: string): Promise<{ ok: boolean }> {
-  return apiFetch(`/api/knowledge/classifier-examples/${id}`, { method: 'DELETE' })
-}
-
-export async function apiReinitializeClassifier(): Promise<{ ok: boolean; exampleCount: number }> {
-  return apiFetch('/api/knowledge/classifier-reinitialize', { method: 'POST' })
-}
-
 // ─── OPUS Audit Reports ─────────────────────────────────────────────────────
 
 export interface OpusReportSummary {
@@ -1047,61 +870,6 @@ export async function apiGenerateSnapshot(): Promise<string> {
   return res.text()
 }
 
-// ─── Gap Analysis & Suggested Examples ────────────────────────────────────────
-
-export interface GapAnalysisResult {
-  emptyLabelMessages: number
-  underrepresentedCategories: Array<{ category: string; count: number }>
-  languageDistribution: Record<string, number>
-  suggestedExamples: number
-  message: string
-}
-
-export async function apiRunGapAnalysis(): Promise<GapAnalysisResult> {
-  return apiFetch('/api/knowledge/gap-analysis', { method: 'POST' })
-}
-
-export async function apiApproveExample(id: string): Promise<{ id: string; active: boolean }> {
-  return apiFetch(`/api/knowledge/classifier-examples/${id}/approve`, { method: 'POST' })
-}
-
-export async function apiRejectExample(id: string): Promise<{ deleted: boolean }> {
-  return apiFetch(`/api/knowledge/classifier-examples/${id}/reject`, { method: 'POST' })
-}
-
-// ─── Batch Classification ─────────────────────────────────────────────────────
-
-export interface BatchClassifyResult {
-  results: Array<{ message: string; labels: string[]; topSimilarity: number; method: string }>
-  threshold: number
-  emptyLabelCount: number
-  totalMessages: number
-}
-
-export async function apiBatchClassify(messages: string[], voteThreshold?: number): Promise<BatchClassifyResult> {
-  return apiFetch('/api/knowledge/batch-classify', {
-    method: 'POST',
-    body: JSON.stringify({ messages, voteThreshold }),
-  })
-}
-
-// ─── LR Classifier Retrain ────────────────────────────────────────────────────
-
-export interface RetrainResult {
-  success: boolean
-  exampleCount: number
-  classes: number
-  crossValAccuracy: number
-  globalThreshold: number
-  trainDurationMs: number
-  message: string
-  error?: string
-}
-
-export async function apiRetrainClassifier(): Promise<RetrainResult> {
-  return apiFetch('/api/knowledge/retrain-classifier', { method: 'POST' })
-}
-
 // ─── Tool Invocations ────────────────────────────────────────────────────────
 
 export interface ToolInvocation {
@@ -1154,15 +922,40 @@ export async function apiSandboxChat(req: SandboxChatRequest): Promise<SandboxCh
   })
 }
 
-// ─── Intent Extractor Prompt ─────────────────────────────────────────────────
+// ── SOP Classification Monitoring ──
 
-export async function apiGetIntentPrompt(): Promise<{ prompt: string }> {
-  return apiFetch<{ prompt: string }>('/api/ai-config/intent-prompt')
+export interface SopClassification {
+  id: string
+  createdAt: string
+  conversationId: string | null
+  categories: string[]
+  confidence: 'high' | 'medium' | 'low'
+  reasoning: string | null
 }
 
-export async function apiUpdateIntentPrompt(prompt: string): Promise<{ ok: boolean; length: number }> {
-  return apiFetch<{ ok: boolean; length: number }>('/api/ai-config/intent-prompt', {
-    method: 'PUT',
-    body: JSON.stringify({ prompt }),
-  })
+export interface SopClassificationsResponse {
+  classifications: SopClassification[]
+  total: number
+  limit: number
+  offset: number
 }
+
+export interface SopStatsResponse {
+  totalClassifications: number
+  byConfidence: { high: number; medium: number; low: number }
+  byCategory: Array<{ category: string; count: number; percentage: number }>
+}
+
+export async function apiGetSopClassifications(params?: { limit?: number; offset?: number; confidence?: string }): Promise<SopClassificationsResponse> {
+  const query = new URLSearchParams()
+  if (params?.limit) query.set('limit', String(params.limit))
+  if (params?.offset) query.set('offset', String(params.offset))
+  if (params?.confidence) query.set('confidence', params.confidence)
+  const url = `/api/knowledge/sop-classifications${query.toString() ? '?' + query.toString() : ''}`
+  return apiFetch<SopClassificationsResponse>(url)
+}
+
+export async function apiGetSopStats(): Promise<SopStatsResponse> {
+  return apiFetch<SopStatsResponse>('/api/knowledge/evaluation-stats')
+}
+

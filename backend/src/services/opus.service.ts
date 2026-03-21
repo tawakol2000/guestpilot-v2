@@ -7,8 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient, MessageRole } from '@prisma/client';
-import { SOP_CONTENT } from './classifier-data';
-import { getClassifierStatus, getClassifierThresholds } from './classifier.service';
+import { SOP_CATEGORIES } from './sop.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -127,19 +126,20 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
     unfired: pendingReplies.filter(p => !p.fired).length,
   };
 
-  // RAG chunk hit frequency from AI logs
-  const chunkHits: Record<string, number> = {};
+  // SOP category hit frequency from AI logs (tool-based classification)
+  const sopHits: Record<string, number> = {};
+  const sopConfidenceCounts = { high: 0, medium: 0, low: 0 };
   for (const log of aiLogs) {
     const ctx = log.ragContext as any;
-    if (ctx?.classifierResult?.labels) {
-      for (const label of ctx.classifierResult.labels) {
-        chunkHits[label] = (chunkHits[label] || 0) + 1;
+    if (ctx?.sopCategories) {
+      for (const cat of ctx.sopCategories) {
+        sopHits[cat] = (sopHits[cat] || 0) + 1;
       }
     }
+    if (ctx?.sopConfidence && ctx.sopConfidence in sopConfidenceCounts) {
+      sopConfidenceCounts[ctx.sopConfidence as keyof typeof sopConfidenceCounts]++;
+    }
   }
-
-  const classifierStatus = getClassifierStatus();
-  const classifierThresholds = getClassifierThresholds();
 
   // Full per-call pipeline details — this is what the Pipeline page shows
   const pipelineDetails = aiLogs.map(log => {
@@ -151,20 +151,12 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
       conversationId: log.conversationId,
       // Input: the guest message(s) that triggered this call
       guestQuery: ctx?.query || '',
-      // Tier 1 — Embedding Classifier
-      tier1: {
-        method: ctx?.classifierMethod || null,
-        labels: ctx?.classifierLabels || [],
-        topSimilarity: ctx?.classifierTopSim ?? null,
-        classifierUsed: ctx?.classifierUsed ?? true,
-      },
-      // Tier 2 — Intent Extractor (Haiku)
-      tier2: ctx?.tier2Output || null,
-      // Tier 3 — Topic State Cache
-      tier3: {
-        reinjected: ctx?.tier3Reinjected ?? false,
-        topicSwitch: ctx?.tier3TopicSwitch ?? false,
-        reinjectedLabels: ctx?.tier3ReinjectedLabels || [],
+      // SOP Tool Classification (get_sop)
+      sopClassification: {
+        categories: ctx?.sopCategories || [],
+        confidence: ctx?.sopConfidence || null,
+        reasoning: ctx?.sopReasoning || null,
+        durationMs: ctx?.sopClassificationDurationMs ?? null,
       },
       // RAG chunks retrieved
       retrievedChunks: (ctx?.chunks || []).map((c: any) => ({
@@ -192,7 +184,7 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
     aiLogStats,
     evalStats,
     pendingStats,
-    chunkHits,
+    sopHits,
     // Full pipeline trace for every AI call (what the Pipeline page shows)
     pipelineDetails,
     // Classifier evaluations (judge decisions)
@@ -229,8 +221,6 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
       debounceDelayMs: config.debounceDelayMs,
       judgeThreshold: config.judgeThreshold,
       autoFixThreshold: config.autoFixThreshold,
-      classifierVoteThreshold: config.classifierVoteThreshold,
-      classifierContextualGate: config.classifierContextualGate,
       workingHoursEnabled: config.workingHoursEnabled,
       workingHoursStart: config.workingHoursStart,
       workingHoursEnd: config.workingHoursEnd,
@@ -238,13 +228,11 @@ export async function collectDailyData(tenantId: string, prisma: PrismaClient) {
       ragEnabled: config.ragEnabled,
       memorySummaryEnabled: config.memorySummaryEnabled,
     } : null,
-    classifierStatus: {
-      exampleCount: classifierStatus.exampleCount,
-      sopChunkCount: classifierStatus.sopChunkCount,
-      voteThreshold: classifierThresholds.voteThreshold,
-      contextualGate: classifierThresholds.contextualGate,
+    sopClassificationStats: {
+      totalClassified: aiLogs.filter(l => (l.ragContext as any)?.sopToolUsed).length,
+      confidenceDistribution: sopConfidenceCounts,
     },
-    activeSops: Object.keys(SOP_CONTENT),
+    activeSops: SOP_CATEGORIES.filter(c => c !== 'none' && c !== 'escalate'),
   };
 }
 
@@ -254,43 +242,31 @@ const OPUS_SYSTEM_PROMPT = `You are the Chief AI Systems Auditor for GuestPilot,
 
 ## Architecture Overview
 
-GuestPilot uses a multi-tier classification and response pipeline:
+GuestPilot uses a tool-based SOP classification and response pipeline:
 
 ### Message Flow
 1. Guest sends message via Airbnb/Booking.com/WhatsApp → Hostaway webhook → GuestPilot backend
 2. Message saved to DB → debounce timer started (waits for more messages)
-3. After debounce: Tier 1-3 classification → RAG retrieval → AI response generation → send via Hostaway API
+3. After debounce: get_sop tool classification → RAG retrieval → AI response generation → send via Hostaway API
 
-### Tier 1 — LR Embedding Classifier
-- 300+ training examples, each labeled with SOP categories
-- Embeds the guest message and applies LR sigmoid model with three-tier confidence routing (KNN diagnostic runs alongside)
-- Weighted voting: label needs >voteThreshold (default 0.30) of weighted vote AND ≥2/3 neighbor agreement
-- Contextual gate: if best match is "contextual" above contextualGate (default 0.85), skip SOP retrieval and re-inject last topic (Tier 3)
-- Returns: labels[], LR confidence (primary), topSimilarity (KNN diagnostic), method
-
-### Tier 2 — Intent Extractor (Claude Haiku)
-- Fires when Tier 1 LR confidence is low (below judgeThreshold 0.75) AND Tier 3 doesn't re-inject
-- Reads last 3 guest + 2 host messages for context
-- Returns: TOPIC, STATUS, URGENCY, SOPS[]
-
-### Tier 3 — Topic State Cache
-- Tracks the last SOP topic per conversation
-- If Tier 1 returns "contextual" (short follow-up like "yes", "ok"), re-injects the previous topic's SOPs
-- Prevents topic loss during multi-turn conversations
+### SOP Classification (get_sop tool)
+- Claude is given a get_sop tool definition with 20 operational SOP categories + 'none' + 'escalate'
+- On each guest message, the AI calls get_sop with the relevant categories, a confidence level (high/medium/low), and reasoning
+- Replaces the previous multi-tier embedding classifier (Tier 1 LR + Tier 2 Intent Extractor + Tier 3 Topic Cache)
+- Confidence levels: high = clear match, medium = reasonable guess, low = uncertain
 
 ### Self-Improvement Judge
 - Runs after each AI response (fire-and-forget)
-- Skipped if Tier 1 LR confidence ≥ judgeThreshold (0.75) or majority neighbor support
-- If Tier 2 fired: validates Tier 2's labels have ≥0.35 similarity to existing examples before auto-fixing
-- Otherwise: calls Claude Haiku to judge if classification was correct
-- If incorrect AND topSim < autoFixThreshold (0.70): auto-adds the message as a new training example
+- Skipped when SOP classification confidence is 'high' (in sampling mode)
+- Validates the tool classification was correct
+- If incorrect: auto-adds the message as a new training example
 - Rate limited to 10 auto-fixes per hour
 
 ### SOP System
-- Each classified label maps to an SOP (Standard Operating Procedure) text
+- Each classified category maps to an SOP (Standard Operating Procedure) text
 - SOPs contain instructions for the AI on how to handle specific scenarios
 - 4 SOPs are "baked in" (always in system prompt): scheduling, house rules, escalation-immediate, escalation-scheduled
-- Remaining SOPs retrieved dynamically based on classification
+- Remaining SOPs retrieved dynamically based on get_sop tool output
 
 ### AI Response
 - Claude Haiku generates the response with: system prompt + SOP context + property info + conversation history
@@ -311,10 +287,10 @@ Analyze the past 24 hours of system data and produce a comprehensive audit repor
 Guest/AI/host message counts, AI response rate (AI messages / guest messages), channel breakdown.
 
 ## 3. Per-Message Pipeline Review
-For EACH AI call in the pipeline trace: was the classification correct? Did the right SOP get retrieved? Was the AI response appropriate? Flag specific calls where the pipeline failed. Quote the guest message and AI response.
+For EACH AI call in the pipeline trace: was the get_sop classification correct? Did the right SOP categories get selected? Was the AI response appropriate? Flag specific calls where the pipeline failed. Quote the guest message and AI response.
 
 ## 4. Classification Accuracy
-Tier 1 accuracy rate, average similarity scores, Tier 2 fire rate, judge intervention rate. Flag any patterns in misclassifications.
+SOP tool classification accuracy, confidence distribution (high/medium/low), judge intervention rate. Flag any patterns in misclassifications.
 
 ## 5. Auto-Fix Review
 Review EACH auto-fixed example individually. For each: was the correction correct? Is the text-to-label mapping sensible? Flag any that should be deactivated.
@@ -325,8 +301,8 @@ Total API costs, cost per guest message, breakdown by agent (Omar, Judge, Intent
 ## 7. SOP Coverage
 Which SOPs fired most? Any SOPs that never fired? Any messages that fell through without a good SOP match?
 
-## 8. Threshold Recommendations
-Based on the data: should judgeThreshold, autoFixThreshold, voteThreshold, or contextualGate be adjusted? Explain why with data.
+## 8. Configuration Recommendations
+Based on the data: should judgeThreshold or autoFixThreshold be adjusted? Are any SOP categories being over- or under-selected? Explain why with data.
 
 ## 9. System Health Score
 Rate 1-10 with justification. Consider: accuracy, cost efficiency, response coverage, error rate, self-improvement quality.
@@ -350,9 +326,8 @@ export async function generateOpusReport(tenantId: string, reportId: string, pri
       let s = `### Call #${i + 1} — ${p.agent} @ ${p.time}\n`;
       s += `**Guest message:** "${p.guestQuery}"\n`;
       s += `**Conversation:** ${p.conversationId}\n\n`;
-      s += `**Tier 1 (Classifier):** method=${p.tier1.method}, labels=[${p.tier1.labels.join(', ')}], topSim=${p.tier1.topSimilarity?.toFixed(3) ?? 'N/A'}\n`;
-      if (p.tier2) s += `**Tier 2 (Haiku):** ${JSON.stringify(p.tier2)}\n`;
-      if (p.tier3.reinjected) s += `**Tier 3 (Topic Cache):** reinjected=[${p.tier3.reinjectedLabels.join(', ')}]\n`;
+      s += `**SOP Classification (get_sop tool):** categories=[${p.sopClassification.categories.join(', ')}], confidence=${p.sopClassification.confidence ?? 'N/A'}, durationMs=${p.sopClassification.durationMs ?? 'N/A'}\n`;
+      if (p.sopClassification.reasoning) s += `**Reasoning:** ${p.sopClassification.reasoning}\n`;
       if (p.retrievedChunks.length > 0) {
         s += `**Retrieved SOPs (${p.retrievedChunks.length}):** ${p.retrievedChunks.map((c: any) => `${c.category} (${c.similarity?.toFixed(2)})`).join(', ')}\n`;
       }
@@ -378,15 +353,15 @@ ${JSON.stringify(rawData.aiLogStats, null, 2)}
 ### Classifier Evaluation Statistics
 ${JSON.stringify(rawData.evalStats, null, 2)}
 
-### SOP Hit Frequency
-${JSON.stringify(rawData.chunkHits, null, 2)}
+### SOP Category Hit Frequency (tool-based classification)
+${JSON.stringify(rawData.sopHits, null, 2)}
 
 ### Pending AI Replies
 ${JSON.stringify(rawData.pendingStats, null, 2)}
 
 ## Full Pipeline Trace — Every AI Call (${rawData.pipelineDetails.length} total)
 
-Each entry shows: guest message → Tier 1/2/3 classification → retrieved SOPs → AI response.
+Each entry shows: guest message → get_sop tool classification → retrieved SOPs → AI response.
 
 ${pipelineSection}
 
@@ -405,8 +380,8 @@ ${JSON.stringify(rawData.aiErrors, null, 2)}
 ## Current Settings
 ${JSON.stringify(rawData.settings, null, 2)}
 
-## Classifier Status
-${JSON.stringify(rawData.classifierStatus, null, 2)}
+## SOP Classification Stats (tool-based)
+${JSON.stringify(rawData.sopClassificationStats, null, 2)}
 
 ## Active SOPs (${rawData.activeSops.length})
 ${rawData.activeSops.join(', ')}`;

@@ -17,9 +17,6 @@ import type { ContentBlock } from '../services/ai.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
-import { getIntentPrompt, reloadIntentPrompt } from '../services/intent-extractor.service';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -182,33 +179,6 @@ export function makeAiConfigController(prisma: PrismaClient) {
         res.json(updated);
       } catch (err) {
         console.error('[AiConfig] revertVersion error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    },
-
-    // ─── Intent Prompt — view / edit the Tier 2 intent extractor prompt ────────
-    async getIntentPrompt(_req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        res.json({ prompt: getIntentPrompt() });
-      } catch (err) {
-        console.error('[AiConfig] getIntentPrompt error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-      }
-    },
-
-    async updateIntentPrompt(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const { prompt } = req.body;
-        if (typeof prompt !== 'string') {
-          res.status(400).json({ error: 'prompt (string) is required' });
-          return;
-        }
-        const promptPath = path.join(__dirname, '../../config/intent_extractor_prompt.md');
-        fs.writeFileSync(promptPath, prompt, 'utf-8');
-        reloadIntentPrompt();
-        res.json({ ok: true, length: prompt.length });
-      } catch (err) {
-        console.error('[AiConfig] updateIntentPrompt error:', err);
         res.status(500).json({ error: 'Internal server error' });
       }
     },

@@ -1,14 +1,8 @@
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { execFile } from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { AuthenticatedRequest } from '../types';
 import { appendLearnedAnswer } from '../services/rag.service';
-import { extractIntent } from '../services/intent-extractor.service';
-import { reinitializeClassifier, loadLrWeightsMetadata } from '../services/classifier.service';
-import { TRAINING_EXAMPLES } from '../services/classifier-data';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -250,175 +244,14 @@ export function makeKnowledgeController(prisma: PrismaClient) {
           .map(([category, count]) => ({ category, count }))
           .sort((a, b) => a.count - b.count);
 
-        // Step 4: Get existing example texts for dedup
-        const existingTexts = new Set(
-          (await prisma.classifierExample.findMany({
-            where: { tenantId },
-            select: { text: true },
-          })).map(e => e.text)
-        );
-
-        // Step 5: For each empty-label message, call intent extractor and save as pending example
-        let suggestedCount = 0;
-        for (const eval_ of emptyLabelEvals) {
-          const msg = eval_.guestMessage.trim();
-          if (!msg || existingTexts.has(msg)) continue;
-
-          // Call intent extractor with message formatted as a single guest message
-          const intentResult = await extractIntent(
-            [{ role: 'guest', content: msg }],
-            tenantId,
-            'gap-analysis'
-          );
-
-          const labels = intentResult?.sops ?? [];
-          if (labels.length === 0) continue;
-
-          // Save as ClassifierExample with active=false (pending approval)
-          try {
-            await prisma.classifierExample.create({
-              data: {
-                tenantId,
-                text: msg,
-                labels,
-                source: 'gap-analysis',
-                active: false,
-              },
-            });
-            existingTexts.add(msg); // prevent duplicates within this run
-            suggestedCount++;
-          } catch (err: any) {
-            // Skip unique constraint violations (text already exists)
-            if (err?.code === 'P2002') continue;
-            throw err;
-          }
-        }
-
         res.json({
           emptyLabelMessages: emptyLabelEvals.length,
           underrepresentedCategories,
           languageDistribution: langDist,
-          suggestedExamples: suggestedCount,
-          message: `Generated ${suggestedCount} suggested examples. Review in classifier examples UI.`,
         });
       } catch (err) {
         console.error('[Knowledge] gapAnalysis error:', err);
         res.status(500).json({ error: 'Failed to run gap analysis' });
-      }
-    },
-
-    async retrainClassifier(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const { tenantId } = req;
-        const includeDescriptions = req.body?.includeDescriptions !== false; // opt-out via body
-
-        // 1. Fetch all active ClassifierExample from DB (global — no tenantId filter)
-        const dbExamples = await prisma.classifierExample.findMany({
-          where: { active: true },
-          select: { text: true, labels: true },
-        });
-
-        // 2. Merge hardcoded base examples + DB examples (deduplicated by text)
-        const baseExamples = TRAINING_EXAMPLES.map(ex => ({
-          text: ex.text,
-          labels: ex.labels,
-        }));
-        const baseTexts = new Set(baseExamples.map(e => e.text));
-        const newExamples = dbExamples
-          .map(ex => ({ text: ex.text, labels: ex.labels as string[] }))
-          .filter(e => !baseTexts.has(e.text));
-        const mergedExamples = [...baseExamples, ...newExamples];
-
-        // 3. Get Cohere API key
-        const cohereApiKey = process.env.COHERE_API_KEY;
-        if (!cohereApiKey) {
-          res.status(400).json({ error: 'COHERE_API_KEY not configured — required for LR training' });
-          return;
-        }
-
-        // 4. Call the Python training script using execFile (safe from injection)
-        const scriptPath = path.join(__dirname, '../../scripts/train_classifier.py');
-        const outputPath = path.join(__dirname, '../config/classifier-weights.json');
-
-        const summary = await new Promise<any>((resolve, reject) => {
-          const child = execFile('python3', [scriptPath, '--output', outputPath], {
-            timeout: 600000, // 10 min max — LOO-CV with 363+ examples is CPU-intensive
-          }, (error, stdout, stderr) => {
-            if (error) {
-              console.error('[retrainClassifier] Script error:', error.message);
-              console.error('[retrainClassifier] stderr:', stderr);
-              reject(new Error(`Training script failed: ${error.message}\n${stderr}`));
-              return;
-            }
-
-            if (stderr) {
-              console.log('[retrainClassifier] Progress:', stderr);
-            }
-
-            try {
-              const result = JSON.parse(stdout);
-              resolve(result);
-            } catch (parseErr) {
-              reject(new Error(`Failed to parse training output: ${stdout}`));
-            }
-          });
-
-          // T017: Load SOP descriptions for description-enhanced training (opt-out via includeDescriptions=false)
-          let descriptions: Record<string, { en: string[]; ar: string[] }> | undefined;
-          if (includeDescriptions) {
-            try {
-              const descPath = path.join(__dirname, '../config/sop_descriptions.json');
-              if (fs.existsSync(descPath)) {
-                const descData = JSON.parse(fs.readFileSync(descPath, 'utf-8'));
-                if (descData.categories) {
-                  descriptions = {};
-                  for (const [cat, data] of Object.entries(descData.categories as Record<string, any>)) {
-                    descriptions[cat] = {
-                      en: data.descriptions?.en || [],
-                      ar: data.descriptions?.ar || [],
-                    };
-                  }
-                }
-              }
-            } catch (descErr) {
-              console.warn('[retrainClassifier] Could not load SOP descriptions (non-fatal):', descErr);
-            }
-          } else {
-            console.log('[retrainClassifier] Description features disabled — training with 1024-dim only');
-          }
-
-          // Write input to stdin
-          child.stdin?.write(JSON.stringify({ examples: mergedExamples, cohereApiKey, descriptions }));
-          child.stdin?.end();
-        });
-
-        // 5. Reload LR weights metadata
-        loadLrWeightsMetadata();
-
-        // 5b. Persist weights to DB (survives container restarts)
-        try {
-          const weightsJson = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
-          await prisma.classifierWeights.create({
-            data: {
-              tenantId,
-              weights: weightsJson,
-              accuracy: summary.crossValAccuracy || null,
-              classes: summary.classes || 0,
-              examples: summary.exampleCount || 0,
-            },
-          });
-          console.log(`[retrainClassifier] Weights persisted to DB (accuracy: ${summary.crossValAccuracy}, classes: ${summary.classes})`);
-        } catch (dbErr) {
-          console.warn('[retrainClassifier] Failed to persist weights to DB (non-fatal):', dbErr);
-        }
-
-        // 6. Trigger atomic swap reinit of the LR classifier
-        await reinitializeClassifier(tenantId, prisma);
-
-        res.json(summary);
-      } catch (err: any) {
-        console.error('[Knowledge] retrainClassifier error:', err);
-        res.status(500).json({ error: err.message || 'Failed to retrain classifier' });
       }
     },
 
@@ -493,11 +326,6 @@ export function makeKnowledgeController(prisma: PrismaClient) {
                 },
               });
               exampleCreated = true;
-
-              // Trigger classifier reinit in the background
-              reinitializeClassifier(tenantId, prisma).catch(err =>
-                console.error('[Rating] Classifier reinit after operator correction failed:', err)
-              );
               console.log(`[Rating] Operator correction: "${guestText.substring(0, 60)}..." -> [${correction.join(', ')}]`);
             } catch (err: any) {
               console.error('[Rating] Failed to create operator-correction example:', err);
@@ -542,11 +370,6 @@ export function makeKnowledgeController(prisma: PrismaClient) {
                   },
                 });
                 exampleCreated = true;
-
-                // Trigger classifier reinit in the background
-                reinitializeClassifier(tenantId, prisma).catch(err =>
-                  console.error('[Rating] Classifier reinit after operator reinforcement failed:', err)
-                );
                 console.log(`[Rating] Operator reinforcement (LR confidence=${classifierConfidence.toFixed(3)}): "${guestText.substring(0, 60)}..." -> [${classifierLabels.join(', ')}]`);
               }
             }
@@ -562,150 +385,5 @@ export function makeKnowledgeController(prisma: PrismaClient) {
       }
     },
 
-    // T018: Training data distribution + rebalancing
-    async trainingDistribution(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const dbExamples = await prisma.classifierExample.findMany({
-          where: { active: true },
-          select: { text: true, labels: true },
-        });
-        const baseExamples = TRAINING_EXAMPLES.map(ex => ({ text: ex.text, labels: ex.labels }));
-        const baseTexts = new Set(baseExamples.map(e => e.text));
-        const newExamples = dbExamples
-          .map(ex => ({ text: ex.text, labels: ex.labels as string[] }))
-          .filter(e => !baseTexts.has(e.text));
-        const allExamples = [...baseExamples, ...newExamples];
-
-        const counts: Record<string, number> = {};
-        for (const ex of allExamples) {
-          for (const label of ex.labels) {
-            counts[label] = (counts[label] || 0) + 1;
-          }
-        }
-
-        const distribution = Object.entries(counts)
-          .sort((a, b) => b[1] - a[1])
-          .map(([label, count]) => ({
-            label,
-            count,
-            status: count > 25 ? 'over' : count < 10 ? 'under' : 'ok',
-          }));
-
-        res.json({
-          totalExamples: allExamples.length,
-          baseExamples: baseExamples.length,
-          dbExamples: newExamples.length,
-          distribution,
-          targetRange: { min: 10, max: 25 },
-        });
-      } catch (err: any) {
-        console.error('[Knowledge] trainingDistribution error:', err);
-        res.status(500).json({ error: err.message || 'Failed to compute distribution' });
-      }
-    },
-
-    // T019: Generate paraphrases for under-represented categories
-    async generateParaphrases(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const { tenantId } = req;
-        const { label, count = 5, language = 'both' } = req.body as {
-          label: string;
-          count?: number;
-          language?: 'en' | 'ar' | 'both';
-        };
-        if (!label) {
-          res.status(400).json({ error: 'label is required' });
-          return;
-        }
-
-        // Get existing examples for this label
-        const dbExamples = await prisma.classifierExample.findMany({
-          where: { active: true, labels: { has: label } },
-          select: { text: true },
-        });
-        const baseExamples = TRAINING_EXAMPLES
-          .filter(ex => ex.labels.includes(label))
-          .map(ex => ex.text);
-        const allTexts = [...new Set([...baseExamples, ...dbExamples.map(e => e.text)])];
-
-        if (allTexts.length === 0) {
-          res.status(400).json({ error: `No existing examples found for label "${label}"` });
-          return;
-        }
-
-        const targetCount = Math.min(count, 20); // cap at 20 per call
-        const languageInstructions = language === 'ar'
-          ? 'Generate ONLY Arabic paraphrases.'
-          : language === 'en'
-          ? 'Generate ONLY English paraphrases.'
-          : `Generate a mix: roughly half English, half Arabic. Arabic examples should be natural guest messages, not literal translations.`;
-
-        const response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2000,
-          messages: [{
-            role: 'user',
-            content: `You are helping generate training data for an SOP classifier in a serviced apartment guest messaging system.
-
-Category: ${label}
-Existing examples:
-${allTexts.slice(0, 15).map((t, i) => `${i + 1}. ${t}`).join('\n')}
-
-Generate ${targetCount} NEW, diverse paraphrases that a real guest might send. Each should be a single guest message that clearly belongs to the "${label}" category.
-
-${languageInstructions}
-
-Rules:
-- Vary tone: formal, casual, urgent, polite
-- Vary length: some short (2-5 words), some medium (5-15 words)
-- Do NOT duplicate any existing example
-- Output JSON array of strings only, no explanation
-
-Example output: ["Can I get more towels?", "هل يمكنني الحصول على وسائد إضافية؟"]`,
-          }],
-        });
-
-        const text = response.content[0].type === 'text' ? response.content[0].text : '';
-        let paraphrases: string[];
-        try {
-          // Extract JSON array from response (handle markdown code blocks)
-          const jsonMatch = text.match(/\[[\s\S]*\]/);
-          paraphrases = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-        } catch {
-          res.status(500).json({ error: 'Failed to parse AI response', raw: text });
-          return;
-        }
-
-        // Insert into DB as new classifier examples
-        let inserted = 0;
-        for (const para of paraphrases) {
-          if (!para || typeof para !== 'string' || para.trim().length < 2) continue;
-          try {
-            await prisma.classifierExample.create({
-              data: {
-                tenantId,
-                text: para.trim(),
-                labels: [label],
-                source: 'ai-paraphrase',
-                active: true,
-              },
-            });
-            inserted++;
-          } catch {
-            // Skip duplicates (unique constraint on tenantId+text)
-          }
-        }
-
-        res.json({
-          label,
-          generated: paraphrases.length,
-          inserted,
-          paraphrases,
-        });
-      } catch (err: any) {
-        console.error('[Knowledge] generateParaphrases error:', err);
-        res.status(500).json({ error: err.message || 'Failed to generate paraphrases' });
-      }
-    },
   };
 }
