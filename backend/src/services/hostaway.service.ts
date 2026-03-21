@@ -100,6 +100,47 @@ export async function listAvailableListings(
   return res.data;
 }
 
+// ─── Calendar & Pricing ──────────────────────────────────────────────────────
+
+export async function getListingCalendar(
+  accountId: string,
+  apiKey: string,
+  listingId: string | number,
+  startDate: string,
+  endDate: string
+): Promise<{ result: any[] }> {
+  const client = await getClient(accountId, apiKey);
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/listings/${listingId}/calendar?startDate=${startDate}&endDate=${endDate}&includeResources=1`)
+  );
+  return res.data;
+}
+
+export async function calculateReservationPrice(
+  accountId: string,
+  apiKey: string,
+  listingId: string | number,
+  arrivalDate: string,
+  departureDate: string,
+  numberOfGuests: number
+): Promise<{ result: any } | null> {
+  try {
+    const client = await getClient(accountId, apiKey);
+    const res = await retryWithBackoff(() =>
+      client.post('/v1/reservations/calculatePrice', {
+        listingMapId: Number(listingId),
+        arrivalDate,
+        departureDate,
+        numberOfGuests,
+      })
+    );
+    return res.data;
+  } catch (err) {
+    console.error('[Hostaway] calculateReservationPrice failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 // ─── Reservations ─────────────────────────────────────────────────────────────
 
 export async function listReservations(

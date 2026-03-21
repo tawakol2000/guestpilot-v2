@@ -14,6 +14,7 @@ import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
+import { checkExtendAvailability } from './extend-stay.service';
 import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from './rag.service';
 import { getSopContent } from './classifier.service';
 import { evaluateAndImprove } from './judge.service';
@@ -510,6 +511,31 @@ Each request includes these sections:
 - Refund or discount requests — never authorize, always escalate
 - Pricing inquiries beyond what's in SOPs
 - Any question you don't have the answer to
+
+---
+
+## EXTEND STAY TOOL
+
+You have access to a \`check_extend_availability\` tool that checks if the property is available for extended/modified dates and calculates the price.
+
+**WHEN to use it:**
+- Guest asks to extend their stay ("Can I stay 2 more nights?", "Is the apartment available until Sunday?")
+- Guest asks to shorten their stay or leave early ("Can I check out a day early?")
+- Guest asks to shift dates ("Can I arrive Thursday instead of Wednesday?")
+- Guest asks about pricing for extra nights ("How much would 3 more nights cost?")
+
+**WHEN NOT to use it:**
+- Guest is asking about something unrelated (WiFi, check-in time, amenities)
+- Guest hasn't specified dates — ask them first before calling the tool
+
+**HOW to present results:**
+- Always include the price from the tool result (total_additional_cost) in your message
+- Always include the channel_instructions from the tool result — this tells the guest exactly how to proceed based on their booking channel
+- If partially available, tell the guest the maximum extension and the date of the next booking
+- If price is null, say you'll check pricing with the team and escalate
+
+**Example response:**
+{"guest_message":"Great news! The apartment is available until March 27. The 2 extra nights would be approximately $300. To extend, please submit an alteration request through Airbnb and we'll approve it right away.","escalation":{"title":"stay-extension-request","note":"Guest [Name] requesting extension from Mar 25 to Mar 27 (2 extra nights, ~$300). Channel: Airbnb. Guest instructed to submit alteration request.","urgency":"scheduled"}}
 
 ---
 
@@ -1693,7 +1719,9 @@ export async function generateAndSendAiReply(
       // Text-only branch
       const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
 
-      // ─── Tool use: property search tool for screening agent (INQUIRY only) ───
+      // ─── Tool use: per-agent tools ───
+      // Screening agent (INQUIRY): property search tool
+      // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
       const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
         name: 'search_available_properties',
         description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
@@ -1706,9 +1734,30 @@ export async function generateAndSendAiReply(
           },
           required: ['amenities', 'reason'],
         },
-      }] : undefined;
+      }] : [{
+        name: 'check_extend_availability',
+        description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
+            new_checkin: { type: 'string', description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+            reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
+          },
+          required: ['new_checkout', 'reason'],
+        },
+      }];
 
-      const toolHandlersForCall: Map<string, ToolHandler> | undefined = isInquiry ? new Map([
+      // Look up hostawayListingId for extend-stay tool
+      let hostawayListingId = '';
+      if (!isInquiry && context.propertyId) {
+        try {
+          const prop = await prisma.property.findUnique({ where: { id: context.propertyId }, select: { hostawayListingId: true } });
+          hostawayListingId = prop?.hostawayListingId || '';
+        } catch { /* fallback: empty */ }
+      }
+
+      const toolHandlersForCall: Map<string, ToolHandler> = isInquiry ? new Map([
         ['search_available_properties', async (input: unknown) => {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
           const currentAddress = context.listing?.address || context.customKnowledgeBase?.address as string || '';
@@ -1725,7 +1774,19 @@ export async function generateAndSendAiReply(
             currentCity,
           });
         }],
-      ]) : undefined;
+      ]) : new Map([
+        ['check_extend_availability', async (input: unknown) => {
+          return checkExtendAvailability(input, {
+            listingId: hostawayListingId,
+            currentCheckIn: context.checkIn,
+            currentCheckOut: context.checkOut,
+            channel: context.channel || 'DIRECT',
+            numberOfGuests: context.guestCount,
+            hostawayAccountId: context.hostawayAccountId,
+            hostawayApiKey: context.hostawayApiKey,
+          });
+        }],
+      ]);
 
       const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
         model: effectiveModel,
