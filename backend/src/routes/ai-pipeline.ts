@@ -1,9 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
-import { getTopicCacheStats } from '../services/topic-state.service';
-import { getTier2Stats } from '../services/intent-extractor.service';
-import { getClassifierStatus } from '../services/classifier.service';
 import { generatePipelineSnapshot } from '../services/snapshot.service';
 
 // In-memory cache for /accuracy endpoint (60s TTL)
@@ -287,11 +284,6 @@ export function aiPipelineRouter(prisma: PrismaClient) {
         prisma.classifierEvaluation.count({ where: { tenantId, createdAt: { gte: since }, autoFixed: true } }),
       ]);
 
-      // Get Tier 2 and topic cache stats from in-memory services
-      const tier2Stats = getTier2Stats();
-      const cacheStats = getTopicCacheStats();
-      const classifierStatus = getClassifierStatus();
-
       const total = recentLogs.length;
 
       res.json({
@@ -316,9 +308,6 @@ export function aiPipelineRouter(prisma: PrismaClient) {
           autoFixed: evalAutoFixed,
         },
         escalationSignals: escalationSignalCount,
-        tier2Service: tier2Stats,
-        topicCache: cacheStats,
-        classifier: classifierStatus,
       });
     } catch (err) {
       console.error('[Pipeline] Stats query failed:', err);

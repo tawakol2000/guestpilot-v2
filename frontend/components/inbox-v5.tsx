@@ -76,13 +76,13 @@ import { TasksV5 } from '@/components/tasks-v5'
 import { SettingsV5 } from '@/components/settings-v5'
 import { ConfigureAiV5 } from '@/components/configure-ai-v5'
 import { AiLogsV5 } from '@/components/ai-logs-v5'
-import { ClassifierV5 } from '@/components/classifier-v5'
 import AiPipelineV5 from '@/components/ai-pipeline-v5'
 import SopEditorV5 from '@/components/sop-editor-v5'
-import ExamplesEditorV5 from '@/components/examples-editor-v5'
+// ExamplesEditorV5 removed — classifier training data no longer managed (013-sop-tool-routing)
 import { OpusV5 } from '@/components/opus-v5'
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
+import SopMonitorV5 from '@/components/sop-monitor-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'tools' | 'sandbox' | 'opus'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'opus' | 'sop-monitor'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1365,7 +1365,7 @@ export default function InboxV5() {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
         'overview','inbox','analytics','tasks','settings','configure',
-        'classifier','logs','pipeline','sops','examples','tools','sandbox','opus',
+        'logs','pipeline','sops','tools','sandbox','opus',
       ].includes(saved)) return saved as NavTab
     }
     return 'inbox'
@@ -2282,14 +2282,14 @@ export default function InboxV5() {
             { id: 'tasks', label: 'Tasks' },
             { id: 'settings', label: 'Settings' },
             { id: 'configure', label: 'Configure AI' },
-            { id: 'classifier', label: 'Classifier' },
             { id: 'logs', label: 'AI Logs' },
             { id: 'pipeline', label: 'Pipeline' },
             { id: 'sops', label: 'SOPs' },
-            { id: 'examples', label: 'Examples' },
+            /* Examples tab removed — 013-sop-tool-routing */
             { id: 'tools', label: 'Tools' },
             { id: 'sandbox', label: 'Sandbox' },
             { id: 'opus', label: 'OPUS' },
+            { id: 'sop-monitor', label: 'SOP Monitor' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
           <button
@@ -4028,13 +4028,6 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'classifier' && (
-        <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <ClassifierV5 />
-        </div>
-        </ErrorBoundary>
-      )}
       {navTab === 'logs' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -4056,13 +4049,7 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'examples' && (
-        <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <ExamplesEditorV5 />
-        </div>
-        </ErrorBoundary>
-      )}
+      {/* Examples tab removed — classifier training data no longer managed (013-sop-tool-routing) */}
       {navTab === 'tools' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -4081,6 +4068,13 @@ export default function InboxV5() {
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
           <OpusV5 />
+        </div>
+        </ErrorBoundary>
+      )}
+      {navTab === 'sop-monitor' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <SopMonitorV5 />
         </div>
         </ErrorBoundary>
       )}

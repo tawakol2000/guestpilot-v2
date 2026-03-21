@@ -688,24 +688,33 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
           {truncate(p.query || '(no query)', 60)}
         </span>
 
-        {/* Tier badge */}
-        <TierBadge tier={p.tier} />
-
-        {/* LR confidence + tier badge */}
-        {p.classifierConfidence != null && (
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              fontFamily: T.font.mono,
-              color: p.classifierConfidence >= 0.75 ? T.status.green : p.classifierConfidence >= 0.5 ? T.status.amber : T.status.red,
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {(p.classifierConfidence * 100).toFixed(0)}%
+        {/* SOP category badges (collapsed row) */}
+        {(() => {
+          const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : []
+          return labels.slice(0, 2).map((label: string, i: number) => {
+            const sc = sopBadgeColor(label)
+            return (
+              <span key={i} style={{
+                background: sc.bg, color: sc.fg,
+                fontSize: 9, fontWeight: 600, fontFamily: T.font.sans,
+                padding: '2px 6px', borderRadius: 999,
+                border: `1px solid ${sc.fg}20`,
+                flexShrink: 0, whiteSpace: 'nowrap',
+              }}>
+                {label}
+              </span>
+            )
+          })
+        })()}
+        {p.classifierLabels?.length > 2 && (
+          <span style={{
+            fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
+            color: T.text.tertiary, flexShrink: 0,
+          }}>
+            +{p.classifierLabels.length - 2}
           </span>
         )}
+        {/* SOP confidence badge */}
         {p.confidenceTier && (
           <span
             style={{
@@ -722,43 +731,6 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             }}
           >
             {p.confidenceTier}
-          </span>
-        )}
-        {p.llmOverride && (
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 600,
-              fontFamily: T.font.sans,
-              background: '#FFF7ED',
-              color: '#C2410C',
-              padding: '2px 6px',
-              borderRadius: 999,
-              border: '1px solid rgba(194,65,12,0.2)',
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            LLM Override
-          </span>
-        )}
-        {/* T026: Boost badge in collapsed row */}
-        {p.boostApplied && (
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 600,
-              fontFamily: T.font.sans,
-              background: '#DCFCE7',
-              color: '#15803D',
-              padding: '2px 6px',
-              borderRadius: 999,
-              border: '1px solid rgba(21,128,61,0.2)',
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Boosted
           </span>
         )}
         {/* Tool usage badge in collapsed row */}
@@ -873,298 +845,20 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             </div>
           </TimelineStep>
 
-          {/* Step 2: Tier 1 -- LR Sigmoid Classifier */}
+          {/* Step 2: SOP Classification */}
           <TimelineStep
             stepNum={2}
-            title="Tier 1 -- LR Sigmoid Classifier"
-            color={TIER_COLORS.tier1.fg}
+            title="SOP Classification"
+            color={PURPLE}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {isLrEntry ? (
-                /* ── T031: LR Engine display ── */
-                <>
-                  {/* LR primary classification */}
-                  {(() => {
-                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
-                    const primaryLabel = labels[0] || '(none)'
-                    const conf = p.classifierConfidence != null ? p.classifierConfidence : 0
-                    const tier = p.confidenceTier || 'low'
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, fontFamily: T.font.sans, color: T.text.primary }}>
-                          LR: {primaryLabel} ({(conf * 100).toFixed(0)}%)
-                        </span>
-                        <span style={{ fontSize: 9, fontFamily: T.font.mono, color: T.text.tertiary }}>—</span>
-                        <span style={{ fontSize: 10, fontFamily: T.font.sans, color: T.text.secondary }}>Tier:</span>
-                        {/* Confidence tier colored badge */}
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            fontFamily: T.font.sans,
-                            background: tier === 'high' ? '#DCFCE7' : tier === 'medium' ? '#FEF3C7' : '#FEE2E2',
-                            color: tier === 'high' ? T.status.green : tier === 'medium' ? T.status.amber : T.status.red,
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                            border: `1px solid ${tier === 'high' ? 'rgba(21,128,61,0.2)' : tier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
-                          }}
-                        >
-                          {tier}
-                        </span>
-                      </div>
-                    )
-                  })()}
-
-                  {/* All classifier labels */}
-                  {(() => {
-                    const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
-                    return labels.length > 0 ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ classified as:</span>
-                        {labels.map((label: string, i: number) => {
-                          const sc = sopBadgeColor(label)
-                          return (
-                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
-                              {label}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ) : null
-                  })()}
-
-                  {/* Per-SOP LR sigmoid scores */}
-                  {p.topCandidates && p.topCandidates.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
-                      <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>→ per-SOP scores:</span>
-                      {p.topCandidates.map((c: { label: string; confidence: number }, i: number) => {
-                        const sc = sopBadgeColor(c.label)
-                        const pct = Math.max(0, Math.min(100, c.confidence * 100))
-                        const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : []
-                        const isSelected = labels.includes(c.label)
-                        return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{
-                              fontSize: 10,
-                              fontFamily: T.font.mono,
-                              color: isSelected ? sc.fg : T.text.tertiary,
-                              fontWeight: isSelected ? 600 : 400,
-                              minWidth: 180,
-                              textAlign: 'right',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}>
-                              {c.label}
-                            </span>
-                            <div style={{ width: 100, height: 5, background: T.bg.tertiary, borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
-                              <div style={{
-                                width: `${pct}%`,
-                                height: '100%',
-                                borderRadius: 3,
-                                background: isSelected ? sc.fg : T.text.tertiary,
-                                opacity: isSelected ? 1 : 0.4,
-                                transition: 'width 0.3s ease',
-                              }} />
-                            </div>
-                            <span style={{
-                              fontSize: 10,
-                              fontFamily: T.font.mono,
-                              fontWeight: 600,
-                              color: isSelected ? sc.fg : T.text.tertiary,
-                              minWidth: 32,
-                            }}>
-                              {pct.toFixed(0)}%
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* LLM Override indicator */}
-                  {p.llmOverride && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          fontFamily: T.font.sans,
-                          background: '#FFF7ED',
-                          color: '#C2410C',
-                          padding: '3px 10px',
-                          borderRadius: 999,
-                          border: '1px solid rgba(194,65,12,0.2)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        <Sparkles size={10} />
-                        LLM Override: {p.classifierPick || '?'} → {p.llmPick || '?'}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Verdict — use confidenceTier (LR) not backward-compat tier */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {p.confidenceTier === 'high' ? (
-                      <>
-                        <CheckCircle2 size={13} color={T.status.green} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
-                          Confident
-                        </span>
-                      </>
-                    ) : p.confidenceTier === 'medium' ? (
-                      <>
-                        <AlertTriangle size={13} color={T.status.amber} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
-                          Medium confidence — top 3 SOPs injected
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertTriangle size={13} color={T.status.red} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: T.status.red, fontFamily: T.font.sans }}>
-                          Low confidence — {p.tier === 'tier3_cache' ? 'Tier 3 re-injected' : 'routed to Tier 2'}
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  {/* T021/T024: Similarity Boost section (renamed from Embedding Diagnostic) */}
-                  <div style={{ marginTop: 4 }}>
-                    <div
-                      onClick={(e) => { e.stopPropagation(); setDiagnosticsExpanded(v => !v) }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        padding: '4px 0',
-                      }}
-                    >
-                      <div
-                        style={{
-                          transition: 'transform 0.2s ease',
-                          transform: diagnosticsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <ChevronRight size={12} color={T.text.tertiary} />
-                      </div>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Similarity Boost
-                      </span>
-                      {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
-                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                          (sim: {(p.classifierTopSim ?? ev?.classifierTopSim ?? 0).toFixed(2)})
-                        </span>
-                      )}
-                      {p.boostApplied && (
-                        <span style={{
-                          fontSize: 9, fontWeight: 700, fontFamily: T.font.sans,
-                          background: '#DCFCE7', color: '#15803D', padding: '1px 6px',
-                          borderRadius: 999, border: '1px solid rgba(21,128,61,0.2)',
-                        }}>
-                          Boosted
-                        </span>
-                      )}
-                    </div>
-                    {diagnosticsExpanded && (
-                      <div style={{ paddingLeft: 18, paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 6, animation: 'fadeInUp 0.2s ease-out both' }}>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {(p.classifierMethod || ev?.classifierMethod) && (
-                            <MetaPill label="method:" value={p.classifierMethod || ev?.classifierMethod || ''} />
-                          )}
-                          {(p.classifierTopSim != null || ev?.classifierTopSim != null) && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>top neighbor sim:</span>
-                              <SimilarityBar score={p.classifierTopSim ?? ev?.classifierTopSim ?? 0} width={80} />
-                            </div>
-                          )}
-                        </div>
-                        {/* T024: Boost decision details */}
-                        {p.boostApplied ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.status.green }}>
-                                boost fired — 3/3 neighbors agree
-                              </span>
-                            </div>
-                            {p.originalLrConfidence != null && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>original LR:</span>
-                                <SimilarityBar score={p.originalLrConfidence} width={60} />
-                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→</span>
-                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.status.green }}>boosted: {((p.boostSimilarity ?? 0) * 100).toFixed(0)}%</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (p.classifierTopSim != null && (
-                          <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                            no boost — {(p.classifierTopSim ?? 0) < 0.80 ? 'below threshold' : 'neighbors disagree'}
-                          </span>
-                        ))}
-                        {/* T025: Description Matches */}
-                        {p.topDescriptionMatches && p.topDescriptionMatches.length > 0 && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 10, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.mono }}>
-                                description matches
-                              </span>
-                              {p.descriptionFeaturesActive != null && (
-                                <span style={{
-                                  fontSize: 8, fontFamily: T.font.mono, padding: '1px 4px', borderRadius: 3,
-                                  background: p.descriptionFeaturesActive ? '#DCFCE7' : '#FEE2E2',
-                                  color: p.descriptionFeaturesActive ? '#15803D' : '#DC2626',
-                                }}>
-                                  {p.descriptionFeaturesActive ? 'active' : 'disabled'}
-                                </span>
-                              )}
-                            </div>
-                            {p.topDescriptionMatches.map((m: { label: string; similarity: number }, i: number) => (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary, minWidth: 140, textAlign: 'right' }}>
-                                  {m.label}
-                                </span>
-                                <SimilarityBar score={m.similarity} width={60} />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </TimelineStep>
-
-          {/* Step 3: Tier 3 -- Topic State Cache */}
-          <TimelineStep
-            stepNum={3}
-            title="Tier 3 -- Topic State Cache"
-            color={TIER_COLORS.tier3_cache.fg}
-            dimmed={p.tier === 'tier1' && !p.tier3Reinjected}
-          >
-            {p.confidenceTier === 'high' && !p.tier3Reinjected && !p.tier3TopicSwitch ? (
-              <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                -- Skipped (Tier 1 confident)
-              </span>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>re-injected:</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: p.tier3Reinjected ? T.status.green : T.text.tertiary, fontFamily: T.font.sans }}>
-                    {p.tier3Reinjected ? 'Yes' : 'No'}
-                  </span>
-                </div>
-                {p.tier3Reinjected && (p.tier3ReinjectedLabels || []).length > 0 && (
+              {/* SOP categories */}
+              {(() => {
+                const labels = p.classifierLabels?.length > 0 ? p.classifierLabels : ev?.classifierLabels || []
+                return labels.length > 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ re-injected SOPs:</span>
-                    {(p.tier3ReinjectedLabels || []).map((label: string, i: number) => {
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>categories:</span>
+                    {labels.map((label: string, i: number) => {
                       const sc = sopBadgeColor(label)
                       return (
                         <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
@@ -1173,74 +867,79 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
                       )
                     })}
                   </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>topic switch:</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: p.tier3TopicSwitch ? T.status.amber : T.text.tertiary, fontFamily: T.font.sans }}>
-                    {p.tier3TopicSwitch ? 'Yes' : 'No'}
+                ) : (
+                  <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                    No SOP categories matched
                   </span>
-                </div>
-                {p.centroidSimilarity != null && p.centroidThreshold != null && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                      centroid: {p.centroidSimilarity.toFixed(2)} {p.centroidSimilarity < p.centroidThreshold ? '<' : '>'} {p.centroidThreshold.toFixed(2)} → {p.centroidSimilarity < p.centroidThreshold ? 'switch detected' : 'same topic'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </TimelineStep>
+                )
+              })()}
 
-          {/* Step 4: Tier 2 -- Intent Extractor */}
-          <TimelineStep
-            stepNum={4}
-            title="Tier 2 -- Intent Extractor (Haiku)"
-            color={TIER_COLORS.tier2_needed.fg}
-            dimmed={p.tier !== 'tier2_needed' && !p.tier2Output}
-          >
-            {p.tier !== 'tier2_needed' && !p.tier2Output ? (
-              <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
-                -- Skipped ({p.confidenceTier === 'high' ? 'Tier 1 confident' : p.tier === 'tier3_cache' ? 'Tier 3 handled' : 'not needed'})
-              </span>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* SOP confidence badge */}
+              {p.confidenceTier && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Zap size={13} color={T.status.amber} />
-                  <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>Fired</span>
+                  <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>confidence:</span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      fontFamily: T.font.sans,
+                      background: p.confidenceTier === 'high' ? '#DCFCE7' : p.confidenceTier === 'medium' ? '#FEF3C7' : '#FEE2E2',
+                      color: p.confidenceTier === 'high' ? T.status.green : p.confidenceTier === 'medium' ? T.status.amber : T.status.red,
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      border: `1px solid ${p.confidenceTier === 'high' ? 'rgba(21,128,61,0.2)' : p.confidenceTier === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                    }}
+                  >
+                    {p.confidenceTier}
+                  </span>
+                  {p.classifierConfidence != null && (
+                    <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.secondary }}>
+                      ({(p.classifierConfidence * 100).toFixed(0)}%)
+                    </span>
+                  )}
                 </div>
-                {p.tier2Output && (
+              )}
+
+              {/* SOP reasoning (from tier2Output or judge) */}
+              {p.tier2Output && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <MetaPill label="topic:" value={p.tier2Output.topic} />
+                  <MetaPill label="status:" value={p.tier2Output.status} color={p.tier2Output.status === 'ongoing_issue' ? T.status.amber : p.tier2Output.status === 'follow_up' ? T.status.blue : undefined} />
+                  <MetaPill label="urgency:" value={p.tier2Output.urgency} color={p.tier2Output.urgency === 'angry' ? T.status.red : p.tier2Output.urgency === 'frustrated' ? T.status.amber : p.tier2Output.urgency === 'emergency' ? T.status.red : undefined} />
+                </div>
+              )}
+
+              {/* Verdict */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {p.confidenceTier === 'high' ? (
                   <>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <MetaPill label="topic:" value={p.tier2Output.topic} />
-                      <MetaPill label="status:" value={p.tier2Output.status} color={p.tier2Output.status === 'ongoing_issue' ? T.status.amber : p.tier2Output.status === 'follow_up' ? T.status.blue : undefined} />
-                      <MetaPill label="urgency:" value={p.tier2Output.urgency} color={p.tier2Output.urgency === 'angry' ? T.status.red : p.tier2Output.urgency === 'frustrated' ? T.status.amber : p.tier2Output.urgency === 'emergency' ? T.status.red : undefined} />
-                    </div>
-                    {p.tier2Output.sops.length > 0 ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ SOPs:</span>
-                        {p.tier2Output.sops.map((s: string, i: number) => {
-                          const sc = sopBadgeColor(s)
-                          return (
-                            <span key={i} style={{ background: sc.bg, color: sc.fg, fontSize: 10, fontWeight: 600, fontFamily: T.font.sans, padding: '2px 8px', borderRadius: 999, border: `1px solid ${sc.fg}20` }}>
-                              {s}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>→ SOPs: none (contextual)</span>
-                      </div>
-                    )}
+                    <CheckCircle2 size={13} color={T.status.green} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: T.status.green, fontFamily: T.font.sans }}>
+                      Confident classification
+                    </span>
+                  </>
+                ) : p.confidenceTier === 'medium' ? (
+                  <>
+                    <AlertTriangle size={13} color={T.status.amber} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: T.status.amber, fontFamily: T.font.sans }}>
+                      Medium confidence -- multiple SOPs injected
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle size={13} color={T.status.red} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: T.status.red, fontFamily: T.font.sans }}>
+                      Low confidence -- broad SOP retrieval used
+                    </span>
                   </>
                 )}
               </div>
-            )}
+            </div>
           </TimelineStep>
 
-          {/* Step 5: Escalation Signals */}
+          {/* Step 3: Escalation Signals */}
           <TimelineStep
-            stepNum={5}
+            stepNum={3}
             title="Escalation Signals"
             color={T.status.red}
             dimmed={p.escalationSignals.length === 0}
@@ -1276,8 +975,8 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             )}
           </TimelineStep>
 
-          {/* Step 6: SOPs Selected */}
-          <TimelineStep stepNum={6} title="SOPs Selected" color={PURPLE}>
+          {/* Step 4: SOPs Selected */}
+          <TimelineStep stepNum={4} title="SOPs Selected" color={PURPLE}>
             {p.chunks.length === 0 ? (
               <span style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.tertiary }}>
                 No chunks retrieved
@@ -1350,9 +1049,9 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             )}
           </TimelineStep>
 
-          {/* Step 7: Tool Usage (conditional) */}
+          {/* Step 5: Tool Usage (conditional) */}
           {entry.toolUsed && (
-            <TimelineStep stepNum={7} title={`Tool Use — ${entry.toolName || 'unknown'}`} color={T.accent}>
+            <TimelineStep stepNum={5} title={`Tool Use -- ${entry.toolName || 'unknown'}`} color={T.accent}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {/* Tool name badge */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1491,8 +1190,8 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             </TimelineStep>
           )}
 
-          {/* Step 7/8: Omar's Response */}
-          <TimelineStep stepNum={entry.toolUsed ? 8 : 7} title="Omar's Response" color={T.accent}>
+          {/* Step 5/6: Omar's Response */}
+          <TimelineStep stepNum={entry.toolUsed ? 6 : 5} title="Omar's Response" color={T.accent}>
             <TextBox content={entry.responseText || '(empty response)'} maxHeight={200} />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <MetaPill label="model:" value={entry.model} />
@@ -1523,9 +1222,9 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             )}
           </TimelineStep>
 
-          {/* Step 8/9: Self-Improvement */}
+          {/* Step 6/7: Self-Improvement */}
           <TimelineStep
-            stepNum={entry.toolUsed ? 9 : 8}
+            stepNum={entry.toolUsed ? 7 : 6}
             title="Self-Improvement (Judge)"
             color={PURPLE}
             dimmed={!ev}
@@ -1869,28 +1568,20 @@ export default function AiPipelineV5(): React.ReactElement {
               animIdx={0}
             />
             <HealthCard
-              accentColor={TIER_COLORS.tier1.fg}
-              icon={<Target size={15} color={TIER_COLORS.tier1.fg} />}
-              label="Tier 1 (Classifier)"
-              value={`${stats.tiers.tier1.pct}%`}
-              subValue={`${stats.tiers.tier1.count} messages`}
+              accentColor={PURPLE}
+              icon={<Target size={15} color={PURPLE} />}
+              label="SOP Classifications"
+              value={String(stats.classifier?.sopChunkCount ?? stats.tiers.tier1.count)}
+              subValue="categories matched"
               animIdx={1}
             />
             <HealthCard
-              accentColor={TIER_COLORS.tier2_needed.fg}
-              icon={<Zap size={15} color={TIER_COLORS.tier2_needed.fg} />}
-              label="Tier 2 (Haiku)"
-              value={`${stats.tiers.tier2.pct}%`}
-              subValue={`${stats.tiers.tier2.count} messages`}
+              accentColor={T.status.amber}
+              icon={<Shield size={15} color={T.status.amber} />}
+              label="Escalation Signals"
+              value={String(stats.escalationSignals)}
+              subValue="detected"
               animIdx={2}
-            />
-            <HealthCard
-              accentColor={TIER_COLORS.tier3_cache.fg}
-              icon={<Layers size={15} color={TIER_COLORS.tier3_cache.fg} />}
-              label="Tier 3 (Cache)"
-              value={`${stats.tiers.tier3.pct}%`}
-              subValue={`${stats.tiers.tier3.count} messages`}
-              animIdx={3}
             />
             <HealthCard
               accentColor={PURPLE}

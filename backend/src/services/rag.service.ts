@@ -8,11 +8,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { embedText, embedBatch, getEmbeddingProvider } from './embeddings.service';
-import { classifyMessage, isClassifierInitialized, getSopContent, initializeClassifier, type ClassificationResult } from './classifier.service';
-import { BAKED_IN_CHUNKS } from './classifier-data';
 import { rerank, isRerankEnabled } from './rerank.service';
-import { getTenantAiConfig } from './tenant-config.service';
-import { extractIntent } from './intent-extractor.service';
 
 /** Returns the DB column name for the active embedding provider. */
 function embCol(): string {
@@ -31,39 +27,6 @@ function generateId(): string {
 
 // Cache pgvector availability per process lifetime
 let _pgvectorAvailable: boolean | null = null;
-
-// Last classifier result — stashed for judge service evaluation
-// Per-request classifier result — captured immediately after classification, consumed by the same request.
-// NOTE: This is a module-global for backward compat. For thread safety, callers MUST snapshot
-// via getAndClearLastClassifierResult() immediately after retrieveRelevantKnowledge() returns.
-let _lastClassifierResult: {
-  method: string;
-  labels: string[];
-  topSimilarity: number;
-  confidence: number;
-  neighbors: Array<{ labels: string[]; similarity: number }>;
-  tier: 'high' | 'medium' | 'low';
-  topCandidates: Array<{ label: string; confidence: number }>;
-  queryEmbedding?: number[];
-  // T005: Similarity Boost + Description fields
-  boostApplied?: boolean;
-  boostSimilarity?: number;
-  boostLabels?: string[];
-  originalLrConfidence?: number;
-  originalLrLabels?: string[];
-  descriptionFeaturesActive?: boolean;
-  topDescriptionMatches?: Array<{ label: string; similarity: number }>;
-} | null = null;
-
-/**
- * Atomically get and clear the last classifier result.
- * Prevents a concurrent request from reading stale data.
- */
-export function getAndClearLastClassifierResult(): typeof _lastClassifierResult {
-  const result = _lastClassifierResult;
-  _lastClassifierResult = null;
-  return result;
-}
 
 async function isPgvectorAvailable(prisma: PrismaClient): Promise<boolean> {
   if (_pgvectorAvailable !== null) return _pgvectorAvailable;
@@ -343,335 +306,38 @@ export async function retrieveRelevantKnowledge(
   agentType?: 'guestCoordinator' | 'screeningAI',
   conversationId?: string,
   recentMessages?: Array<{ role: string; content: string }>,
-  propertyAmenities?: string,
-  cachedTopicLabel?: string
+  propertyAmenities?: string
 ): Promise<{
   chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>;
   topSimilarity: number;
-  tier: 'tier1' | 'tier2_needed' | 'tier3_cache';
-  confidenceTier?: 'high' | 'medium' | 'low';
-  topCandidates?: Array<{ label: string; confidence: number }>;
-  intentExtractorRan?: boolean;
+  tier: 'property';
 }> {
-  // Three-tier confidence thresholds — configurable per tenant via UI
-  let HIGH_CONFIDENCE_THRESHOLD = 0.85;
-  let LOW_CONFIDENCE_THRESHOLD = 0.55;
-  let tier1Mode: 'active' | 'ghost' | 'off' = 'active';
-  let tier2Mode: 'active' | 'ghost' | 'off' = 'active';
-  try {
-    const cfg = await getTenantAiConfig(tenantId, prisma);
-    if (cfg.highConfidenceThreshold !== undefined && cfg.highConfidenceThreshold !== null) {
-      HIGH_CONFIDENCE_THRESHOLD = cfg.highConfidenceThreshold;
-    }
-    if (cfg.lowConfidenceThreshold !== undefined && cfg.lowConfidenceThreshold !== null) {
-      LOW_CONFIDENCE_THRESHOLD = cfg.lowConfidenceThreshold;
-    }
-    if ((cfg as any).tier1Mode && ['active', 'ghost', 'off'].includes((cfg as any).tier1Mode)) {
-      tier1Mode = (cfg as any).tier1Mode;
-    }
-    if ((cfg as any).tier2Mode && ['active', 'ghost', 'off'].includes((cfg as any).tier2Mode)) {
-      tier2Mode = (cfg as any).tier2Mode;
-    }
-  } catch { /* use default */ }
+  // Property knowledge retrieval only — SOP routing is handled by the get_sop tool in ai.service.ts
+  const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, topK);
 
-  // ─── Tier 1 OFF mode: skip classifier entirely ────────────────────────
-  if (tier1Mode === 'off' && agentType === 'guestCoordinator') {
-    console.log(`[RAG] Tier 1 OFF — skipping classifier, forcing low confidence for Tier 2 fallback`);
-    const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
-    return {
-      chunks: propertyChunks,
-      topSimilarity: 0,
-      tier: 'tier2_needed' as const,
-      confidenceTier: 'low',
-      topCandidates: [],
-      intentExtractorRan: false,
-    };
-  }
+  const MAX_CHUNKS = 3;
+  const MIN_SIMILARITY = 0.3;
+  let filtered = propertyChunks.filter(r => r.similarity > MIN_SIMILARITY);
 
-  // For guestCoordinator: use LR classifier for SOPs + pgvector for property chunks only
-  if (agentType === 'guestCoordinator' && isClassifierInitialized()) {
-    try {
-      const classifierResult = await classifyMessage(query, undefined, cachedTopicLabel);
-      _lastClassifierResult = {
-        method: classifierResult.method,
-        labels: classifierResult.labels,
-        topSimilarity: classifierResult.topSimilarity,
-        confidence: classifierResult.confidence,
-        neighbors: classifierResult.neighbors,
-        tier: classifierResult.tier,
-        topCandidates: classifierResult.topCandidates,
-        queryEmbedding: classifierResult.queryEmbedding,
-        // T005: Boost + Description fields
-        boostApplied: classifierResult.boostApplied,
-        boostSimilarity: classifierResult.boostSimilarity,
-        boostLabels: classifierResult.boostLabels,
-        originalLrConfidence: classifierResult.originalLrConfidence,
-        originalLrLabels: classifierResult.originalLrLabels,
-        descriptionFeaturesActive: classifierResult.descriptionFeaturesActive,
-        topDescriptionMatches: classifierResult.topDescriptionMatches,
-      };
-      console.log(`[RAG] Classifier: "${query.substring(0, 60)}" → [${classifierResult.labels.join(', ')}] (${classifierResult.method}, confidence=${classifierResult.confidence.toFixed(3)}, tier=${classifierResult.tier})`);
-
-      // ─── Three-tier confidence routing (T013) ─────────────────────────
-      // Determine confidence tier using LR sigmoid confidence (NOT cosine similarity)
-      const lrConfidence = classifierResult.confidence;
-      // Actual confidence tier — logged for observability even in ghost mode
-      const actualConfidenceTier: 'high' | 'medium' | 'low' =
-        lrConfidence >= HIGH_CONFIDENCE_THRESHOLD ? 'high' :
-        lrConfidence >= LOW_CONFIDENCE_THRESHOLD ? 'medium' : 'low';
-      // Routing confidence tier — in ghost mode, always forced to 'low' so Tier 2 decides
-      const confidenceTier: 'high' | 'medium' | 'low' =
-        tier1Mode === 'ghost' ? 'low' : actualConfidenceTier;
-
-      if (tier1Mode === 'ghost') {
-        console.log(`[RAG] Tier 1 GHOST — classifier ran (actual=${actualConfidenceTier}), forcing routing to low for Tier 2`);
-      }
-
-      let sopChunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }> = [];
-
-      if (confidenceTier === 'high') {
-        // HIGH tier: inject single top SOP
-        sopChunks = classifierResult.labels
-          .map(label => {
-            const content = getSopContent(label, propertyAmenities);
-            return content ? {
-              content,
-              category: label,
-              similarity: 1.0,
-              sourceKey: label,
-              propertyId: null as string | null,
-            } : null;
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null);
-
-      } else if (confidenceTier === 'medium') {
-        // MEDIUM tier: inject top 3 candidates with verification context
-        const top3 = classifierResult.topCandidates.slice(0, 3);
-        sopChunks = top3
-          .map((candidate, idx) => {
-            const content = getSopContent(candidate.label, propertyAmenities);
-            if (!content) return null;
-            return {
-              content: `CANDIDATE ${idx + 1} (classifier confidence: ${candidate.confidence.toFixed(2)}): ${content}`,
-              category: candidate.label,
-              similarity: candidate.confidence,
-              sourceKey: candidate.label,
-              propertyId: null as string | null,
-            };
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null);
-
-        if (sopChunks.length > 0) {
-          // Add verification instruction as a preamble chunk
-          sopChunks.unshift({
-            content: 'VERIFICATION REQUIRED: The classifier was not fully confident. Multiple SOP candidates are provided below. Read all candidates carefully and choose the most relevant one based on the guest message context. If none fit, respond with general courtesy.',
-            category: 'verification-instruction',
-            similarity: 1.0,
-            sourceKey: 'verification-instruction',
-            propertyId: null,
-          });
-        }
-        console.log(`[RAG] Medium confidence — injected ${top3.length} candidate SOPs: [${top3.map(c => `${c.label}(${c.confidence.toFixed(2)})`).join(', ')}]`);
-
-      } else {
-        // LOW tier: fire intent extractor as fallback
-        console.log(`[RAG] Low confidence (${lrConfidence.toFixed(3)}) — firing Tier 2 intent extractor (tier2Mode=${tier2Mode})`);
-        let intentResult = null;
-        if (tier2Mode !== 'off') {
-          try {
-            if (conversationId && recentMessages && recentMessages.length > 0) {
-              intentResult = await extractIntent(recentMessages, tenantId, conversationId);
-            }
-          } catch (err) {
-            console.warn('[RAG] Intent extractor failed in low-tier fallback (non-fatal):', err);
-          }
-          if (tier2Mode === 'ghost' && intentResult) {
-            console.log(`[RAG] Tier 2 GHOST — intent extractor ran: [${intentResult.sops.join(', ')}], but not using for routing`);
-            intentResult = null; // Don't use results for routing in ghost mode
-          }
-        } else {
-          console.log(`[RAG] Tier 2 OFF — skipping intent extractor`);
-        }
-
-        if (intentResult && intentResult.sops.length > 0) {
-          // Intent extractor returned SOPs — look them up
-          sopChunks = intentResult.sops
-            .map(label => {
-              const content = getSopContent(label, propertyAmenities);
-              return content ? {
-                content,
-                category: label,
-                similarity: 1.0,
-                sourceKey: label,
-                propertyId: null as string | null,
-              } : null;
-            })
-            .filter((c): c is NonNullable<typeof c> => c !== null);
-          console.log(`[RAG] Low tier — intent extractor resolved: [${intentResult.sops.join(', ')}]`);
-        } else {
-          // Both classifier and intent extractor failed — return empty (baked-in SOPs still present)
-          console.log(`[RAG] Low tier — both classifier and intent extractor failed. No dynamic SOPs.`);
-          const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
-          return {
-            chunks: propertyChunks,
-            topSimilarity: classifierResult.topSimilarity,
-            tier: 'tier2_needed' as const,
-            confidenceTier: 'low',
-            topCandidates: classifierResult.topCandidates,
-            intentExtractorRan: true,
-          };
-        }
-      }
-
-      // Apply per-tenant SOP overrides (skip/replace) — baked-in SOPs are exempt
-      try {
-        const tenantConfig = await getTenantAiConfig(tenantId, prisma);
-        const sopOverrides = tenantConfig.sopOverrides as Record<string, { enabled?: boolean; override?: string }> | null;
-        if (sopOverrides && typeof sopOverrides === 'object') {
-          sopChunks = sopChunks.filter(chunk => {
-            // Baked-in SOPs are never affected by tenant overrides
-            if (BAKED_IN_CHUNKS.has(chunk.category)) return true;
-            // Verification instruction is not a real SOP — skip override checks
-            if (chunk.category === 'verification-instruction') return true;
-
-            const override = sopOverrides[chunk.category];
-            if (!override) return true; // no override configured — keep default
-
-            // Tenant disabled this SOP entirely
-            if (override.enabled === false) {
-              console.log(`[RAG] SOP "${chunk.category}" disabled by tenant override`);
-              return false;
-            }
-
-            // Tenant provided replacement content
-            if (override.override) {
-              chunk.content = override.override;
-              console.log(`[RAG] SOP "${chunk.category}" replaced by tenant override`);
-            }
-
-            return true;
-          });
-        }
-      } catch (err) {
-        console.warn('[RAG] Failed to load tenant SOP overrides, using defaults:', err);
-      }
-
-      // Deduplicate sopChunks by sourceKey (guards against LLM returning duplicate labels)
-      const seenKeys = new Set<string>();
-      sopChunks = sopChunks.filter(c => {
-        if (seenKeys.has(c.sourceKey)) return false;
-        seenKeys.add(c.sourceKey);
-        return true;
-      });
-
-      // Also get property-specific chunks via pgvector
-      const propertyChunks = await retrievePropertyChunks(tenantId, propertyId, query, prisma, 3);
-
-      const combined = [...sopChunks, ...propertyChunks];
-      const topSimilarity = classifierResult.confidence;
-      // Map confidence tiers to the existing tier system for backward compatibility
-      const tier = confidenceTier === 'high' ? 'tier1' as const : 'tier2_needed' as const;
-      console.log(`[RAG] Classifier result: ${sopChunks.length} SOP chunks + ${propertyChunks.length} property chunks, tier=${tier} confidenceTier=${confidenceTier} topSim=${topSimilarity.toFixed(3)}`);
-      return { chunks: combined, topSimilarity, tier, confidenceTier, topCandidates: classifierResult.topCandidates };
-    } catch (err) {
-      console.warn('[RAG] Classifier failed, falling back to pgvector:', err);
-      // Fall through to existing pgvector logic below
-    }
-  }
-
-  try {
-    if (!(await isPgvectorAvailable(prisma))) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
-    const embedding = await embedText(query, 'search_query');
-    if (!embedding || embedding.length === 0) return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
-
-    const embeddingStr = `[${embedding.join(',')}]`;
-    const col = embCol();
-
-    type ChunkRow = { id: string; content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null };
-    let results: ChunkRow[];
-
-    if (agentType === 'guestCoordinator') {
-      results = await (prisma.$queryRawUnsafe as any)(
-        `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
-        FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
-          AND "tenantId" = $3
-          AND "${col}" IS NOT NULL
-          AND category NOT LIKE 'sop-screening-%'
-          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector(${embDim()})
-        LIMIT $4`,
-        embeddingStr, propertyId, tenantId, topK
-      ) as ChunkRow[];
-    } else if (agentType === 'screeningAI') {
-      results = await (prisma.$queryRawUnsafe as any)(
-        `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
-        FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
-          AND "tenantId" = $3
-          AND "${col}" IS NOT NULL
-          AND category NOT IN ('sop-service-requests', 'sop-maintenance', 'sop-house-rules', 'sop-checkin-checkout', 'sop-escalation')
-          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector(${embDim()})
-        LIMIT $4`,
-        embeddingStr, propertyId, tenantId, topK
-      ) as ChunkRow[];
-    } else {
-      results = await (prisma.$queryRawUnsafe as any)(
-        `SELECT id, content, category, "sourceKey", "propertyId",
-          1 - ("${col}" <=> $1::vector(${embDim()})) as similarity
-        FROM "PropertyKnowledgeChunk"
-        WHERE ("propertyId" = $2 OR "propertyId" IS NULL)
-          AND "tenantId" = $3
-          AND "${col}" IS NOT NULL
-          AND category NOT IN ('sop-scheduling', 'sop-house-rules', 'sop-escalation-immediate', 'sop-escalation-scheduled')
-        ORDER BY "${col}" <=> $1::vector(${embDim()})
-        LIMIT $4`,
-        embeddingStr, propertyId, tenantId, topK
-      ) as ChunkRow[];
-    }
-
-    // Log ALL results with scores for diagnostics
-    console.log(`[RAG] raw results for "${query.substring(0, 60)}": ${results.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'empty'}`);
-
-    const MAX_CHUNKS = 3;
-    const MIN_SIMILARITY = 0.3;
-    let filtered = results.filter(r => Number(r.similarity) > MIN_SIMILARITY);
-
-    // Rerank: cross-encoder re-scoring for better relevance ordering
-    if (isRerankEnabled() && filtered.length > MAX_CHUNKS) {
-      const reranked = await rerank(query, filtered.map(r => r.content), MAX_CHUNKS);
-      if (reranked && reranked.length > 0) {
-        filtered = reranked.map(r => ({
-          ...filtered[r.index],
-          similarity: r.relevanceScore as any, // use rerank score
-        }));
-        console.log(`[RAG] reranked: ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ')}`);
-      } else {
-        filtered = filtered.slice(0, MAX_CHUNKS);
-      }
+  // Rerank: cross-encoder re-scoring for better relevance ordering
+  if (isRerankEnabled() && filtered.length > MAX_CHUNKS) {
+    const reranked = await rerank(query, filtered.map(r => r.content), MAX_CHUNKS);
+    if (reranked && reranked.length > 0) {
+      filtered = reranked.map(r => ({
+        ...filtered[r.index],
+        similarity: r.relevanceScore,
+      }));
+      console.log(`[RAG] reranked: ${filtered.map(r => `${r.sourceKey}(${r.similarity.toFixed(3)})`).join(', ')}`);
     } else {
       filtered = filtered.slice(0, MAX_CHUNKS);
     }
-
-    console.log(`[RAG] retrieved ${filtered.length} chunks: ${filtered.map(r => `${r.sourceKey}(${Number(r.similarity).toFixed(3)})`).join(', ') || 'none'}`);
-    const mappedChunks = filtered.map(r => ({
-        content: r.content,
-        category: r.category,
-        similarity: Number(r.similarity),
-        sourceKey: r.sourceKey,
-        propertyId: r.propertyId,
-      }));
-    const topSimilarity = mappedChunks.length > 0 ? Math.max(...mappedChunks.map(r => r.similarity)) : 0;
-    const tier = topSimilarity > HIGH_CONFIDENCE_THRESHOLD ? 'tier1' as const : 'tier2_needed' as const;
-    console.log(`[RAG] tier=${tier} topSim=${topSimilarity.toFixed(3)} chunks=${mappedChunks.length}`);
-    return { chunks: mappedChunks, topSimilarity, tier };
-  } catch (err) {
-    console.error('[RAG] retrieveRelevantKnowledge failed:', err);
-    return { chunks: [], topSimilarity: 0, tier: 'tier2_needed' as const };
+  } else {
+    filtered = filtered.slice(0, MAX_CHUNKS);
   }
+
+  const topSimilarity = filtered.length > 0 ? Math.max(...filtered.map(r => r.similarity)) : 0;
+  console.log(`[RAG] retrieved ${filtered.length} property chunks: ${filtered.map(r => `${r.sourceKey}(${r.similarity.toFixed(3)})`).join(', ') || 'none'}`);
+  return { chunks: filtered, topSimilarity, tier: 'property' };
 }
 
 // ─── SOP Seeding — tenant-level procedure chunks ──────────────────────────────
@@ -1113,11 +779,6 @@ export async function seedTenantSops(
   }
 
   console.log(`[RAG] Seeded ${inserted}/${SOP_CHUNKS.length} SOP chunks for tenant ${tenantId}`);
-
-  // Trigger classifier initialization (non-blocking)
-  initializeClassifier().catch(err =>
-    console.warn('[RAG] Classifier init failed (non-fatal):', err)
-  );
 
   return inserted;
 }

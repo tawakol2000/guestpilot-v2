@@ -4,10 +4,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { authMiddleware } from '../middleware/auth';
 import { getAiConfig } from '../services/ai-config.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
-import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from '../services/rag.service';
-import { getSopContent } from '../services/classifier.service';
+import { retrieveRelevantKnowledge } from '../services/rag.service';
+import { getSopContent, SOP_TOOL_DEFINITION } from '../services/sop.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
-import { extractIntent } from '../services/intent-extractor.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 
@@ -222,55 +221,65 @@ export function sandboxRouter(prisma: PrismaClient) {
           ).catch(() => ({
             chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>,
             topSimilarity: 0,
-            tier: 'tier2_needed' as const,
-            confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined,
-            topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined,
           }))
         : {
             chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>,
             topSimilarity: 0,
-            tier: 'tier1' as const,
-            confidenceTier: undefined as 'high' | 'medium' | 'low' | undefined,
-            topCandidates: undefined as Array<{ label: string; confidence: number }> | undefined,
           };
 
-      let retrievedChunks = ragResult.chunks;
-      // Clear classifier state if any
-      getAndClearLastClassifierResult();
+      const retrievedChunks = ragResult.chunks;
 
-      // ── Tier 2: Intent extraction for non-high confidence ─────────────
-      let tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null = null;
-      if (ragResult.confidenceTier !== 'high') {
-        try {
-          const tier2Result = await extractIntent(recentForRag, tenantId, 'sandbox');
-          if (tier2Result) {
-            tier2Output = { topic: tier2Result.topic, status: tier2Result.status, urgency: tier2Result.urgency, sops: tier2Result.sops };
-            if (tier2Result.sops.length > 0) {
-              const tier2Chunks = tier2Result.sops
-                .map(label => {
-                  const content = getSopContent(label, propertyAmenities);
-                  return content ? { content, category: label, similarity: 1.0, sourceKey: label, propertyId: null as string | null } : null;
-                })
-                .filter((c): c is NonNullable<typeof c> => c !== null);
-              if (tier2Chunks.length > 0) {
-                retrievedChunks.push(...tier2Chunks);
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[Sandbox] Tier 2 failed (non-fatal):', err);
+      // ── SOP Classification via Tool Use ─────────────────────────────
+      // Single forced get_sop tool call — replaces the 3-tier pipeline.
+      let sopClassification: { categories: string[]; confidence: string; reasoning: string; inputTokens: number; outputTokens: number; durationMs: number } = {
+        categories: ['none'], confidence: 'low', reasoning: 'Classification not run', inputTokens: 0, outputTokens: 0, durationMs: 0,
+      };
+      try {
+        const classificationUserContent: Anthropic.ContentBlock[] = [{
+          type: 'text',
+          text: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
+        }];
+        const sopStart = Date.now();
+        const sopResponse = await withRetry(() =>
+          (anthropic.messages.create as any)({
+            model: tenantConfig?.model || personaCfg.model,
+            max_tokens: 200,
+            temperature: 0,
+            system: [{ type: 'text', text: personaCfg.systemPrompt, cache_control: { type: 'ephemeral' } }],
+            messages: [{ role: 'user', content: classificationUserContent }],
+            tools: [SOP_TOOL_DEFINITION],
+            tool_choice: { type: 'tool' as const, name: 'get_sop' },
+          }, { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } })
+        ) as Anthropic.Message;
+        const sopDurationMs = Date.now() - sopStart;
+        const sopToolBlock = sopResponse.content.find((b: any) => b.type === 'tool_use');
+        if (sopToolBlock && sopToolBlock.type === 'tool_use') {
+          const input = sopToolBlock.input as { categories: string[]; confidence: string; reasoning: string };
+          sopClassification = {
+            categories: input.categories,
+            confidence: input.confidence,
+            reasoning: input.reasoning,
+            inputTokens: sopResponse.usage?.input_tokens || 0,
+            outputTokens: sopResponse.usage?.output_tokens || 0,
+            durationMs: sopDurationMs,
+          };
+          console.log(`[Sandbox] SOP classification: [${input.categories.join(', ')}] confidence=${input.confidence} (${sopDurationMs}ms) — ${input.reasoning}`);
+        } else {
+          console.warn('[Sandbox] SOP classification returned no tool_use block — defaulting to none');
+          sopClassification.durationMs = sopDurationMs;
+          sopClassification.inputTokens = sopResponse.usage?.input_tokens || 0;
+          sopClassification.outputTokens = sopResponse.usage?.output_tokens || 0;
         }
+      } catch (err) {
+        console.warn('[Sandbox] SOP classification failed (non-fatal):', err);
       }
 
-      // Deduplicate chunks by category
-      {
-        const seen = new Set<string>();
-        retrievedChunks = retrievedChunks.filter(c => {
-          if (seen.has(c.category)) return false;
-          seen.add(c.category);
-          return true;
-        });
-      }
+      // Fetch SOP content for classified categories
+      const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
+      const sopTexts = sopCategories
+        .map(c => getSopContent(c, propertyAmenities))
+        .filter(Boolean);
+      const sopContent = sopTexts.join('\n\n---\n\n');
 
       // ── Escalation signals ─────────────────────────────────────────────
       const escalationSignals = detectEscalationSignals(ragQuery);
@@ -314,6 +323,13 @@ export function sandboxRouter(prisma: PrismaClient) {
       }
       if (tenantConfig?.customInstructions) {
         effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\n${tenantConfig.customInstructions}`;
+      }
+
+      // Inject SOP content from tool classification into system prompt
+      if (sopContent) {
+        effectiveSystemPrompt += `\n\n## STANDARD OPERATING PROCEDURE\nFollow this procedure for the guest's current request:\n${sopContent}`;
+      } else if (!sopClassification.categories.includes('none') && sopCategories.length > 0) {
+        effectiveSystemPrompt += `\n\n## NOTE\nSOP temporarily unavailable. Respond helpfully based on your general knowledge and system instructions.`;
       }
 
       const templateVars = {
@@ -490,10 +506,12 @@ export function sandboxRouter(prisma: PrismaClient) {
         model: effectiveModel,
         ragContext: {
           chunks: retrievedChunks.map(c => ({ category: c.category, similarity: c.similarity, sourceKey: c.sourceKey })),
-          tier: ragResult.tier,
-          confidenceTier: ragResult.confidenceTier ?? null,
-          topCandidates: ragResult.topCandidates ?? null,
-          tier2Output: tier2Output ?? null,
+          sopToolUsed: true,
+          sopCategories: sopClassification.categories,
+          sopConfidence: sopClassification.confidence,
+          sopReasoning: sopClassification.reasoning,
+          sopClassificationTokens: { input: sopClassification.inputTokens, output: sopClassification.outputTokens },
+          sopClassificationDurationMs: sopClassification.durationMs,
           escalationSignals: escalationSignals.map(s => s.signal),
         },
       });

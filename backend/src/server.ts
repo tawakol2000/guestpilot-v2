@@ -7,7 +7,6 @@ import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
-import { initializeClassifier, setClassifierThresholds, setBoostThreshold } from './services/classifier.service';
 import { setEmbeddingProvider, type EmbeddingProvider } from './services/embeddings.service';
 import { setPropertySearchPrisma } from './services/property-search.service';
 
@@ -62,12 +61,10 @@ async function main() {
       if (tenants.length > 0) {
         const cfg = await prisma.tenantAiConfig.findUnique({
           where: { tenantId: tenants[0].id },
-          select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true, tier2Threshold: true },
+          select: { embeddingProvider: true },
         });
         if (cfg) {
           if (cfg.embeddingProvider) setEmbeddingProvider(cfg.embeddingProvider as EmbeddingProvider);
-          setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
-          if (cfg.tier2Threshold != null) setBoostThreshold(cfg.tier2Threshold);
         }
       }
 
@@ -84,16 +81,6 @@ async function main() {
         console.log(`[Startup] Re-embedded ${properties.length} property chunk sets for tenant ${tenant.id}`);
       }
 
-      // Initialize the LR classifier for SOP routing
-      try {
-        await initializeClassifier();
-        // If file weights missing, try loading from DB (survives container restarts)
-        const { loadLrWeightsMetadata } = await import('./services/classifier.service');
-        await loadLrWeightsMetadata(prisma);
-        console.log('[Startup] LR classifier initialized');
-      } catch (err) {
-        console.warn('[Startup] LR classifier init failed (non-fatal):', err);
-      }
     } catch (err) {
       console.warn('[Startup] Background re-embed failed (non-fatal):', err);
     }
