@@ -83,6 +83,7 @@ import ExamplesEditorV5 from '@/components/examples-editor-v5'
 import { OpusV5 } from '@/components/opus-v5'
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -432,6 +433,7 @@ function MiniCalendar({ checkIn, checkOut }: { checkIn: string; checkOut: string
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <button
           onClick={prevMonth}
+          aria-label="Previous month"
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: T.text.tertiary, display: 'flex', alignItems: 'center' }}
         >
           <ChevronLeft size={13} />
@@ -441,6 +443,7 @@ function MiniCalendar({ checkIn, checkOut }: { checkIn: string; checkOut: string
         </span>
         <button
           onClick={nextMonth}
+          aria-label="Next month"
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: T.text.tertiary, display: 'flex', alignItems: 'center' }}
         >
           <ChevronRight size={13} />
@@ -628,7 +631,7 @@ function TasksBox({ conversationId, dragHandle }: { conversationId: string; drag
   const [tasks, setTasks] = useState<ApiTask[]>([])
 
   useEffect(() => {
-    apiGetConversationTasks(conversationId).then(setTasks).catch(() => {})
+    apiGetConversationTasks(conversationId).then(setTasks).catch(err => console.error('[Tasks] Failed to load tasks:', err))
   }, [conversationId])
 
   async function markComplete(id: string) {
@@ -817,7 +820,7 @@ function AlterationRequestCard({
         t => (ALTERATION_TITLES as readonly string[]).includes(t.title) && t.status !== 'completed'
       )
       setTasks(alteration)
-    }).catch(() => {})
+    }).catch(err => console.error('[Alteration] Failed to load alteration tasks:', err))
   }, [conversationId])
 
   async function handleAction(task: ApiTask, action: 'accept' | 'reject') {
@@ -1357,7 +1360,20 @@ export default function InboxV5() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [activeTab, setActiveTab] = useState<InboxTab>('All')
-  const [navTab, setNavTab] = useState<NavTab>('inbox')
+  const [navTab, setNavTabRaw] = useState<NavTab>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('gp-nav-tab')
+      if (saved && [
+        'overview','inbox','analytics','tasks','settings','configure',
+        'classifier','logs','pipeline','sops','examples','tools','sandbox','opus',
+      ].includes(saved)) return saved as NavTab
+    }
+    return 'inbox'
+  })
+  const setNavTab = useCallback((tab: NavTab) => {
+    setNavTabRaw(tab)
+    try { sessionStorage.setItem('gp-nav-tab', tab) } catch {}
+  }, [])
   const navRef = useRef<HTMLElement>(null)
   const [lampStyle, setLampStyle] = useState({ left: 0, width: 0, ready: false })
   const [searchQuery, setSearchQuery] = useState('')
@@ -1680,6 +1696,8 @@ export default function InboxV5() {
         if (destroyed) return
         es?.close()
         es = null
+        // Clear any existing reconnect timer to prevent duplicate connections
+        if (reconnectTimer) clearTimeout(reconnectTimer)
         reconnectTimer = setTimeout(connect, 3000)
       }
     }
@@ -2233,6 +2251,7 @@ export default function InboxV5() {
             color: T.text.tertiary,
           }}
           title="Log out"
+          aria-label="Log out"
         >
           <LogOut size={15} />
         </button>
@@ -2418,6 +2437,7 @@ export default function InboxV5() {
                     transition: 'all 0.1s',
                   }}
                   title="Filter"
+                  aria-label="Toggle filters"
                 >
                   <ListFilter size={14} />
                   {activeFilterCount > 0 && (
@@ -2681,7 +2701,7 @@ export default function InboxV5() {
                     <span style={{ padding: '0 8px', color: T.text.primary, fontWeight: 500, height: '100%', display: 'flex', alignItems: 'center', borderRight: `1px solid ${T.border.default}`, fontFamily: T.font.sans }}>
                       {statusConfig[filterStatus].label}
                     </span>
-                    <button onClick={() => setFilterStatus('all')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 6px', color: T.text.tertiary, height: '100%', display: 'flex', alignItems: 'center' }}>
+                    <button onClick={() => setFilterStatus('all')} aria-label="Clear status filter" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 6px', color: T.text.tertiary, height: '100%', display: 'flex', alignItems: 'center' }}>
                       <X size={11} />
                     </button>
                   </div>
@@ -2707,7 +2727,7 @@ export default function InboxV5() {
                     <span style={{ padding: '0 8px', color: T.text.primary, fontWeight: 500, height: '100%', display: 'flex', alignItems: 'center', borderRight: `1px solid ${T.border.default}`, fontFamily: T.font.sans, textTransform: 'capitalize' }}>
                       {filterAiMode}
                     </span>
-                    <button onClick={() => setFilterAiMode('all')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 6px', color: T.text.tertiary, height: '100%', display: 'flex', alignItems: 'center' }}>
+                    <button onClick={() => setFilterAiMode('all')} aria-label="Clear AI mode filter" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 6px', color: T.text.tertiary, height: '100%', display: 'flex', alignItems: 'center' }}>
                       <X size={11} />
                     </button>
                   </div>
@@ -3356,9 +3376,10 @@ export default function InboxV5() {
                                     const newRating = 'positive' as const
                                     setMessageRatings(r => ({ ...r, [msg.id]: newRating }))
                                     setCorrectionMsgId(null)
-                                    apiRateMessage(msg.id, newRating).catch(() => {})
+                                    apiRateMessage(msg.id, newRating).catch(err => console.error('[Rate] Failed to rate message:', err))
                                   }}
                                   title="Good response (reinforces AI learning)"
+                                  aria-label="Rate response as good"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -3377,7 +3398,7 @@ export default function InboxV5() {
                                   onClick={() => {
                                     const newRating = 'negative' as const
                                     setMessageRatings(r => ({ ...r, [msg.id]: newRating }))
-                                    apiRateMessage(msg.id, newRating).catch(() => {})
+                                    apiRateMessage(msg.id, newRating).catch(err => console.error('[Rate] Failed to rate message:', err))
                                     // Toggle correction popover
                                     if (correctionMsgId === msg.id) {
                                       setCorrectionMsgId(null)
@@ -3387,6 +3408,7 @@ export default function InboxV5() {
                                     }
                                   }}
                                   title="Poor response (click to add correction labels)"
+                                  aria-label="Rate response as poor"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -3456,7 +3478,7 @@ export default function InboxV5() {
                                   <button
                                     disabled={correctionLabels.length === 0}
                                     onClick={() => {
-                                      apiRateMessage(msg.id, 'negative', correctionLabels).catch(() => {})
+                                      apiRateMessage(msg.id, 'negative', correctionLabels).catch(err => console.error('[Rate] Failed to submit correction:', err))
                                       setCorrectionSubmitted(s => ({ ...s, [msg.id]: true }))
                                       setCorrectionMsgId(null)
                                     }}
@@ -3551,6 +3573,7 @@ export default function InboxV5() {
                                   try { await apiApproveSuggestion(selectedConv.id, s) } catch { setAiSuggestion(s) }
                                 }}
                                 title="Send this response"
+                                aria-label="Approve and send AI suggestion"
                                 style={{
                                   position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
                                   width: 28, height: 28, borderRadius: '50%', border: 'none',
@@ -3624,6 +3647,7 @@ export default function InboxV5() {
                       {/* Attach */}
                       <button
                         title="Attach file"
+                        aria-label="Attach file"
                         style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none',
                           background: 'transparent', cursor: 'pointer', display: 'flex',
@@ -3644,6 +3668,7 @@ export default function InboxV5() {
                       {/* Property link */}
                       <button
                         title="Send property link"
+                        aria-label="Send property link"
                         style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none',
                           background: 'transparent', cursor: 'pointer', display: 'flex',
@@ -3664,6 +3689,7 @@ export default function InboxV5() {
                       {/* Add task */}
                       <button
                         title="Add task"
+                        aria-label="Add task"
                         style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none',
                           background: 'transparent', cursor: 'pointer', display: 'flex',
@@ -3687,6 +3713,7 @@ export default function InboxV5() {
                         <button
                           onClick={() => sendChannelOpen ? closeSendChannel() : setSendChannelOpen(true)}
                           title="Choose channel"
+                          aria-label="Choose send channel"
                           style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none',
                             background: sendChannelOpen ? T.bg.tertiary : 'transparent',
@@ -3803,6 +3830,7 @@ export default function InboxV5() {
                         onClick={sendPrivate}
                         disabled={!replyText.trim()}
                         title="Private note"
+                        aria-label="Send private note"
                         style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none',
                           background: replyText.trim() ? T.status.amber : '#D8D8D8',
@@ -3819,6 +3847,7 @@ export default function InboxV5() {
                         onClick={sendReply}
                         disabled={sendingMessage || !replyText.trim()}
                         title="Send (⌘↵)"
+                        aria-label="Send message"
                         style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none',
                           background: replyText.trim() && !sendingMessage ? T.text.primary : '#D8D8D8',
@@ -3915,6 +3944,7 @@ export default function InboxV5() {
                 <button
                   onClick={() => setWiggleMode(true)}
                   title="Reorder sections"
+                  aria-label="Reorder detail sections"
                   style={{
                     background: 'none',
                     border: `1px solid ${T.border.default}`,
@@ -3956,6 +3986,7 @@ export default function InboxV5() {
       </div>
       )}
       {navTab === 'overview' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <OverviewV5
             conversations={conversations}
@@ -3965,68 +3996,93 @@ export default function InboxV5() {
             }}
           />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'analytics' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <AnalyticsV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'tasks' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <TasksV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'settings' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <SettingsV5 onImportComplete={() => {
-            apiGetConversations().then(data => setConversations(data.map(summaryToConversation))).catch(() => {})
+            apiGetConversations().then(data => setConversations(data.map(summaryToConversation))).catch(err => console.error('[Settings] Failed to refresh conversations:', err))
           }} />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'configure' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ConfigureAiV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'classifier' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ClassifierV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'logs' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <AiLogsV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'pipeline' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <AiPipelineV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'sops' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <SopEditorV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'examples' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ExamplesEditorV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'tools' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ToolsV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'sandbox' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
           <SandboxChatV5 />
         </div>
+        </ErrorBoundary>
       )}
       {navTab === 'opus' && (
+        <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
           <OpusV5 />
         </div>
+        </ErrorBoundary>
       )}
 
       {/* Image lightbox modal */}

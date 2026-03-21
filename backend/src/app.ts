@@ -41,6 +41,9 @@ export function createApp(prisma: PrismaClient) {
   const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
     : ['http://localhost:3000'];
+  if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
+    console.warn('[CORS] WARNING: CORS_ORIGINS not set in production — falling back to localhost. This is unsafe for production.');
+  }
   app.use(cors({ origin: allowedOrigins, credentials: true }));
   app.use(express.json({
     limit: '10mb',

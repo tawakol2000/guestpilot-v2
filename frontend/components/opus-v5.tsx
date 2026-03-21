@@ -293,13 +293,13 @@ export function OpusV5(): React.ReactElement {
     setLoadingDetail(true)
     apiGetOpusReport(selectedId)
       .then(d => { setDetail(d); setLoadingDetail(false) })
-      .catch(() => setLoadingDetail(false))
+      .catch(err => { console.error('[OPUS] Failed to load report detail:', err); setLoadingDetail(false) })
   }, [selectedId])
 
   useEffect(() => {
     if (!generating) return
     pollRef.current = setInterval(async () => {
-      const data = await apiGetOpusReports().catch(() => [])
+      const data = await apiGetOpusReports().catch(err => { console.error('[OPUS] Failed to poll reports:', err); return [] as OpusReportSummary[] })
       setReports(data)
       const inProgress = data.find((r: OpusReportSummary) => r.status === 'pending' || r.status === 'generating')
       if (!inProgress) {
@@ -308,7 +308,7 @@ export function OpusV5(): React.ReactElement {
         const latest = data[0]
         if (latest) {
           setSelectedId(latest.id)
-          apiGetOpusReport(latest.id).then(setDetail).catch(() => {})
+          apiGetOpusReport(latest.id).then(setDetail).catch(err => console.error('[OPUS] Failed to load latest report:', err))
         }
       }
     }, 5000)

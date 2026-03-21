@@ -808,6 +808,7 @@ function TaskDetailPanel({
 export function TasksV5(): React.ReactElement {
   const [tasks, setTasks] = useState<ApiTask[]>([])
   const [loading, setLoading] = useState(true)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>('All')
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -825,14 +826,15 @@ export function TasksV5(): React.ReactElement {
   }, [])
 
   useEffect(() => {
-    apiGetProperties().then(setProperties).catch(() => {})
+    apiGetProperties().then(setProperties).catch(err => console.error('[Tasks] Failed to load properties:', err))
   }, [])
 
   useEffect(() => {
     setLoading(true)
+    setErrorMsg(null)
     apiGetAllTasks()
       .then((data) => setTasks(data))
-      .catch(console.error)
+      .catch(err => { console.error('[Tasks] Failed to load tasks:', err); setErrorMsg(err.message || 'Failed to load tasks') })
       .finally(() => setLoading(false))
   }, [])
 
@@ -874,7 +876,8 @@ export function TasksV5(): React.ReactElement {
       prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t))
     )
     apiUpdateTask(id, { status: newStatus }).catch((err) => {
-      console.error(err)
+      console.error('[Tasks] Failed to update task status:', err)
+      setErrorMsg(err.message || 'Failed to update task')
       // Revert on error
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: currentStatus } : t))
@@ -887,9 +890,10 @@ export function TasksV5(): React.ReactElement {
     // Optimistic update
     setTasks((prev) => prev.filter((t) => t.id !== id))
     apiDeleteTask(id).catch((err) => {
-      console.error(err)
-      // Revert on error — we'd need to re-fetch for simplicity
-      apiGetAllTasks().then(setTasks).catch(console.error)
+      console.error('[Tasks] Failed to delete task:', err)
+      setErrorMsg(err.message || 'Failed to delete task')
+      // Revert on error — re-fetch for simplicity
+      apiGetAllTasks().then(setTasks).catch(err2 => { console.error('[Tasks] Failed to reload tasks:', err2); setErrorMsg(err2.message || 'Failed to reload tasks') })
     })
   }
 
@@ -1243,6 +1247,24 @@ export function TasksV5(): React.ReactElement {
               boxShadow: T.shadow.sm,
             }}
           >
+            {errorMsg && (
+              <div style={{
+                padding: '8px 12px',
+                marginBottom: 8,
+                background: 'rgba(220,38,38,0.08)',
+                border: `1px solid rgba(220,38,38,0.2)`,
+                borderRadius: T.radius.sm,
+                fontSize: 12,
+                color: T.status.red,
+                fontFamily: T.font.sans,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span>{errorMsg}</span>
+                <button onClick={() => setErrorMsg(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.status.red, fontSize: 14, lineHeight: 1, padding: '0 4px' }} aria-label="Dismiss error">&times;</button>
+              </div>
+            )}
             {loading ? (
               <>
                 {Array.from({ length: 5 }).map((_, i) => (

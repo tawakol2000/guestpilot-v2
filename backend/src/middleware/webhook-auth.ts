@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
  * Hostaway supports optional HTTP Basic Auth on webhooks.
  * - Header present + secret matches: proceed
  * - Header present + secret wrong: reject 401
- * - Header absent + tenant has secret: log warning, proceed (grace period)
+ * - Header absent + tenant has secret: reject 401
  * - Header absent + tenant has no secret: proceed (unconfigured)
  */
 export function makeWebhookAuthMiddleware(prisma: PrismaClient) {
@@ -48,11 +48,10 @@ export function makeWebhookAuthMiddleware(prisma: PrismaClient) {
       }
       // Credentials match (or tenant has no secret configured) — proceed
     } else if (tenant.webhookSecret) {
-      // No auth header but tenant has a secret configured — grace period
-      console.warn(
-        `[Webhook] [${tenantId}] No Basic Auth header — processing with grace period. ` +
-        `Configure webhook credentials in Hostaway dashboard for full security.`
-      );
+      // No auth header but tenant has a secret configured — reject
+      console.warn(`[Webhook] [${tenantId}] Basic Auth REJECTED — no credentials provided but secret is configured`);
+      res.status(401).json({ error: 'Webhook authentication required' });
+      return;
     }
     // No auth header and no secret configured — proceed (unconfigured tenant)
 

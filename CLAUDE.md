@@ -133,6 +133,10 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + pgvector + Prisma ORM + file-based `classifier-weights.json` (009-similarity-boost)
 - TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK (`@anthropic-ai/sdk@^0.30.1`), Hostaway API (010-property-suggestions)
 - PostgreSQL + Prisma ORM + existing `customKnowledgeBase` JSON field (no schema migration) (010-property-suggestions)
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, Hostaway API (011-extend-stay)
+- PostgreSQL + Prisma ORM (no schema changes) (011-extend-stay)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK, Hostaway API (012-system-audit)
+- PostgreSQL + Prisma ORM (add indexes only — no migrations) (012-system-audit)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

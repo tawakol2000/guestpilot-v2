@@ -65,11 +65,6 @@ export function getAndClearLastClassifierResult(): typeof _lastClassifierResult 
   return result;
 }
 
-/** @deprecated Use getAndClearLastClassifierResult() for thread safety */
-export function getLastClassifierResult(): typeof _lastClassifierResult {
-  return _lastClassifierResult;
-}
-
 async function isPgvectorAvailable(prisma: PrismaClient): Promise<boolean> {
   if (_pgvectorAvailable !== null) return _pgvectorAvailable;
   try {

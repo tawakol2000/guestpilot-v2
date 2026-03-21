@@ -130,7 +130,7 @@ export function makeAuthController(prisma: PrismaClient) {
 
     async getSettings(req: Request, res: Response): Promise<void> {
       try {
-        const tenantId = (req as any).user?.tenantId;
+        const tenantId = (req as any).tenantId;
         if (!tenantId) {
           res.status(401).json({ error: 'Unauthorized' });
           return;

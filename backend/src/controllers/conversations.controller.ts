@@ -72,7 +72,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
-        await prisma.conversation.update({ where: { id }, data: { unreadCount: 0 } });
+        await prisma.conversation.updateMany({ where: { id, tenantId }, data: { unreadCount: 0 } });
 
         res.json({
           id: conversation.id,
@@ -444,8 +444,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           },
         });
 
-        await prisma.conversation.update({
-          where: { id },
+        await prisma.conversation.updateMany({
+          where: { id, tenantId },
           data: { lastMessageAt: sentAt },
         });
 
@@ -484,8 +484,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
-        await prisma.conversation.update({
-          where: { id },
+        await prisma.conversation.updateMany({
+          where: { id, tenantId },
           data: { starred },
         });
 
@@ -516,8 +516,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
-        await prisma.conversation.update({
-          where: { id },
+        await prisma.conversation.updateMany({
+          where: { id, tenantId },
           data: { status },
         });
 

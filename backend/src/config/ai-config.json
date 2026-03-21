@@ -1,4 +1,5 @@
 {
+  "_note": "FALLBACK TEMPLATE ONLY — runtime config comes from TenantAiConfig database table. Changes here only affect new tenants or when DB config is missing.",
   "debounceDelayMs": 5000,
   "messageHistoryCount": 20,
   "guestCoordinator": {

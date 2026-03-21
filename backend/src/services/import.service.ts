@@ -196,12 +196,6 @@ export async function runImport(
         console.log(`[Import] Amenity-related fields on listing: ${amenityFields.join(', ') || 'none'}. Sample keys: ${Object.keys(listing).slice(0, 30).join(', ')}`);
       }
     }
-    // Listing URLs for cross-sell property suggestions
-    if (result.properties === 0) {
-      const urlFields = Object.keys(listing).filter(k => /url|link|booking|airbnb|vrbo|engine/i.test(k));
-      console.log(`[Import] URL-related fields on listing: ${urlFields.join(', ') || 'none'}`);
-      urlFields.forEach(k => console.log(`[Import]   ${k}: ${JSON.stringify((listing as any)[k])?.substring(0, 200)}`));
-    }
     if (listing.airbnbListingUrl) kb.airbnbListingUrl = String(listing.airbnbListingUrl);
     if (listing.vrboListingUrl) kb.vrboListingUrl = String(listing.vrboListingUrl);
     if (listing.bookingEngineUrls) {

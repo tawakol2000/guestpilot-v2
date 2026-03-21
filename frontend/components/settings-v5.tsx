@@ -267,7 +267,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
           startPolling()
         }
       })
-      .catch(() => {})
+      .catch(err => console.error('[Sync] Failed to get import progress:', err))
     return stopPolling
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -647,7 +647,7 @@ function LearnedAnswersViewer({ propertyId }: { propertyId: string }): React.Rea
     apiGetKnowledgeChunks(propertyId).then(all => {
       setChunks(all.filter(c => c.category === 'learned-answers'))
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }).catch(err => { console.error('[Knowledge] Failed to load learned answers:', err); setLoading(false) })
   }, [propertyId])
 
   const qaLines = chunks.length > 0
@@ -791,13 +791,14 @@ function PropertyCard({ prop, isOpen, onToggle, onUpdate }: { prop: ApiProperty;
 function PropertiesSection(): React.ReactElement {
   const [properties, setProperties] = useState<ApiProperty[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   function handlePropertyUpdate(updated: ApiProperty): void {
     setProperties(prev => prev.map(p => p.id === updated.id ? updated : p))
   }
 
   useEffect(() => {
-    apiGetProperties().then(setProperties).catch(() => {})
+    apiGetProperties().then(setProperties).catch(err => { console.error('[Properties] Failed to load:', err); setLoadError(err.message || 'Failed to load properties') })
   }, [])
 
   function toggleExpand(id: string): void {
@@ -808,7 +809,11 @@ function PropertiesSection(): React.ReactElement {
     <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.05s' }}>
       <div style={cardHeaderStyle}>Properties</div>
       <div style={cardBodyStyle}>
-        {properties.length === 0 ? (
+        {loadError ? (
+          <div style={{ fontSize: 13, color: T.status.red, fontFamily: T.font.sans }}>
+            {loadError}
+          </div>
+        ) : properties.length === 0 ? (
           <div style={{ fontSize: 13, color: T.text.tertiary, fontFamily: T.font.sans }}>
             No properties found. Run a sync first.
           </div>
@@ -976,9 +981,10 @@ function TemplateItem({
 
 function MessageTemplatesSection(): React.ReactElement {
   const [templates, setTemplates] = useState<ApiMessageTemplate[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
-    apiGetTemplates().then(setTemplates).catch(() => {})
+    apiGetTemplates().then(setTemplates).catch(err => { console.error('[Templates] Failed to load:', err); setLoadError(err.message || 'Failed to load templates') })
   }, [])
 
   function handleUpdate(updated: ApiMessageTemplate): void {
@@ -989,7 +995,11 @@ function MessageTemplatesSection(): React.ReactElement {
     <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.1s' }}>
       <div style={cardHeaderStyle}>Message Templates</div>
       <div style={cardBodyStyle}>
-        {templates.length === 0 ? (
+        {loadError ? (
+          <div style={{ fontSize: 13, color: T.status.red, fontFamily: T.font.sans }}>
+            {loadError}
+          </div>
+        ) : templates.length === 0 ? (
           <div style={{ fontSize: 13, color: T.text.tertiary, fontFamily: T.font.sans }}>
             No templates yet. Run a sync to import automated messages from Hostaway.
           </div>
@@ -1277,8 +1287,8 @@ function KnowledgeBaseSection(): React.ReactElement {
       category: selectedCategory || undefined,
       search: activeSearch || undefined,
     }
-    apiGetKnowledgeSuggestions('pending', opts).then(setPending).catch(() => {})
-    apiGetKnowledgeSuggestions('approved', opts).then(setApproved).catch(() => {})
+    apiGetKnowledgeSuggestions('pending', opts).then(setPending).catch(err => console.error('[Knowledge] Failed to load pending suggestions:', err))
+    apiGetKnowledgeSuggestions('approved', opts).then(setApproved).catch(err => console.error('[Knowledge] Failed to load approved suggestions:', err))
   }, [selectedCategory, activeSearch])
 
   useEffect(() => {
@@ -1737,7 +1747,7 @@ function AIToggleSection({ onImportComplete }: { onImportComplete: () => void })
   const [properties, setProperties] = useState<PropertyAiStatus[]>([])
 
   function loadProperties(): void {
-    apiGetPropertiesAiStatus().then(setProperties).catch(() => {})
+    apiGetPropertiesAiStatus().then(setProperties).catch(err => console.error('[AI Toggle] Failed to load properties:', err))
   }
 
   useEffect(() => { loadProperties() }, [])
@@ -2026,7 +2036,7 @@ function RagChunksSection(): React.ReactElement {
     apiGetProperties().then(props => {
       setProperties(props)
       if (props.length > 0 && !selectedPropertyId) setSelectedPropertyId(props[0].id)
-    }).catch(() => {})
+    }).catch(err => console.error('[Knowledge Browser] Failed to load properties:', err))
   }, [open, selectedPropertyId])
 
   useEffect(() => {
@@ -2034,7 +2044,7 @@ function RagChunksSection(): React.ReactElement {
     setLoading(true)
     apiGetKnowledgeChunks(selectedPropertyId)
       .then(setChunks)
-      .catch(() => setChunks([]))
+      .catch(err => { console.error('[Knowledge Browser] Failed to load chunks:', err); setChunks([]) })
       .finally(() => setLoading(false))
   }, [selectedPropertyId])
 
@@ -2224,7 +2234,7 @@ function WorkingHoursSection(): React.ReactElement {
         setEnd(cfg.workingHoursEnd ?? '01:00')
         setTimezone(cfg.workingHoursTimezone ?? 'UTC')
       })
-      .catch(() => {})
+      .catch(err => console.error('[Working Hours] Failed to load config:', err))
       .finally(() => setLoading(false))
   }, [])
 

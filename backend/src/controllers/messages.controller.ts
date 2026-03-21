@@ -67,8 +67,8 @@ export function makeMessagesController(prisma: PrismaClient) {
           },
         });
 
-        await prisma.conversation.update({
-          where: { id },
+        await prisma.conversation.updateMany({
+          where: { id, tenantId },
           data: { lastMessageAt: new Date() },
         });
 
@@ -181,8 +181,8 @@ export function makeMessagesController(prisma: PrismaClient) {
           },
         });
 
-        await prisma.conversation.update({
-          where: { id },
+        await prisma.conversation.updateMany({
+          where: { id, tenantId },
           data: { lastMessageAt: new Date() },
         });
 

@@ -9,6 +9,7 @@ import { getSopContent } from '../services/classifier.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
 import { extractIntent } from '../services/intent-extractor.service';
 import { searchAvailableProperties } from '../services/property-search.service';
+import { checkExtendAvailability } from '../services/extend-stay.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -326,20 +327,43 @@ export function sandboxRouter(prisma: PrismaClient) {
 
       const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
 
-      // ── Tool definitions (INQUIRY only — property search) ──────────────
-      const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
+      // ── Tool definitions — per-agent tools ──────────────────────────
+      // Screening agent (INQUIRY): property search tool
+      // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
+      const toolsForCall: Anthropic.Tool[] = isInquiry ? [{
         name: 'search_available_properties',
-        description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates.',
+        description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
         input_schema: {
           type: 'object' as const,
           properties: {
-            amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities the guest is looking for' },
-            min_capacity: { type: 'number', description: 'Minimum guest capacity' },
-            reason: { type: 'string', description: 'Brief reason for the search' },
+            amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
+            min_capacity: { type: 'number', description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+            reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
           },
           required: ['amenities', 'reason'],
         },
-      }] : undefined;
+      }] : [{
+        name: 'check_extend_availability',
+        description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
+            new_checkin: { type: 'string', description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+            reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
+          },
+          required: ['new_checkout', 'reason'],
+        },
+      }];
+
+      // Look up hostawayListingId for extend-stay tool
+      let hostawayListingId = '';
+      if (!isInquiry) {
+        try {
+          const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { hostawayListingId: true } });
+          hostawayListingId = prop?.hostawayListingId || '';
+        } catch { /* fallback: empty */ }
+      }
 
       // ── Call Claude ────────────────────────────────────────────────────
       const createParams: any = {
@@ -366,7 +390,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       let toolResults: any;
       let toolDurationMs: number | undefined;
 
-      if (response.stop_reason === 'tool_use' && isInquiry) {
+      if (response.stop_reason === 'tool_use') {
         const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
         if (toolUseBlock) {
           toolUsed = true;
@@ -376,19 +400,33 @@ export function sandboxRouter(prisma: PrismaClient) {
 
           let toolResultContent: string;
           try {
-            const typedInput = toolUseBlock.input as { amenities: string[]; min_capacity?: number; reason?: string };
-            const currentAddress = listing.address || '';
-            const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
-            const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
-            toolResultContent = await searchAvailableProperties(typedInput, {
-              tenantId,
-              currentPropertyId: propertyId,
-              checkIn, checkOut,
-              channel: channel || 'DIRECT',
-              hostawayAccountId: tenant.hostawayAccountId,
-              hostawayApiKey: tenant.hostawayApiKey,
-              currentCity,
-            });
+            if (toolUseBlock.name === 'search_available_properties') {
+              const typedInput = toolUseBlock.input as { amenities: string[]; min_capacity?: number; reason?: string };
+              const currentAddress = listing.address || '';
+              const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
+              const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
+              toolResultContent = await searchAvailableProperties(typedInput, {
+                tenantId,
+                currentPropertyId: propertyId,
+                checkIn, checkOut,
+                channel: channel || 'DIRECT',
+                hostawayAccountId: tenant.hostawayAccountId,
+                hostawayApiKey: tenant.hostawayApiKey,
+                currentCity,
+              });
+            } else if (toolUseBlock.name === 'check_extend_availability') {
+              toolResultContent = await checkExtendAvailability(toolUseBlock.input, {
+                listingId: hostawayListingId,
+                currentCheckIn: checkIn,
+                currentCheckOut: checkOut,
+                channel: channel || 'DIRECT',
+                numberOfGuests: guestCount || 1,
+                hostawayAccountId: tenant.hostawayAccountId,
+                hostawayApiKey: tenant.hostawayApiKey,
+              });
+            } else {
+              toolResultContent = JSON.stringify({ error: `Unknown tool: ${toolUseBlock.name}` });
+            }
           } catch (toolErr) {
             console.error('[Sandbox] Tool handler error:', toolErr);
             toolResultContent = JSON.stringify({ error: 'Tool execution failed', found: false, properties: [] });

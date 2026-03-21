@@ -14,6 +14,15 @@ import { setPropertySearchPrisma } from './services/property-search.service';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function main() {
+  if (!process.env.DATABASE_URL) {
+    console.error('[FATAL] DATABASE_URL not set');
+    process.exit(1);
+  }
+  if (!process.env.JWT_SECRET) {
+    console.error('[FATAL] JWT_SECRET not set');
+    process.exit(1);
+  }
+
   const prisma = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });

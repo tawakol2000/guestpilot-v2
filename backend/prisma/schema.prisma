@@ -130,6 +130,7 @@ model Conversation {
 
   @@unique([tenantId, reservationId])
   @@index([tenantId])
+  @@index([tenantId, status])
   @@index([tenantId, lastMessageAt(sort: Desc)])
 }
 
@@ -189,6 +190,7 @@ model Task {
   tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, status])
   @@index([conversationId])
 }
 
@@ -345,6 +347,7 @@ model PropertyKnowledgeChunk {
   property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, propertyId])
+  @@index([tenantId, category])
   @@index([propertyId, category])
 }
 

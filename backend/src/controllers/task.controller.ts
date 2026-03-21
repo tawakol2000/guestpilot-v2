@@ -112,6 +112,8 @@ export function taskController(prisma: PrismaClient) {
         }
         if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
         if (assignee !== undefined) data.assignee = assignee || null;
+        const existing = await prisma.task.findFirst({ where: { id, tenantId } });
+        if (!existing) { res.status(404).json({ error: 'Task not found' }); return; }
         const task = await prisma.task.update({ where: { id }, data });
         res.json(task);
       } catch (err) { next(err); }

@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
@@ -15,14 +16,44 @@ import {
 import type { ContentBlock } from '../services/ai.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
+import { checkExtendAvailability } from '../services/extend-stay.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─── Config cache for GET endpoint ──────────────────────────────────────────
+// Pre-serialize and compute ETag once; invalidated on update.
+let _cachedConfigJson: string | null = null;
+let _cachedConfigEtag: string | null = null;
+
+function getCachedConfigResponse(): { json: string; etag: string } {
+  if (!_cachedConfigJson) {
+    _cachedConfigJson = JSON.stringify(getAiConfig());
+    _cachedConfigEtag = `"${crypto.createHash('md5').update(_cachedConfigJson).digest('hex')}"`;
+  }
+  return { json: _cachedConfigJson, etag: _cachedConfigEtag! };
+}
+
+function invalidateConfigCache(): void {
+  _cachedConfigJson = null;
+  _cachedConfigEtag = null;
+}
+
 export function makeAiConfigController(prisma: PrismaClient) {
   return {
-    async get(_req: AuthenticatedRequest, res: Response): Promise<void> {
+    async get(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
-        res.json(getAiConfig());
+        const { json, etag } = getCachedConfigResponse();
+
+        // ETag-based 304 Not Modified
+        if (req.headers['if-none-match'] === etag) {
+          res.status(304).end();
+          return;
+        }
+
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+        res.setHeader('Content-Type', 'application/json');
+        res.send(json);
       } catch (err) {
         console.error('[AiConfig] get error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -31,6 +62,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
 
     async update(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
+        invalidateConfigCache();
         const updated = updateAiConfig(req.body);
 
         // Save a version snapshot
@@ -122,6 +154,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
           res.status(404).json({ error: 'Version not found' });
           return;
         }
+        invalidateConfigCache();
         const updated = updateAiConfig(version.config as any);
 
         // Save a new version noting the revert
@@ -291,8 +324,20 @@ export function makeAiConfigController(prisma: PrismaClient) {
           ];
         }
 
-        // ── Set up tools for INQUIRY (property search) ────────────────────────
-        const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
+        // ── Set up tools — per-agent tools ──────────────────────────────────
+        // Screening agent (INQUIRY): property search tool
+        // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
+
+        // Look up hostawayListingId for extend-stay tool
+        let hostawayListingId = '';
+        if (!isInquiry) {
+          try {
+            const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { hostawayListingId: true } });
+            hostawayListingId = prop?.hostawayListingId || '';
+          } catch { /* fallback: empty */ }
+        }
+
+        const toolsForCall: Anthropic.Tool[] = isInquiry ? [{
           name: 'search_available_properties',
           description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
           input_schema: {
@@ -304,7 +349,19 @@ export function makeAiConfigController(prisma: PrismaClient) {
             },
             required: ['amenities', 'reason'],
           },
-        }] : undefined;
+        }] : [{
+          name: 'check_extend_availability',
+          description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
+              new_checkin: { type: 'string', description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+              reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
+            },
+            required: ['new_checkout', 'reason'],
+          },
+        }];
 
         const ragContext: any = {
           query: currentMsgsText,
@@ -313,7 +370,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
           durationMs: 0,
         };
 
-        const toolHandlersForCall: Map<string, ToolHandler> | undefined = isInquiry ? new Map([
+        const toolHandlersForCall: Map<string, ToolHandler> = isInquiry ? new Map([
           ['search_available_properties', async (input: unknown) => {
             const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
             const currentAddress = listing.address || (customKb.address as string) || '';
@@ -330,7 +387,19 @@ export function makeAiConfigController(prisma: PrismaClient) {
               currentCity,
             });
           }],
-        ]) : undefined;
+        ]) : new Map([
+          ['check_extend_availability', async (input: unknown) => {
+            return checkExtendAvailability(input, {
+              listingId: hostawayListingId,
+              currentCheckIn: checkIn,
+              currentCheckOut: checkOut,
+              channel: channel || 'DIRECT',
+              numberOfGuests: guestCount || 1,
+              hostawayAccountId: tenant.hostawayAccountId,
+              hostawayApiKey: tenant.hostawayApiKey,
+            });
+          }],
+        ]);
 
         // ── Call Claude ───────────────────────────────────────────────────────
         const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
@@ -385,7 +454,11 @@ export function makeAiConfigController(prisma: PrismaClient) {
               response: parsed.guest_message || '',
               escalation: parsed.escalation || null,
               manager: null,
-              toolUsed: false,
+              toolUsed: ragContext.toolUsed || false,
+              toolName: ragContext.toolName || undefined,
+              toolInput: ragContext.toolInput || undefined,
+              toolResults: ragContext.toolResults || undefined,
+              toolDurationMs: ragContext.toolDurationMs || undefined,
               inputTokens,
               outputTokens,
               durationMs,

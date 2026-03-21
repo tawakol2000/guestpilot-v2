@@ -421,7 +421,7 @@ export function AnalyticsV5(): React.ReactElement {
               label="AI Resolution Rate"
               value={
                 data?.totals.aiResolutionRate != null
-                  ? `${Math.round(data.totals.aiResolutionRate * 100)}%`
+                  ? `${Math.min(100, Math.round(data.totals.aiResolutionRate))}%`
                   : '—'
               }
               animationIndex={4}
