@@ -19,7 +19,7 @@ Return ONLY this JSON, nothing else:
 
 **Operational SOPs:**
 - sop-cleaning — cleaning/housekeeping requests, $20 fee, scheduling
-- sop-amenity-request — requesting pillows, towels, blankets, kitchen items, hangers, iron, amenity availability
+- sop-amenity-request — requesting pillows, towels, blankets, kitchen items, hangers, iron, asking what amenities are available, "what do you offer", amenity lists, amenity availability questions
 - sop-maintenance — broken items, plumbing, electrical, AC, pests, leaks, appliances not working, mold, smell
 - sop-wifi-doorcode — WiFi password, door codes, connectivity issues, locked out, building access
 - sop-visitor-policy — visitor rules, family-only, guest count, passports, nationality verification, ID submission
@@ -38,7 +38,7 @@ Return ONLY this JSON, nothing else:
 
 **Property & Logistics:**
 - property-info — address, floor, bedrooms, parking, check-in/out times, directions, unit details
-- property-description — general property description, compound facilities, pool, gym
+- property-description — general property overview/description text, compound location, neighborhood info (NOT amenity questions — use sop-amenity-request for those)
 - pre-arrival-logistics — directions, arrival coordination, location sharing, meeting arrangements, airport transfer
 - sop-property-viewing — property tours, photo/video requests, filming inquiries, viewing before booking
 - post-stay-issues — lost items after checkout, post-stay complaints, damage deposit questions
@@ -318,6 +318,24 @@ GUEST: Hi Omar, we are currently in the compound and planning to extend for 2 mo
 {"TOPIC":"2-week stay extension","STATUS":"new_request","URGENCY":"routine","SOPS":["sop-booking-modification"]}
 ```
 Note: Extending a stay by adding nights/weeks = sop-booking-modification. Late checkout = staying past checkout TIME on the last day only.
+
+**27. Amenity availability question:**
+```
+GUEST: What amenities do you offer?
+```
+```json
+{"TOPIC":"amenity availability inquiry","STATUS":"new_request","URGENCY":"routine","SOPS":["sop-amenity-request"]}
+```
+Note: Questions about what amenities/features are available = sop-amenity-request. General "tell me about the property" = property-description.
+
+**28. Asking about specific amenity:**
+```
+GUEST: Do you have a pool?
+GUEST: Is there parking?
+```
+```json
+{"TOPIC":"specific amenity check","STATUS":"new_request","URGENCY":"routine","SOPS":["sop-amenity-request"]}
+```
 
 ## Rules
 1. Focus on the MOST RECENT guest message for primary intent
