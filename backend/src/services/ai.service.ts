@@ -809,9 +809,10 @@ You have access to a \`search_available_properties\` tool that can find alternat
 
 **HOW to present results:**
 - Briefly acknowledge the current property doesn't have what they want
-- Present alternatives naturally: property name, what makes it a match, and the booking link
+- Present each alternative with: property name, key highlights, and the booking_link URL from the tool results. ALWAYS include the full URL in your message so the guest can click it directly. Example: "Apartment 403 — pool, sleeps 7: https://www.airbnb.com/rooms/123456"
 - Never quote specific prices — direct the guest to the booking link for live pricing
-- If the guest expresses interest in a suggested property, provide the booking link and escalate to the manager
+- If the guest expresses interest in a suggested property, provide the booking link again and escalate to the manager
+- If a property has no booking_link (null), mention the property by name and say "contact us for booking details"
 
 **If no results:** Politely say none of our properties have that feature for their dates. Offer to escalate for manual assistance.
 

@@ -126,10 +126,10 @@ function getBookingLink(kb: Record<string, unknown>, channel: string): string | 
       break;
   }
 
-  // Fallback: if channel-specific URL missing, try bookingEngineUrl
-  if (!link) {
-    link = (kb.bookingEngineUrl as string) || null;
-  }
+  // Fallback chain: bookingEngineUrl → airbnbListingUrl → vrboListingUrl
+  if (!link) link = (kb.bookingEngineUrl as string) || null;
+  if (!link) link = (kb.airbnbListingUrl as string) || null;
+  if (!link) link = (kb.vrboListingUrl as string) || null;
 
   return link;
 }
