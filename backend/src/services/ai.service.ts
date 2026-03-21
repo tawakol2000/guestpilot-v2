@@ -1033,7 +1033,8 @@ function buildPropertyInfo(
     wifiPassword?: string;
   },
   retrievedChunks?: Array<{ content: string; category: string }>,
-  reservationStatus?: string
+  reservationStatus?: string,
+  amenities?: string
 ): string {
   // Compute human-readable booking status
   const bookingStatusDisplay = (() => {
@@ -1081,6 +1082,15 @@ Number of Guests: ${guestCount}
     }
     if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
       info += `WiFi Password: ${listing.wifiPassword}\n`;
+    }
+  }
+
+  // Always include amenities so Omar can answer "what amenities do you offer" without SOP routing
+  if (amenities) {
+    const amenityList = amenities.split(',').map(a => a.trim()).filter(Boolean);
+    if (amenityList.length > 0) {
+      info += '\n### AVAILABLE AMENITIES\n';
+      info += amenityList.map(a => `• ${a}`).join('\n') + '\n';
     }
   }
 
@@ -1706,7 +1716,8 @@ export async function generateAndSendAiReply(
       context.guestCount,
       context.listing,
       retrievedChunks,
-      context.reservationStatus
+      context.reservationStatus,
+      propertyAmenities
     );
 
     // T014 / FR-012: Inject escalation signals into prompt so Claude can factor them in

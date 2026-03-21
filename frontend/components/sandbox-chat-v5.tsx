@@ -573,8 +573,8 @@ export default function SandboxChatV5() {
                     )}
                   </span>
 
-                  {/* RAG chunks injected */}
-                  {msg.meta.ragContext && msg.meta.ragContext.chunks.length > 0 && (
+                  {/* RAG context: chunks + tier info */}
+                  {msg.meta.ragContext && (
                     <div style={{
                       width: '100%',
                       marginTop: 4,
@@ -583,38 +583,62 @@ export default function SandboxChatV5() {
                       gap: 4,
                       alignItems: 'center',
                     }}>
-                      <span style={{ fontSize: 10, color: T.text.tertiary, marginRight: 2 }}>
-                        SOPs:
-                      </span>
-                      {msg.meta.ragContext.chunks.map((chunk, i) => (
+                      {/* Tier 2 fired indicator */}
+                      {msg.meta.ragContext.tier2Output && (
                         <span
-                          key={i}
-                          title={`similarity: ${chunk.similarity.toFixed(2)} | source: ${chunk.sourceKey}`}
+                          title={`topic: ${msg.meta.ragContext.tier2Output.topic} | status: ${msg.meta.ragContext.tier2Output.status} | urgency: ${msg.meta.ragContext.tier2Output.urgency}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
                             padding: '1px 6px',
                             borderRadius: 4,
-                            background: '#30A46C14',
-                            border: '1px solid #30A46C30',
-                            color: '#30A46C',
+                            background: '#FFB22414',
+                            border: '1px solid #FFB22430',
+                            color: '#FFB224',
                             fontSize: 10,
                             fontWeight: 600,
                             fontFamily: T.font.mono,
                             cursor: 'help',
                           }}
                         >
-                          {chunk.category}
+                          T2 fired: {msg.meta.ragContext.tier2Output.topic}
                         </span>
-                      ))}
-                      {msg.meta.ragContext.tier2Output && (
-                        <span style={{
-                          fontSize: 10,
-                          color: T.status.amber,
-                          fontFamily: T.font.mono,
-                          fontWeight: 600,
-                        }}>
-                          T2: {msg.meta.ragContext.tier2Output.topic}
+                      )}
+
+                      {/* SOP chunks */}
+                      {msg.meta.ragContext.chunks.length > 0 && (
+                        <>
+                          <span style={{ fontSize: 10, color: T.text.tertiary }}>
+                            {msg.meta.ragContext.chunks.length} SOP{msg.meta.ragContext.chunks.length !== 1 ? 's' : ''}:
+                          </span>
+                          {msg.meta.ragContext.chunks.map((chunk, i) => (
+                            <span
+                              key={i}
+                              title={`similarity: ${chunk.similarity.toFixed(2)} | source: ${chunk.sourceKey}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: '#30A46C14',
+                                border: '1px solid #30A46C30',
+                                color: '#30A46C',
+                                fontSize: 10,
+                                fontWeight: 600,
+                                fontFamily: T.font.mono,
+                                cursor: 'help',
+                              }}
+                            >
+                              {chunk.category}
+                            </span>
+                          ))}
+                        </>
+                      )}
+
+                      {/* No chunks case */}
+                      {msg.meta.ragContext.chunks.length === 0 && !msg.meta.ragContext.tier2Output && (
+                        <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>
+                          no SOPs injected
                         </span>
                       )}
                     </div>

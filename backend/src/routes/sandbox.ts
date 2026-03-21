@@ -51,6 +51,7 @@ function buildPropertyInfo(
   },
   retrievedChunks: Array<{ content: string; category: string }>,
   reservationStatus: string,
+  amenities?: string,
 ): string {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const ci = new Date(checkIn); ci.setHours(0, 0, 0, 0);
@@ -94,6 +95,14 @@ Number of Guests: ${guestCount}
     }
     if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
       info += `WiFi Password: ${listing.wifiPassword}\n`;
+    }
+  }
+
+  if (amenities) {
+    const amenityList = amenities.split(',').map(a => a.trim()).filter(Boolean);
+    if (amenityList.length > 0) {
+      info += '\n### AVAILABLE AMENITIES\n';
+      info += amenityList.map(a => `• ${a}`).join('\n') + '\n';
     }
   }
 
@@ -278,7 +287,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       // ── Build prompt ───────────────────────────────────────────────────
       let propertyInfo = buildPropertyInfo(
         guestName || 'Test Guest', checkIn, checkOut, guestCount || 2,
-        listing, retrievedChunks, reservationStatus,
+        listing, retrievedChunks, reservationStatus, propertyAmenities,
       );
 
       if (escalationSignals.length > 0) {
