@@ -1153,3 +1153,16 @@ export async function apiSandboxChat(req: SandboxChatRequest): Promise<SandboxCh
     body: JSON.stringify(req),
   })
 }
+
+// ─── Intent Extractor Prompt ─────────────────────────────────────────────────
+
+export async function apiGetIntentPrompt(): Promise<{ prompt: string }> {
+  return apiFetch<{ prompt: string }>('/api/ai-config/intent-prompt')
+}
+
+export async function apiUpdateIntentPrompt(prompt: string): Promise<{ ok: boolean; length: number }> {
+  return apiFetch<{ ok: boolean; length: number }>('/api/ai-config/intent-prompt', {
+    method: 'PUT',
+    body: JSON.stringify({ prompt }),
+  })
+}

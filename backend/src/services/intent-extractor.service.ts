@@ -141,3 +141,17 @@ export async function extractIntent(
 export function getTier2Stats() {
   return { calls: _tier2CallCount, successes: _tier2SuccessCount, failures: _tier2FailCount };
 }
+
+export function getIntentPrompt(): string {
+  return INTENT_PROMPT;
+}
+
+export function reloadIntentPrompt(): void {
+  try {
+    const promptPath = path.join(__dirname, '../../config/intent_extractor_prompt.md');
+    INTENT_PROMPT = fs.readFileSync(promptPath, 'utf-8');
+    console.log('[IntentExtractor] Prompt reloaded:', INTENT_PROMPT.length, 'chars');
+  } catch (err) {
+    console.warn('[IntentExtractor] Failed to reload prompt:', err);
+  }
+}
