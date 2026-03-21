@@ -268,5 +268,7 @@ export async function searchAvailableProperties(
     city: currentCity || 'unknown',
   };
 
+  console.log(`[PropertySearch] Result: ${properties.length} properties, links: ${properties.map(p => p.booking_link || 'NULL').join(', ')}`);
+
   return JSON.stringify(result);
 }
