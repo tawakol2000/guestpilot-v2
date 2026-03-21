@@ -466,7 +466,7 @@ Cleaning costs $20 per session. Available during working hours only (10am–5pm)
 {PROPERTY_AMENITIES}
 
 Check the property amenities list for available items. Only confirm items explicitly listed there.
-- Item on the amenities list → confirm availability, ask for delivery time during working hours (10am–5pm), then escalate as "scheduled"
+- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
 - Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
@@ -477,7 +477,7 @@ Broken or malfunctioning items: Acknowledge the problem, assure guest someone wi
 WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Give them directly.
 If there's a **problem** (WiFi not working, code not working, can't connect, locked out) → escalate immediately.`,
 
-  'sop-visitor-policy': `Guest wants to invite someone over, have a friend visit, bring a visitor, asks about visitor rules, or asks if someone can come to the apartment.
+  'sop-visitor-policy': `Guest wants to invite someone ELSE over — a friend, family member, or visitor to the apartment. NOTE: This SOP is for VISITOR requests only. If the guest is asking about their OWN booking documents (passport, marriage cert, ID), this does not apply — escalate as info_request instead.
 
 ## VISITOR POLICY
 - ONLY immediate family members allowed as visitors
@@ -485,39 +485,21 @@ If there's a **problem** (WiFi not working, code not working, can't connect, loc
 - Family names must match guest's family name
 Collect passport image → escalate for manager verification
 Non-family visitors (friends, colleagues, etc.) = NOT allowed
-
-**Examples:**
-Guest: "Can my someone come over for dinner?"
-{"guest_message":"We only allow immediate family members as visitors. If they're family, please send their passport through the chat and we'll arrange access.","escalation":null}
-
-Guest: "That's unfair, it's just one friend"
-{"guest_message":"I understand, but this is a strict policy we need to follow. I'll pass your feedback along.","escalation":{"title":"house-rule-pushback","note":"Guest [Name] in [Unit] pushing back on visitor policy. Wants non-family friend. Needs manager.","urgency":"immediate"}}`,
+Any pushback on this rule → escalate as immediate`,
 
   'sop-early-checkin': `Guest asks for early check-in, arriving early, wants to check in before 3pm, or asks if they can come earlier.
 
 ## EARLY CHECK-IN
 Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-**More than 2 days before check-in:** Do NOT escalate. Tell guest:
-"We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
+**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
 **Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
-**Never confirm early check-in yourself.**
-
-**Examples:**
-Guest: "Can I check in at noon?" (check-in is far away)
-{"guest_message":"We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab something at O1 Mall — it's a 1-minute walk.","escalation":null}
-
-Guest: "I arrive tomorrow at 10am, early check-in?" (within 2 days)
-{"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"early-checkin","note":"Guest [Name] in [Unit] — early check-in tomorrow 10am. Within 2-day window.","urgency":"info_request"}}`,
+**Never confirm early check-in yourself.**`,
 
   'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
 Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-**More than 2 days before checkout:** Do NOT escalate. Tell guest the same 2-day rule.
+**More than 2 days before checkout:** Do NOT escalate. Tell guest: "We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date."
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
-**Never confirm late checkout yourself.**
-
-**Example:**
-Guest: "Can I check out at 2pm instead of 11?"
-{"guest_message":"Let me check on that for you and get back to you shortly.","escalation":{"title":"late-checkout","note":"Guest [Name] in [Unit] — wants late checkout at 2pm. Needs manager approval.","urgency":"info_request"}}`,
+**Never confirm late checkout yourself.**`,
 
   'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
 Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
@@ -528,7 +510,7 @@ Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissiv
 - General dissatisfaction → empathize, ask for specifics, escalate as immediate
 Never offer refunds, discounts, or compensation yourself. Inform the guest you have notified the manager.`,
 
-  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If available, share property links. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties, present them with booking links from the tool results. If no booking links are available, list properties by name and escalate to manager to send links — never promise to send links you don't have. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
 
   'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
 
