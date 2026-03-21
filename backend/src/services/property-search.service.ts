@@ -109,14 +109,13 @@ function propertyHasAmenity(amenitiesCsv: string, synonyms: string[]): boolean {
 
 // ─── Channel booking link resolver ──────────────────────────────────────────
 
-function getBookingLink(urls: { airbnbListingUrl: string | null; vrboListingUrl: string | null; bookingEngineUrls: unknown }, channel: string): string | null {
+function getBookingLink(kb: Record<string, unknown>, channel: string): string | null {
   let link: string | null = null;
 
-  // Read URLs directly from Hostaway API response (always fresh, slim extract)
-  const airbnb = urls.airbnbListingUrl || null;
-  const vrbo = urls.vrboListingUrl || null;
-  const engineUrls = urls.bookingEngineUrls;
-  const engine = Array.isArray(engineUrls) && engineUrls.length > 0 ? String(engineUrls[0]) : null;
+  // Read URLs from local customKnowledgeBase (populated during import)
+  const airbnb = (kb.airbnbListingUrl as string) || null;
+  const vrbo = (kb.vrboListingUrl as string) || null;
+  const engine = (kb.bookingEngineUrl as string) || null;
 
   switch (channel.toUpperCase()) {
     case 'AIRBNB':
@@ -196,8 +195,8 @@ export async function searchAvailableProperties(
     };
   }).filter((x): x is NonNullable<typeof x> => x !== null);
 
-  // 4. Call Hostaway to check availability — extract only IDs + URLs, discard the rest
-  let availableListingsMap: Map<string, { airbnbListingUrl: string | null; vrboListingUrl: string | null; bookingEngineUrls: unknown }>;
+  // 4. Call Hostaway to check availability — only need listing IDs
+  let availableListingIds: Set<string>;
   try {
     const availableRes = await listAvailableListings(
       context.hostawayAccountId,
@@ -206,11 +205,7 @@ export async function searchAvailableProperties(
       checkOut
     );
     const listings = availableRes.result || [];
-    availableListingsMap = new Map(listings.map(l => [String(l.id), {
-      airbnbListingUrl: l.airbnbListingUrl || null,
-      vrboListingUrl: l.vrboListingUrl || null,
-      bookingEngineUrls: l.bookingEngineUrls,
-    }]));
+    availableListingIds = new Set(listings.map(l => String(l.id)));
   } catch (err) {
     console.error('[PropertySearch] Hostaway availability check failed:', err);
     const errorResult: SearchResult = {
@@ -226,9 +221,9 @@ export async function searchAvailableProperties(
   }
 
   // 5. Intersect: only keep properties available on Hostaway
-  const available = scored
-    .filter(s => availableListingsMap.has(s.property.hostawayListingId))
-    .map(s => ({ ...s, listingUrls: availableListingsMap.get(s.property.hostawayListingId)! }));
+  const available = scored.filter(s =>
+    availableListingIds.has(s.property.hostawayListingId)
+  );
 
   // 6. Sort by amenity match count (descending), take top 3
   available.sort((a, b) => b.matchCount - a.matchCount);
@@ -236,7 +231,7 @@ export async function searchAvailableProperties(
 
   // 7. Build results — NEVER include access codes
   const properties: PropertyResult[] = top.map(item => {
-    const { property, amenitiesCsv, capacity, matchedAmenities, listingUrls } = item;
+    const { property, kb, amenitiesCsv, capacity, matchedAmenities } = item;
 
     // Build highlights from first 3-4 amenities + capacity
     const amenityItems = amenitiesCsv
@@ -249,7 +244,7 @@ export async function searchAvailableProperties(
     }
     const highlights = amenityItems.join(', ');
 
-    const bookingLink = getBookingLink(listingUrls, channel);
+    const bookingLink = getBookingLink(kb, channel);
 
     return {
       name: property.name,
