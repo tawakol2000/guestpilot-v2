@@ -1,6 +1,6 @@
 # AI Response Audit
 
-**Last run**: never
+**Last run**: 2026-03-21T12:15:00Z (53 messages audited, score: 3.83/5)
 **Command**: Tell Claude "run response audit"
 
 ## What it does
