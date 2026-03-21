@@ -119,10 +119,26 @@ export async function scheduleAiReply(
   // expectedAt = when the AI will actually fire (scheduledAt + up to one poll cycle)
   const expectedAt = new Date(scheduledAt.getTime() + POLL_INTERVAL_MS);
 
-  // Cleanup old completed (fired) records for this conversation
+  // Cleanup old completed (fired) records — but only if they were scheduled more than 60s ago
+  // to avoid deleting a record that a worker is currently processing
+  const oldFiredCutoff = new Date(now.getTime() - 60000);
   await prisma.pendingAiReply.deleteMany({
+    where: { conversationId, fired: true, scheduledAt: { lt: oldFiredCutoff } },
+  });
+
+  // Check if there's a currently active (fired) pending reply — if so, don't reset it
+  // This prevents re-triggering while a worker is mid-processing
+  const activeFired = await prisma.pendingAiReply.findFirst({
     where: { conversationId, fired: true },
   });
+
+  if (activeFired) {
+    // Worker is currently processing — create a NEW pending reply instead of resetting
+    // The unique constraint is on conversationId, so we can't upsert with fired: false
+    // Just log and let the current response handle the accumulated messages
+    console.log(`[Debounce] Worker already processing conv ${conversationId} — skipping re-schedule`);
+    return;
+  }
 
   // Atomic upsert — eliminates findFirst+create/update race condition (FR-006)
   await prisma.pendingAiReply.upsert({
