@@ -1415,6 +1415,7 @@ export async function generateAndSendAiReply(
     const classifierSnap = getAndClearLastClassifierResult();
 
     // ─── Load tier mode settings ────────────────────────────────────────────
+    const tier1ModeForJudge: string = (tenantConfig as any)?.tier1Mode || 'active';
     const tier2Mode: string = (tenantConfig as any)?.tier2Mode || 'active';
     const tier3Mode: string = (tenantConfig as any)?.tier3Mode || 'active';
 
@@ -2145,11 +2146,13 @@ export async function generateAndSendAiReply(
           classifierLabels: classifierSnap.labels,
           classifierMethod: classifierSnap.method,
           classifierTopSim: classifierSnap.topSimilarity,
-          confidence: classifierSnap.confidence,
+          // In ghost mode, force confidence to 0 so judge always evaluates
+          // (real confidence is still logged in ragContext for observability)
+          confidence: tier1ModeForJudge === 'ghost' ? 0 : classifierSnap.confidence,
           neighbors: classifierSnap.neighbors,
           aiResponse: guestMessage,
           tier2Labels: tier2ResolvedLabels,
-          tier3Reinjected,
+          tier3Reinjected: tier3Mode === 'ghost' ? false : tier3Reinjected, // Ghost tier3 shouldn't suppress judge
         }, prisma).catch(err =>
           console.warn('[AI] Judge evaluation failed (non-fatal):', err)
         );
