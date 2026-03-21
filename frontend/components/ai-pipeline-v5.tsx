@@ -107,6 +107,12 @@ interface PipelineFeedEntry {
   durationMs: number
   responseText: string
   error: string | null
+  // Tool usage fields
+  toolUsed?: boolean
+  toolName?: string
+  toolInput?: { amenities?: string[]; min_capacity?: number; reason?: string }
+  toolResults?: { found?: boolean; count?: number; properties?: Array<{ name: string; highlights: string; booking_link?: string; capacity?: number; amenities_matched?: string[] }> }
+  toolDurationMs?: number
   pipeline: {
     query: string
     tier: 'tier1' | 'tier2_needed' | 'tier3_cache' | 'unknown'
@@ -755,6 +761,25 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             Boosted
           </span>
         )}
+        {/* Tool usage badge in collapsed row */}
+        {entry.toolUsed && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              fontFamily: T.font.sans,
+              background: `${T.accent}14`,
+              color: T.accent,
+              padding: '2px 6px',
+              borderRadius: 999,
+              border: `1px solid ${T.accent}30`,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Tool
+          </span>
+        )}
 
         {/* SOP count */}
         <span
@@ -1325,8 +1350,149 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             )}
           </TimelineStep>
 
-          {/* Step 7: Omar's Response */}
-          <TimelineStep stepNum={7} title="Omar's Response" color={T.accent}>
+          {/* Step 7: Tool Usage (conditional) */}
+          {entry.toolUsed && (
+            <TimelineStep stepNum={7} title={`Tool Use — ${entry.toolName || 'unknown'}`} color={T.accent}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Tool name badge */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: T.font.sans,
+                      background: `${T.accent}14`,
+                      color: T.accent,
+                      padding: '3px 10px',
+                      borderRadius: 999,
+                      border: `1px solid ${T.accent}30`,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    Tool: {entry.toolName || 'unknown'}
+                  </span>
+                  {entry.toolDurationMs != null && (
+                    <MetaPill label="dur:" value={`${entry.toolDurationMs}ms`} color={entry.toolDurationMs < 1000 ? T.status.green : T.status.amber} />
+                  )}
+                  {entry.toolResults?.found != null && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        fontFamily: T.font.sans,
+                        background: entry.toolResults.found ? '#DCFCE7' : '#FEE2E2',
+                        color: entry.toolResults.found ? T.status.green : T.status.red,
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        border: `1px solid ${entry.toolResults.found ? 'rgba(21,128,61,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                      }}
+                    >
+                      {entry.toolResults.found ? `${entry.toolResults.count ?? 0} found` : 'no results'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Search criteria */}
+                {entry.toolInput && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>search criteria:</span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {entry.toolInput.amenities && entry.toolInput.amenities.length > 0 && (
+                        entry.toolInput.amenities.map((a, i) => (
+                          <span
+                            key={i}
+                            style={{
+                              background: '#DBEAFE',
+                              color: '#2563EB',
+                              fontSize: 10,
+                              fontWeight: 600,
+                              fontFamily: T.font.sans,
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              border: '1px solid rgba(37,99,235,0.2)',
+                            }}
+                          >
+                            {a}
+                          </span>
+                        ))
+                      )}
+                      {entry.toolInput.min_capacity != null && (
+                        <MetaPill label="min capacity:" value={String(entry.toolInput.min_capacity)} />
+                      )}
+                    </div>
+                    {entry.toolInput.reason && (
+                      <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.secondary }}>
+                        reason: {entry.toolInput.reason}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Results — property list */}
+                {entry.toolResults?.properties && entry.toolResults.properties.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>results:</span>
+                    {entry.toolResults.properties.map((prop, pi) => (
+                      <div
+                        key={pi}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '4px 8px',
+                          borderRadius: T.radius.sm,
+                          background: pi % 2 === 0 ? T.bg.secondary : 'transparent',
+                          fontSize: 11,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            fontFamily: T.font.sans,
+                            color: T.text.primary,
+                            minWidth: 120,
+                          }}
+                        >
+                          {prop.name}
+                        </span>
+                        {prop.amenities_matched && prop.amenities_matched.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {prop.amenities_matched.map((am, ai) => (
+                              <span
+                                key={ai}
+                                style={{
+                                  background: '#DCFCE7',
+                                  color: '#15803D',
+                                  fontSize: 9,
+                                  fontWeight: 600,
+                                  fontFamily: T.font.sans,
+                                  padding: '1px 6px',
+                                  borderRadius: 999,
+                                  border: '1px solid rgba(21,128,61,0.2)',
+                                }}
+                              >
+                                {am}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {prop.capacity != null && (
+                          <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                            cap: {prop.capacity}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TimelineStep>
+          )}
+
+          {/* Step 7/8: Omar's Response */}
+          <TimelineStep stepNum={entry.toolUsed ? 8 : 7} title="Omar's Response" color={T.accent}>
             <TextBox content={entry.responseText || '(empty response)'} maxHeight={200} />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <MetaPill label="model:" value={entry.model} />
@@ -1357,9 +1523,9 @@ function FeedCard({ entry, index }: { entry: PipelineFeedEntry; index: number })
             )}
           </TimelineStep>
 
-          {/* Step 8: Self-Improvement */}
+          {/* Step 8/9: Self-Improvement */}
           <TimelineStep
-            stepNum={8}
+            stepNum={entry.toolUsed ? 9 : 8}
             title="Self-Improvement (Judge)"
             color={PURPLE}
             dimmed={!ev}

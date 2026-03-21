@@ -196,6 +196,13 @@ export async function runImport(
         console.log(`[Import] Amenity-related fields on listing: ${amenityFields.join(', ') || 'none'}. Sample keys: ${Object.keys(listing).slice(0, 30).join(', ')}`);
       }
     }
+    // Listing URLs for cross-sell property suggestions
+    if (listing.airbnbListingUrl) kb.airbnbListingUrl = String(listing.airbnbListingUrl);
+    if (listing.vrboListingUrl) kb.vrboListingUrl = String(listing.vrboListingUrl);
+    if (listing.bookingEngineUrls) {
+      const urls = Array.isArray(listing.bookingEngineUrls) ? listing.bookingEngineUrls : [];
+      if (urls.length > 0) kb.bookingEngineUrl = String(urls[0]);
+    }
     if (listing.cleaningFee) kb.cleaningFee = String(listing.cleaningFee);
     if (listing.squareMeters) kb.squareMeters = String(listing.squareMeters);
     if (listing.bedTypes) kb.bedTypes = Array.isArray(listing.bedTypes) ? (listing.bedTypes as string[]).join(', ') : String(listing.bedTypes);

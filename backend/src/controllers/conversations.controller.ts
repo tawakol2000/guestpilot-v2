@@ -327,6 +327,7 @@ export function makeConversationsController(prisma: PrismaClient) {
             listing: { name: property.name, internalListingName: property.name, address: property.address },
             customKnowledgeBase: customKb,
             listingDescription: property.listingDescription,
+            channel: reservation.channel,
           },
           prisma
         ).catch(err => console.error(`[sendAiNow] Error for conv ${id}:`, err));

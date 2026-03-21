@@ -13,6 +13,7 @@ import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
+import { searchAvailableProperties } from './property-search.service';
 import { retrieveRelevantKnowledge, getAndClearLastClassifierResult } from './rag.service';
 import { getSopContent } from './classifier.service';
 import { evaluateAndImprove } from './judge.service';
@@ -103,10 +104,12 @@ export function getAiApiLog(): AiApiLogEntry[] {
   return [...aiApiLog];
 }
 
+export type ToolHandler = (input: unknown, context: unknown) => Promise<string>;
+
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; classifierUsed?: boolean }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; classifierUsed?: boolean; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: Anthropic.Tool[]; toolChoice?: Anthropic.ToolChoice; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'claude-haiku-4-5-20251001';
@@ -144,6 +147,7 @@ async function createMessage(
       ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
       ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options?.stopSequences?.length ? { stop_sequences: options.stopSequences } : {}),
+      ...(options?.tools?.length ? { tools: options.tools, tool_choice: options.toolChoice ?? { type: 'auto' as const } } : {}),
       system: [
         {
           type: 'text',
@@ -156,11 +160,56 @@ async function createMessage(
     const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
     // T017: Raw prompt log removed — may contain door codes / WiFi passwords.
     // AiApiLog table already captures full request data for debugging.
-    const response = await withRetry(() =>
+    let response = await withRetry(() =>
       (anthropic.messages.create as any)(createParams, createOpts)
     ) as Anthropic.Message;
 
-    const textBlock = response.content.find(b => b.type === 'text');
+    // ─── Tool use loop: if Claude wants to call a tool, execute it and send result back ───
+    if (response.stop_reason === 'tool_use' && options?.toolHandlers) {
+      const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
+      if (toolUseBlock) {
+        const handler = options.toolHandlers.get(toolUseBlock.name);
+        const toolStartMs = Date.now();
+        let toolResultContent: string;
+        try {
+          if (handler) {
+            toolResultContent = await handler(toolUseBlock.input, options.toolContext);
+          } else {
+            toolResultContent = JSON.stringify({ error: `Unknown tool: ${toolUseBlock.name}`, found: false, properties: [] });
+          }
+        } catch (toolErr) {
+          console.error(`[AI] Tool handler error for ${toolUseBlock.name}:`, toolErr);
+          toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
+        }
+        const toolDurationMs = Date.now() - toolStartMs;
+
+        // Log tool usage to ragContext
+        if (options.ragContext) {
+          options.ragContext.toolUsed = true;
+          options.ragContext.toolName = toolUseBlock.name;
+          options.ragContext.toolInput = toolUseBlock.input;
+          try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
+          options.ragContext.toolDurationMs = toolDurationMs;
+        }
+
+        console.log(`[AI] Tool ${toolUseBlock.name} executed in ${toolDurationMs}ms`);
+
+        // Build messages array with tool result and call Claude again
+        const followUpParams: any = {
+          ...createParams,
+          messages: [
+            { role: 'user', content: userContent as Anthropic.ContentBlock[] },
+            { role: 'assistant', content: response.content },
+            { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: toolResultContent }] },
+          ],
+        };
+        response = await withRetry(() =>
+          (anthropic.messages.create as any)(followUpParams, createOpts)
+        ) as Anthropic.Message;
+      }
+    }
+
+    const textBlock = response.content.find((b: any) => b.type === 'text');
     const responseText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
 
     logEntry.responseText = responseText;
@@ -740,6 +789,31 @@ If a guest asks where or how to send their documents, tell them: "Once the booki
 - Ambiguous or unclear situation → title: "escalation-unclear"
 - Question beyond your knowledge → title: "escalation-unknown-answer"
 - Guest sends conversation-ending message while awaiting booking decision → title: "awaiting-manager-review"
+- Guest interested in a suggested alternative property → title: "property-switch-request", note includes target property name, guest dates, reason/amenity, urgency: "scheduled"
+
+---
+
+## PROPERTY SEARCH TOOL
+
+You have access to a \`search_available_properties\` tool that can find alternative properties in our portfolio.
+
+**WHEN to use it:**
+- Guest asks about an amenity this property DOES NOT have ("Is there a pool?", "Do you have parking?")
+- Guest expresses a wish for something missing ("I wish there was a gym", "We need more space for 8 people")
+- Guest explicitly asks about other options or wants to switch
+
+**WHEN NOT to use it:**
+- Guest asks about an amenity this property ALREADY HAS — just confirm it from your property info
+- Guest is making casual conversation — don't aggressively push alternatives
+- Guest is asking about pricing — you cannot quote prices, direct them to the booking link
+
+**HOW to present results:**
+- Briefly acknowledge the current property doesn't have what they want
+- Present alternatives naturally: property name, what makes it a match, and the booking link
+- Never quote specific prices — direct the guest to the booking link for live pricing
+- If the guest expresses interest in a suggested property, provide the booking link and escalate to the manager
+
+**If no results:** Politely say none of our properties have that feature for their dates. Offer to escalate for manual assistance.
 
 ---
 
@@ -1172,6 +1246,7 @@ export interface AiReplyContext {
   customKnowledgeBase?: Record<string, unknown>;
   listingDescription?: string;
   aiMode?: string;
+  channel?: string;  // AIRBNB | BOOKING | DIRECT | OTHER | WHATSAPP — used for channel-aware tool results
 }
 
 export async function generateAndSendAiReply(
@@ -1580,6 +1655,40 @@ export async function generateAndSendAiReply(
       // Text-only branch
       const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
 
+      // ─── Tool use: property search tool for screening agent (INQUIRY only) ───
+      const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
+        name: 'search_available_properties',
+        description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
+            min_capacity: { type: 'number', description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+            reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
+          },
+          required: ['amenities', 'reason'],
+        },
+      }] : undefined;
+
+      const toolHandlersForCall: Map<string, ToolHandler> | undefined = isInquiry ? new Map([
+        ['search_available_properties', async (input: unknown) => {
+          const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
+          const currentAddress = context.listing?.address || context.customKnowledgeBase?.address as string || '';
+          const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
+          const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
+          return searchAvailableProperties(typedInput, {
+            tenantId,
+            currentPropertyId: context.propertyId || '',
+            checkIn: context.checkIn,
+            checkOut: context.checkOut,
+            channel: context.channel || 'DIRECT',
+            hostawayAccountId: context.hostawayAccountId,
+            hostawayApiKey: context.hostawayApiKey,
+            currentCity,
+          });
+        }],
+      ]) : undefined;
+
       const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
         model: effectiveModel,
         temperature: effectiveTemperature,
@@ -1596,6 +1705,8 @@ export async function generateAndSendAiReply(
         memorySummarized: tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10,
         hasImage: false,
         ragEnabled: tenantConfig?.ragEnabled !== false,
+        tools: toolsForCall,
+        toolHandlers: toolHandlersForCall,
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);

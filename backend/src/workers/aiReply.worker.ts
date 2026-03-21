@@ -109,6 +109,7 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         customKnowledgeBase: property.customKnowledgeBase as Record<string, unknown>,
         listingDescription: property.listingDescription,
         aiMode,
+        channel: reservation.channel,
       };
 
       await generateAndSendAiReply(context, prisma);

@@ -48,6 +48,14 @@ export function getClassifierThresholds(): { voteThreshold: number; contextualGa
   return { voteThreshold: _voteThreshold, contextualGate: _contextualGate };
 }
 
+/**
+ * Update boost similarity threshold at runtime (called when settings are saved).
+ */
+export function setBoostThreshold(threshold: number): void {
+  _boostConfig.boostSimilarityThreshold = threshold;
+  console.log(`[Classifier] Boost threshold updated: ${threshold}`);
+}
+
 // ─── State (atomic swap pattern — FR-007) ───────────────────────────────
 interface ClassifierState {
   // Existing fields:

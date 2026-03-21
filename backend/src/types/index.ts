@@ -37,6 +37,10 @@ export interface HostawayListing {
   houseRules?: string;
   specialInstruction?: string;
   keyPickup?: string;
+  amenities?: unknown;
+  airbnbListingUrl?: string;
+  vrboListingUrl?: string;
+  bookingEngineUrls?: unknown;
   [key: string]: unknown;
 }
 

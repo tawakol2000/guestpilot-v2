@@ -131,6 +131,8 @@ cd backend && npx prisma studio     # browse data
 - No schema changes — ragContext JSON field gets new keys (009-similarity-boost)
 - TypeScript 5.x on Node.js 18+ (backend), Python 3 (training script), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Cohere SDK (`cohere-ai@^7.20.0`), Anthropic SDK, scikit-learn + numpy (Python) (009-similarity-boost)
 - PostgreSQL + pgvector + Prisma ORM + file-based `classifier-weights.json` (009-similarity-boost)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK (`@anthropic-ai/sdk@^0.30.1`), Hostaway API (010-property-suggestions)
+- PostgreSQL + Prisma ORM + existing `customKnowledgeBase` JSON field (no schema migration) (010-property-suggestions)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

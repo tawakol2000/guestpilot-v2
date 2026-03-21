@@ -7,8 +7,9 @@ import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { seedTenantSops, ingestPropertyKnowledge } from './services/rag.service';
-import { initializeClassifier, setClassifierThresholds } from './services/classifier.service';
+import { initializeClassifier, setClassifierThresholds, setBoostThreshold } from './services/classifier.service';
 import { setEmbeddingProvider, type EmbeddingProvider } from './services/embeddings.service';
+import { setPropertySearchPrisma } from './services/property-search.service';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -28,6 +29,7 @@ async function main() {
 
   // Initialize AI service with DB reference for persistent logging
   setAiServicePrisma(prisma);
+  setPropertySearchPrisma(prisma);
 
   const app = createApp(prisma);
 
@@ -51,11 +53,12 @@ async function main() {
       if (tenants.length > 0) {
         const cfg = await prisma.tenantAiConfig.findUnique({
           where: { tenantId: tenants[0].id },
-          select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
+          select: { classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true, tier2Threshold: true },
         });
         if (cfg) {
           if (cfg.embeddingProvider) setEmbeddingProvider(cfg.embeddingProvider as EmbeddingProvider);
           setClassifierThresholds(cfg.classifierVoteThreshold, cfg.classifierContextualGate);
+          if (cfg.tier2Threshold != null) setBoostThreshold(cfg.tier2Threshold);
         }
       }
 

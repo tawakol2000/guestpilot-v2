@@ -76,6 +76,7 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
             customKnowledgeBase: customKb,
             listingDescription: property.listingDescription,
             aiMode: reservation.aiMode,
+            channel: reservation.channel,
           },
           prisma
         ).catch(err => {

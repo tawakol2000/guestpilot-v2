@@ -77,6 +77,7 @@ import AiPipelineV5 from '@/components/ai-pipeline-v5'
 import SopEditorV5 from '@/components/sop-editor-v5'
 import ExamplesEditorV5 from '@/components/examples-editor-v5'
 import { OpusV5 } from '@/components/opus-v5'
+import ToolsV5 from '@/components/tools-v5'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'opus'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'tools' | 'opus'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1935,6 +1936,7 @@ export default function InboxV5() {
             { id: 'pipeline', label: 'Pipeline' },
             { id: 'sops', label: 'SOPs' },
             { id: 'examples', label: 'Examples' },
+            { id: 'tools', label: 'Tools' },
             { id: 'opus', label: 'OPUS' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3644,6 +3646,11 @@ export default function InboxV5() {
       {navTab === 'examples' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ExamplesEditorV5 />
+        </div>
+      )}
+      {navTab === 'tools' && (
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <ToolsV5 />
         </div>
       )}
       {navTab === 'opus' && (

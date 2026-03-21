@@ -87,6 +87,19 @@ export async function getListing(
   return res.data;
 }
 
+export async function listAvailableListings(
+  accountId: string,
+  apiKey: string,
+  startDate: string,
+  endDate: string
+): Promise<{ result: HostawayListing[] }> {
+  const client = await getClient(accountId, apiKey);
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/listings?availabilityDateStart=${startDate}&availabilityDateEnd=${endDate}&limit=100`)
+  );
+  return res.data;
+}
+
 // ─── Reservations ─────────────────────────────────────────────────────────────
 
 export async function listReservations(

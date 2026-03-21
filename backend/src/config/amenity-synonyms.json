@@ -1,0 +1,17 @@
+{
+  "pool": ["pool", "swimming pool", "outdoor pool", "indoor pool", "plunge pool", "infinity pool"],
+  "wifi": ["wifi", "wi-fi", "internet", "wireless", "broadband"],
+  "parking": ["parking", "garage", "car park", "covered parking", "valet"],
+  "gym": ["gym", "fitness", "fitness center", "workout room", "exercise"],
+  "balcony": ["balcony", "terrace", "patio", "outdoor space", "veranda"],
+  "kitchen": ["kitchen", "kitchenette", "cooking", "full kitchen"],
+  "washer": ["washer", "washing machine", "laundry", "dryer"],
+  "ac": ["ac", "air conditioning", "air conditioner", "cooling", "a/c"],
+  "sea_view": ["sea view", "ocean view", "beach view", "water view", "waterfront"],
+  "bbq": ["bbq", "barbecue", "grill", "outdoor grill"],
+  "elevator": ["elevator", "lift"],
+  "jacuzzi": ["jacuzzi", "hot tub", "spa", "whirlpool"],
+  "sauna": ["sauna", "steam room"],
+  "garden": ["garden", "yard", "backyard", "outdoor garden"],
+  "pet_friendly": ["pet friendly", "pets allowed", "dog friendly"]
+}

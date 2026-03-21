@@ -1098,3 +1098,20 @@ export interface RetrainResult {
 export async function apiRetrainClassifier(): Promise<RetrainResult> {
   return apiFetch('/api/knowledge/retrain-classifier', { method: 'POST' })
 }
+
+// ─── Tool Invocations ────────────────────────────────────────────────────────
+
+export interface ToolInvocation {
+  id: string
+  createdAt: string
+  conversationId: string | null
+  agentName: string | null
+  toolName: string | null
+  toolInput: Record<string, unknown> | null
+  toolResults: unknown | null
+  toolDurationMs: number | null
+}
+
+export async function apiGetToolInvocations(): Promise<ToolInvocation[]> {
+  return apiFetch<ToolInvocation[]>('/api/knowledge/tool-invocations')
+}

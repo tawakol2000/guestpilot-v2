@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
-import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, batchClassify, getDescriptionMatrix, classifyDetailed } from '../services/classifier.service';
+import { getClassifierStatus, classifyMessage, isClassifierInitialized, initializeClassifier, reinitializeClassifier, setClassifierThresholds, setBoostThreshold, batchClassify, getDescriptionMatrix, classifyDetailed } from '../services/classifier.service';
 import { addExample, getActiveExamples, getExampleByText } from '../services/classifier-store.service';
 import { TRAINING_EXAMPLES } from '../services/classifier-data';
 import { invalidateThresholdCache } from '../services/judge.service';
@@ -295,7 +295,7 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const tenantId = req.tenantId as string;
       const cfg = await prisma.tenantAiConfig.findUnique({
         where: { tenantId },
-        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true },
+        select: { judgeThreshold: true, autoFixThreshold: true, classifierVoteThreshold: true, classifierContextualGate: true, embeddingProvider: true, tier2Threshold: true },
       });
       res.json({
         judgeThreshold:  cfg?.judgeThreshold  ?? 0.75,
@@ -303,6 +303,7 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         classifierVoteThreshold: cfg?.classifierVoteThreshold ?? 0.30,
         classifierContextualGate: cfg?.classifierContextualGate ?? 0.85,
         embeddingProvider: cfg?.embeddingProvider ?? 'openai',
+        tier2Threshold: cfg?.tier2Threshold ?? 0.80,
       });
     } catch (err) {
       console.error('[Knowledge] classifier-thresholds GET failed:', err);
@@ -314,10 +315,10 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
   router.post('/classifier-thresholds', async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate, embeddingProvider: newProvider } = req.body as {
+      const { judgeThreshold, autoFixThreshold, classifierVoteThreshold, classifierContextualGate, embeddingProvider: newProvider, tier2Threshold } = req.body as {
         judgeThreshold?: number; autoFixThreshold?: number;
         classifierVoteThreshold?: number; classifierContextualGate?: number;
-        embeddingProvider?: string;
+        embeddingProvider?: string; tier2Threshold?: number;
       };
 
       if (typeof judgeThreshold !== 'number' || judgeThreshold < 0.3 || judgeThreshold > 1.0) {
@@ -346,14 +347,17 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       const provider = (newProvider === 'cohere' ? 'cohere' : 'openai') as EmbeddingProvider;
       const prevProvider = getEmbeddingProvider();
 
+      const boostT = typeof tier2Threshold === 'number' ? Math.max(0.50, Math.min(1.00, tier2Threshold)) : undefined;
+
       await prisma.tenantAiConfig.upsert({
         where: { tenantId },
-        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider },
-        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider },
+        update: { judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}) },
+        create: { tenantId, judgeThreshold, autoFixThreshold, classifierVoteThreshold: voteT, classifierContextualGate: ctxG, embeddingProvider: provider, ...(boostT != null ? { tier2Threshold: boostT } : {}) },
       });
 
       invalidateThresholdCache(tenantId);
       setClassifierThresholds(voteT, ctxG);
+      if (boostT != null) setBoostThreshold(boostT);
 
       // If embedding provider changed, re-embed everything in the background
       if (provider !== prevProvider) {
@@ -732,6 +736,39 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Dedup] dedup-conversations failed:', err);
       res.status(500).json({ error: 'Dedup failed' });
+    }
+  });
+
+  // GET /api/knowledge/tool-invocations — recent tool uses from AI pipeline
+  router.get('/tool-invocations', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const logs = await prisma.aiApiLog.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+
+      const toolLogs = logs
+        .filter((entry) => (entry.ragContext as any)?.toolUsed === true)
+        .map((entry) => {
+          const ctx = entry.ragContext as any;
+          return {
+            id: entry.id,
+            createdAt: entry.createdAt,
+            conversationId: entry.conversationId,
+            agentName: entry.agentName,
+            toolName: ctx?.toolName ?? null,
+            toolInput: ctx?.toolInput ?? null,
+            toolResults: ctx?.toolResults ?? null,
+            toolDurationMs: ctx?.toolDurationMs ?? null,
+          };
+        });
+
+      res.json(toolLogs);
+    } catch (err) {
+      console.error('[Knowledge] tool-invocations failed:', err);
+      res.status(500).json({ error: 'Failed to fetch tool invocations' });
     }
   });
 

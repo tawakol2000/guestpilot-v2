@@ -936,7 +936,7 @@ function ThresholdSettings() {
   const [autoFixVal, setAutoFixVal] = useState(0.70)
   const [voteVal, setVoteVal] = useState(0.30)
   const [ctxGateVal, setCtxGateVal] = useState(0.85)
-  const [tier2Val, setTier2Val] = useState(0.75)
+  const [tier2Val, setTier2Val] = useState(0.80)
   const [highConfVal, setHighConfVal] = useState(0.85)
   const [lowConfVal, setLowConfVal] = useState(0.55)
   const [providerVal, setProviderVal] = useState<'openai' | 'cohere'>('openai')
