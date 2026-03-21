@@ -63,6 +63,14 @@ interface ChatMessage {
     outputTokens?: number
     durationMs?: number
     model?: string
+    ragContext?: {
+      chunks: Array<{ category: string; similarity: number; sourceKey: string }>
+      tier: string
+      confidenceTier: string | null
+      topCandidates: Array<{ label: string; confidence: number }> | null
+      tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null
+      escalationSignals: string[]
+    } | null
   }
 }
 
@@ -166,6 +174,7 @@ export default function SandboxChatV5() {
           outputTokens: resp.outputTokens,
           durationMs: resp.durationMs,
           model: resp.model,
+          ragContext: (resp as any).ragContext ?? null,
         },
       }
       setMessages(prev => [...prev, aiMsg])
@@ -563,6 +572,53 @@ export default function SandboxChatV5() {
                       <span>{msg.meta.model.replace('claude-', '').replace('-20251001', '')}</span>
                     )}
                   </span>
+
+                  {/* RAG chunks injected */}
+                  {msg.meta.ragContext && msg.meta.ragContext.chunks.length > 0 && (
+                    <div style={{
+                      width: '100%',
+                      marginTop: 4,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 4,
+                      alignItems: 'center',
+                    }}>
+                      <span style={{ fontSize: 10, color: T.text.tertiary, marginRight: 2 }}>
+                        SOPs:
+                      </span>
+                      {msg.meta.ragContext.chunks.map((chunk, i) => (
+                        <span
+                          key={i}
+                          title={`similarity: ${chunk.similarity.toFixed(2)} | source: ${chunk.sourceKey}`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            background: '#30A46C14',
+                            border: '1px solid #30A46C30',
+                            color: '#30A46C',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            fontFamily: T.font.mono,
+                            cursor: 'help',
+                          }}
+                        >
+                          {chunk.category}
+                        </span>
+                      ))}
+                      {msg.meta.ragContext.tier2Output && (
+                        <span style={{
+                          fontSize: 10,
+                          color: T.status.amber,
+                          fontFamily: T.font.mono,
+                          fontWeight: 600,
+                        }}>
+                          T2: {msg.meta.ragContext.tier2Output.topic}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

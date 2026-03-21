@@ -488,6 +488,14 @@ export function sandboxRouter(prisma: PrismaClient) {
         outputTokens: response.usage?.output_tokens ?? 0,
         durationMs,
         model: effectiveModel,
+        ragContext: {
+          chunks: retrievedChunks.map(c => ({ category: c.category, similarity: c.similarity, sourceKey: c.sourceKey })),
+          tier: ragResult.tier,
+          confidenceTier: ragResult.confidenceTier ?? null,
+          topCandidates: ragResult.topCandidates ?? null,
+          tier2Output: tier2Output ?? null,
+          escalationSignals: escalationSignals.map(s => s.signal),
+        },
       });
     } catch (err: any) {
       console.error('[Sandbox] Chat error:', err);
