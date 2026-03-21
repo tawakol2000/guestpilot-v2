@@ -78,6 +78,7 @@ import SopEditorV5 from '@/components/sop-editor-v5'
 import ExamplesEditorV5 from '@/components/examples-editor-v5'
 import { OpusV5 } from '@/components/opus-v5'
 import ToolsV5 from '@/components/tools-v5'
+import SandboxChatV5 from '@/components/sandbox-chat-v5'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'tools' | 'opus'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'classifier' | 'logs' | 'pipeline' | 'sops' | 'examples' | 'tools' | 'sandbox' | 'opus'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1937,6 +1938,7 @@ export default function InboxV5() {
             { id: 'sops', label: 'SOPs' },
             { id: 'examples', label: 'Examples' },
             { id: 'tools', label: 'Tools' },
+            { id: 'sandbox', label: 'Sandbox' },
             { id: 'opus', label: 'OPUS' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3651,6 +3653,11 @@ export default function InboxV5() {
       {navTab === 'tools' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <ToolsV5 />
+        </div>
+      )}
+      {navTab === 'sandbox' && (
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+          <SandboxChatV5 />
         </div>
       )}
       {navTab === 'opus' && (

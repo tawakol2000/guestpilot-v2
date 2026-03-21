@@ -1115,3 +1115,38 @@ export interface ToolInvocation {
 export async function apiGetToolInvocations(): Promise<ToolInvocation[]> {
   return apiFetch<ToolInvocation[]>('/api/knowledge/tool-invocations')
 }
+
+// ─── Sandbox Chat ─────────────────────────────────────────────────────────────
+
+export interface SandboxChatRequest {
+  propertyId: string
+  reservationStatus: string
+  channel: string
+  guestName: string
+  checkIn: string
+  checkOut: string
+  guestCount: number
+  messages: Array<{ role: 'guest' | 'host'; content: string }>
+}
+
+export interface SandboxChatResponse {
+  response: string
+  escalation?: { title: string; note: string; urgency: string } | null
+  manager?: { needed: boolean; title: string; note: string } | null
+  toolUsed?: boolean
+  toolName?: string
+  toolInput?: any
+  toolResults?: any
+  toolDurationMs?: number
+  inputTokens: number
+  outputTokens: number
+  durationMs: number
+  model: string
+}
+
+export async function apiSandboxChat(req: SandboxChatRequest): Promise<SandboxChatResponse> {
+  return apiFetch<SandboxChatResponse>('/api/sandbox/chat', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+}

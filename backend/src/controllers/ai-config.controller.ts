@@ -3,6 +3,18 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { getAiConfig, updateAiConfig } from '../services/ai-config.service';
+import {
+  OMAR_SYSTEM_PROMPT,
+  OMAR_SCREENING_SYSTEM_PROMPT,
+  createMessage,
+  stripCodeFences,
+  buildPropertyInfo,
+  ToolHandler,
+  getAiApiLog,
+} from '../services/ai.service';
+import type { ContentBlock } from '../services/ai.service';
+import { getTenantAiConfig } from '../services/tenant-config.service';
+import { searchAvailableProperties } from '../services/property-search.service';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -135,6 +147,275 @@ export function makeAiConfigController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[AiConfig] revertVersion error:', err);
         res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    // ─── Sandbox Chat — test AI responses without creating real bookings ────────
+    async sandboxChat(req: AuthenticatedRequest, res: Response): Promise<void> {
+      const startMs = Date.now();
+      try {
+        const tenantId = req.tenantId;
+        const {
+          propertyId,
+          reservationStatus,
+          channel,
+          guestName,
+          checkIn,
+          checkOut,
+          guestCount,
+          messages,
+        } = req.body;
+
+        // ── Validate required fields ──────────────────────────────────────────
+        if (!propertyId || !reservationStatus || !guestName || !checkIn || !checkOut || !messages?.length) {
+          res.status(400).json({
+            error: 'Required fields: propertyId, reservationStatus, guestName, checkIn, checkOut, messages (non-empty)',
+          });
+          return;
+        }
+
+        // ── Load property (tenant-scoped) ─────────────────────────────────────
+        const property = await prisma.property.findFirst({
+          where: { id: propertyId, tenantId },
+        });
+        if (!property) {
+          res.status(404).json({ error: 'Property not found' });
+          return;
+        }
+
+        // ── Load tenant (for Hostaway creds — needed by property search tool) ─
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        if (!tenant) {
+          res.status(404).json({ error: 'Tenant not found' });
+          return;
+        }
+
+        // ── Load per-tenant AI config ─────────────────────────────────────────
+        const tenantConfig = await getTenantAiConfig(tenantId, prisma).catch(() => null);
+        const aiCfg = getAiConfig();
+
+        const isInquiry = reservationStatus === 'INQUIRY';
+        const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
+        const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
+
+        // ── Build effective model settings ────────────────────────────────────
+        const effectiveModel = tenantConfig?.model || personaCfg.model;
+        const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
+        const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
+        const effectiveAgentName = tenantConfig?.agentName || agentName;
+
+        // ── Build system prompt ───────────────────────────────────────────────
+        let effectiveSystemPrompt = isInquiry ? OMAR_SCREENING_SYSTEM_PROMPT : OMAR_SYSTEM_PROMPT;
+        if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
+          effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
+        }
+        if (tenantConfig?.customInstructions) {
+          effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
+        }
+
+        // ── Build listing object from property's customKnowledgeBase ──────────
+        const customKb = (property.customKnowledgeBase as Record<string, unknown> | null) ?? {};
+        const listing = {
+          name: property.name,
+          internalListingName: property.name,
+          address: property.address || (customKb.address as string) || '',
+          doorSecurityCode: (customKb.doorCode as string) || undefined,
+          wifiUsername: (customKb.wifiName as string) || undefined,
+          wifiPassword: (customKb.wifiPassword as string) || undefined,
+        };
+
+        // ── Build property info (same as real pipeline) ───────────────────────
+        const propertyInfo = buildPropertyInfo(
+          guestName,
+          checkIn,
+          checkOut,
+          guestCount || 1,
+          listing,
+          undefined, // no RAG chunks in sandbox (keeps it simple + fast)
+          reservationStatus,
+        );
+
+        // ── Build conversation history text ───────────────────────────────────
+        // Replicate the format from generateAndSendAiReply: "Guest: ..." / "Omar: ..."
+        const allMessages = messages as Array<{ role: 'guest' | 'host'; content: string }>;
+        const historyMsgs = allMessages.slice(0, -1); // all but the last message = history
+        const currentMsgs = allMessages.slice(-1);     // last message = current
+
+        const historyText = historyMsgs.length > 0
+          ? historyMsgs.map((m: { role: string; content: string }) =>
+              `${m.role === 'guest' ? 'Guest' : effectiveAgentName}: ${m.content}`
+            ).join('\n')
+          : 'No previous messages.';
+
+        const currentMsgsText = currentMsgs
+          .filter((m: { role: string }) => m.role === 'guest')
+          .map((m: { content: string }) => `Guest: ${m.content}`)
+          .join('\n');
+
+        // If the last message is from the host, treat it as just history context
+        // and there's no current guest message to respond to
+        if (!currentMsgsText.trim()) {
+          res.status(400).json({ error: 'Last message must be from a guest (role: "guest")' });
+          return;
+        }
+
+        const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
+
+        // ── Build content blocks (same format as real pipeline) ───────────────
+        const templateVars: Record<string, string> = {
+          conversationHistory: historyText,
+          propertyInfo,
+          currentMessages: currentMsgsText,
+          localTime,
+          openTasks: 'No open tasks.',
+          knowledgeBase: 'No additional Q&A available.',
+        };
+
+        let userContent: ContentBlock[];
+        if (personaCfg.contentBlockTemplate) {
+          // Split template on ### headers and interpolate {{variables}}
+          const sections = personaCfg.contentBlockTemplate.split(/(?=### )/).filter((s: string) => s.trim());
+          userContent = sections.map((section: string) => {
+            let text = section;
+            for (const [key, value] of Object.entries(templateVars)) {
+              text = text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+            }
+            return { type: 'text' as const, text };
+          });
+        } else {
+          // Fallback: hardcoded default content blocks
+          userContent = [
+            { type: 'text' as const, text: `### CONVERSATION HISTORY ###\n${historyText}` },
+            { type: 'text' as const, text: `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}` },
+            { type: 'text' as const, text: `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}\n\n### CURRENT LOCAL TIME###\n${localTime}` },
+          ];
+        }
+
+        // ── Set up tools for INQUIRY (property search) ────────────────────────
+        const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
+          name: 'search_available_properties',
+          description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
+              min_capacity: { type: 'number', description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+              reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
+            },
+            required: ['amenities', 'reason'],
+          },
+        }] : undefined;
+
+        const ragContext: any = {
+          query: currentMsgsText,
+          chunks: [],
+          totalRetrieved: 0,
+          durationMs: 0,
+        };
+
+        const toolHandlersForCall: Map<string, ToolHandler> | undefined = isInquiry ? new Map([
+          ['search_available_properties', async (input: unknown) => {
+            const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
+            const currentAddress = listing.address || (customKb.address as string) || '';
+            const cityParts = currentAddress.split(',').map((s: string) => s.trim()).filter(Boolean);
+            const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
+            return searchAvailableProperties(typedInput, {
+              tenantId,
+              currentPropertyId: propertyId,
+              checkIn,
+              checkOut,
+              channel: channel || 'DIRECT',
+              hostawayAccountId: tenant.hostawayAccountId,
+              hostawayApiKey: tenant.hostawayApiKey,
+              currentCity,
+            });
+          }],
+        ]) : undefined;
+
+        // ── Call Claude ───────────────────────────────────────────────────────
+        const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
+          model: effectiveModel,
+          temperature: effectiveTemperature,
+          maxTokens: effectiveMaxTokens,
+          ...(personaCfg.topK !== undefined ? { topK: personaCfg.topK } : {}),
+          ...(personaCfg.topP !== undefined ? { topP: personaCfg.topP } : {}),
+          ...(personaCfg.stopSequences?.length ? { stopSequences: personaCfg.stopSequences } : {}),
+          agentName: effectiveAgentName,
+          tenantId,
+          ragContext,
+          tools: toolsForCall,
+          toolHandlers: toolHandlersForCall,
+        });
+
+        const durationMs = Date.now() - startMs;
+
+        // Grab token counts from the most recent log entry (createMessage pushes to ring buffer)
+        const latestLog = getAiApiLog()[0];
+        const inputTokens = latestLog?.inputTokens ?? 0;
+        const outputTokens = latestLog?.outputTokens ?? 0;
+
+        // ── Parse the JSON response ───────────────────────────────────────────
+        try {
+          const cleaned = stripCodeFences(rawResponse);
+          if (isInquiry) {
+            const parsed = JSON.parse(cleaned) as {
+              'guest message': string;
+              manager?: { needed: boolean; title: string; note: string };
+            };
+            res.json({
+              response: parsed['guest message'] || '',
+              manager: parsed.manager || null,
+              escalation: null,
+              toolUsed: ragContext.toolUsed || false,
+              toolName: ragContext.toolName || undefined,
+              toolInput: ragContext.toolInput || undefined,
+              toolResults: ragContext.toolResults || undefined,
+              toolDurationMs: ragContext.toolDurationMs || undefined,
+              inputTokens,
+              outputTokens,
+              durationMs,
+              model: effectiveModel,
+            });
+          } else {
+            const parsed = JSON.parse(cleaned) as {
+              guest_message: string;
+              escalation: { title: string; note: string; urgency: string } | null;
+            };
+            res.json({
+              response: parsed.guest_message || '',
+              escalation: parsed.escalation || null,
+              manager: null,
+              toolUsed: false,
+              inputTokens,
+              outputTokens,
+              durationMs,
+              model: effectiveModel,
+            });
+          }
+        } catch (parseErr) {
+          // Return raw response if JSON parsing fails — useful for debugging
+          res.json({
+            response: rawResponse,
+            parseError: true,
+            escalation: null,
+            manager: null,
+            toolUsed: ragContext.toolUsed || false,
+            toolName: ragContext.toolName || undefined,
+            toolInput: ragContext.toolInput || undefined,
+            toolResults: ragContext.toolResults || undefined,
+            toolDurationMs: ragContext.toolDurationMs || undefined,
+            inputTokens,
+            outputTokens,
+            durationMs: Date.now() - startMs,
+            model: effectiveModel,
+          });
+        }
+      } catch (err) {
+        console.error('[AiConfig] sandboxChat error:', err);
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Sandbox chat failed',
+          durationMs: Date.now() - startMs,
+        });
       }
     },
   };
