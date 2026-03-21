@@ -233,7 +233,16 @@ export async function searchAvailableProperties(
   const properties: PropertyResult[] = top.map(item => {
     const { property, kb, amenitiesCsv, capacity, matchedAmenities } = item;
 
-    // Build highlights from first 3-4 amenities + capacity
+    // Build guest-friendly name: "3-Bedroom Apartment with Pool (sleeps 6)"
+    // instead of internal names like "Apartment 105" or "B 3.17 (Omar)"
+    const bedrooms = Number(kb.bedroomsNumber) || 0;
+    const roomType = (kb.roomType as string) || 'apartment';
+    const typeLabel = roomType === 'entire_home' ? 'Apartment' : roomType.charAt(0).toUpperCase() + roomType.slice(1);
+    const bedroomLabel = bedrooms > 0 ? `${bedrooms}-Bedroom ` : '';
+    const matchedFeatures = matchedAmenities.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(' & ');
+    const guestName = `${bedroomLabel}${typeLabel}${matchedFeatures ? ' with ' + matchedFeatures : ''}`;
+
+    // Build highlights from matched + top amenities
     const amenityItems = amenitiesCsv
       .split(',')
       .map(a => a.trim())
@@ -247,7 +256,7 @@ export async function searchAvailableProperties(
     const bookingLink = getBookingLink(kb, channel);
 
     return {
-      name: property.name,
+      name: guestName,
       highlights,
       booking_link: bookingLink,
       capacity,
