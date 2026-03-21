@@ -40,6 +40,10 @@ import {
   Languages,
   Archive,
   ArchiveRestore,
+  AlertTriangle,
+  CalendarClock,
+  Loader2,
+  ArrowRight,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -746,6 +750,333 @@ function TasksBox({ conversationId, dragHandle }: { conversationId: string; drag
         ))
       )}
     </PanelSection>
+  )
+}
+
+// ─── Alteration Request Card ─────────────────────────────────────────────────
+
+const ALTERATION_TITLES = ['stay-extension-request', 'property-switch-request', 'date-modification-request'] as const
+
+function alterationDisplayTitle(title: string): string {
+  if (title === 'stay-extension-request') return 'Stay Extension Request'
+  if (title === 'property-switch-request') return 'Property Switch Request'
+  if (title === 'date-modification-request') return 'Date Modification Request'
+  return title.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function parseAlterationNote(note: string | undefined): {
+  guestName?: string
+  currentDates?: string
+  requestedDates?: string
+  price?: string
+  channel?: string
+  reason?: string
+  raw: string
+} {
+  if (!note) return { raw: '' }
+  const result: ReturnType<typeof parseAlterationNote> = { raw: note }
+
+  // Try structured parsing — notes can be free-form but often contain labeled fields
+  const lines = note.split('\n').map(l => l.trim()).filter(Boolean)
+  for (const line of lines) {
+    const lower = line.toLowerCase()
+    if (lower.startsWith('guest:') || lower.startsWith('guest name:')) {
+      result.guestName = line.split(':').slice(1).join(':').trim()
+    } else if (lower.startsWith('current dates:') || lower.startsWith('current:') || lower.startsWith('original dates:')) {
+      result.currentDates = line.split(':').slice(1).join(':').trim()
+    } else if (lower.startsWith('requested dates:') || lower.startsWith('requested:') || lower.startsWith('new dates:')) {
+      result.requestedDates = line.split(':').slice(1).join(':').trim()
+    } else if (lower.startsWith('price:') || lower.startsWith('cost:') || lower.startsWith('total:')) {
+      result.price = line.split(':').slice(1).join(':').trim()
+    } else if (lower.startsWith('channel:') || lower.startsWith('source:') || lower.startsWith('platform:')) {
+      result.channel = line.split(':').slice(1).join(':').trim()
+    } else if (lower.startsWith('reason:') || lower.startsWith('note:') || lower.startsWith('details:')) {
+      result.reason = line.split(':').slice(1).join(':').trim()
+    }
+  }
+
+  return result
+}
+
+function AlterationRequestCard({
+  conversationId,
+  guestName,
+  onMessageSent,
+}: {
+  conversationId: string
+  guestName: string
+  onMessageSent: (msg: { id: string; content: string; sentAt: string }) => void
+}) {
+  const [tasks, setTasks] = useState<ApiTask[]>([])
+  const [processing, setProcessing] = useState<string | null>(null) // taskId being processed
+  const [processedTasks, setProcessedTasks] = useState<Record<string, 'accepted' | 'rejected'>>({})
+
+  useEffect(() => {
+    apiGetConversationTasks(conversationId).then(all => {
+      const alteration = all.filter(
+        t => (ALTERATION_TITLES as readonly string[]).includes(t.title) && t.status !== 'completed'
+      )
+      setTasks(alteration)
+    }).catch(() => {})
+  }, [conversationId])
+
+  async function handleAction(task: ApiTask, action: 'accept' | 'reject') {
+    if (processing) return
+    setProcessing(task.id)
+
+    try {
+      // 1. Mark task completed
+      await apiUpdateTask(task.id, { status: 'completed' })
+
+      // 2. Send the appropriate message to the guest
+      const displayTitle = alterationDisplayTitle(task.title).toLowerCase()
+      const message = action === 'accept'
+        ? `Great news! Your ${displayTitle} has been approved. We'll update your reservation details accordingly. Please let us know if you have any questions.`
+        : `Unfortunately, we're unable to accommodate the ${displayTitle} at this time. Please let us know if there's anything else we can help with.`
+
+      const msg = await apiSendMessage(conversationId, message)
+      onMessageSent({ id: msg.id, content: message, sentAt: msg.sentAt })
+
+      // 3. Update local state
+      setProcessedTasks(prev => ({ ...prev, [task.id]: action === 'accept' ? 'accepted' : 'rejected' }))
+    } catch (err) {
+      console.error('[AlterationRequest]', action, 'error:', err)
+    } finally {
+      setProcessing(null)
+    }
+  }
+
+  // Filter out processed tasks after a short delay
+  const visibleTasks = tasks.filter(t => !processedTasks[t.id])
+
+  if (visibleTasks.length === 0 && Object.keys(processedTasks).length === 0) return null
+
+  // Show recently-processed tasks briefly
+  const recentlyProcessed = tasks.filter(t => processedTasks[t.id])
+
+  if (visibleTasks.length === 0 && recentlyProcessed.length === 0) return null
+
+  return (
+    <div style={{ padding: '0 16px', flexShrink: 0 }}>
+      {visibleTasks.map(task => {
+        const parsed = parseAlterationNote(task.note)
+        const isProcessing = processing === task.id
+
+        return (
+          <div
+            key={task.id}
+            style={{
+              background: T.bg.primary,
+              border: `1px solid ${T.status.amber}44`,
+              borderLeft: `4px solid ${T.status.amber}`,
+              borderRadius: 8,
+              overflow: 'hidden',
+              marginBottom: 8,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                background: T.status.amber + '12',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                borderBottom: `1px solid ${T.status.amber}22`,
+              }}
+            >
+              <AlertTriangle size={14} color={T.status.amber} />
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: T.text.primary,
+                  fontFamily: T.font.sans,
+                }}
+              >
+                {alterationDisplayTitle(task.title)}
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: T.status.amber,
+                  background: T.status.amber + '20',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  marginLeft: 'auto',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Pending
+              </span>
+            </div>
+
+            {/* Details */}
+            <div style={{ padding: '8px 12px' }}>
+              {parsed.guestName && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Users size={11} color={T.text.tertiary} />
+                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    {parsed.guestName}
+                  </span>
+                </div>
+              )}
+              {(parsed.currentDates || parsed.requestedDates) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <CalendarClock size={11} color={T.text.tertiary} />
+                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    {parsed.currentDates && parsed.requestedDates
+                      ? (<>{parsed.currentDates} <ArrowRight size={10} style={{ display: 'inline', verticalAlign: 'middle', margin: '0 2px' }} /> {parsed.requestedDates}</>)
+                      : parsed.requestedDates || parsed.currentDates
+                    }
+                  </span>
+                </div>
+              )}
+              {parsed.price && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Tag size={11} color={T.text.tertiary} />
+                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    {parsed.price}
+                  </span>
+                </div>
+              )}
+              {parsed.channel && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Globe size={11} color={T.text.tertiary} />
+                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    {parsed.channel}
+                  </span>
+                </div>
+              )}
+              {parsed.reason && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <ClipboardList size={11} color={T.text.tertiary} />
+                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    {parsed.reason}
+                  </span>
+                </div>
+              )}
+              {/* Fallback: show raw note if no structured fields found */}
+              {!parsed.guestName && !parsed.currentDates && !parsed.requestedDates && !parsed.price && !parsed.reason && parsed.raw && (
+                <div style={{
+                  fontSize: 12,
+                  color: T.text.secondary,
+                  fontFamily: T.font.sans,
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}>
+                  {parsed.raw}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div
+              style={{
+                padding: '8px 12px',
+                display: 'flex',
+                gap: 8,
+                borderTop: `1px solid ${T.border.default}`,
+              }}
+            >
+              <button
+                onClick={() => handleAction(task, 'accept')}
+                disabled={isProcessing}
+                style={{
+                  flex: 1,
+                  height: 34,
+                  borderRadius: 6,
+                  border: 'none',
+                  background: T.status.green,
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontFamily: T.font.sans,
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  opacity: isProcessing ? 0.7 : 1,
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                {isProcessing && processing === task.id ? (
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Check size={14} />
+                )}
+                Accept
+              </button>
+              <button
+                onClick={() => handleAction(task, 'reject')}
+                disabled={isProcessing}
+                style={{
+                  flex: 0,
+                  minWidth: 90,
+                  height: 34,
+                  borderRadius: 6,
+                  border: `1px solid ${T.status.red}66`,
+                  background: 'transparent',
+                  color: T.status.red,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: T.font.sans,
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  opacity: isProcessing ? 0.7 : 1,
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                <X size={13} />
+                Reject
+              </button>
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Recently processed */}
+      {recentlyProcessed.map(task => (
+        <div
+          key={`done-${task.id}`}
+          style={{
+            background: T.bg.primary,
+            border: `1px solid ${processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red}44`,
+            borderLeft: `4px solid ${processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red}`,
+            borderRadius: 8,
+            padding: '10px 12px',
+            marginBottom: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {processedTasks[task.id] === 'accepted' ? (
+            <CheckCircle size={14} color={T.status.green} />
+          ) : (
+            <CircleX size={14} color={T.status.red} />
+          )}
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red,
+              fontFamily: T.font.sans,
+            }}
+          >
+            {alterationDisplayTitle(task.title)} — {processedTasks[task.id] === 'accepted' ? 'Approved' : 'Rejected'}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -2762,6 +3093,38 @@ export default function InboxV5() {
                   </button>
                 </div>
               </div>
+
+              {/* Alteration Request Banner */}
+              <AlterationRequestCard
+                key={`alteration-${selectedConv.id}`}
+                conversationId={selectedConv.id}
+                guestName={selectedConv.guestName}
+                onMessageSent={(msg) => {
+                  const newMsg: Message = {
+                    id: msg.id,
+                    sender: 'host',
+                    text: msg.content,
+                    time: formatTimestamp(msg.sentAt),
+                  }
+                  setConversations(prev =>
+                    prev.map(c =>
+                      c.id === selectedConv.id
+                        ? {
+                            ...c,
+                            messages: [...c.messages, newMsg],
+                            lastMessage: msg.content,
+                            lastMessageSender: 'host',
+                            timestamp: formatTimestamp(msg.sentAt),
+                          }
+                        : c
+                    )
+                  )
+                  setTimeout(
+                    () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
+                    50
+                  )
+                }}
+              />
 
               {/* Messages */}
               <div
