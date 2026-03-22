@@ -67,9 +67,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-type ContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string } };
+type ContentBlock = { type: 'text'; text: string };
 
 // ─── API call log (in-memory ring buffer) ────────────────────────────────────
 
@@ -177,7 +175,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string }> }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -195,10 +193,7 @@ async function createMessage(
     topP: options?.topP,
     systemPromptPreview: systemPrompt.substring(0, 200),
     systemPromptLength: systemPrompt.length,
-    contentBlocks: userContent.map(b => {
-      if (b.type === 'text') return { type: 'text', textPreview: b.text, textLength: b.text.length };
-      return { type: 'image' };
-    }),
+    contentBlocks: userContent.map(b => ({ type: 'text', textPreview: b.text, textLength: b.text.length })),
     responseText: '',
     responseLength: 0,
     inputTokens: 0,
@@ -532,7 +527,7 @@ async function createMessage(
           temperature: options.temperature,
           maxTokens,
           systemPrompt,
-          userContent: JSON.stringify(userContent.map(b => b.type === 'text' ? { type: 'text', text: b.text } : { type: 'image' })),
+          userContent: JSON.stringify(userContent.map(b => ({ type: 'text', text: b.text }))),
           responseText: '',
           inputTokens: logEntry.inputTokens,
           outputTokens: logEntry.outputTokens,
@@ -558,34 +553,7 @@ function stripCodeFences(text: string): string {
   return s.trim();
 }
 
-/** Inject the IMAGE HANDLING section right before OUTPUT FORMAT in any system prompt */
-function injectImageHandling(basePrompt: string): string {
-  return basePrompt.replace(
-    '---\n\n## OUTPUT FORMAT',
-    `---
-
-## IMAGE HANDLING
-
-When a guest sends an image:
-1. Respond naturally based on what you see — the way a human would. Don't describe the image back to the guest (a human wouldn't say "I see a broken mirror"). Just respond with the appropriate action or acknowledgment.
-2. Always escalate to manager. In the escalation note, describe what the image shows so the manager has context.
-3. If the image is unclear: tell the guest you're looking into it and escalate with "Guest sent an image that requires manager review."
-
-Common image types:
-- Broken item photos = maintenance escalation
-- Leak/damage photos = urgent repair escalation
-- Passport/ID = visitor verification escalation
-- Appliance photos = troubleshooting or malfunction escalation
-
-Never ignore images. The image is often the most important part of the message.
-
----
-
-## OUTPUT FORMAT`
-  );
-}
-
-// ─── System Prompts (ported verbatim) ────────────────────────────────────────
+// ─── System Prompts ────────────────────────────────────────
 
 const OMAR_SYSTEM_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residence
 
@@ -747,6 +715,23 @@ You have access to a \`check_extend_availability\` tool that checks if the prope
 
 **Example response:**
 {"guest_message":"Great news! The apartment is available until March 27. The 2 extra nights would be approximately $300. To extend, please submit an alteration request through Airbnb and we'll approve it right away.","escalation":{"title":"stay-extension-request","note":"Guest [Name] requesting extension from Mar 25 to Mar 27 (2 extra nights, ~$300). Channel: Airbnb. Guest instructed to submit alteration request.","urgency":"scheduled"}}
+
+---
+
+## IMAGE HANDLING
+
+When a guest sends an image:
+1. Respond naturally based on what you see — the way a human would. Don't describe the image back to the guest (a human wouldn't say "I see a broken mirror"). Just respond with the appropriate action or acknowledgment.
+2. Always escalate to manager. In the escalation note, describe what the image shows so the manager has context.
+3. If the image is unclear: tell the guest you're looking into it and escalate with "Guest sent an image that requires manager review."
+
+Common image types:
+- Broken item photos = maintenance escalation
+- Leak/damage photos = urgent repair escalation
+- Passport/ID = visitor verification escalation
+- Appliance photos = troubleshooting or malfunction escalation
+
+Never ignore images. The image is often the most important part of the message.
 
 ---
 
@@ -1802,14 +1787,15 @@ export async function generateAndSendAiReply(
     );
 
     // Final input: history turns + context block as last user message
-    const inputTurns = [
+    // content can be string (text) or array (text + image) for OpenAI Responses API
+    type InputTurn = { role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> };
+    const inputTurns: InputTurn[] = [
       ...historyTurns,
       { role: 'user' as const, content: lastUserMessage },
     ];
 
-    if (!hasImages) {
-      // Text-only branch
-      const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, {
+    // Single code path for text and text+image
+    const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, {
         conversationHistory: '', propertyInfo, currentMessages: currentMsgsText,
         localTime, openTasks: openTasksText, knowledgeBase: knowledgeText,
       });
@@ -1892,6 +1878,43 @@ export async function generateAndSendAiReply(
       // Determine reasoning effort based on SOP classification
       const reasoningEffort = sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' as const : 'none' as const;
 
+      // ─── Image handling: download and attach to last inputTurns entry ───
+      let imageBase64 = '';
+      let imageMimeType = 'image/jpeg';
+      if (hasImages) {
+        const msgWithImage = currentMsgs.find((m: { imageUrls: string[] }) => m.imageUrls && m.imageUrls.length > 0);
+        const imageUrl = msgWithImage?.imageUrls?.[0];
+        if (imageUrl) {
+          try {
+            const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+            imageBase64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
+            const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;
+            if (ct.includes('png')) imageMimeType = 'image/png';
+            else if (ct.includes('gif')) imageMimeType = 'image/gif';
+            else if (ct.includes('webp')) imageMimeType = 'image/webp';
+          } catch (err) {
+            console.warn(`[AI] [${conversationId}] Could not download image:`, err);
+          }
+        }
+
+        if (imageBase64) {
+          // Attach image to the last user turn in OpenAI Responses API format
+          inputTurns[inputTurns.length - 1] = {
+            role: 'user' as const,
+            content: [
+              { type: 'input_text', text: lastUserMessage },
+              { type: 'input_image', image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+            ],
+          };
+        } else {
+          // Download failed — tell the AI an image was sent but couldn't be loaded
+          inputTurns[inputTurns.length - 1] = {
+            role: 'user' as const,
+            content: `[System: The guest sent an image but it could not be loaded. Acknowledge this and escalate to manager.]\n\n${lastUserMessage}`,
+          };
+        }
+      }
+
       const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
         model: effectiveModel,
         temperature: effectiveTemperature,
@@ -1903,7 +1926,7 @@ export async function generateAndSendAiReply(
         openTaskCount: openTasks.length,
         totalMessages: allMsgs.length,
         memorySummarized: false,
-        hasImage: false,
+        hasImage: hasImages,
         ragEnabled: tenantConfig?.ragEnabled !== false,
         tools: toolsForCall,
         toolHandlers: toolHandlersForCall,
@@ -1993,125 +2016,6 @@ export async function generateAndSendAiReply(
         broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
         return;
       }
-    } else {
-      // Image branch — find the first message with images and download
-      const msgWithImage = currentMsgs.find((m: { imageUrls: string[] }) => m.imageUrls && m.imageUrls.length > 0);
-      const imageUrl = msgWithImage?.imageUrls?.[0];
-
-      let imageBase64 = '';
-      let imageMimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
-
-      if (imageUrl) {
-        try {
-          const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-          imageBase64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
-          const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;
-          if (ct.includes('png')) imageMimeType = 'image/png';
-          else if (ct.includes('gif')) imageMimeType = 'image/gif';
-          else if (ct.includes('webp')) imageMimeType = 'image/webp';
-        } catch (err) {
-          console.warn(`[AI] [${conversationId}] Could not download image:`, err);
-        }
-      }
-
-      const imageTemplateVars = {
-        conversationHistory: conversationTurns.map(t => `${t.role === 'user' ? 'Guest' : 'Omar'}: ${t.content}`).join('\n'),
-        propertyInfo, currentMessages: currentMsgsText, localTime,
-        openTasks: openTasksText, knowledgeBase: knowledgeText,
-      };
-      const imageContent: ContentBlock[] = buildContentBlocks(personaCfg.contentBlockTemplate, imageTemplateVars);
-
-      if (imageBase64) {
-        imageContent.push({
-          type: 'image',
-          source: { type: 'base64', media_type: imageMimeType, data: imageBase64 },
-        });
-      }
-
-      const imageSystemPrompt = injectImageHandling(effectiveSystemPrompt);
-
-      const rawResponse = await createMessage(imageSystemPrompt, imageContent, {
-        model: effectiveModel,
-        temperature: effectiveTemperature,
-        maxTokens: effectiveMaxTokens,
-        ...(personaCfg.topK !== undefined ? { topK: personaCfg.topK } : {}),
-        ...(personaCfg.topP !== undefined ? { topP: personaCfg.topP } : {}),
-        ...(personaCfg.stopSequences?.length ? { stopSequences: personaCfg.stopSequences } : {}),
-        agentName: effectiveAgentName,
-        tenantId,
-        conversationId,
-        ragContext,
-        openTaskCount: openTasks.length,
-        totalMessages: allMsgs.length,
-        memorySummarized: tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10,
-        hasImage: true,
-        ragEnabled: tenantConfig?.ragEnabled !== false,
-      });
-
-      try {
-        if (isInquiry) {
-          const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
-            'guest message': string;
-            manager?: { needed: boolean; title: string; note: string };
-          };
-          guestMessage = parsed['guest message'] || '';
-          if (parsed.manager?.needed) {
-            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'info_request');
-            traceEscalation({
-              tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.manager.title, escalationUrgency: 'info_request',
-              escalationNote: parsed.manager.note,
-            });
-          }
-        } else {
-          const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
-            guest_message: string;
-            resolveTaskId?: string | null;
-            updateTaskId?: string | null;
-            escalation: { title: string; note: string; urgency: string } | null;
-          };
-          guestMessage = parsed.guest_message || '';
-          if (parsed.escalation) {
-            await handleEscalation(
-              prisma, tenantId, conversationId, context.propertyId,
-              parsed.escalation.title, parsed.escalation.note, parsed.escalation.urgency,
-              parsed.updateTaskId, parsed.resolveTaskId, ragQuery
-            );
-            traceEscalation({
-              tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.escalation.title, escalationUrgency: parsed.escalation.urgency,
-              escalationNote: parsed.escalation.note,
-              taskResolved: parsed.resolveTaskId || undefined,
-              taskUpdated: parsed.updateTaskId || undefined,
-            });
-          } else if (parsed.resolveTaskId || parsed.updateTaskId) {
-            await handleEscalation(
-              prisma, tenantId, conversationId, context.propertyId,
-              '', '', 'immediate',
-              parsed.updateTaskId, parsed.resolveTaskId
-            );
-            traceEscalation({
-              tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: 'task-update', escalationUrgency: 'immediate',
-              escalationNote: '',
-              taskResolved: parsed.resolveTaskId || undefined,
-              taskUpdated: parsed.updateTaskId || undefined,
-            });
-          }
-        }
-      } catch {
-        console.error(`[AI] [${conversationId}] Image JSON parse failed`);
-        // T030: Escalate on JSON parse failure so manager can follow up manually
-        await handleEscalation(
-          prisma, tenantId, conversationId, context.propertyId,
-          'ai-parse-failure',
-          `AI response failed JSON parsing. Raw response snippet: ${rawResponse?.substring(0, 200)}`,
-          'immediate'
-        );
-        broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
-        return;
-      }
-    }
 
     // SOP tool classification is already logged in ragContext — no override detection needed
 
@@ -2222,5 +2126,5 @@ export async function generateAndSendAiReply(
   }
 }
 
-export { OMAR_SYSTEM_PROMPT, OMAR_SCREENING_SYSTEM_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, createMessage, stripCodeFences, injectImageHandling, buildPropertyInfo };
+export { OMAR_SYSTEM_PROMPT, OMAR_SCREENING_SYSTEM_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, createMessage, stripCodeFences, buildPropertyInfo };
 export type { ContentBlock };

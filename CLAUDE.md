@@ -141,6 +141,7 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (no schema changes — ragContext JSON field gets new shape) (014-sop-optimization)
 - TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK, Express 4.x, Prisma ORM (015-sop-variants)
 - PostgreSQL + Prisma ORM (new SopDefinition + SopVariant models) (015-sop-variants)
+- TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK, Express 4.x, Prisma ORM, axios (image download) (016-fix-image-handling)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ
