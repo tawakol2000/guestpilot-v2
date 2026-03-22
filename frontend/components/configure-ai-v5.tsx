@@ -1307,6 +1307,7 @@ function TenantConfigSection({
         temperature: local.temperature,
         maxTokens: local.maxTokens,
         debounceDelayMs: local.debounceDelayMs,
+        adaptiveDebounce: local.adaptiveDebounce,
         customInstructions: local.customInstructions,
         ragEnabled: local.ragEnabled,
         memorySummaryEnabled: local.memorySummaryEnabled,
@@ -1472,8 +1473,9 @@ function TenantConfigSection({
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Features</label>
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
+          {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           <div style={{ borderBottom: 'none' }}>
-            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
+            {toggleRow('Adaptive Debounce', 'Automatically extends debounce when guests send multiple messages rapidly', local.adaptiveDebounce, 'adaptiveDebounce')}
           </div>
         </div>
 

@@ -107,9 +107,34 @@ export async function scheduleAiReply(
   const cfg = await getTenantAiConfig(tenantId, prisma);
   const now = new Date();
 
+  // ── Adaptive debounce: extend delay when guest sends rapid-fire messages ───
+  let effectiveDelayMs = cfg.debounceDelayMs;
+  if (cfg.adaptiveDebounce) {
+    try {
+      const sixtySecondsAgo = new Date(now.getTime() - 60_000);
+      const recentGuestMessages = await prisma.message.count({
+        where: {
+          conversationId,
+          role: 'GUEST',
+          sentAt: { gte: sixtySecondsAgo },
+        },
+      });
+      if (recentGuestMessages >= 6) {
+        effectiveDelayMs = cfg.debounceDelayMs * 6;
+        console.log(`[Debounce] Adaptive: 6+ messages in 60s (${recentGuestMessages}) — delay x6 → ${effectiveDelayMs}ms`);
+      } else if (recentGuestMessages >= 3) {
+        effectiveDelayMs = cfg.debounceDelayMs * 3;
+        console.log(`[Debounce] Adaptive: 3-5 messages in 60s (${recentGuestMessages}) — delay x3 → ${effectiveDelayMs}ms`);
+      }
+    } catch (err) {
+      // Non-fatal — fall back to base delay
+      console.warn('[Debounce] Adaptive debounce query failed (non-fatal):', err);
+    }
+  }
+
   let scheduledAt: Date;
   if (isWithinWorkingHours(cfg, now)) {
-    scheduledAt = new Date(now.getTime() + cfg.debounceDelayMs);
+    scheduledAt = new Date(now.getTime() + effectiveDelayMs);
   } else {
     // Outside working hours — defer all messages to next window open
     scheduledAt = nextWorkingHoursStart(cfg, now);
@@ -151,7 +176,7 @@ export async function scheduleAiReply(
   broadcastToTenant(tenantId, 'ai_typing', { conversationId, expectedAt: expectedAt.toISOString() });
 
   // Also enqueue in BullMQ (if Redis available) — fire-and-forget, never breaks DB debounce
-  addAiReplyJob(conversationId, tenantId, cfg.debounceDelayMs).catch(err =>
+  addAiReplyJob(conversationId, tenantId, effectiveDelayMs).catch(err =>
     console.warn('[Debounce] BullMQ enqueue failed (non-fatal):', err)
   );
 }

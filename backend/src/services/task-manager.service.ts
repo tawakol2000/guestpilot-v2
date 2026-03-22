@@ -37,6 +37,11 @@ Rules:
 
 When in doubt between UPDATE and CREATE, prefer UPDATE — it's better to keep one well-documented task than create duplicates.
 
+Additional dedup rules:
+- If the new escalation title shares 2+ words (split on hyphens) with an existing task's title, this is almost certainly a duplicate. Prefer UPDATE over CREATE.
+- If the same guest has sent multiple messages about the same topic in rapid succession, strongly prefer UPDATE over CREATE.
+- When consolidating rapid-fire messages, summarize ALL new information in one paragraph. Do not repeat what's in the existing task.
+
 Return ONLY a single JSON line. No explanation outside the JSON.`;
 
 // Stats tracking

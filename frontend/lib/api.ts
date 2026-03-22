@@ -369,6 +369,7 @@ export interface TenantAiConfig {
   temperature: number
   maxTokens: number
   debounceDelayMs: number
+  adaptiveDebounce: boolean
   customInstructions: string
   ragEnabled: boolean
   memorySummaryEnabled: boolean

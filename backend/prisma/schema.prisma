@@ -365,6 +365,7 @@ model TenantAiConfig {
   temperature          Float    @default(0.25)
   maxTokens            Int      @default(1024)
   debounceDelayMs      Int      @default(30000)
+  adaptiveDebounce     Boolean  @default(true)
   aiEnabled            Boolean  @default(true)
   screeningEnabled     Boolean  @default(true)
   ragEnabled           Boolean  @default(true)

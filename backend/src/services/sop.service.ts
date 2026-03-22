@@ -2,7 +2,7 @@
  * SOP (Standard Operating Procedure) — DB-backed content & tool schema.
  *
  * Exports:
- * - SOP_CATEGORIES          — 22-value constant array (seeding + validation)
+ * - SOP_CATEGORIES          — 23-value constant array (seeding + validation)
  * - SopCategory             — type alias
  * - getSopContent()         — async, DB-backed SOP lookup with property overrides
  * - buildToolDefinition()   — async, dynamic tool schema from enabled SopDefinitions
@@ -37,6 +37,7 @@ export const SOP_CATEGORIES = [
   'pre-arrival-logistics',
   'sop-property-viewing',
   'post-stay-issues',
+  'local-recommendations',
   'none',
   'escalate',
 ] as const;
@@ -343,6 +344,7 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'pre-arrival-logistics': 'Arrival coordination, ETA sharing, airport transfer, directions.',
   'sop-property-viewing': 'Property tours, photo/video requests, filming permission.',
   'post-stay-issues': 'Lost items after checkout, post-stay complaints, damage deposit.',
+  'local-recommendations': 'Guest asks about nearby places — pharmacy, mall, restaurant, hospital, supermarket, ATM, coffee shop, mosque. Always escalate.',
   'none': 'Simple greeting, thank you, acknowledgment, or message fully answered by system knowledge.',
   'escalate': 'Safety concern, legal issue, billing dispute requiring human, or anything needing immediate manager attention.',
 };
@@ -385,13 +387,13 @@ Any pushback on this rule → escalate as immediate`,
 
 ## EARLY CHECK-IN
 Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
+**More than 2 days before check-in:** Do NOT escalate. Inform the guest naturally (in your own words) that: early check-in can only be confirmed 2 days before due to potential guest changeovers; they can leave luggage with housekeeping if they arrive early; O1 Mall is a 1-minute walk with food and coffee options.
 **Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
 **Never confirm early check-in yourself.**`,
 
   'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
 Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-**More than 2 days before checkout:** Do NOT escalate. Tell guest: "We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date."
+**More than 2 days before checkout:** Do NOT escalate. Inform the guest naturally (in your own words) that: late checkout can only be confirmed 2 days before due to potential guest changeovers; you will update them closer to their checkout date.
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
 **Never confirm late checkout yourself.**`,
 
@@ -424,7 +426,10 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. First recommend that the photos are available online and comprehensive of the property. If wants videos, escalate to manager, and tell the guest I'll ask the manager if there are videos to provide.`,
 
-  'non-actionable': `NON-ACTIONABLE: Greetings, test messages, wrong chat, or questions about topics already covered by your standard procedures (house rules, working hours, scheduling, escalation rules). For greetings, respond warmly and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For house rules or scheduling questions, answer from your standard procedures.`,
+  'local-recommendations': `Guest asks about nearby places, local recommendations, or "where is the nearest X?"
+You do NOT have local area knowledge. Do NOT guess locations, distances, or directions.
+Acknowledge the question naturally, then escalate as info_request with what the guest is looking for.
+Common requests: pharmacy (صيدلية), mall (مول), supermarket, restaurant, hospital, ATM, mosque (مسجد).`,
 };
 
 // ── Status-variant overrides for SOPs whose response differs by reservation status ──
@@ -536,7 +541,7 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CHECKED_IN',
-      content: `Guest wants to extend their current stay or change dates. Acknowledge the request. Check if the extend-stay tool is available to check availability and pricing. Escalate to manager with details. Never confirm modifications yourself.`,
+      content: `Guest wants to extend their current stay or change dates. **Use the check_extend_availability tool first** to get real availability and pricing data. Present the price and channel instructions from the tool result. If the tool is unavailable or fails, then escalate as info_request. Never confirm modifications yourself.`,
     },
   ],
 
