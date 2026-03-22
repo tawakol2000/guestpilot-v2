@@ -7,7 +7,7 @@ import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
 import { getTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { AuthenticatedRequest } from '../types';
-import { SOP_CATEGORIES, SOP_TOOL_DEFINITION, getSopContent } from '../services/sop.service';
+import { SOP_CATEGORIES, buildToolDefinition, getSopContent, invalidateSopCache } from '../services/sop.service';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -597,8 +597,9 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     try {
       const tenantId = req.tenantId;
 
-      // Parse tool descriptions from SOP_TOOL_DEFINITION
-      const descriptionText = SOP_TOOL_DEFINITION.parameters.properties.categories.description as string;
+      // Build tool definition from DB (cached 5min) to extract descriptions
+      const toolDef = await buildToolDefinition(tenantId, prisma);
+      const descriptionText = toolDef.parameters.properties.categories.description as string;
       const descriptionMap: Record<string, string> = {};
       for (const line of descriptionText.split('\n')) {
         const match = line.match(/^- '([^']+)':\s*(.+)$/);
@@ -618,18 +619,285 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         select: { id: true, propertyId: true, content: true, category: true, sourceKey: true },
       });
 
-      // Build SOP data array
-      const sops = SOP_CATEGORIES.map(category => ({
-        category,
-        toolDescription: descriptionMap[category] || '',
-        content: getSopContent(category) || '',
-        isGlobal: true,
-      }));
+      // Build SOP data array — use DEFAULT status for the overview listing
+      const sops = await Promise.all(
+        SOP_CATEGORIES.map(async category => ({
+          category,
+          toolDescription: descriptionMap[category] || '',
+          content: await getSopContent(tenantId, category, 'DEFAULT', undefined, undefined, prisma) || '',
+          isGlobal: true,
+        }))
+      );
 
       res.json({ sops, properties, propertyChunks });
     } catch (err) {
       console.error('[Knowledge] sop-data failed:', err);
       res.status(500).json({ error: 'Failed to fetch SOP data' });
+    }
+  });
+
+  // ── SOP Definition & Variant CRUD ──
+
+  // GET /api/knowledge/sop-definitions — all definitions + variants for tenant (auto-seeds if empty)
+  router.get('/sop-definitions', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+
+      // Auto-seed if no definitions found
+      const count = await prisma.sopDefinition.count({ where: { tenantId } });
+      if (count === 0) {
+        const { seedSopDefinitions } = await import('../services/sop.service');
+        await seedSopDefinitions(tenantId, prisma);
+      }
+
+      const definitions = await prisma.sopDefinition.findMany({
+        where: { tenantId },
+        include: { variants: true },
+        orderBy: { category: 'asc' },
+      });
+
+      const properties = await prisma.property.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, address: true },
+        orderBy: { name: 'asc' },
+      });
+
+      res.json({ definitions, properties });
+    } catch (err) {
+      console.error('[Knowledge] sop-definitions GET failed:', err);
+      res.status(500).json({ error: 'Failed to fetch SOP definitions' });
+    }
+  });
+
+  // PUT /api/knowledge/sop-definitions/:id — update toolDescription and/or enabled
+  router.put('/sop-definitions/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params;
+      const { toolDescription, enabled } = req.body as { toolDescription?: string; enabled?: boolean };
+
+      const def = await prisma.sopDefinition.findFirst({
+        where: { id, tenantId },
+      });
+      if (!def) return res.status(404).json({ error: 'Not found' });
+
+      const updated = await prisma.sopDefinition.update({
+        where: { id },
+        data: {
+          ...(toolDescription !== undefined ? { toolDescription } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+        },
+        include: { variants: true },
+      });
+
+      invalidateSopCache(tenantId);
+      res.json(updated);
+    } catch (err) {
+      console.error('[Knowledge] sop-definitions PUT failed:', err);
+      res.status(500).json({ error: 'Failed to update SOP definition' });
+    }
+  });
+
+  // PUT /api/knowledge/sop-variants/:id — update content and/or enabled
+  router.put('/sop-variants/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params;
+      const { content, enabled } = req.body as { content?: string; enabled?: boolean };
+
+      // Verify the variant belongs to this tenant
+      const variant = await prisma.sopVariant.findFirst({
+        where: { id },
+        include: { sopDefinition: { select: { tenantId: true } } },
+      });
+      if (!variant || variant.sopDefinition.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const updated = await prisma.sopVariant.update({
+        where: { id },
+        data: {
+          ...(content !== undefined ? { content } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+        },
+      });
+
+      invalidateSopCache(tenantId);
+      res.json(updated);
+    } catch (err) {
+      console.error('[Knowledge] sop-variants PUT failed:', err);
+      res.status(500).json({ error: 'Failed to update SOP variant' });
+    }
+  });
+
+  // POST /api/knowledge/sop-variants — create new variant
+  router.post('/sop-variants', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { sopDefinitionId, status, content } = req.body as {
+        sopDefinitionId: string; status: string; content: string;
+      };
+
+      if (!sopDefinitionId || !status || !content) {
+        return res.status(400).json({ error: 'sopDefinitionId, status, and content are required' });
+      }
+
+      // Verify the definition belongs to this tenant
+      const def = await prisma.sopDefinition.findFirst({
+        where: { id: sopDefinitionId, tenantId },
+      });
+      if (!def) return res.status(404).json({ error: 'SOP definition not found' });
+
+      const variant = await prisma.sopVariant.create({
+        data: { sopDefinitionId, status, content, enabled: true },
+      });
+
+      invalidateSopCache(tenantId);
+      res.json(variant);
+    } catch (err) {
+      console.error('[Knowledge] sop-variants POST failed:', err);
+      res.status(500).json({ error: 'Failed to create SOP variant' });
+    }
+  });
+
+  // DELETE /api/knowledge/sop-variants/:id — delete a variant
+  router.delete('/sop-variants/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params;
+
+      const variant = await prisma.sopVariant.findFirst({
+        where: { id },
+        include: { sopDefinition: { select: { tenantId: true } } },
+      });
+      if (!variant || variant.sopDefinition.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      await prisma.sopVariant.delete({ where: { id } });
+
+      invalidateSopCache(tenantId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Knowledge] sop-variants DELETE failed:', err);
+      res.status(500).json({ error: 'Failed to delete SOP variant' });
+    }
+  });
+
+  // GET /api/knowledge/sop-property-overrides?propertyId=xxx — list overrides for a property
+  router.get('/sop-property-overrides', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { propertyId } = req.query as { propertyId?: string };
+
+      if (!propertyId) {
+        return res.status(400).json({ error: 'propertyId query parameter is required' });
+      }
+
+      const overrides = await prisma.sopPropertyOverride.findMany({
+        where: {
+          propertyId,
+          sopDefinition: { tenantId },
+        },
+        include: { sopDefinition: { select: { category: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      res.json(overrides);
+    } catch (err) {
+      console.error('[Knowledge] sop-property-overrides GET failed:', err);
+      res.status(500).json({ error: 'Failed to fetch property overrides' });
+    }
+  });
+
+  // POST /api/knowledge/sop-property-overrides — create property override
+  router.post('/sop-property-overrides', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { sopDefinitionId, propertyId, status, content } = req.body as {
+        sopDefinitionId: string; propertyId: string; status: string; content: string;
+      };
+
+      if (!sopDefinitionId || !propertyId || !status || !content) {
+        return res.status(400).json({ error: 'sopDefinitionId, propertyId, status, and content are required' });
+      }
+
+      // Verify the definition belongs to this tenant
+      const def = await prisma.sopDefinition.findFirst({
+        where: { id: sopDefinitionId, tenantId },
+      });
+      if (!def) return res.status(404).json({ error: 'SOP definition not found' });
+
+      // Verify property belongs to this tenant
+      const prop = await prisma.property.findFirst({
+        where: { id: propertyId, tenantId },
+      });
+      if (!prop) return res.status(404).json({ error: 'Property not found' });
+
+      const override = await prisma.sopPropertyOverride.create({
+        data: { sopDefinitionId, propertyId, status, content, enabled: true },
+      });
+
+      invalidateSopCache(tenantId);
+      res.json(override);
+    } catch (err) {
+      console.error('[Knowledge] sop-property-overrides POST failed:', err);
+      res.status(500).json({ error: 'Failed to create property override' });
+    }
+  });
+
+  // PUT /api/knowledge/sop-property-overrides/:id — update property override
+  router.put('/sop-property-overrides/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params;
+      const { content, enabled } = req.body as { content?: string; enabled?: boolean };
+
+      const override = await prisma.sopPropertyOverride.findFirst({
+        where: { id },
+        include: { sopDefinition: { select: { tenantId: true } } },
+      });
+      if (!override || override.sopDefinition.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      const updated = await prisma.sopPropertyOverride.update({
+        where: { id },
+        data: {
+          ...(content !== undefined ? { content } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+        },
+      });
+
+      invalidateSopCache(tenantId);
+      res.json(updated);
+    } catch (err) {
+      console.error('[Knowledge] sop-property-overrides PUT failed:', err);
+      res.status(500).json({ error: 'Failed to update property override' });
+    }
+  });
+
+  // DELETE /api/knowledge/sop-property-overrides/:id — delete property override
+  router.delete('/sop-property-overrides/:id', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { id } = req.params;
+
+      const override = await prisma.sopPropertyOverride.findFirst({
+        where: { id },
+        include: { sopDefinition: { select: { tenantId: true } } },
+      });
+      if (!override || override.sopDefinition.tenantId !== tenantId) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      await prisma.sopPropertyOverride.delete({ where: { id } });
+
+      invalidateSopCache(tenantId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Knowledge] sop-property-overrides DELETE failed:', err);
+      res.status(500).json({ error: 'Failed to delete property override' });
     }
   });
 

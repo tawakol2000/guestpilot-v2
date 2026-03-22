@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 import { getAiConfig } from '../services/ai-config.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
 import { retrieveRelevantKnowledge } from '../services/rag.service';
-import { getSopContent, SOP_TOOL_DEFINITION } from '../services/sop.service';
+import { getSopContent, buildToolDefinition } from '../services/sop.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
@@ -236,6 +236,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       };
       try {
         const classificationUserText = `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`;
+        const sopToolDef = await buildToolDefinition(tenantId, prisma);
         const sopStart = Date.now();
         const sopResponse = await withRetry(() =>
           (openai.responses as any).create({
@@ -244,7 +245,7 @@ export function sandboxRouter(prisma: PrismaClient) {
             temperature: 0,
             instructions: personaCfg.systemPrompt,
             input: [{ role: 'user', content: classificationUserText }],
-            tools: [SOP_TOOL_DEFINITION],
+            tools: [sopToolDef],
             tool_choice: { type: 'function' as const, name: 'get_sop' },
             reasoning: { effort: 'none' },
             truncation: 'auto',
@@ -276,10 +277,10 @@ export function sandboxRouter(prisma: PrismaClient) {
 
       // Fetch SOP content for classified categories
       const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
-      const sopTexts = sopCategories
-        .map(c => getSopContent(c, propertyAmenities))
-        .filter(Boolean);
-      const sopContent = sopTexts.join('\n\n---\n\n');
+      const sopTexts = await Promise.all(
+        sopCategories.map(c => getSopContent(tenantId, c, reservationStatus || 'DEFAULT', propertyId, propertyAmenities, prisma))
+      );
+      const sopContent = sopTexts.filter(Boolean).join('\n\n---\n\n');
 
       // ── Escalation signals ─────────────────────────────────────────────
       const escalationSignals = detectEscalationSignals(ragQuery);

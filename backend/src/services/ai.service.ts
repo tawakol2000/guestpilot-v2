@@ -15,7 +15,7 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
 import { retrieveRelevantKnowledge } from './rag.service';
-import { getSopContent, SOP_TOOL_DEFINITION, SOP_CATEGORIES } from './sop.service';
+import { getSopContent, buildToolDefinition, SOP_CATEGORIES } from './sop.service';
 import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
@@ -131,7 +131,8 @@ const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-c
 async function classifyMessageSop(
   systemPrompt: string,
   inputMessages: Array<{ role: string; content: string }>,
-  options: { model?: string; tenantId?: string; conversationId?: string; agentType?: string }
+  options: { model?: string; tenantId?: string; conversationId?: string; agentType?: string },
+  sopToolDef?: any,
 ): Promise<SopClassificationResult> {
   const start = Date.now();
   try {
@@ -139,7 +140,7 @@ async function classifyMessageSop(
       model: options.model || 'gpt-5.4-mini-2026-03-17',
       instructions: systemPrompt,
       input: inputMessages,
-      tools: [SOP_TOOL_DEFINITION],
+      tools: [sopToolDef],
       tool_choice: { type: 'function', name: 'get_sop' },
       reasoning: { effort: 'none' },
       max_output_tokens: 200,
@@ -1647,18 +1648,22 @@ export async function generateAndSendAiReply(
       content: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
     }];
 
+    // Build tool definition from DB (cached 5min per tenant)
+    const sopToolDef = await buildToolDefinition(tenantId, prisma);
+
     const sopClassification = await classifyMessageSop(
       personaCfg.systemPrompt,
       classificationInput,
-      { model: effectiveModel, tenantId, conversationId, agentType: isInquiry ? 'screening' : 'coordinator' }
+      { model: effectiveModel, tenantId, conversationId, agentType: isInquiry ? 'screening' : 'coordinator' },
+      sopToolDef,
     );
 
     // Fetch SOP content for classified categories (skip none, escalate gets SOP if paired with other categories)
     const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
-    const sopTexts = sopCategories
-      .map(c => getSopContent(c, propertyAmenities))
-      .filter(Boolean);
-    const sopContent = sopTexts.join('\n\n---\n\n');
+    const sopTexts = await Promise.all(
+      sopCategories.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma))
+    );
+    const sopContent = sopTexts.filter(Boolean).join('\n\n---\n\n');
 
     // Handle escalation category
     if (sopClassification.categories.includes('escalate')) {
@@ -1707,6 +1712,7 @@ export async function generateAndSendAiReply(
       sopCategories: sopClassification.categories,
       sopConfidence: sopClassification.confidence,
       sopReasoning: sopClassification.reasoning,
+      sopVariantStatus: context.reservationStatus || 'DEFAULT',
       sopClassificationTokens: { input: sopClassification.inputTokens, output: sopClassification.outputTokens },
       sopClassificationDurationMs: sopClassification.durationMs,
       // Escalation

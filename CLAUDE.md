@@ -139,6 +139,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (add indexes only — no migrations) (012-system-audit)
 - TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK (`openai`), Express 4.x, Prisma ORM — replacing `@anthropic-ai/sdk` (014-sop-optimization)
 - PostgreSQL + Prisma ORM (no schema changes — ragContext JSON field gets new shape) (014-sop-optimization)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK, Express 4.x, Prisma ORM (015-sop-variants)
+- PostgreSQL + Prisma ORM (new SopDefinition + SopVariant models) (015-sop-variants)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

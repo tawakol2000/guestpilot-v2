@@ -1069,3 +1069,90 @@ export async function apiGetSopStats(): Promise<SopStatsResponse> {
   return apiFetch<SopStatsResponse>('/api/knowledge/evaluation-stats')
 }
 
+// ── SOP Definition Management (015-sop-variants) ──
+
+export interface SopVariantData {
+  id: string
+  status: string // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SopDefinitionData {
+  id: string
+  tenantId: string
+  category: string
+  toolDescription: string
+  enabled: boolean
+  variants: SopVariantData[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SopPropertyOverrideData {
+  id: string
+  sopDefinitionId: string
+  propertyId: string
+  status: string
+  content: string
+  enabled: boolean
+}
+
+export interface SopDefinitionsResponse {
+  definitions: SopDefinitionData[]
+  properties: Array<{ id: string; name: string; address: string }>
+}
+
+export async function apiGetSopDefinitions(): Promise<SopDefinitionsResponse> {
+  return apiFetch<SopDefinitionsResponse>('/api/knowledge/sop-definitions')
+}
+
+export async function apiUpdateSopDefinition(id: string, data: { toolDescription?: string; enabled?: boolean }): Promise<SopDefinitionData> {
+  return apiFetch<SopDefinitionData>(`/api/knowledge/sop-definitions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiUpdateSopVariant(id: string, data: { content?: string; enabled?: boolean }): Promise<SopVariantData> {
+  return apiFetch<SopVariantData>(`/api/knowledge/sop-variants/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiCreateSopVariant(data: { sopDefinitionId: string; status: string; content: string }): Promise<SopVariantData> {
+  return apiFetch<SopVariantData>('/api/knowledge/sop-variants', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiDeleteSopVariant(id: string): Promise<void> {
+  await apiFetch(`/api/knowledge/sop-variants/${id}`, { method: 'DELETE' })
+}
+
+export async function apiGetSopPropertyOverrides(propertyId: string): Promise<SopPropertyOverrideData[]> {
+  return apiFetch<SopPropertyOverrideData[]>(`/api/knowledge/sop-property-overrides?propertyId=${propertyId}`)
+}
+
+export async function apiCreateSopPropertyOverride(data: { sopDefinitionId: string; propertyId: string; status: string; content: string }): Promise<SopPropertyOverrideData> {
+  return apiFetch<SopPropertyOverrideData>('/api/knowledge/sop-property-overrides', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiUpdateSopPropertyOverride(id: string, data: { content?: string; enabled?: boolean }): Promise<SopPropertyOverrideData> {
+  return apiFetch<SopPropertyOverrideData>(`/api/knowledge/sop-property-overrides/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function apiDeleteSopPropertyOverride(id: string): Promise<void> {
+  await apiFetch(`/api/knowledge/sop-property-overrides/${id}`, { method: 'DELETE' })
+}
+

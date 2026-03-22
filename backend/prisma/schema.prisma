@@ -37,6 +37,7 @@ model Tenant {
   classifierEvaluations   ClassifierEvaluation[]
   opusReports             OpusReport[]
   classifierWeights       ClassifierWeights[]
+  sopDefinitions          SopDefinition[]
 }
 
 model Property {
@@ -55,6 +56,7 @@ model Property {
   tasks                Task[]
   knowledgeSuggestions    KnowledgeSuggestion[]
   propertyKnowledgeChunks PropertyKnowledgeChunk[]
+  sopPropertyOverrides    SopPropertyOverride[]
 
   @@unique([tenantId, hostawayListingId])
   @@index([tenantId])
@@ -485,4 +487,53 @@ model ClassifierWeights {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt(sort: Desc)])
+}
+
+// ─── SOP Definitions (per-tenant, editable by operators) ────────────────────
+
+model SopDefinition {
+  id              String    @id @default(cuid())
+  tenantId        String
+  category        String    // e.g., "sop-amenity-request"
+  toolDescription String    @db.Text  // lean description for AI classification
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  variants          SopVariant[]
+  propertyOverrides SopPropertyOverride[]
+
+  @@unique([tenantId, category])
+  @@index([tenantId])
+}
+
+model SopVariant {
+  id              String    @id @default(cuid())
+  sopDefinitionId String
+  status          String    // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content         String    @db.Text
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sopDefinition   SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([sopDefinitionId, status])
+}
+
+model SopPropertyOverride {
+  id              String    @id @default(cuid())
+  sopDefinitionId String
+  propertyId      String
+  status          String    // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content         String    @db.Text
+  enabled         Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sopDefinition   SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
+  property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([sopDefinitionId, propertyId, status])
 }
