@@ -591,7 +591,7 @@ export default function SandboxChatV5() {
                     )}
                   </span>
 
-                  {/* RAG context: chunks + tier info */}
+                  {/* SOP classification + RAG context */}
                   {msg.meta.ragContext && (
                     <div style={{
                       width: '100%',
@@ -601,38 +601,65 @@ export default function SandboxChatV5() {
                       gap: 4,
                       alignItems: 'center',
                     }}>
-                      {/* Tier 2 fired indicator */}
-                      {msg.meta.ragContext.tier2Output && (
-                        <span
-                          title={`topic: ${msg.meta.ragContext.tier2Output.topic} | status: ${msg.meta.ragContext.tier2Output.status} | urgency: ${msg.meta.ragContext.tier2Output.urgency}`}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            background: '#FFB22414',
-                            border: '1px solid #FFB22430',
-                            color: '#FFB224',
-                            fontSize: 10,
-                            fontWeight: 600,
-                            fontFamily: T.font.mono,
-                            cursor: 'help',
-                          }}
-                        >
-                          T2 fired: {msg.meta.ragContext.tier2Output.topic}
-                        </span>
+                      {/* SOP tool classification (new architecture) */}
+                      {msg.meta.ragContext.sopCategories && msg.meta.ragContext.sopCategories.length > 0 && (
+                        <>
+                          {msg.meta.ragContext.sopCategories.filter((c: string) => c !== 'none').length > 0 ? (
+                            <>
+                              <span style={{ fontSize: 10, color: T.text.tertiary }}>
+                                SOPs:
+                              </span>
+                              {msg.meta.ragContext.sopCategories.filter((c: string) => c !== 'none').map((cat: string, i: number) => (
+                                <span
+                                  key={i}
+                                  title={msg.meta.ragContext?.sopReasoning || ''}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#30A46C14',
+                                    border: '1px solid #30A46C30',
+                                    color: '#30A46C',
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    fontFamily: T.font.mono,
+                                    cursor: 'help',
+                                  }}
+                                >
+                                  {cat}
+                                </span>
+                              ))}
+                              {msg.meta.ragContext.sopConfidence && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontFamily: T.font.mono,
+                                  color: msg.meta.ragContext.sopConfidence === 'high' ? '#30A46C'
+                                    : msg.meta.ragContext.sopConfidence === 'medium' ? '#FFB224'
+                                    : '#F87171',
+                                }}>
+                                  {msg.meta.ragContext.sopConfidence}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>
+                              no SOPs (none)
+                            </span>
+                          )}
+                        </>
                       )}
 
-                      {/* SOP chunks */}
-                      {msg.meta.ragContext.chunks.length > 0 && (
+                      {/* Legacy: old-style chunks (backward compat) */}
+                      {(!msg.meta.ragContext.sopCategories) && msg.meta.ragContext.chunks?.length > 0 && (
                         <>
                           <span style={{ fontSize: 10, color: T.text.tertiary }}>
-                            {msg.meta.ragContext.chunks.length} SOP{msg.meta.ragContext.chunks.length !== 1 ? 's' : ''}:
+                            SOPs:
                           </span>
-                          {msg.meta.ragContext.chunks.map((chunk, i) => (
+                          {msg.meta.ragContext.chunks.map((chunk: any, i: number) => (
                             <span
                               key={i}
-                              title={`similarity: ${chunk.similarity.toFixed(2)} | source: ${chunk.sourceKey}`}
+                              title={`similarity: ${chunk.similarity?.toFixed?.(2) || '?'}`}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -653,8 +680,8 @@ export default function SandboxChatV5() {
                         </>
                       )}
 
-                      {/* No chunks case */}
-                      {msg.meta.ragContext.chunks.length === 0 && !msg.meta.ragContext.tier2Output && (
+                      {/* No SOPs at all */}
+                      {!msg.meta.ragContext.sopCategories && (!msg.meta.ragContext.chunks || msg.meta.ragContext.chunks.length === 0) && (
                         <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>
                           no SOPs injected
                         </span>
