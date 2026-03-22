@@ -137,8 +137,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (no schema changes) (011-extend-stay)
 - TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK, Hostaway API (012-system-audit)
 - PostgreSQL + Prisma ORM (add indexes only — no migrations) (012-system-audit)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend), Python 3 (removed — training script deleted) + Express 4.x, Prisma ORM, Anthropic SDK (`@anthropic-ai/sdk`), existing tool use infrastructure from features 010/011 (013-sop-tool-routing)
-- PostgreSQL + Prisma ORM (no schema changes — existing classifier tables kept read-only) (013-sop-tool-routing)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK (`openai`), Express 4.x, Prisma ORM — replacing `@anthropic-ai/sdk` (014-sop-optimization)
+- PostgreSQL + Prisma ORM (no schema changes — ragContext JSON field gets new shape) (014-sop-optimization)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

@@ -5,10 +5,8 @@
  * Exports:
  * - getSopContent(category, propertyAmenities?) — retrieve SOP text for a category
  * - SOP_CATEGORIES — the 22-value enum array
- * - SOP_TOOL_DEFINITION — full Anthropic tool schema for get_sop
+ * - SOP_TOOL_DEFINITION — OpenAI function-format tool schema for get_sop
  */
-
-import Anthropic from '@anthropic-ai/sdk';
 
 // ── SOP Categories (22 total: 20 operational + none + escalate) ──
 
@@ -141,11 +139,13 @@ export function getSopContent(category: string, propertyAmenities?: string): str
 
 // ── Tool Schema Definition ──
 
-export const SOP_TOOL_DEFINITION: Anthropic.Tool = {
+export const SOP_TOOL_DEFINITION: any = {
+  type: 'function',
   name: 'get_sop',
   description: 'Classifies a guest message to determine which Standard Operating Procedure should guide the response. Call this for EVERY guest message. Returns the SOP category that best matches the guest\'s primary intent. For simple greetings, acknowledgments, or messages that don\'t require procedure-based responses, use "none". For messages requiring human intervention, use "escalate".',
-  input_schema: {
-    type: 'object' as const,
+  strict: true,
+  parameters: {
+    type: 'object',
     properties: {
       reasoning: {
         type: 'string',
@@ -192,12 +192,4 @@ export const SOP_TOOL_DEFINITION: Anthropic.Tool = {
     required: ['reasoning', 'categories', 'confidence'],
     additionalProperties: false,
   },
-  // @ts-ignore — input_examples is supported by the API but not in the SDK types yet
-  input_examples: [
-    { reasoning: 'Dirty bathroom is cleanliness issue not damage', categories: ['sop-cleaning'], confidence: 'high' },
-    { reasoning: 'Guest asks if there is a pool — amenity availability question', categories: ['sop-amenity-request'], confidence: 'high' },
-    { reasoning: 'AC broken is a maintenance issue', categories: ['sop-maintenance'], confidence: 'high' },
-    { reasoning: 'Guest says hello in Arabic', categories: ['none'], confidence: 'high' },
-    { reasoning: 'Guest wants towels AND wifi password — two distinct requests', categories: ['sop-amenity-request', 'sop-wifi-doorcode'], confidence: 'high' },
-  ],
 };

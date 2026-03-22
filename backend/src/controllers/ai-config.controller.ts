@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import crypto from 'crypto';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { getAiConfig, updateAiConfig } from '../services/ai-config.service';
@@ -18,7 +18,7 @@ import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Config cache for GET endpoint ──────────────────────────────────────────
 // Pre-serialize and compute ETag once; invalidated on update.
@@ -100,21 +100,22 @@ export function makeAiConfigController(prisma: PrismaClient) {
           return;
         }
         const startMs = Date.now();
-        const response = await anthropic.messages.create({
-          model: model || 'claude-haiku-4-5-20251001',
-          max_tokens: maxTokens || 2048,
+        const response = await (openai.responses as any).create({
+          model: model || 'gpt-5.4-mini-2026-03-17',
+          max_output_tokens: maxTokens || 2048,
           ...(temperature !== undefined ? { temperature } : {}),
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
+          instructions: systemPrompt,
+          input: userMessage,
+          reasoning: { effort: 'none' },
+          store: true,
         });
-        const textBlock = response.content.find(b => b.type === 'text');
-        const responseText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+        const responseText = response.output_text || '';
         res.json({
           response: responseText,
           inputTokens: response.usage?.input_tokens ?? 0,
           outputTokens: response.usage?.output_tokens ?? 0,
           durationMs: Date.now() - startMs,
-          model: model || 'claude-haiku-4-5-20251001',
+          model: model || 'gpt-5.4-mini-2026-03-17',
         });
       } catch (err) {
         console.error('[AiConfig] test error:', err);
@@ -337,7 +338,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
           } catch { /* fallback: empty */ }
         }
 
-        const toolsForCall: Anthropic.Tool[] = isInquiry ? [{
+        const toolsForCall: any[] = isInquiry ? [{
           name: 'search_available_properties',
           description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
           input_schema: {

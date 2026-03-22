@@ -1,11 +1,10 @@
 /**
  * AI Service
- * All Claude API calls, system prompts, and AI logic.
- * Ported IDENTICALLY from make-to-code/src/webhooks/guest-messaging.ts
- * and make-to-code/src/webhooks/guest-inquiries.ts and manager-replies.ts
+ * All OpenAI GPT-5.4 Mini API calls, system prompts, and AI logic.
+ * Migrated from Anthropic Claude to OpenAI Responses API (014-openai-migration).
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import axios from 'axios';
 import { PrismaClient, MessageRole, Channel } from '@prisma/client';
 import * as hostawayService from './hostaway.service';
@@ -23,34 +22,39 @@ import { buildTieredContext, formatConversationContext } from './memory.service'
 import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Model pricing (per 1M tokens) — loaded from config for easy updates ────
 import modelPricingData from '../config/model-pricing.json';
-const MODEL_PRICING: Record<string, { input: number; output: number }> = modelPricingData;
+const MODEL_PRICING: Record<string, { input: number; cachedInput?: number; output: number }> = modelPricingData;
 
-function calculateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = MODEL_PRICING[model] || { input: 3, output: 15 }; // default to sonnet pricing
-  return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
+function calculateCostUsd(model: string, inputTokens: number, outputTokens: number, cachedInputTokens = 0, reasoningTokens = 0): number {
+  const pricing = MODEL_PRICING[model] || { input: 0.75, cachedInput: 0.075, output: 4.50 };
+  const uncachedInputTokens = inputTokens - cachedInputTokens;
+  const cachedRate = pricing.cachedInput ?? pricing.input * 0.1;
+  return (uncachedInputTokens / 1_000_000) * pricing.input
+    + (cachedInputTokens / 1_000_000) * cachedRate
+    + ((outputTokens + reasoningTokens) / 1_000_000) * pricing.output;
 }
 
 // ─── Module-level DB reference for log persistence ───────────────────────────
 let _prismaRef: PrismaClient | null = null;
 export function setAiServicePrisma(prisma: PrismaClient) { _prismaRef = prisma; }
 
-// ─── Retry wrapper (overloaded_error / 529) ──────────────────────────────────
-async function withRetry<T>(fn: () => Promise<T>, retries = 5): Promise<T> {
-  let delay = 2000;
+// ─── Retry wrapper (rate limit 429, server errors 500/502/503) ──────────────
+async function withRetry<T>(fn: () => Promise<T>, retries = 6): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
-      const e = err as { error?: { error?: { type?: string } }; status?: number };
-      const isOverloaded =
-        e?.error?.error?.type === 'overloaded_error' || e?.status === 529;
-      if (isOverloaded && attempt < retries) {
-        await sleep(delay);
-        delay *= 2;
+      const e = err as { status?: number; code?: string };
+      const isRetryable = e?.status === 429 || e?.status === 500 || e?.status === 502 || e?.status === 503;
+      if (isRetryable && attempt < retries) {
+        // Exponential backoff with jitter: 1-60s range
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
+        const jitter = baseDelay * (0.5 + Math.random() * 0.5);
+        console.warn(`[AI] Retry ${attempt + 1}/${retries} after ${Math.round(jitter)}ms (status=${e?.status})`);
+        await sleep(jitter);
         continue;
       }
       throw err;
@@ -117,41 +121,47 @@ interface SopClassificationResult {
   durationMs: number;
 }
 
+// SOP categories that benefit from reasoning (complex multi-step logic)
+const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
+
 async function classifyMessageSop(
   systemPrompt: string,
-  userContent: Anthropic.ContentBlock[],
-  options: { model?: string; tenantId?: string; conversationId?: string }
+  inputMessages: Array<{ role: string; content: string }>,
+  options: { model?: string; tenantId?: string; conversationId?: string; agentType?: string }
 ): Promise<SopClassificationResult> {
   const start = Date.now();
   try {
-    const response = await anthropic.messages.create({
-      model: options.model || 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
-      temperature: 0,
-      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: userContent }],
+    const response = await withRetry(() => (openai.responses as any).create({
+      model: options.model || 'gpt-5.4-mini-2026-03-17',
+      instructions: systemPrompt,
+      input: inputMessages,
       tools: [SOP_TOOL_DEFINITION],
-      tool_choice: { type: 'tool' as const, name: 'get_sop' },
-    } as any);
+      tool_choice: { type: 'function', name: 'get_sop' },
+      reasoning: { effort: 'none' },
+      max_output_tokens: 200,
+      prompt_cache_key: options.tenantId ? `tenant-${options.tenantId}-${options.agentType || 'default'}` : undefined,
+      prompt_cache_retention: '24h',
+      store: true,
+    }));
 
     const durationMs = Date.now() - start;
-    const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use');
+    const fnCall = (response as any).output?.find((i: any) => i.type === 'function_call');
 
-    if (toolUseBlock && toolUseBlock.type === 'tool_use') {
-      const input = toolUseBlock.input as { categories: string[]; confidence: string; reasoning: string };
-      console.log(`[AI] SOP classification: [${input.categories.join(', ')}] confidence=${input.confidence} (${durationMs}ms) — ${input.reasoning}`);
+    if (fnCall) {
+      const args = JSON.parse(fnCall.arguments) as { categories: string[]; confidence: string; reasoning: string };
+      console.log(`[AI] SOP classification: [${args.categories.join(', ')}] confidence=${args.confidence} (${durationMs}ms) — ${args.reasoning}`);
       return {
-        categories: input.categories,
-        confidence: input.confidence as 'high' | 'medium' | 'low',
-        reasoning: input.reasoning,
-        inputTokens: response.usage?.input_tokens || 0,
-        outputTokens: response.usage?.output_tokens || 0,
+        categories: args.categories,
+        confidence: args.confidence as 'high' | 'medium' | 'low',
+        reasoning: args.reasoning,
+        inputTokens: (response as any).usage?.input_tokens || 0,
+        outputTokens: (response as any).usage?.output_tokens || 0,
         durationMs,
       };
     }
 
-    console.warn(`[AI] SOP classification returned no tool_use block — defaulting to none`);
-    return { categories: ['none'], confidence: 'low', reasoning: 'Classification returned no tool_use block', inputTokens: response.usage?.input_tokens || 0, outputTokens: response.usage?.output_tokens || 0, durationMs };
+    console.warn(`[AI] SOP classification returned no function_call — defaulting to none`);
+    return { categories: ['none'], confidence: 'low', reasoning: 'Classification returned no function_call', inputTokens: (response as any).usage?.input_tokens || 0, outputTokens: (response as any).usage?.output_tokens || 0, durationMs };
   } catch (err) {
     const durationMs = Date.now() - start;
     console.error(`[AI] SOP classification failed (non-fatal):`, err);
@@ -162,11 +172,12 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; classifierUsed?: boolean; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: Anthropic.Tool[]; toolChoice?: Anthropic.ToolChoice; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string }
 ): Promise<string> {
   const startMs = Date.now();
-  const model = options?.model || 'claude-haiku-4-5-20251001';
-  const maxTokens = options?.maxTokens || 4096;
+  const model = options?.model || 'gpt-5.4-mini-2026-03-17';
+  const maxTokens = options?.maxTokens || 300;
+  const reasoningEffort = options?.reasoningEffort || 'none';
 
   const logEntry: AiApiLogEntry = {
     id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -192,78 +203,77 @@ async function createMessage(
   };
 
   try {
-    // Upgrade 8: Use prompt caching for system prompt (reduces cost ~70% on repeated calls)
+    // Build input messages from userContent blocks
+    const inputMessages: any[] = userContent
+      .filter(b => b.type === 'text')
+      .map(b => ({ role: 'user', content: (b as { type: 'text'; text: string }).text }));
+
+    // OpenAI Responses API call
     const createParams: any = {
       model,
-      max_tokens: maxTokens,
-      ...(options?.topK !== undefined ? { top_k: options.topK } : {}),
-      ...(options?.topP !== undefined ? { top_p: options.topP } : {}),
-      ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
-      ...(options?.stopSequences?.length ? { stop_sequences: options.stopSequences } : {}),
-      ...(options?.tools?.length ? { tools: options.tools, tool_choice: options.toolChoice ?? { type: 'auto' as const } } : {}),
-      system: [
-        {
-          type: 'text',
-          text: systemPrompt,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-      messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
+      instructions: systemPrompt,
+      input: inputMessages,
+      max_output_tokens: maxTokens,
+      ...(reasoningEffort !== 'none' ? { reasoning: { effort: reasoningEffort } } : { reasoning: { effort: 'none' } }),
+      ...(reasoningEffort === 'none' && options?.temperature !== undefined ? { temperature: options.temperature } : {}),
+      ...(options?.tools?.length ? { tools: options.tools, tool_choice: options.toolChoice ?? 'auto' } : {}),
+      text: { verbosity: 'low' as const },
+      truncation: 'auto',
+      store: true,
+      ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
+      prompt_cache_retention: '24h',
     };
-    const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
-    // T017: Raw prompt log removed — may contain door codes / WiFi passwords.
-    // AiApiLog table already captures full request data for debugging.
-    let response = await withRetry(() =>
-      (anthropic.messages.create as any)(createParams, createOpts)
-    ) as Anthropic.Message;
 
-    // ─── Tool use loop: if Claude wants to call a tool, execute it and send result back ───
-    if (response.stop_reason === 'tool_use' && options?.toolHandlers) {
-      const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
-      if (toolUseBlock) {
-        const handler = options.toolHandlers.get(toolUseBlock.name);
-        const toolStartMs = Date.now();
-        let toolResultContent: string;
-        try {
-          if (handler) {
-            toolResultContent = await handler(toolUseBlock.input, options.toolContext);
-          } else {
-            toolResultContent = JSON.stringify({ error: `Unknown tool: ${toolUseBlock.name}`, found: false, properties: [] });
-          }
-        } catch (toolErr) {
-          console.error(`[AI] Tool handler error for ${toolUseBlock.name}:`, toolErr);
-          toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
+    let response: any = await withRetry(() =>
+      (openai.responses as any).create(createParams)
+    );
+
+    // ─── Tool use loop: if model wants to call a tool, execute and send result back ───
+    const fnCall = response.output?.find((i: any) => i.type === 'function_call');
+    if (fnCall && options?.toolHandlers) {
+      const handler = options.toolHandlers.get(fnCall.name);
+      const toolStartMs = Date.now();
+      let toolResultContent: string;
+      try {
+        const toolInput = JSON.parse(fnCall.arguments);
+        if (handler) {
+          toolResultContent = await handler(toolInput, options.toolContext);
+        } else {
+          toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}`, found: false, properties: [] });
         }
-        const toolDurationMs = Date.now() - toolStartMs;
-
-        // Log tool usage to ragContext
-        if (options.ragContext) {
-          options.ragContext.toolUsed = true;
-          options.ragContext.toolName = toolUseBlock.name;
-          options.ragContext.toolInput = toolUseBlock.input;
-          try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
-          options.ragContext.toolDurationMs = toolDurationMs;
-        }
-
-        console.log(`[AI] Tool ${toolUseBlock.name} executed in ${toolDurationMs}ms`);
-
-        // Build messages array with tool result and call Claude again
-        const followUpParams: any = {
-          ...createParams,
-          messages: [
-            { role: 'user', content: userContent as Anthropic.ContentBlock[] },
-            { role: 'assistant', content: response.content },
-            { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: toolResultContent }] },
-          ],
-        };
-        response = await withRetry(() =>
-          (anthropic.messages.create as any)(followUpParams, createOpts)
-        ) as Anthropic.Message;
+      } catch (toolErr) {
+        console.error(`[AI] Tool handler error for ${fnCall.name}:`, toolErr);
+        toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
       }
+      const toolDurationMs = Date.now() - toolStartMs;
+
+      // Log tool usage to ragContext
+      if (options.ragContext) {
+        options.ragContext.toolUsed = true;
+        options.ragContext.toolName = fnCall.name;
+        try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
+        try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
+        options.ragContext.toolDurationMs = toolDurationMs;
+      }
+
+      console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms`);
+
+      // Send tool result back via previous_response_id (within same message — safe)
+      response = await withRetry(() =>
+        (openai.responses as any).create({
+          model,
+          instructions: systemPrompt,
+          input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+          previous_response_id: response.id,
+          max_output_tokens: maxTokens,
+          reasoning: { effort: reasoningEffort },
+          text: { verbosity: 'low' as const },
+          store: true,
+        })
+      );
     }
 
-    const textBlock = response.content.find((b: any) => b.type === 'text');
-    const responseText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+    const responseText = response.output_text || '';
 
     logEntry.responseText = responseText;
     logEntry.responseLength = responseText.length;
@@ -271,15 +281,15 @@ async function createMessage(
     logEntry.outputTokens = response.usage?.output_tokens ?? 0;
     logEntry.durationMs = Date.now() - startMs;
 
-    const cacheCreationTokens = (response.usage as any)?.cache_creation_input_tokens ?? 0;
-    const cacheReadTokens = (response.usage as any)?.cache_read_input_tokens ?? 0;
+    const cachedInputTokens = response.usage?.input_tokens_details?.cached_tokens ?? 0;
+    const reasoningTokens = response.usage?.output_tokens_details?.reasoning_tokens ?? 0;
 
     // Push to ring buffer
     aiApiLog.unshift(logEntry);
     if (aiApiLog.length > AI_LOG_MAX) aiApiLog.length = AI_LOG_MAX;
 
     // Persist to DB
-    const costUsd = calculateCostUsd(model, logEntry.inputTokens, logEntry.outputTokens);
+    const costUsd = calculateCostUsd(model, logEntry.inputTokens, logEntry.outputTokens, cachedInputTokens, reasoningTokens);
     if (_prismaRef && options?.tenantId) {
       _prismaRef.aiApiLog.create({
         data: {
@@ -290,7 +300,7 @@ async function createMessage(
           temperature: options.temperature,
           maxTokens,
           systemPrompt,
-          userContent: JSON.stringify(userContent.map(b => b.type === 'text' ? { type: 'text', text: b.text } : { type: 'image' })),
+          userContent: JSON.stringify(inputMessages),
           responseText,
           inputTokens: logEntry.inputTokens,
           outputTokens: logEntry.outputTokens,
@@ -301,11 +311,10 @@ async function createMessage(
       }).catch(e => console.error('[AI-LOG] DB persist error:', e));
     }
 
-    // Upgrade 1: Langfuse observability — fire-and-forget
+    // Langfuse observability — fire-and-forget
     if (options?.tenantId && options?.conversationId) {
-      // Build a preview of user content blocks for Langfuse input display
-      const userContentPreview = userContent
-        .map(b => b.type === 'text' ? (b as { type: 'text'; text: string }).text.substring(0, 500) : `[${b.type}]`)
+      const userContentPreview = inputMessages
+        .map((m: any) => typeof m.content === 'string' ? m.content.substring(0, 500) : `[${m.role}]`)
         .join('\n---\n')
         .substring(0, 3000);
       traceAiCall({
@@ -319,8 +328,8 @@ async function createMessage(
         durationMs: logEntry.durationMs,
         responseText,
         escalated: false,
-        cacheCreationTokens,
-        cacheReadTokens,
+        cacheCreationTokens: 0,
+        cacheReadTokens: cachedInputTokens,
         ragChunks: options.ragContext?.chunks,
         ragDurationMs: options.ragContext?.durationMs,
         ragQuery: options.ragContext?.query,
@@ -334,8 +343,8 @@ async function createMessage(
       });
     }
 
-    if (cacheReadTokens > 0) {
-      console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | cache: ${cacheReadTokens}r/${cacheCreationTokens}w | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
+    if (cachedInputTokens > 0) {
+      console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | cached: ${cachedInputTokens} | reasoning: ${reasoningTokens} | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
     } else {
       console.log(`[AI-LOG] ${model} | ${logEntry.inputTokens}in/${logEntry.outputTokens}out | ${logEntry.durationMs}ms | $${costUsd.toFixed(4)}`);
     }
@@ -1405,7 +1414,7 @@ export async function generateAndSendAiReply(
           messages: allMsgs,
           conversation,
           prisma,
-          anthropicClient: anthropic,
+          openaiClient: openai,
         }).catch(() => ({
           recentMessagesText: recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n'),
           summaryText: null,
@@ -1506,16 +1515,16 @@ export async function generateAndSendAiReply(
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
     const effectiveModel = tenantConfig?.model || personaCfg.model;
 
-    // Build minimal user content for classification (same as what createMessage receives)
-    const classificationUserContent: Anthropic.ContentBlock[] = [{
-      type: 'text',
-      text: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
+    // Build input messages for classification (OpenAI Responses API format)
+    const classificationInput = [{
+      role: 'user',
+      content: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
     }];
 
     const sopClassification = await classifyMessageSop(
       personaCfg.systemPrompt,
-      classificationUserContent,
-      { model: effectiveModel, tenantId, conversationId }
+      classificationInput,
+      { model: effectiveModel, tenantId, conversationId, agentType: isInquiry ? 'screening' : 'coordinator' }
     );
 
     // Fetch SOP content for classified categories (skip none, escalate gets SOP if paired with other categories)
@@ -1642,29 +1651,35 @@ export async function generateAndSendAiReply(
       // ─── Tool use: per-agent tools ───
       // Screening agent (INQUIRY): property search tool
       // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
-      const toolsForCall: Anthropic.Tool[] | undefined = isInquiry ? [{
+      const toolsForCall: any[] | undefined = isInquiry ? [{
+        type: 'function',
         name: 'search_available_properties',
         description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
-        input_schema: {
+        strict: true,
+        parameters: {
           type: 'object' as const,
           properties: {
             amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
-            min_capacity: { type: 'number', description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+            min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
             reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
           },
-          required: ['amenities', 'reason'],
+          required: ['amenities', 'reason', 'min_capacity'],
+          additionalProperties: false,
         },
       }] : [{
+        type: 'function',
         name: 'check_extend_availability',
         description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
-        input_schema: {
+        strict: true,
+        parameters: {
           type: 'object' as const,
           properties: {
             new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
-            new_checkin: { type: 'string', description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+            new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
             reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
           },
-          required: ['new_checkout', 'reason'],
+          required: ['new_checkout', 'reason', 'new_checkin'],
+          additionalProperties: false,
         },
       }];
 
@@ -1708,13 +1723,13 @@ export async function generateAndSendAiReply(
         }],
       ]);
 
+      // Determine reasoning effort based on SOP classification
+      const reasoningEffort = sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' as const : 'none' as const;
+
       const rawResponse = await createMessage(effectiveSystemPrompt, userContent, {
         model: effectiveModel,
         temperature: effectiveTemperature,
         maxTokens: effectiveMaxTokens,
-        ...(personaCfg.topK !== undefined ? { topK: personaCfg.topK } : {}),
-        ...(personaCfg.topP !== undefined ? { topP: personaCfg.topP } : {}),
-        ...(personaCfg.stopSequences?.length ? { stopSequences: personaCfg.stopSequences } : {}),
         agentName: effectiveAgentName,
         tenantId,
         conversationId,
@@ -1726,6 +1741,8 @@ export async function generateAndSendAiReply(
         ragEnabled: tenantConfig?.ragEnabled !== false,
         tools: toolsForCall,
         toolHandlers: toolHandlersForCall,
+        reasoningEffort,
+        agentType: isInquiry ? 'screening' : 'coordinator',
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);

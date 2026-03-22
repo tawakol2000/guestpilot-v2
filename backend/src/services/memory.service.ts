@@ -7,7 +7,7 @@
  *
  * For short conversations (<= 10 messages): no summary needed, return all verbatim.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
 // Use a local type for messages to avoid Prisma import issues
@@ -49,13 +49,13 @@ export async function buildTieredContext(params: {
   messages: MessageLike[];
   conversation: ConversationLike;
   prisma: PrismaClient;
-  anthropicClient: Anthropic;
+  openaiClient: OpenAI;
 }): Promise<{
   recentMessagesText: string;
   summaryText: string | null;
   totalMessageCount: number;
 }> {
-  const { conversationId, messages, conversation, prisma, anthropicClient } = params;
+  const { conversationId, messages, conversation, prisma, openaiClient } = params;
 
   const recentMessages = messages.slice(-10);
   const olderMessages = messages.slice(0, -10);
@@ -85,16 +85,13 @@ export async function buildTieredContext(params: {
   // Generate fresh summary via Claude Haiku
   try {
     const historyText = formatMessages(olderMessages);
-    const response = await anthropicClient.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system:
+    const response = await (openaiClient.responses as any).create({
+      model: 'gpt-5.4-mini-2026-03-17',
+      max_output_tokens: 300,
+      instructions:
         'You are a conversation summarizer for a hospitality AI system. ' +
         'Be extremely concise. Output only bullet points.',
-      messages: [
-        {
-          role: 'user',
-          content: `Summarize this guest conversation history. Focus on:
+      input: `Summarize this guest conversation history. Focus on:
 - What the guest asked for or reported
 - What was resolved vs still pending
 - Any preferences or special needs mentioned
@@ -103,12 +100,11 @@ Keep to 5 bullet points maximum. Be brief.
 
 [CONVERSATION HISTORY]
 ${historyText}`,
-        },
-      ],
+      reasoning: { effort: 'none' },
+      store: true,
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
-    const summary = (textBlock && textBlock.type === 'text' ? textBlock.text : '').trim();
+    const summary = (response.output_text || '').trim();
 
     // Persist summary to DB
     if (conversationId) {

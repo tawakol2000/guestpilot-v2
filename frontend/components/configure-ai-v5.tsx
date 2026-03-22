@@ -46,15 +46,10 @@ const T = {
 
 // ─── Model options ─────────────────────────────────────────────────────────────
 const MODEL_OPTIONS = [
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
-  'claude-opus-4-5',
-  'claude-sonnet-4-5',
-  'claude-haiku-4-5',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-haiku-20241022',
-  'claude-3-opus-20240229',
+  'gpt-5.4-mini-2026-03-17',  // Default — best balance of cost + quality (~$0.001/msg)
+  'gpt-5.4-mini',              // Latest mini (auto-updates)
+  'gpt-5.4-nano',              // Budget tier (~$0.0004/msg)
+  'gpt-5.4',                   // Premium tier (~$0.004/msg)
 ]
 
 // ─── Persona definitions ──────────────────────────────────────────────────────

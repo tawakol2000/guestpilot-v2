@@ -6,7 +6,7 @@
  * and an AI-generated health summary. Writes the report to .specify/memory/.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -207,18 +207,19 @@ export async function generatePipelineSnapshot(tenantId: string, prisma: PrismaC
   }, null, 2);
 
   try {
-    const anthropic = new Anthropic();
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      system: 'You are a pipeline health analyst. Given these metrics, write a concise health assessment: overall status, worst-performing categories, self-improvement velocity, and top 3 recommended actions.',
-      messages: [{ role: 'user', content: metricsForHaiku }],
+    const response = await (openai.responses as any).create({
+      model: 'gpt-5.4-mini-2026-03-17',
+      max_output_tokens: 500,
+      instructions: 'You are a pipeline health analyst. Given these metrics, write a concise health assessment: overall status, worst-performing categories, self-improvement velocity, and top 3 recommended actions.',
+      input: metricsForHaiku,
+      reasoning: { effort: 'none' },
+      store: true,
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
-    if (textBlock && textBlock.type === 'text') {
-      healthSummary = textBlock.text;
+    if (response.output_text) {
+      healthSummary = response.output_text;
     }
   } catch (err) {
     console.warn('[Snapshot] Haiku health summary generation failed:', err);

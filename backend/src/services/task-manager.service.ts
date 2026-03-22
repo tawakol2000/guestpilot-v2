@@ -9,18 +9,18 @@
  * Fallback: On any error → CREATE (never lose an escalation)
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
-// Lazy Anthropic client (same pattern as intent-extractor.service.ts)
-let _client: Anthropic | null = null;
-function getClient(): Anthropic | null {
+// Lazy OpenAI client (same pattern as intent-extractor.service.ts)
+let _client: OpenAI | null = null;
+function getClient(): OpenAI | null {
   if (!_client) {
-    const key = process.env.ANTHROPIC_API_KEY;
+    const key = process.env.OPENAI_API_KEY;
     if (!key) {
-      console.warn('[TaskManager] No ANTHROPIC_API_KEY — task dedup disabled');
+      console.warn('[TaskManager] No OPENAI_API_KEY — task dedup disabled');
       return null;
     }
-    _client = new Anthropic({ apiKey: key });
+    _client = new OpenAI({ apiKey: key });
   }
   return _client;
 }
@@ -107,15 +107,17 @@ export async function evaluateEscalation(input: TaskManagerInput): Promise<TaskM
 
     const userMessage = `OPEN TASKS:\n${tasksFormatted}\n\nNEW ESCALATION:\nTitle: ${input.newEscalation.title}\nNote: ${input.newEscalation.note}\nUrgency: ${input.newEscalation.urgency}\n\nGUEST MESSAGE: "${input.guestMessage}"\n\nReturn: {"action":"create|update|resolve|skip","taskId":"id-if-applicable","reason":"brief-reason"}`;
 
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 100,
+    const response = await (client.responses as any).create({
+      model: 'gpt-5.4-mini-2026-03-17',
+      max_output_tokens: 100,
       temperature: 0,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
+      instructions: SYSTEM_PROMPT,
+      input: userMessage,
+      reasoning: { effort: 'none' },
+      store: true,
     });
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = response.output_text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn(`[TaskManager] No JSON in response: ${text.substring(0, 100)}`);

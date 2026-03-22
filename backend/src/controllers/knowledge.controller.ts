@@ -1,10 +1,10 @@
 import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { AuthenticatedRequest } from '../types';
 import { appendLearnedAnswer } from '../services/rag.service';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export function makeKnowledgeController(prisma: PrismaClient) {
   return {
@@ -124,18 +124,16 @@ export function makeKnowledgeController(prisma: PrismaClient) {
           ? approvedKb.map(k => `Q: ${k.question}\nA: ${k.answer}`).join('\n---\n')
           : '(No knowledge base entries yet)';
 
-        const response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2048,
-          system: `You are a hospitality knowledge base analyst. Given a list of recent guest messages and existing knowledge base Q&A entries, identify frequently asked questions or common guest concerns that are NOT covered by the existing knowledge base. Return ONLY a JSON array of objects with "question" and "suggestedAnswer" fields. Each entry should be a real gap — a question guests are asking that the KB doesn't address. Return at most 5 gaps. If there are no gaps, return an empty array []. Return raw JSON only, no markdown fences.`,
-          messages: [{
-            role: 'user',
-            content: `RECENT GUEST MESSAGES:\n${guestTexts}\n\nEXISTING KNOWLEDGE BASE:\n${kbTexts}\n\nIdentify knowledge base gaps and return as JSON array.`,
-          }],
+        const response = await (openai.responses as any).create({
+          model: 'gpt-5.4-mini-2026-03-17',
+          max_output_tokens: 2048,
+          instructions: `You are a hospitality knowledge base analyst. Given a list of recent guest messages and existing knowledge base Q&A entries, identify frequently asked questions or common guest concerns that are NOT covered by the existing knowledge base. Return ONLY a JSON array of objects with "question" and "suggestedAnswer" fields. Each entry should be a real gap — a question guests are asking that the KB doesn't address. Return at most 5 gaps. If there are no gaps, return an empty array []. Return raw JSON only, no markdown fences.`,
+          input: `RECENT GUEST MESSAGES:\n${guestTexts}\n\nEXISTING KNOWLEDGE BASE:\n${kbTexts}\n\nIdentify knowledge base gaps and return as JSON array.`,
+          reasoning: { effort: 'none' },
+          store: true,
         });
 
-        const textBlock = response.content.find(b => b.type === 'text');
-        const raw = textBlock && textBlock.type === 'text' ? textBlock.text : '[]';
+        const raw = response.output_text || '[]';
         let gaps: Array<{ question: string; suggestedAnswer: string }>;
         try {
           gaps = JSON.parse(raw);
@@ -159,18 +157,16 @@ export function makeKnowledgeController(prisma: PrismaClient) {
           return;
         }
 
-        const response = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 4096,
-          system: `Parse the following text into question-and-answer pairs for a vacation rental knowledge base. Return a JSON array of objects with "question" and "answer" fields. Extract as many relevant Q&A pairs as possible. Return raw JSON only, no markdown fences.`,
-          messages: [{
-            role: 'user',
-            content: text,
-          }],
+        const response = await (openai.responses as any).create({
+          model: 'gpt-5.4-mini-2026-03-17',
+          max_output_tokens: 4096,
+          instructions: `Parse the following text into question-and-answer pairs for a vacation rental knowledge base. Return a JSON array of objects with "question" and "answer" fields. Extract as many relevant Q&A pairs as possible. Return raw JSON only, no markdown fences.`,
+          input: text,
+          reasoning: { effort: 'none' },
+          store: true,
         });
 
-        const textBlock = response.content.find(b => b.type === 'text');
-        const raw = textBlock && textBlock.type === 'text' ? textBlock.text : '[]';
+        const raw = response.output_text || '[]';
         let pairs: Array<{ question: string; answer: string }>;
         try {
           pairs = JSON.parse(raw);

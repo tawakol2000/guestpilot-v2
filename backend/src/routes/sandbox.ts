@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { authMiddleware } from '../middleware/auth';
 import { getAiConfig } from '../services/ai-config.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
@@ -10,7 +10,7 @@ import { detectEscalationSignals } from '../services/escalation-enrichment.servi
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Retry helper (same as ai.service.ts) ────────────────────────────────────
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
@@ -18,7 +18,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   for (let i = 0; i <= maxRetries; i++) {
     try { return await fn(); } catch (err: any) {
       lastErr = err;
-      if (err?.status === 529 || err?.status === 429 || err?.error?.type === 'overloaded_error') {
+      if (err?.status === 429 || err?.error?.type === 'overloaded_error') {
         const delay = Math.min(1000 * 2 ** i, 8000);
         console.warn(`[Sandbox] Retry ${i + 1}/${maxRetries} after ${delay}ms (${err?.status || 'overloaded'})`);
         await new Promise(r => setTimeout(r, delay));
@@ -235,26 +235,32 @@ export function sandboxRouter(prisma: PrismaClient) {
         categories: ['none'], confidence: 'low', reasoning: 'Classification not run', inputTokens: 0, outputTokens: 0, durationMs: 0,
       };
       try {
-        const classificationUserContent: Anthropic.ContentBlock[] = [{
-          type: 'text',
-          text: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
-        }];
+        const classificationUserText = `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`;
         const sopStart = Date.now();
         const sopResponse = await withRetry(() =>
-          (anthropic.messages.create as any)({
-            model: tenantConfig?.model || personaCfg.model,
-            max_tokens: 200,
+          (openai.responses as any).create({
+            model: 'gpt-5.4-mini-2026-03-17',
+            max_output_tokens: 200,
             temperature: 0,
-            system: [{ type: 'text', text: personaCfg.systemPrompt, cache_control: { type: 'ephemeral' } }],
-            messages: [{ role: 'user', content: classificationUserContent }],
-            tools: [SOP_TOOL_DEFINITION],
-            tool_choice: { type: 'tool' as const, name: 'get_sop' },
-          }, { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } })
-        ) as Anthropic.Message;
+            instructions: personaCfg.systemPrompt,
+            input: [{ role: 'user', content: classificationUserText }],
+            tools: [{
+              type: 'function',
+              name: SOP_TOOL_DEFINITION.name,
+              description: SOP_TOOL_DEFINITION.description,
+              parameters: SOP_TOOL_DEFINITION.input_schema,
+              strict: true,
+            }],
+            tool_choice: { type: 'function' as const, name: 'get_sop' },
+            reasoning: { effort: 'none' },
+            truncation: 'auto',
+            store: true,
+          })
+        ) as any;
         const sopDurationMs = Date.now() - sopStart;
-        const sopToolBlock = sopResponse.content.find((b: any) => b.type === 'tool_use');
-        if (sopToolBlock && sopToolBlock.type === 'tool_use') {
-          const input = sopToolBlock.input as { categories: string[]; confidence: string; reasoning: string };
+        const sopFnCall = sopResponse.output?.find((i: any) => i.type === 'function_call');
+        if (sopFnCall) {
+          const input = JSON.parse(sopFnCall.arguments) as { categories: string[]; confidence: string; reasoning: string };
           sopClassification = {
             categories: input.categories,
             confidence: input.confidence,
@@ -265,7 +271,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           };
           console.log(`[Sandbox] SOP classification: [${input.categories.join(', ')}] confidence=${input.confidence} (${sopDurationMs}ms) — ${input.reasoning}`);
         } else {
-          console.warn('[Sandbox] SOP classification returned no tool_use block — defaulting to none');
+          console.warn('[Sandbox] SOP classification returned no function_call — defaulting to none');
           sopClassification.durationMs = sopDurationMs;
           sopClassification.inputTokens = sopResponse.usage?.input_tokens || 0;
           sopClassification.outputTokens = sopResponse.usage?.output_tokens || 0;
@@ -346,10 +352,11 @@ export function sandboxRouter(prisma: PrismaClient) {
       // ── Tool definitions — per-agent tools ──────────────────────────
       // Screening agent (INQUIRY): property search tool
       // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
-      const toolsForCall: Anthropic.Tool[] = isInquiry ? [{
+      const toolsForCall: any[] = isInquiry ? [{
+        type: 'function',
         name: 'search_available_properties',
         description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
-        input_schema: {
+        parameters: {
           type: 'object' as const,
           properties: {
             amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
@@ -359,9 +366,10 @@ export function sandboxRouter(prisma: PrismaClient) {
           required: ['amenities', 'reason'],
         },
       }] : [{
+        type: 'function',
         name: 'check_extend_availability',
         description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
-        input_schema: {
+        parameters: {
           type: 'object' as const,
           properties: {
             new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
@@ -381,23 +389,27 @@ export function sandboxRouter(prisma: PrismaClient) {
         } catch { /* fallback: empty */ }
       }
 
-      // ── Call Claude ────────────────────────────────────────────────────
+      // ── Call OpenAI ───────────────────────────────────────────────────
+      const userText = userContent.map(b => b.text).join('\n\n');
       const createParams: any = {
         model: effectiveModel,
-        max_tokens: effectiveMaxTokens,
+        max_output_tokens: effectiveMaxTokens,
         ...(effectiveTemperature !== undefined ? { temperature: effectiveTemperature } : {}),
-        ...(personaCfg.topK !== undefined ? { top_k: personaCfg.topK } : {}),
         ...(personaCfg.topP !== undefined ? { top_p: personaCfg.topP } : {}),
-        ...(personaCfg.stopSequences?.length ? { stop_sequences: personaCfg.stopSequences } : {}),
-        ...(toolsForCall?.length ? { tools: toolsForCall, tool_choice: { type: 'auto' as const } } : {}),
-        system: [{ type: 'text', text: effectiveSystemPrompt, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: userContent as Anthropic.ContentBlock[] }],
+        ...(toolsForCall?.length ? { tools: toolsForCall, tool_choice: 'auto' } : {}),
+        instructions: effectiveSystemPrompt,
+        input: [{ role: 'user', content: userText }],
+        reasoning: { effort: 'none' },
+        text: { verbosity: 'low' },
+        truncation: 'auto',
+        store: true,
+        prompt_cache_key: 'sandbox',
+        prompt_cache_retention: '24h',
       };
-      const createOpts: any = { headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' } };
 
       let response = await withRetry(() =>
-        (anthropic.messages.create as any)(createParams, createOpts)
-      ) as Anthropic.Message;
+        (openai.responses as any).create(createParams)
+      ) as any;
 
       // ── Tool use loop ──────────────────────────────────────────────────
       let toolUsed = false;
@@ -406,68 +418,65 @@ export function sandboxRouter(prisma: PrismaClient) {
       let toolResults: any;
       let toolDurationMs: number | undefined;
 
-      if (response.stop_reason === 'tool_use') {
-        const toolUseBlock = response.content.find((b: any) => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
-        if (toolUseBlock) {
-          toolUsed = true;
-          toolName = toolUseBlock.name;
-          toolInput = toolUseBlock.input;
-          const toolStartMs = Date.now();
+      const fnCall = response.output?.find((i: any) => i.type === 'function_call');
+      if (fnCall) {
+        toolUsed = true;
+        toolName = fnCall.name;
+        toolInput = JSON.parse(fnCall.arguments);
+        const toolStartMs = Date.now();
 
-          let toolResultContent: string;
-          try {
-            if (toolUseBlock.name === 'search_available_properties') {
-              const typedInput = toolUseBlock.input as { amenities: string[]; min_capacity?: number; reason?: string };
-              const currentAddress = listing.address || '';
-              const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
-              const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
-              toolResultContent = await searchAvailableProperties(typedInput, {
-                tenantId,
-                currentPropertyId: propertyId,
-                checkIn, checkOut,
-                channel: channel || 'DIRECT',
-                hostawayAccountId: tenant.hostawayAccountId,
-                hostawayApiKey: tenant.hostawayApiKey,
-                currentCity,
-              });
-            } else if (toolUseBlock.name === 'check_extend_availability') {
-              toolResultContent = await checkExtendAvailability(toolUseBlock.input, {
-                listingId: hostawayListingId,
-                currentCheckIn: checkIn,
-                currentCheckOut: checkOut,
-                channel: channel || 'DIRECT',
-                numberOfGuests: guestCount || 1,
-                hostawayAccountId: tenant.hostawayAccountId,
-                hostawayApiKey: tenant.hostawayApiKey,
-              });
-            } else {
-              toolResultContent = JSON.stringify({ error: `Unknown tool: ${toolUseBlock.name}` });
-            }
-          } catch (toolErr) {
-            console.error('[Sandbox] Tool handler error:', toolErr);
-            toolResultContent = JSON.stringify({ error: 'Tool execution failed', found: false, properties: [] });
+        let toolResultContent: string;
+        try {
+          if (fnCall.name === 'search_available_properties') {
+            const typedInput = toolInput as { amenities: string[]; min_capacity?: number; reason?: string };
+            const currentAddress = listing.address || '';
+            const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
+            const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
+            toolResultContent = await searchAvailableProperties(typedInput, {
+              tenantId,
+              currentPropertyId: propertyId,
+              checkIn, checkOut,
+              channel: channel || 'DIRECT',
+              hostawayAccountId: tenant.hostawayAccountId,
+              hostawayApiKey: tenant.hostawayApiKey,
+              currentCity,
+            });
+          } else if (fnCall.name === 'check_extend_availability') {
+            toolResultContent = await checkExtendAvailability(toolInput, {
+              listingId: hostawayListingId,
+              currentCheckIn: checkIn,
+              currentCheckOut: checkOut,
+              channel: channel || 'DIRECT',
+              numberOfGuests: guestCount || 1,
+              hostawayAccountId: tenant.hostawayAccountId,
+              hostawayApiKey: tenant.hostawayApiKey,
+            });
+          } else {
+            toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}` });
           }
-          toolDurationMs = Date.now() - toolStartMs;
-          try { toolResults = JSON.parse(toolResultContent); } catch { toolResults = toolResultContent; }
-
-          // Follow up with tool result
-          const followUpParams: any = {
-            ...createParams,
-            messages: [
-              { role: 'user', content: userContent as Anthropic.ContentBlock[] },
-              { role: 'assistant', content: response.content },
-              { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseBlock.id, content: toolResultContent }] },
-            ],
-          };
-          response = await withRetry(() =>
-            (anthropic.messages.create as any)(followUpParams, createOpts)
-          ) as Anthropic.Message;
+        } catch (toolErr) {
+          console.error('[Sandbox] Tool handler error:', toolErr);
+          toolResultContent = JSON.stringify({ error: 'Tool execution failed', found: false, properties: [] });
         }
+        toolDurationMs = Date.now() - toolStartMs;
+        try { toolResults = JSON.parse(toolResultContent); } catch { toolResults = toolResultContent; }
+
+        // Follow up with tool result
+        const followUpParams: any = {
+          ...createParams,
+          input: [
+            { role: 'user', content: userText },
+            ...response.output,
+            { type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent },
+          ],
+        };
+        response = await withRetry(() =>
+          (openai.responses as any).create(followUpParams)
+        ) as any;
       }
 
       // ── Extract response text ──────────────────────────────────────────
-      const textBlock = response.content.find((b: any) => b.type === 'text');
-      const rawResponseText = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+      const rawResponseText = response.output_text || '';
       const durationMs = Date.now() - startMs;
 
       // ── Parse JSON response ────────────────────────────────────────────

@@ -79,7 +79,7 @@ import { AiLogsV5 } from '@/components/ai-logs-v5'
 import AiPipelineV5 from '@/components/ai-pipeline-v5'
 import SopEditorV5 from '@/components/sop-editor-v5'
 // ExamplesEditorV5 removed — classifier training data no longer managed (013-sop-tool-routing)
-import { OpusV5 } from '@/components/opus-v5'
+// OpusV5 removed — daily audit service deleted (014-openai-migration)
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import SopMonitorV5 from '@/components/sop-monitor-v5'
@@ -116,7 +116,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'opus' | 'sop-monitor'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'sop-monitor'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1365,7 +1365,7 @@ export default function InboxV5() {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
         'overview','inbox','analytics','tasks','settings','configure',
-        'logs','pipeline','sops','tools','sandbox','opus',
+        'logs','pipeline','sops','tools','sandbox',
       ].includes(saved)) return saved as NavTab
     }
     return 'inbox'
@@ -2288,7 +2288,7 @@ export default function InboxV5() {
             /* Examples tab removed — 013-sop-tool-routing */
             { id: 'tools', label: 'Tools' },
             { id: 'sandbox', label: 'Sandbox' },
-            { id: 'opus', label: 'OPUS' },
+            /* OPUS tab removed — 014-openai-migration */
             { id: 'sop-monitor', label: 'SOP Monitor' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -4064,13 +4064,7 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'opus' && (
-        <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-          <OpusV5 />
-        </div>
-        </ErrorBoundary>
-      )}
+      {/* OPUS tab render removed — 014-openai-migration */}
       {navTab === 'sop-monitor' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>

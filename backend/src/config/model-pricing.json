@@ -1,7 +1,6 @@
 {
-  "claude-opus-4-6": { "input": 15, "output": 75 },
-  "claude-sonnet-4-6": { "input": 3, "output": 15 },
-  "claude-haiku-4-5-20251001": { "input": 0.80, "output": 4 },
-  "claude-3-5-sonnet-20241022": { "input": 3, "output": 15 },
-  "claude-3-5-haiku-20241022": { "input": 0.80, "output": 4 }
+  "gpt-5.4-mini-2026-03-17": { "input": 0.75, "cachedInput": 0.075, "output": 4.50 },
+  "gpt-5.4-mini": { "input": 0.75, "cachedInput": 0.075, "output": 4.50 },
+  "gpt-5.4-nano": { "input": 0.20, "cachedInput": 0.02, "output": 1.25 },
+  "gpt-5.4": { "input": 2.50, "cachedInput": 0.25, "output": 15.00 }
 }
