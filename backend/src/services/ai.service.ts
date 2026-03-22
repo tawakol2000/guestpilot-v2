@@ -91,12 +91,16 @@ export interface AiApiLogEntry {
   outputTokens: number;
   durationMs: number;
   error?: string;
+  openaiRequestId?: string;
+  rateLimitRemaining?: { requests: number; tokens: number };
   ragContext?: {
     query: string;
     chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>;
     totalRetrieved: number;
     durationMs: number;
     classifierUsed?: boolean;
+    openaiRequestId?: string;
+    rateLimitRemaining?: { requests: number; tokens: number };
   } | null;
 }
 
@@ -172,7 +176,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -224,9 +228,43 @@ async function createMessage(
       prompt_cache_retention: '24h',
     };
 
+    // ─── Helper: extract rate limit headers and request ID from response ───
+    const extractOpsHeaders = (resp: any): { openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } } => {
+      const result: { openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } } = {};
+      // The Responses API may expose headers on the response object or via response.headers
+      // Try multiple access patterns for forward-compatibility with SDK updates
+      const headers = resp?.headers || resp?._headers;
+      if (headers) {
+        const requestId = typeof headers.get === 'function' ? headers.get('x-request-id') : headers['x-request-id'];
+        if (requestId) result.openaiRequestId = String(requestId);
+        const remainingReqs = typeof headers.get === 'function' ? headers.get('x-ratelimit-remaining-requests') : headers['x-ratelimit-remaining-requests'];
+        const remainingTokens = typeof headers.get === 'function' ? headers.get('x-ratelimit-remaining-tokens') : headers['x-ratelimit-remaining-tokens'];
+        if (remainingReqs !== undefined || remainingTokens !== undefined) {
+          result.rateLimitRemaining = {
+            requests: parseInt(String(remainingReqs || '0'), 10) || 0,
+            tokens: parseInt(String(remainingTokens || '0'), 10) || 0,
+          };
+        }
+      }
+      // Fallback: some SDK versions put request ID directly on response
+      if (!result.openaiRequestId && resp?.request_id) {
+        result.openaiRequestId = String(resp.request_id);
+      }
+      return result;
+    };
+
     let response: any = await withRetry(() =>
       (openai.responses as any).create(createParams)
     );
+
+    // T042: Log rate limit headers and request ID from initial call
+    const initialOpsHeaders = extractOpsHeaders(response);
+    if (initialOpsHeaders.openaiRequestId) {
+      console.log(`[AI-OPS] Request ID: ${initialOpsHeaders.openaiRequestId}`);
+    }
+    if (initialOpsHeaders.rateLimitRemaining) {
+      console.log(`[AI-OPS] Rate limit remaining — requests: ${initialOpsHeaders.rateLimitRemaining.requests}, tokens: ${initialOpsHeaders.rateLimitRemaining.tokens}`);
+    }
 
     // ─── Tool use loop: if model wants to call a tool, execute and send result back ───
     const fnCall = response.output?.find((i: any) => i.type === 'function_call');
@@ -248,7 +286,7 @@ async function createMessage(
       const toolDurationMs = Date.now() - toolStartMs;
 
       // Log tool usage to ragContext
-      if (options.ragContext) {
+      if (options?.ragContext) {
         options.ragContext.toolUsed = true;
         options.ragContext.toolName = fnCall.name;
         try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
@@ -258,22 +296,111 @@ async function createMessage(
 
       console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms`);
 
-      // Send tool result back via previous_response_id (within same message — safe)
-      response = await withRetry(() =>
-        (openai.responses as any).create({
-          model,
-          instructions: systemPrompt,
-          input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
-          previous_response_id: response.id,
-          max_output_tokens: maxTokens,
-          reasoning: { effort: reasoningEffort },
-          text: { verbosity: 'low' as const },
-          store: true,
-        })
-      );
+      // Send tool result back via previous_response_id
+      // T029: When streaming is enabled, stream the tool follow-up call (the final response to guest)
+      if (options?.stream && options?.tenantId && options?.conversationId) {
+        const toolFollowUpStream = await withRetry(() =>
+          (openai.responses as any).create({
+            model,
+            instructions: systemPrompt,
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            previous_response_id: response.id,
+            max_output_tokens: maxTokens,
+            reasoning: { effort: reasoningEffort },
+            text: { verbosity: 'low' as const },
+            store: true,
+            stream: true,
+          })
+        );
+
+        let streamedText = '';
+        let streamResponse: any = null;
+        for await (const event of toolFollowUpStream as AsyncIterable<any>) {
+          if (event.type === 'response.output_text.delta') {
+            streamedText += event.delta;
+            broadcastToTenant(options.tenantId, 'ai_typing_text', {
+              conversationId: options.conversationId,
+              delta: event.delta,
+              done: false,
+            });
+          }
+          if (event.type === 'response.completed') {
+            streamResponse = event.response;
+          }
+        }
+
+        // Emit final done event
+        broadcastToTenant(options.tenantId, 'ai_typing_text', {
+          conversationId: options.conversationId,
+          delta: '',
+          done: true,
+        });
+
+        // Use the completed response for usage/headers
+        response = streamResponse || { output_text: streamedText, usage: {} };
+        if (!response.output_text) response.output_text = streamedText;
+
+        // T042: Log ops headers from tool follow-up
+        const toolOpsHeaders = extractOpsHeaders(response);
+        if (toolOpsHeaders.openaiRequestId) {
+          console.log(`[AI-OPS] Tool follow-up Request ID: ${toolOpsHeaders.openaiRequestId}`);
+        }
+        if (toolOpsHeaders.rateLimitRemaining) {
+          console.log(`[AI-OPS] Tool follow-up rate limit — requests: ${toolOpsHeaders.rateLimitRemaining.requests}, tokens: ${toolOpsHeaders.rateLimitRemaining.tokens}`);
+        }
+      } else {
+        // Non-streaming tool follow-up (existing behavior)
+        response = await withRetry(() =>
+          (openai.responses as any).create({
+            model,
+            instructions: systemPrompt,
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            previous_response_id: response.id,
+            max_output_tokens: maxTokens,
+            reasoning: { effort: reasoningEffort },
+            text: { verbosity: 'low' as const },
+            store: true,
+          })
+        );
+
+        // T042: Log ops headers from tool follow-up
+        const toolOpsHeaders = extractOpsHeaders(response);
+        if (toolOpsHeaders.openaiRequestId) {
+          console.log(`[AI-OPS] Tool follow-up Request ID: ${toolOpsHeaders.openaiRequestId}`);
+        }
+        if (toolOpsHeaders.rateLimitRemaining) {
+          console.log(`[AI-OPS] Tool follow-up rate limit — requests: ${toolOpsHeaders.rateLimitRemaining.requests}, tokens: ${toolOpsHeaders.rateLimitRemaining.tokens}`);
+        }
+      }
+    } else if (options?.stream && options?.tenantId && options?.conversationId && !fnCall) {
+      // ─── T029: Streaming for non-tool calls ───
+      // Initial call was non-streaming (needed to check for tool calls first).
+      // Emit the already-received full text as SSE so the frontend gets the typing effect.
+      const fullText = response.output_text || '';
+      if (fullText) {
+        broadcastToTenant(options.tenantId, 'ai_typing_text', {
+          conversationId: options.conversationId,
+          delta: fullText,
+          done: false,
+        });
+      }
+      broadcastToTenant(options.tenantId, 'ai_typing_text', {
+        conversationId: options.conversationId,
+        delta: '',
+        done: true,
+      });
     }
 
     const responseText = response.output_text || '';
+
+    // T042/T043: Capture final ops headers into log entry and ragContext
+    const finalOpsHeaders = extractOpsHeaders(response);
+    logEntry.openaiRequestId = finalOpsHeaders.openaiRequestId || initialOpsHeaders.openaiRequestId;
+    logEntry.rateLimitRemaining = finalOpsHeaders.rateLimitRemaining || initialOpsHeaders.rateLimitRemaining;
+    if (options?.ragContext) {
+      options.ragContext.openaiRequestId = logEntry.openaiRequestId;
+      options.ragContext.rateLimitRemaining = logEntry.rateLimitRemaining;
+    }
 
     logEntry.responseText = responseText;
     logEntry.responseLength = responseText.length;
@@ -290,6 +417,21 @@ async function createMessage(
 
     // Persist to DB
     const costUsd = calculateCostUsd(model, logEntry.inputTokens, logEntry.outputTokens, cachedInputTokens, reasoningTokens);
+
+    // Enrich ragContext with cache/reasoning metrics for analytics (T035)
+    const enrichedRagContext = options?.ragContext
+      ? {
+          ...options.ragContext,
+          cachedInputTokens,
+          totalInputTokens: logEntry.inputTokens,
+          reasoningTokens,
+          reasoningEffort: reasoningEffort,
+          costUsd,
+        }
+      : options?.tenantId
+        ? { cachedInputTokens, totalInputTokens: logEntry.inputTokens, reasoningTokens, reasoningEffort: reasoningEffort, costUsd }
+        : undefined;
+
     if (_prismaRef && options?.tenantId) {
       _prismaRef.aiApiLog.create({
         data: {
@@ -306,7 +448,7 @@ async function createMessage(
           outputTokens: logEntry.outputTokens,
           costUsd,
           durationMs: logEntry.durationMs,
-          ragContext: options.ragContext ?? undefined,
+          ragContext: enrichedRagContext,
         },
       }).catch(e => console.error('[AI-LOG] DB persist error:', e));
     }
@@ -1743,6 +1885,7 @@ export async function generateAndSendAiReply(
         toolHandlers: toolHandlersForCall,
         reasoningEffort,
         agentType: isInquiry ? 'screening' : 'coordinator',
+        stream: true,
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);

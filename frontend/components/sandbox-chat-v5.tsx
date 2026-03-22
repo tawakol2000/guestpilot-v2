@@ -8,6 +8,7 @@ import {
 import {
   apiGetProperties,
   apiSandboxChat,
+  apiSandboxChatStream,
   type ApiProperty,
   type SandboxChatRequest,
   type SandboxChatResponse,
@@ -95,6 +96,8 @@ export default function SandboxChatV5() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Streaming text accumulator — shows progressive AI response
+  const [streamingText, setStreamingText] = useState('')
 
   // UI state
   const [configCollapsed, setConfigCollapsed] = useState(false)
@@ -114,7 +117,7 @@ export default function SandboxChatV5() {
   // ── Auto-scroll to bottom ───────────────────────────────────────────────
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, streamingText])
 
   // ── Auto-resize textarea ────────────────────────────────────────────────
   const handleInputChange = useCallback((val: string) => {
@@ -125,12 +128,13 @@ export default function SandboxChatV5() {
     }
   }, [])
 
-  // ── Send message ────────────────────────────────────────────────────────
+  // ── Send message (with streaming support) ───────────────────────────────
   const handleSend = useCallback(async () => {
     const text = input.trim()
     if (!text || loading || !propertyId) return
 
     setError(null)
+    setStreamingText('')
     const guestMsg: ChatMessage = {
       id: `msg-${Date.now()}-g`,
       role: 'guest',
@@ -155,8 +159,20 @@ export default function SandboxChatV5() {
         messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
       }
 
-      const resp = await apiSandboxChat(req)
+      // Try streaming first, fall back to non-streaming on error
+      let resp: SandboxChatResponse
+      try {
+        resp = await apiSandboxChatStream(req, (delta) => {
+          setStreamingText(prev => prev + delta)
+        })
+      } catch {
+        // Streaming not available — fall back to non-streaming
+        // (backend endpoint may not support ?stream=1 yet)
+        setStreamingText('')
+        resp = await apiSandboxChat(req)
+      }
 
+      setStreamingText('')
       const aiMsg: ChatMessage = {
         id: `msg-${Date.now()}-a`,
         role: 'host',
@@ -179,6 +195,7 @@ export default function SandboxChatV5() {
       }
       setMessages(prev => [...prev, aiMsg])
     } catch (err: any) {
+      setStreamingText('')
       setError(err.message || 'Failed to get AI response')
     } finally {
       setLoading(false)
@@ -190,6 +207,7 @@ export default function SandboxChatV5() {
   const handleReset = useCallback(() => {
     setMessages([])
     setError(null)
+    setStreamingText('')
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
   }, [])
@@ -569,7 +587,7 @@ export default function SandboxChatV5() {
                       {msg.meta.durationMs ? `${(msg.meta.durationMs / 1000).toFixed(1)}s` : '--'}
                     </span>
                     {msg.meta.model && (
-                      <span>{msg.meta.model.replace('claude-', '').replace('-20251001', '')}</span>
+                      <span>{msg.meta.model}</span>
                     )}
                   </span>
 
@@ -648,7 +666,7 @@ export default function SandboxChatV5() {
             </div>
           ))}
 
-          {/* Loading indicator */}
+          {/* Loading / streaming indicator */}
           {loading && (
             <div style={{
               display: 'flex',
@@ -656,19 +674,46 @@ export default function SandboxChatV5() {
               maxWidth: '80%',
               alignSelf: 'flex-start',
             }}>
-              <div style={{
-                padding: '10px 14px',
-                borderRadius: '16px 16px 16px 4px',
-                background: T.bg.secondary,
-                color: T.text.tertiary,
-                fontSize: 13,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}>
-                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                <span>Thinking...</span>
-              </div>
+              {streamingText ? (
+                /* Show progressive streaming text in an AI-style bubble */
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '16px 16px 16px 4px',
+                  background: T.bg.secondary,
+                  color: T.text.primary,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}>
+                  {streamingText}
+                  <span style={{
+                    display: 'inline-block',
+                    width: 5,
+                    height: 14,
+                    background: T.accent,
+                    marginLeft: 1,
+                    borderRadius: 1,
+                    animation: 'cursor-blink 0.8s step-end infinite',
+                    verticalAlign: 'text-bottom',
+                  }} />
+                </div>
+              ) : (
+                /* No streaming text yet — show thinking spinner */
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '16px 16px 16px 4px',
+                  background: T.bg.secondary,
+                  color: T.text.tertiary,
+                  fontSize: 13,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Thinking...</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -769,9 +814,10 @@ export default function SandboxChatV5() {
         </div>
       </div>
 
-      {/* Keyframe animation for spinner */}
+      {/* Keyframe animations */}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
       `}</style>
     </div>
   )

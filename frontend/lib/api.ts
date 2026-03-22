@@ -922,6 +922,87 @@ export async function apiSandboxChat(req: SandboxChatRequest): Promise<SandboxCh
   })
 }
 
+/**
+ * Streaming variant of sandbox chat.
+ * Calls POST /api/sandbox/chat?stream=1 and reads the response as SSE lines.
+ * Each line is `data: {"delta":"..."}` or `data: {"done":true, ...fullResponse}`.
+ * Falls back to non-streaming apiSandboxChat if the response is not streamed.
+ */
+export async function apiSandboxChatStream(
+  req: SandboxChatRequest,
+  onDelta: (text: string) => void,
+): Promise<SandboxChatResponse> {
+  const token = getToken()
+  const res = await fetch(`${BASE_URL}/api/sandbox/chat?stream=1`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(req),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(body || `API error ${res.status}`)
+  }
+
+  const contentType = res.headers.get('content-type') || ''
+
+  // If backend doesn't support streaming yet, it returns normal JSON
+  if (contentType.includes('application/json')) {
+    const json = await res.json() as SandboxChatResponse
+    onDelta(json.response)
+    return json
+  }
+
+  // Read SSE / ndjson stream
+  const reader = res.body?.getReader()
+  if (!reader) {
+    const json = await res.json() as SandboxChatResponse
+    onDelta(json.response)
+    return json
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalResponse: SandboxChatResponse | null = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    // Process complete lines
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || '' // keep incomplete last line in buffer
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith(':')) continue // skip empty lines and SSE comments
+      const dataStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed
+      if (!dataStr) continue
+      try {
+        const parsed = JSON.parse(dataStr)
+        if (parsed.done && parsed.response !== undefined) {
+          // Final payload with full response metadata
+          finalResponse = parsed as SandboxChatResponse
+        } else if (parsed.delta !== undefined) {
+          onDelta(parsed.delta)
+        }
+      } catch {
+        // Ignore unparseable lines
+      }
+    }
+  }
+
+  // If we got a final response from the stream, return it
+  if (finalResponse) return finalResponse
+
+  // Fallback: if stream ended without a final payload, throw
+  throw new Error('Stream ended without final response')
+}
+
 // ── SOP Classification Monitoring ──
 
 export interface SopClassification {
@@ -940,10 +1021,30 @@ export interface SopClassificationsResponse {
   offset: number
 }
 
+export interface CacheStats {
+  avgHitRate: number | null
+  logsWithCacheData: number
+}
+
+export interface CostStats {
+  avgCostPerMessage: number
+  totalCost24h: number
+  messageCount24h: number
+}
+
+export interface ReasoningStats {
+  noneCount: number
+  lowCount: number
+  pctNone: number | null
+}
+
 export interface SopStatsResponse {
   totalClassifications: number
   byConfidence: { high: number; medium: number; low: number }
   byCategory: Array<{ category: string; count: number; percentage: number }>
+  cacheStats?: CacheStats
+  costStats?: CostStats
+  reasoningStats?: ReasoningStats
 }
 
 export async function apiGetSopClassifications(params?: { limit?: number; offset?: number; confidence?: string }): Promise<SopClassificationsResponse> {

@@ -1128,6 +1128,10 @@ const typingKeyframes = `
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
 }
+@keyframes gp-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
 .gp-shine-btn { position: relative; overflow: hidden; }
 .gp-shine-btn::before {
   content: '';
@@ -1384,6 +1388,8 @@ export default function InboxV5() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [aiTyping, setAiTyping] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
+  // Streaming text accumulator: conversationId → partial text received so far
+  const [streamingText, setStreamingText] = useState<Record<string, string>>({})
   const [translateActive, setTranslateActive] = useState(false)
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false)
   const [filterStep, setFilterStep] = useState<'root' | 'status' | 'aiMode'>('root')
@@ -1558,10 +1564,15 @@ export default function InboxV5() {
         const msg = data.message
         const sender = senderFromRole(data.lastMessageRole || msg.role)
 
-        // If AI message arrived, stop typing indicator and clear suggestion
+        // If AI message arrived, stop typing indicator, clear suggestion, and clear streaming text
         if (sender === 'ai' && selectedIdRef.current === convId) {
           setAiTyping(false)
           setAiSuggestion(null)
+          setStreamingText(prev => {
+            const next = { ...prev }
+            delete next[convId]
+            return next
+          })
         }
 
         // Play notification sound for new guest messages
@@ -1629,6 +1640,40 @@ export default function InboxV5() {
         const data = JSON.parse(e.data) as { conversationId: string }
         if (data.conversationId === selectedIdRef.current) {
           setAiTyping(false)
+        }
+      })
+
+      // Streaming AI response text — show progressive text instead of "Generating response…"
+      es.addEventListener('ai_typing_text', (e: MessageEvent) => {
+        const data = JSON.parse(e.data) as { conversationId: string; delta: string; done: boolean }
+        const convId = data.conversationId
+        if (data.done) {
+          // Stream finished — clear streaming text (full message arrives via normal SSE 'message' event)
+          setStreamingText(prev => {
+            const next = { ...prev }
+            delete next[convId]
+            return next
+          })
+          if (convId === selectedIdRef.current) {
+            setAiTyping(false)
+          }
+        } else {
+          // Accumulate delta text
+          setStreamingText(prev => ({
+            ...prev,
+            [convId]: (prev[convId] || '') + data.delta,
+          }))
+          // Ensure typing indicator is on while streaming
+          if (convId === selectedIdRef.current) {
+            setAiTyping(true)
+          }
+          // Auto-scroll as text streams in
+          if (convId === selectedIdRef.current) {
+            setTimeout(
+              () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
+              30
+            )
+          }
         }
       })
 
@@ -3519,6 +3564,42 @@ export default function InboxV5() {
                   })
                 )}
 
+                {/* Streaming AI text bubble — shows progressive text while AI generates */}
+                {selectedConv && streamingText[selectedConv.id] && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      padding: '0 16px',
+                    }}
+                  >
+                    <div style={{
+                      maxWidth: '75%',
+                      padding: '10px 14px',
+                      borderRadius: '14px 14px 4px 14px',
+                      background: T.accent + '0D',
+                      border: `1px solid ${T.accent}22`,
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      color: T.text.primary,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}>
+                      {streamingText[selectedConv.id]}
+                      <span style={{
+                        display: 'inline-block',
+                        width: 5,
+                        height: 14,
+                        background: T.accent,
+                        marginLeft: 1,
+                        borderRadius: 1,
+                        animation: 'gp-cursor-blink 0.8s step-end infinite',
+                        verticalAlign: 'text-bottom',
+                      }} />
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
 
@@ -3563,7 +3644,9 @@ export default function InboxV5() {
                           }}>
                             <IntelligenceGlowBorder active={isGlowing} borderRadius={10} />
                             {aiTyping
-                              ? <ShimmerText text="Generating response…" />
+                              ? (streamingText[selectedConv.id]
+                                ? <span style={{ fontWeight: 400 }}>Streaming response…</span>
+                                : <ShimmerText text="Generating response…" />)
                               : aiSuggestion ?? 'AI is handling responses automatically'}
                             {aiSuggestion && (
                               <button

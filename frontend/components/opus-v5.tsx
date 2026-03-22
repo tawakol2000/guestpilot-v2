@@ -450,7 +450,7 @@ export function OpusV5(): React.ReactElement {
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: T.text.tertiary }}>Generate your first OPUS report</div>
               <div style={{ fontSize: 11, color: T.text.tertiary, maxWidth: 300, textAlign: 'center', lineHeight: 1.6 }}>
-                Claude Opus analyzes your entire AI pipeline — classification accuracy, cost efficiency, SOP coverage, and system health.
+                AI auditor analyzes your entire pipeline — classification accuracy, cost efficiency, SOP coverage, and system health.
               </div>
             </div>
           ) : isGenerating ? (
@@ -459,7 +459,7 @@ export function OpusV5(): React.ReactElement {
                 <Sparkles size={32} color={T.opus} style={{ animation: 'opus-pulse 2s ease-in-out infinite' }} />
               </div>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, textAlign: 'center' }}>Opus is analyzing your system</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, textAlign: 'center' }}>AI is analyzing your system</div>
                 <div style={{ fontSize: 11, color: T.text.tertiary, textAlign: 'center', marginTop: 6, fontFamily: T.font.mono }}>
                   Collecting pipeline data, evaluating classifications, reviewing examples...
                 </div>

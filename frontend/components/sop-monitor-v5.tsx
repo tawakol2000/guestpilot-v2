@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { BarChart3, RefreshCw, Clock, Filter, ChevronRight, ExternalLink } from 'lucide-react'
+import { BarChart3, RefreshCw, Clock, Filter, ChevronRight, ExternalLink, Zap, DollarSign, Brain } from 'lucide-react'
 import {
   apiGetSopClassifications,
   apiGetSopStats,
@@ -271,6 +271,98 @@ export default function SopMonitorV5() {
             )}
           </div>
         </Card>
+
+        {/* T034: Performance metrics — cache, cost, reasoning */}
+        {stats && (stats.cacheStats || stats.costStats || stats.reasoningStats) && (
+          <Card>
+            <CardHeader
+              icon={<Zap size={14} color={T.status.green} />}
+              title="Performance"
+              sub="last 24h"
+            />
+            <div style={{ padding: '16px 20px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Cache Hit Rate */}
+              {stats.cacheStats && stats.cacheStats.avgHitRate !== null && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 16px', borderRadius: T.radius.sm,
+                  background: stats.cacheStats.avgHitRate > 80 ? 'rgba(21,128,61,0.06)' : stats.cacheStats.avgHitRate > 50 ? 'rgba(217,119,6,0.06)' : 'rgba(220,38,38,0.06)',
+                  border: `1px solid ${stats.cacheStats.avgHitRate > 80 ? 'rgba(21,128,61,0.15)' : stats.cacheStats.avgHitRate > 50 ? 'rgba(217,119,6,0.15)' : 'rgba(220,38,38,0.15)'}`,
+                }}>
+                  <Zap size={13} color={stats.cacheStats.avgHitRate > 80 ? T.status.green : stats.cacheStats.avgHitRate > 50 ? T.status.amber : T.status.red} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{
+                      fontSize: 16, fontWeight: 800, fontFamily: T.font.sans,
+                      color: stats.cacheStats.avgHitRate > 80 ? T.status.green : stats.cacheStats.avgHitRate > 50 ? T.status.amber : T.status.red,
+                    }}>
+                      {stats.cacheStats.avgHitRate.toFixed(1)}%
+                    </span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontWeight: 500 }}>cache hit rate</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Avg Cost/Message */}
+              {stats.costStats && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 16px', borderRadius: T.radius.sm,
+                  background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+                }}>
+                  <DollarSign size={13} color={T.accent} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, fontFamily: T.font.sans, color: T.text.primary }}>
+                      ${stats.costStats.avgCostPerMessage < 0.01
+                        ? stats.costStats.avgCostPerMessage.toFixed(4)
+                        : stats.costStats.avgCostPerMessage.toFixed(3)}
+                    </span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontWeight: 500 }}>avg cost/msg</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 24h Total Cost */}
+              {stats.costStats && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 16px', borderRadius: T.radius.sm,
+                  background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+                }}>
+                  <DollarSign size={13} color={T.text.secondary} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, fontFamily: T.font.sans, color: T.text.primary }}>
+                      ${stats.costStats.totalCost24h < 1
+                        ? stats.costStats.totalCost24h.toFixed(4)
+                        : stats.costStats.totalCost24h.toFixed(2)}
+                    </span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontWeight: 500 }}>
+                      total 24h ({stats.costStats.messageCount24h} msgs)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Reasoning Usage */}
+              {stats.reasoningStats && stats.reasoningStats.pctNone !== null && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 16px', borderRadius: T.radius.sm,
+                  background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)',
+                }}>
+                  <Brain size={13} color={PURPLE} />
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, fontFamily: T.font.sans, color: PURPLE }}>
+                      {stats.reasoningStats.pctNone.toFixed(0)}%
+                    </span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontWeight: 500 }}>
+                      none ({stats.reasoningStats.noneCount}) / low ({stats.reasoningStats.lowCount})
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Category distribution table */}
         {stats && stats.byCategory.length > 0 && (

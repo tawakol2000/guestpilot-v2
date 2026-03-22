@@ -210,7 +210,9 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         ragContext: { path: ['sopToolUsed'], equals: true },
       };
 
-      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows, sopLogs, sopTotal] = await Promise.all([
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows, sopLogs, sopTotal, recentAiLogs, costAgg24h] = await Promise.all([
         prisma.classifierEvaluation.count({ where: { tenantId } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
         prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
@@ -242,6 +244,20 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
           take: 1000,
         }),
         prisma.aiApiLog.count({ where: sopWhere }),
+        // T035: Recent AI logs for cache/reasoning metrics
+        prisma.aiApiLog.findMany({
+          where: { tenantId, createdAt: { gte: since24h } },
+          select: { ragContext: true, costUsd: true },
+          orderBy: { createdAt: 'desc' },
+          take: 500,
+        }),
+        // T035: Total cost in last 24h
+        prisma.aiApiLog.aggregate({
+          where: { tenantId, createdAt: { gte: since24h } },
+          _sum: { costUsd: true },
+          _avg: { costUsd: true },
+          _count: true,
+        }),
       ]);
 
       const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
@@ -268,6 +284,29 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
         }
       }
 
+      // T035: Compute cache hit rate and reasoning stats from ragContext
+      let cacheHitSum = 0;
+      let cacheHitCount = 0;
+      let reasoningNoneCount = 0;
+      let reasoningLowCount = 0;
+      for (const log of recentAiLogs) {
+        const ctx = log.ragContext as any;
+        if (ctx?.cachedInputTokens !== undefined && ctx?.totalInputTokens > 0) {
+          cacheHitSum += ctx.cachedInputTokens / ctx.totalInputTokens;
+          cacheHitCount++;
+        }
+        if (ctx?.reasoningEffort === 'none') reasoningNoneCount++;
+        else if (ctx?.reasoningEffort === 'low') reasoningLowCount++;
+      }
+
+      const avgCacheHitRate = cacheHitCount > 0
+        ? Math.round((cacheHitSum / cacheHitCount) * 10000) / 100
+        : null;
+      const reasoningTotal = reasoningNoneCount + reasoningLowCount;
+      const pctNone = reasoningTotal > 0
+        ? Math.round((reasoningNoneCount / reasoningTotal) * 10000) / 100
+        : null;
+
       res.json({
         total,
         correct,
@@ -288,6 +327,23 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
           mediumConfidence: sopConfidenceCounts.medium,
           lowConfidence: sopConfidenceCounts.low,
           categoryDistribution,
+        },
+        // T035: Cache performance metrics
+        cacheStats: {
+          avgHitRate: avgCacheHitRate,
+          logsWithCacheData: cacheHitCount,
+        },
+        // T035: Cost metrics
+        costStats: {
+          avgCostPerMessage: Math.round((costAgg24h._avg.costUsd ?? 0) * 1_000_000) / 1_000_000,
+          totalCost24h: Math.round((costAgg24h._sum.costUsd ?? 0) * 1_000_000) / 1_000_000,
+          messageCount24h: costAgg24h._count,
+        },
+        // T035: Reasoning usage metrics
+        reasoningStats: {
+          noneCount: reasoningNoneCount,
+          lowCount: reasoningLowCount,
+          pctNone,
         },
       });
     } catch (err) {

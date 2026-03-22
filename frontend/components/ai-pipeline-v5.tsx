@@ -2064,7 +2064,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 />
                 <FlowArrow />
                 <FlowStep
-                  label="Omar (Sonnet)"
+                  label="Omar (GPT)"
                   count={stats.totalMessages}
                   color={T.accent}
                 />
@@ -2080,7 +2080,7 @@ export default function AiPipelineV5(): React.ReactElement {
                 />
                 <FlowArrow label="miss" color={T.status.amber} />
                 <FlowStep
-                  label="Tier 2: Haiku"
+                  label="Tier 2: Mini"
                   count={stats.tiers.tier2.count}
                   color={TIER_COLORS.tier2_needed.fg}
                   isActive={stats.tiers.tier2.count > 0}
