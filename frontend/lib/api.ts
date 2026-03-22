@@ -287,6 +287,15 @@ export async function apiDeleteAllData(): Promise<void> {
   await apiFetch<{ deleted: boolean }>('/api/import', { method: 'DELETE' })
 }
 
+// ─── Knowledge / SOP ─────────────────────────────────────────────────────────
+export async function apiGetSopData() {
+  return apiFetch<{
+    sops: Array<{ category: string; toolDescription: string; content: string; isGlobal: boolean }>;
+    properties: Array<{ id: string; name: string; address: string }>;
+    propertyChunks: Array<{ id: string; propertyId: string; content: string; category: string; sourceKey: string }>;
+  }>('/api/knowledge/sop-data');
+}
+
 export async function apiInquiryAction(
   conversationId: string,
   action: 'accept' | 'reject'

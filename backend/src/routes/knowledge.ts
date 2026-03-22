@@ -7,6 +7,7 @@ import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
 import { getTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { AuthenticatedRequest } from '../types';
+import { SOP_CATEGORIES, SOP_TOOL_DEFINITION, getSopContent } from '../services/sop.service';
 
 export function knowledgeRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -588,6 +589,47 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] sop-classifications failed:', err);
       res.status(500).json({ error: 'Failed to fetch SOP classifications' });
+    }
+  });
+
+  // GET /api/knowledge/sop-data — returns all SOP categories with descriptions and content
+  router.get('/sop-data', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId;
+
+      // Parse tool descriptions from SOP_TOOL_DEFINITION
+      const descriptionText = SOP_TOOL_DEFINITION.parameters.properties.categories.description as string;
+      const descriptionMap: Record<string, string> = {};
+      for (const line of descriptionText.split('\n')) {
+        const match = line.match(/^- '([^']+)':\s*(.+)$/);
+        if (match) descriptionMap[match[1]] = match[2];
+      }
+
+      // Get property list for the dropdown
+      const properties = await prisma.property.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, address: true },
+        orderBy: { name: 'asc' },
+      });
+
+      // Get property-specific chunks (RAG knowledge per property)
+      const propertyChunks = await prisma.propertyKnowledgeChunk.findMany({
+        where: { tenantId },
+        select: { id: true, propertyId: true, content: true, category: true, sourceKey: true },
+      });
+
+      // Build SOP data array
+      const sops = SOP_CATEGORIES.map(category => ({
+        category,
+        toolDescription: descriptionMap[category] || '',
+        content: getSopContent(category) || '',
+        isGlobal: true,
+      }));
+
+      res.json({ sops, properties, propertyChunks });
+    } catch (err) {
+      console.error('[Knowledge] sop-data failed:', err);
+      res.status(500).json({ error: 'Failed to fetch SOP data' });
     }
   });
 

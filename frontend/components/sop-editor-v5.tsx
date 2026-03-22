@@ -1,10 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import {
-  BookOpen, ChevronDown, RefreshCw, Check,
-  FileText, Search, Layers,
-} from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { BookOpen, RefreshCw, ChevronDown, ChevronRight, Layers, FileText } from 'lucide-react'
+import { apiGetSopData } from '../lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -33,17 +31,9 @@ const injectedStyles = `
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 .sop-scroll::-webkit-scrollbar { width: 5px; }
 .sop-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -61,22 +51,12 @@ function ensureStyles(): void {
   document.head.appendChild(style)
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
-const headers = () => ({
-  Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('gp_token') : ''}`,
-  'Content-Type': 'application/json',
-})
-
 // ─── Interfaces ───────────────────────────────────────────────────────────────
-interface KnowledgeChunk {
-  id: string
-  propertyId: string | null
-  content: string
+interface SopEntry {
   category: string
-  sourceKey: string
-  createdAt: string
-  updatedAt?: string
+  toolDescription: string
+  content: string
+  isGlobal: boolean
 }
 
 interface Property {
@@ -85,343 +65,146 @@ interface Property {
   address: string
 }
 
+interface PropertyChunk {
+  id: string
+  propertyId: string
+  content: string
+  category: string
+  sourceKey: string
+}
+
 // ─── Category Colors ──────────────────────────────────────────────────────────
-function categoryColor(cat: string): { bg: string; fg: string; accent: string } {
-  if (cat.startsWith('sop-'))      return { bg: '#EFF6FF', fg: '#1D4ED8', accent: '#3B82F6' }
-  if (cat.startsWith('property-')) return { bg: '#F0FDF4', fg: '#15803D', accent: '#22C55E' }
+function categoryColor(cat: string): { bg: string; fg: string } {
+  if (cat.startsWith('sop-'))      return { bg: '#EFF6FF', fg: '#1D4ED8' }
+  if (cat.startsWith('property-')) return { bg: '#F0FDF4', fg: '#15803D' }
   if (cat.startsWith('pricing-') || cat.startsWith('payment-') || cat.startsWith('post-stay'))
-    return { bg: '#FFFBEB', fg: '#D97706', accent: '#F59E0B' }
-  if (cat === 'non-actionable')    return { bg: '#F3F4F6', fg: '#6B7280', accent: '#9CA3AF' }
-  return { bg: '#F5F3FF', fg: '#7C3AED', accent: '#8B5CF6' }
+    return { bg: '#FFFBEB', fg: '#D97706' }
+  if (cat === 'non-actionable' || cat === 'none')
+    return { bg: '#F3F4F6', fg: '#6B7280' }
+  if (cat === 'escalate')
+    return { bg: '#FEF2F2', fg: '#DC2626' }
+  if (cat === 'pre-arrival-logistics')
+    return { bg: '#F0FDF4', fg: '#15803D' }
+  return { bg: '#F5F3FF', fg: '#7C3AED' }
 }
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-// ─── Skeleton Components ──────────────────────────────────────────────────────
-function SkeletonCard({ delay = 0 }: { delay?: number }): React.ReactElement {
+// ─── Skeleton ──────────────────────────────────────────────────────────────────
+function SkeletonTable(): React.ReactElement {
   return (
-    <div style={{
-      height: 320,
-      borderRadius: T.radius.md,
-      border: `1px solid ${T.border.default}`,
-      background: `linear-gradient(90deg, ${T.bg.tertiary} 25%, ${T.bg.secondary} 50%, ${T.bg.tertiary} 75%)`,
-      backgroundSize: '200% 100%',
-      animation: 'shimmer 1.5s ease-in-out infinite',
-      animationDelay: `${delay}s`,
-      boxShadow: T.shadow.sm,
-    }} />
-  )
-}
-
-function SkeletonStats(): React.ReactElement {
-  return (
-    <div style={{
-      height: 36,
-      borderRadius: T.radius.sm,
-      background: `linear-gradient(90deg, ${T.bg.tertiary} 25%, ${T.bg.secondary} 50%, ${T.bg.tertiary} 75%)`,
-      backgroundSize: '200% 100%',
-      animation: 'shimmer 1.5s ease-in-out infinite',
-      maxWidth: 400,
-    }} />
-  )
-}
-
-// ─── SOP Card Sub-Component ──────────────────────────────────────────────────
-function SopCard({ chunk, index }: {
-  chunk: KnowledgeChunk
-  index: number
-}): React.ReactElement {
-  const [localContent, setLocalContent] = useState(chunk.content)
-  const [originalContent] = useState(chunk.content)
-  const [saving, setSaving] = useState(false)
-  const [feedback, setFeedback] = useState<'saved' | 'failed' | null>(null)
-  const [hovered, setHovered] = useState(false)
-
-  const isDirty = localContent !== originalContent
-  const colors = categoryColor(chunk.category)
-  const animDelay = Math.min(index * 0.03, 0.5)
-
-  const handleSave = useCallback(async () => {
-    setSaving(true)
-    setFeedback(null)
-    try {
-      const res = await fetch(`${API_BASE}/api/knowledge/chunks/${chunk.id}`, {
-        method: 'PATCH',
-        headers: headers(),
-        body: JSON.stringify({ content: localContent }),
-      })
-      if (!res.ok) throw new Error('Save failed')
-      setFeedback('saved')
-    } catch {
-      setFeedback('failed')
-    } finally {
-      setSaving(false)
-      setTimeout(() => setFeedback(null), 2200)
-    }
-  }, [chunk.id, localContent])
-
-  return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: T.bg.card,
-        borderRadius: T.radius.md,
-        border: `1px solid ${isDirty ? '#EAB308' : T.border.default}`,
-        boxShadow: hovered ? T.shadow.md : T.shadow.sm,
-        transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
-        animation: 'fadeInUp 0.4s ease-out both',
-        animationDelay: `${animDelay}s`,
-        display: 'flex',
-        flexDirection: 'column' as const,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Card Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '14px 16px',
-        borderBottom: `1px solid ${T.border.default}`,
-      }}>
-        {/* Accent bar */}
-        <div style={{
-          width: 4,
-          height: 32,
-          borderRadius: 2,
-          background: colors.accent,
-          flexShrink: 0,
-        }} />
-
-        {/* Category badge */}
-        <span style={{
-          display: 'inline-block',
-          background: colors.bg,
-          color: colors.fg,
-          border: `1px solid ${colors.fg}28`,
-          borderRadius: 999,
-          fontSize: 11,
-          padding: '3px 10px',
-          fontFamily: T.font.sans,
-          fontWeight: 600,
-          whiteSpace: 'nowrap' as const,
-        }}>
-          {chunk.category}
-        </span>
-
-        {/* Source key */}
-        <span style={{
-          fontFamily: T.font.mono,
-          fontSize: 10,
-          color: T.text.tertiary,
-          marginLeft: 'auto',
-          whiteSpace: 'nowrap' as const,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: 200,
-        }}>
-          {chunk.sourceKey}
-        </span>
-      </div>
-
-      {/* Card Body — textarea */}
-      <div style={{ padding: '12px 16px', flex: 1 }}>
-        <textarea
-          className="sop-scroll"
-          value={localContent}
-          onChange={(e) => setLocalContent(e.target.value)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
           style={{
-            width: '100%',
-            minHeight: 180,
-            resize: 'vertical' as const,
-            fontFamily: T.font.mono,
-            fontSize: 12,
-            lineHeight: 1.6,
-            color: T.text.primary,
-            background: T.bg.primary,
-            border: `1px solid ${isDirty ? '#EAB308' : T.border.default}`,
-            borderRadius: T.radius.sm,
-            padding: 12,
-            outline: 'none',
-            transition: 'border-color 0.2s ease',
-            boxSizing: 'border-box' as const,
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = isDirty ? '#EAB308' : T.accent
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = isDirty ? '#EAB308' : T.border.default
+            height: 48,
+            background: `linear-gradient(90deg, ${T.bg.tertiary} 25%, ${T.bg.secondary} 50%, ${T.bg.tertiary} 75%)`,
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.5s ease-in-out infinite',
+            animationDelay: `${i * 0.05}s`,
           }}
         />
+      ))}
+    </div>
+  )
+}
+
+// ─── Expandable Content Cell ──────────────────────────────────────────────────
+function ExpandableContent({ text, maxHeight = 80 }: { text: string; maxHeight?: number }): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const isLong = text.length > 200
+
+  return (
+    <div>
+      <div
+        className="sop-scroll"
+        style={{
+          maxHeight: expanded ? 'none' : maxHeight,
+          overflow: expanded ? 'visible' : 'hidden',
+          fontFamily: T.font.mono,
+          fontSize: 11.5,
+          lineHeight: 1.6,
+          color: T.text.primary,
+          whiteSpace: 'pre-wrap' as const,
+          wordBreak: 'break-word' as const,
+        }}
+      >
+        {text}
       </div>
-
-      {/* Card Footer */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 16px',
-        borderTop: `1px solid ${T.border.default}`,
-        background: T.bg.primary,
-      }}>
-        <span style={{
-          fontSize: 11,
-          color: T.text.tertiary,
-          fontFamily: T.font.sans,
-        }}>
-          Updated: {fmtDate(chunk.updatedAt || chunk.createdAt)}
-        </span>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Save feedback */}
-          {feedback === 'saved' && (
-            <span style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: T.status.green,
-              fontFamily: T.font.sans,
-              animation: 'fadeInUp 0.2s ease-out both',
-            }}>
-              Saved!
-            </span>
-          )}
-          {feedback === 'failed' && (
-            <span style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: T.status.red,
-              fontFamily: T.font.sans,
-              animation: 'fadeInUp 0.2s ease-out both',
-            }}>
-              Failed
-            </span>
-          )}
-
-          {/* Save button — only visible when dirty */}
-          {isDirty && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                height: 30,
-                padding: '0 14px',
-                background: saving ? T.text.tertiary : T.accent,
-                color: T.text.inverse,
-                border: 'none',
-                borderRadius: T.radius.sm,
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: T.font.sans,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                transition: 'background 0.15s ease',
-                animation: 'fadeInUp 0.2s ease-out both',
-              }}
-              onMouseEnter={(e) => {
-                if (!saving) e.currentTarget.style.background = '#1E40AF'
-              }}
-              onMouseLeave={(e) => {
-                if (!saving) e.currentTarget.style.background = T.accent
-              }}
-            >
-              {saving ? (
-                <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <Check size={13} />
-              )}
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          )}
-        </div>
-      </div>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            marginTop: 4,
+            padding: 0,
+            border: 'none',
+            background: 'none',
+            color: T.accent,
+            fontSize: 11,
+            fontWeight: 600,
+            fontFamily: T.font.sans,
+            cursor: 'pointer',
+          }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+          <ChevronDown
+            size={12}
+            style={{
+              transition: 'transform 0.15s ease',
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            }}
+          />
+        </button>
+      )}
     </div>
   )
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SopEditorV5() {
-  const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
+  const [sops, setSops] = useState<SopEntry[]>([])
   const [properties, setProperties] = useState<Property[]>([])
+  const [propertyChunks, setPropertyChunks] = useState<PropertyChunk[]>([])
   const [selectedScope, setSelectedScope] = useState<string>('global')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
-  // Inject keyframe styles
   useEffect(() => { ensureStyles() }, [])
 
-  // Fetch properties on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/properties`, { headers: headers() })
-        if (res.ok) {
-          const data = await res.json()
-          setProperties(Array.isArray(data) ? data : data.properties || [])
-        }
-      } catch {
-        // silent
-      }
-    })()
-  }, [])
-
-  // Fetch chunks when scope changes
-  const fetchChunks = useCallback(async (scope: string, isRefresh = false) => {
+  const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
-
     try {
-      const url = `${API_BASE}/api/knowledge/chunks?propertyId=${encodeURIComponent(scope)}`
-      const res = await fetch(url, { headers: headers() })
-      if (!res.ok) throw new Error('Fetch failed')
-      const data = await res.json()
-      setChunks(Array.isArray(data) ? data : data.chunks || [])
+      const data = await apiGetSopData()
+      setSops(data.sops || [])
+      setProperties(data.properties || [])
+      setPropertyChunks(data.propertyChunks || [])
     } catch {
-      setChunks([])
+      // silent
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }
 
-  useEffect(() => {
-    fetchChunks(selectedScope)
-  }, [selectedScope, fetchChunks])
+  useEffect(() => { fetchData() }, [])
 
-  // Filtered chunks (search)
+  const isGlobal = selectedScope === 'global'
+
+  // Filtered property chunks for selected property
   const filteredChunks = useMemo(() => {
-    if (!searchQuery.trim()) return chunks
-    const q = searchQuery.toLowerCase()
-    return chunks.filter(c =>
-      c.content.toLowerCase().includes(q) ||
-      c.category.toLowerCase().includes(q) ||
-      c.sourceKey.toLowerCase().includes(q)
-    )
-  }, [chunks, searchQuery])
+    if (isGlobal) return []
+    return propertyChunks.filter(c => c.propertyId === selectedScope)
+  }, [isGlobal, selectedScope, propertyChunks])
 
-  // Stats breakdown
-  const stats = useMemo(() => {
-    const cats: Record<string, number> = {}
-    for (const c of chunks) {
-      const type = c.category.startsWith('sop-') ? 'SOPs'
-        : c.category.startsWith('property-') ? 'Property'
-        : c.category.startsWith('pricing-') || c.category.startsWith('payment-') || c.category.startsWith('post-stay') ? 'Pricing'
-        : 'Other'
-      cats[type] = (cats[type] || 0) + 1
-    }
-    return cats
-  }, [chunks])
-
-  const scopeLabel = selectedScope === 'global'
+  const scopeLabel = isGlobal
     ? 'Global SOPs'
     : properties.find(p => p.id === selectedScope)?.name || selectedScope
+
+  const rowCount = isGlobal ? sops.length : filteredChunks.length
 
   return (
     <div style={{
@@ -433,408 +216,439 @@ export default function SopEditorV5() {
       display: 'flex',
       flexDirection: 'column' as const,
     }}>
-    <div style={{
-      flex: 1,
-      overflowY: 'auto' as const,
-      padding: 20,
-    }}>
-      {/* ─── Header ──────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap' as const,
-        gap: 16,
-        marginBottom: 24,
-        animation: 'fadeInUp 0.3s ease-out both',
-      }}>
-        {/* Left side: title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: T.radius.md,
-            background: '#EFF6FF',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <BookOpen size={20} color={T.accent} />
-          </div>
-          <div>
-            <h1 style={{
-              fontSize: 22,
-              fontWeight: 800,
-              margin: 0,
-              letterSpacing: '-0.02em',
-              color: T.text.primary,
+      <div style={{ flex: 1, overflowY: 'auto' as const, padding: 20 }}>
+        {/* ─── Header ──────────────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap' as const,
+          gap: 16,
+          marginBottom: 20,
+          animation: 'fadeInUp 0.3s ease-out both',
+        }}>
+          {/* Left side: title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 40,
+              height: 40,
+              borderRadius: T.radius.md,
+              background: '#EFF6FF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}>
-              SOP Knowledge Base
-            </h1>
-            <p style={{
-              fontSize: 13,
-              color: T.text.secondary,
-              margin: 0,
-              marginTop: 2,
-            }}>
-              View and edit Standard Operating Procedures
-            </p>
-          </div>
-        </div>
-
-        {/* Right side: dropdown + refresh */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Search */}
-          <div style={{ position: 'relative' as const }}>
-            <Search size={14} color={T.text.tertiary} style={{
-              position: 'absolute' as const,
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              pointerEvents: 'none' as const,
-            }} />
-            <input
-              type="text"
-              placeholder="Search SOPs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                height: 36,
-                width: 200,
-                paddingLeft: 32,
-                paddingRight: 12,
-                fontSize: 13,
-                fontFamily: T.font.sans,
-                border: `1px solid ${T.border.default}`,
-                borderRadius: T.radius.sm,
-                background: T.bg.card,
+              <BookOpen size={20} color={T.accent} />
+            </div>
+            <div>
+              <h1 style={{
+                fontSize: 22,
+                fontWeight: 800,
+                margin: 0,
+                letterSpacing: '-0.02em',
                 color: T.text.primary,
-                outline: 'none',
-                transition: 'border-color 0.15s ease',
-              }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = T.accent }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = T.border.default }}
-            />
-          </div>
-
-          {/* Scope dropdown */}
-          <div style={{ position: 'relative' as const }}>
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                height: 36,
-                padding: '0 14px',
-                background: T.bg.card,
-                border: `1px solid ${T.border.default}`,
-                borderRadius: T.radius.sm,
-                fontSize: 13,
-                fontWeight: 600,
-                fontFamily: T.font.sans,
-                color: T.text.primary,
-                cursor: 'pointer',
-                transition: 'border-color 0.15s ease',
-                minWidth: 160,
-                justifyContent: 'space-between',
-                boxShadow: T.shadow.sm,
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent }}
-              onMouseLeave={(e) => {
-                if (!dropdownOpen) e.currentTarget.style.borderColor = T.border.default
-              }}
-            >
-              <span style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap' as const,
               }}>
-                {scopeLabel}
-              </span>
+                SOP Knowledge Base
+              </h1>
+              <p style={{
+                fontSize: 13,
+                color: T.text.secondary,
+                margin: 0,
+                marginTop: 2,
+              }}>
+                Standard Operating Procedures and property knowledge
+              </p>
+            </div>
+          </div>
+
+          {/* Right side: dropdown + refresh */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Property selector */}
+            <div style={{ position: 'relative' as const }}>
+              <select
+                value={selectedScope}
+                onChange={(e) => setSelectedScope(e.target.value)}
+                style={{
+                  height: 36,
+                  minWidth: 200,
+                  padding: '0 32px 0 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: T.font.sans,
+                  color: T.text.primary,
+                  background: T.bg.card,
+                  border: `1px solid ${T.border.default}`,
+                  borderRadius: T.radius.sm,
+                  boxShadow: T.shadow.sm,
+                  cursor: 'pointer',
+                  appearance: 'none' as const,
+                  WebkitAppearance: 'none' as const,
+                  outline: 'none',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = T.accent }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = T.border.default }}
+              >
+                <option value="global">Global SOPs</option>
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {/* Custom chevron */}
               <ChevronDown
                 size={14}
                 color={T.text.tertiary}
                 style={{
-                  transition: 'transform 0.2s ease',
-                  transform: dropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  flexShrink: 0,
+                  position: 'absolute' as const,
+                  right: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  pointerEvents: 'none' as const,
                 }}
               />
-            </button>
+            </div>
 
-            {/* Dropdown menu */}
-            {dropdownOpen && (
-              <div style={{
-                position: 'absolute' as const,
-                top: 'calc(100% + 4px)',
-                right: 0,
-                minWidth: 220,
+            {/* Refresh button */}
+            <button
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 36,
+                height: 36,
                 background: T.bg.card,
                 border: `1px solid ${T.border.default}`,
                 borderRadius: T.radius.sm,
-                boxShadow: T.shadow.lg,
-                zIndex: 9999,
-                overflow: 'auto',
-                maxHeight: 300,
-                animation: 'scaleIn 0.15s ease-out both',
-              }}>
-                {/* Global option */}
-                <button
-                  onClick={() => {
-                    setSelectedScope('global')
-                    setDropdownOpen(false)
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left' as const,
-                    padding: '10px 14px',
-                    fontSize: 13,
-                    fontWeight: selectedScope === 'global' ? 700 : 500,
-                    fontFamily: T.font.sans,
-                    color: selectedScope === 'global' ? T.accent : T.text.primary,
-                    background: selectedScope === 'global' ? '#EFF6FF' : 'transparent',
-                    border: 'none',
-                    borderBottom: `1px solid ${T.border.default}`,
-                    cursor: 'pointer',
-                    transition: 'background 0.1s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (selectedScope !== 'global') e.currentTarget.style.background = T.bg.secondary
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedScope !== 'global') e.currentTarget.style.background = 'transparent'
-                  }}
-                >
-                  Global SOPs
-                </button>
-
-                {/* Property options */}
-                {properties.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      setSelectedScope(p.id)
-                      setDropdownOpen(false)
-                    }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left' as const,
-                      padding: '10px 14px',
-                      fontSize: 13,
-                      fontWeight: selectedScope === p.id ? 700 : 500,
-                      fontFamily: T.font.sans,
-                      color: selectedScope === p.id ? T.accent : T.text.primary,
-                      background: selectedScope === p.id ? '#EFF6FF' : 'transparent',
-                      border: 'none',
-                      borderBottom: `1px solid ${T.border.default}`,
-                      cursor: 'pointer',
-                      transition: 'background 0.1s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedScope !== p.id) e.currentTarget.style.background = T.bg.secondary
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedScope !== p.id) e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-
-                {properties.length === 0 && (
-                  <div style={{
-                    padding: '10px 14px',
-                    fontSize: 12,
-                    color: T.text.tertiary,
-                    fontStyle: 'italic' as const,
-                  }}>
-                    No properties loaded
-                  </div>
-                )}
-              </div>
-            )}
+                cursor: refreshing ? 'not-allowed' : 'pointer',
+                transition: 'border-color 0.15s ease',
+                boxShadow: T.shadow.sm,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border.default }}
+            >
+              <RefreshCw
+                size={15}
+                color={refreshing ? T.text.tertiary : T.text.secondary}
+                style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined}
+              />
+            </button>
           </div>
+        </div>
 
-          {/* Refresh button */}
-          <button
-            onClick={() => fetchChunks(selectedScope, true)}
-            disabled={refreshing}
-            style={{
+        {/* ─── Stats Bar ───────────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 16,
+          animation: 'fadeInUp 0.3s ease-out both',
+          animationDelay: '0.05s',
+        }}>
+          <Layers size={14} color={T.text.tertiary} />
+          <span style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: T.text.primary,
+            fontFamily: T.font.sans,
+          }}>
+            {loading ? '...' : `${rowCount} ${isGlobal ? 'SOP categor' + (rowCount !== 1 ? 'ies' : 'y') : 'chunk' + (rowCount !== 1 ? 's' : '')}`}
+          </span>
+          <span style={{
+            fontSize: 12,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+          }}>
+            {scopeLabel}
+          </span>
+        </div>
+
+        {/* ─── Table ───────────────────────────────────────────────────────── */}
+        {loading ? (
+          <SkeletonTable />
+        ) : rowCount === 0 ? (
+          /* Empty state */
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column' as const,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '80px 20px',
+            animation: 'fadeInUp 0.3s ease-out both',
+          }}>
+            <div style={{
+              width: 64,
+              height: 64,
+              borderRadius: T.radius.lg,
+              background: T.bg.secondary,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 36,
-              height: 36,
-              background: T.bg.card,
-              border: `1px solid ${T.border.default}`,
-              borderRadius: T.radius.sm,
-              cursor: refreshing ? 'not-allowed' : 'pointer',
-              transition: 'border-color 0.15s ease',
-              boxShadow: T.shadow.sm,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border.default }}
-          >
-            <RefreshCw
-              size={15}
-              color={refreshing ? T.text.tertiary : T.text.secondary}
-              style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Close dropdown on outside click */}
-      {dropdownOpen && (
-        <div
-          onClick={() => setDropdownOpen(false)}
-          style={{
-            position: 'fixed' as const,
-            inset: 0,
-            zIndex: 9998,
-          }}
-        />
-      )}
-
-      {/* ─── Stats Bar ───────────────────────────────────────────────────── */}
-      <div style={{
-        marginBottom: 20,
-        animation: 'fadeInUp 0.3s ease-out both',
-        animationDelay: '0.05s',
-      }}>
-        {loading ? (
-          <SkeletonStats />
-        ) : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            flexWrap: 'wrap' as const,
-          }}>
-            {/* Total count */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
+              marginBottom: 16,
             }}>
-              <Layers size={14} color={T.text.tertiary} />
-              <span style={{
-                fontSize: 13,
-                fontWeight: 700,
-                color: T.text.primary,
-                fontFamily: T.font.sans,
-              }}>
-                {chunks.length} chunk{chunks.length !== 1 ? 's' : ''}
+              <FileText size={28} color={T.text.tertiary} />
+            </div>
+            <p style={{ fontSize: 16, fontWeight: 700, color: T.text.primary, margin: 0, marginBottom: 6 }}>
+              No knowledge found
+            </p>
+            <p style={{ fontSize: 13, color: T.text.tertiary, margin: 0 }}>
+              {isGlobal
+                ? 'No SOP categories loaded'
+                : `No knowledge chunks for "${scopeLabel}"`}
+            </p>
+          </div>
+        ) : isGlobal ? (
+          /* ─── Global SOPs Table ──────────────────────────────────────── */
+          <div style={{
+            background: T.bg.card,
+            border: `1px solid ${T.border.default}`,
+            borderRadius: T.radius.md,
+            boxShadow: T.shadow.sm,
+            overflow: 'hidden',
+            animation: 'fadeInUp 0.3s ease-out both',
+            animationDelay: '0.1s',
+          }}>
+            {/* Table header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '200px 1fr 1fr',
+              gap: 0,
+              background: T.bg.secondary,
+              borderBottom: `1px solid ${T.border.default}`,
+              padding: '10px 16px',
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                SOP Name
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Tool Description
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                SOP Content
               </span>
             </div>
 
-            {/* Breakdown */}
-            {Object.keys(stats).length > 0 && (
-              <span style={{
-                fontSize: 12,
-                color: T.text.tertiary,
-                fontFamily: T.font.sans,
-              }}>
-                {Object.entries(stats).map(([type, count], i) => (
-                  <span key={type}>
-                    {i > 0 && <span style={{ margin: '0 6px', color: T.border.strong }}>&middot;</span>}
-                    <span style={{ fontWeight: 600, color: T.text.secondary }}>{count}</span>
-                    {' '}{type}
-                  </span>
-                ))}
-              </span>
-            )}
+            {/* Table rows */}
+            {sops.map((sop, i) => {
+              const colors = categoryColor(sop.category)
+              const isExpanded = expandedRow === sop.category
+              const hasContent = sop.content.length > 0
 
-            {/* Filtered indicator */}
-            {searchQuery.trim() && (
-              <span style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: T.status.amber,
-                background: '#FFFBEB',
-                border: '1px solid #FDE68A',
-                borderRadius: 999,
-                padding: '2px 10px',
-                fontFamily: T.font.sans,
-              }}>
-                Showing {filteredChunks.length} of {chunks.length}
+              return (
+                <div key={sop.category}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '200px 1fr 1fr',
+                      gap: 0,
+                      padding: '12px 16px',
+                      borderBottom: i < sops.length - 1 ? `1px solid ${T.border.default}` : 'none',
+                      alignItems: 'start',
+                      transition: 'background 0.1s ease',
+                      cursor: hasContent ? 'pointer' : 'default',
+                    }}
+                    onClick={() => {
+                      if (hasContent) setExpandedRow(isExpanded ? null : sop.category)
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = T.bg.primary }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                  >
+                    {/* SOP Name badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {hasContent && (
+                        <ChevronRight
+                          size={13}
+                          color={T.text.tertiary}
+                          style={{
+                            transition: 'transform 0.15s ease',
+                            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <span style={{
+                        display: 'inline-block',
+                        background: colors.bg,
+                        color: colors.fg,
+                        border: `1px solid ${colors.fg}28`,
+                        borderRadius: 999,
+                        fontSize: 11,
+                        padding: '3px 10px',
+                        fontFamily: T.font.sans,
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap' as const,
+                      }}>
+                        {sop.category}
+                      </span>
+                    </div>
+
+                    {/* Tool Description */}
+                    <div style={{
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: T.text.secondary,
+                      fontFamily: T.font.sans,
+                      paddingRight: 16,
+                    }}>
+                      {sop.toolDescription || <span style={{ color: T.text.tertiary, fontStyle: 'italic' as const }}>No description</span>}
+                    </div>
+
+                    {/* SOP Content preview / expanded */}
+                    <div style={{
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: T.text.primary,
+                    }}>
+                      {hasContent ? (
+                        isExpanded ? (
+                          <ExpandableContent text={sop.content} maxHeight={999} />
+                        ) : (
+                          <span style={{
+                            fontFamily: T.font.mono,
+                            fontSize: 11.5,
+                            color: T.text.secondary,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical' as const,
+                            overflow: 'hidden',
+                            wordBreak: 'break-word' as const,
+                          }}>
+                            {sop.content.substring(0, 150)}{sop.content.length > 150 ? '...' : ''}
+                          </span>
+                        )
+                      ) : (
+                        <span style={{ color: T.text.tertiary, fontStyle: 'italic' as const, fontSize: 12 }}>
+                          No static SOP content
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          /* ─── Property Chunks Table ──────────────────────────────────── */
+          <div style={{
+            background: T.bg.card,
+            border: `1px solid ${T.border.default}`,
+            borderRadius: T.radius.md,
+            boxShadow: T.shadow.sm,
+            overflow: 'hidden',
+            animation: 'fadeInUp 0.3s ease-out both',
+            animationDelay: '0.1s',
+          }}>
+            {/* Table header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '180px 160px 1fr',
+              gap: 0,
+              background: T.bg.secondary,
+              borderBottom: `1px solid ${T.border.default}`,
+              padding: '10px 16px',
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Category
               </span>
-            )}
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Source Key
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+                Content
+              </span>
+            </div>
+
+            {/* Table rows */}
+            {filteredChunks.map((chunk, i) => {
+              const colors = categoryColor(chunk.category)
+              const isExpanded = expandedRow === chunk.id
+
+              return (
+                <div key={chunk.id}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '180px 160px 1fr',
+                      gap: 0,
+                      padding: '12px 16px',
+                      borderBottom: i < filteredChunks.length - 1 ? `1px solid ${T.border.default}` : 'none',
+                      alignItems: 'start',
+                      transition: 'background 0.1s ease',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setExpandedRow(isExpanded ? null : chunk.id)}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = T.bg.primary }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                  >
+                    {/* Category badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ChevronRight
+                        size={13}
+                        color={T.text.tertiary}
+                        style={{
+                          transition: 'transform 0.15s ease',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{
+                        display: 'inline-block',
+                        background: colors.bg,
+                        color: colors.fg,
+                        border: `1px solid ${colors.fg}28`,
+                        borderRadius: 999,
+                        fontSize: 11,
+                        padding: '3px 10px',
+                        fontFamily: T.font.sans,
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap' as const,
+                      }}>
+                        {chunk.category}
+                      </span>
+                    </div>
+
+                    {/* Source Key */}
+                    <span style={{
+                      fontFamily: T.font.mono,
+                      fontSize: 11,
+                      color: T.text.tertiary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap' as const,
+                    }}>
+                      {chunk.sourceKey}
+                    </span>
+
+                    {/* Content */}
+                    <div style={{
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: T.text.primary,
+                    }}>
+                      {isExpanded ? (
+                        <ExpandableContent text={chunk.content} maxHeight={999} />
+                      ) : (
+                        <span style={{
+                          fontFamily: T.font.mono,
+                          fontSize: 11.5,
+                          color: T.text.secondary,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical' as const,
+                          overflow: 'hidden',
+                          wordBreak: 'break-word' as const,
+                        }}>
+                          {chunk.content.substring(0, 150)}{chunk.content.length > 150 ? '...' : ''}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
-
-      {/* ─── Content Grid ────────────────────────────────────────────────── */}
-      {loading ? (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(500px, 1fr))',
-          gap: 16,
-        }}>
-          <SkeletonCard delay={0} />
-          <SkeletonCard delay={0.05} />
-          <SkeletonCard delay={0.1} />
-          <SkeletonCard delay={0.15} />
-          <SkeletonCard delay={0.2} />
-          <SkeletonCard delay={0.25} />
-        </div>
-      ) : filteredChunks.length === 0 ? (
-        /* Empty state */
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column' as const,
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '80px 20px',
-          animation: 'fadeInUp 0.3s ease-out both',
-        }}>
-          <div style={{
-            width: 64,
-            height: 64,
-            borderRadius: T.radius.lg,
-            background: T.bg.secondary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 16,
-          }}>
-            <FileText size={28} color={T.text.tertiary} />
-          </div>
-          <p style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: T.text.primary,
-            margin: 0,
-            marginBottom: 6,
-          }}>
-            No SOPs found
-          </p>
-          <p style={{
-            fontSize: 13,
-            color: T.text.tertiary,
-            margin: 0,
-          }}>
-            {searchQuery.trim()
-              ? `No results matching "${searchQuery}" in this scope`
-              : `No knowledge chunks exist for "${scopeLabel}"`
-            }
-          </p>
-        </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(500px, 1fr))',
-          gap: 16,
-        }}>
-          {filteredChunks.map((chunk, i) => (
-            <SopCard key={chunk.id} chunk={chunk} index={i} />
-          ))}
-        </div>
-      )}
-    </div>
     </div>
   )
 }
