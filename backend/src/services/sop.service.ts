@@ -363,6 +363,7 @@ Check the property amenities list for available items. Only confirm items explic
 - Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
+This also includes 'how do I use/turn on X' questions about appliances if the guest seems confused or the item may not be working properly.
 Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it, and escalate immediately.
 **All maintenance/technical issues → urgency: "immediate"**`,
 
@@ -394,7 +395,7 @@ Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only 
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
 **Never confirm late checkout yourself.**`,
 
-  'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
+  'sop-complaint': `**ALWAYS lead with empathy.** Your first sentence must acknowledge the guest's frustration before discussing any action.\n\nCOMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
 Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
 - Cleanliness complaints → offer immediate cleaning (waive $20 fee) and escalate as immediate
 - Noise complaints → acknowledge and escalate as immediate
@@ -403,7 +404,7 @@ Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissiv
 - General dissatisfaction → empathize, ask for specifics, escalate as immediate
 Never offer refunds, discounts, or compensation yourself. Inform the guest you have notified the manager.`,
 
-  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties, present them with booking links from the tool results. If no booking links are available, list properties by name and escalate to manager to send links — never promise to send links you don't have. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties with booking links, include the actual URLs in your message — paste them directly. Never say 'I'll send the links' when you already have them from the tool. If no links are available (null/empty), list properties by name and escalate to manager to provide links. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
 
   'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
 
@@ -411,7 +412,7 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
 
-  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll check with the team. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
+  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll look into it. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
 
   'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate-payment-issue. For receipt requests or invoice, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request. And inform the guest that you have notified the manager.`,
 
@@ -426,7 +427,7 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
   'non-actionable': `NON-ACTIONABLE: Greetings, test messages, wrong chat, or questions about topics already covered by your standard procedures (house rules, working hours, scheduling, escalation rules). For greetings, respond warmly and ask how you can help. For test messages, respond briefly. For wrong-chat messages, let them know politely. For house rules or scheduling questions, answer from your standard procedures.`,
 };
 
-// ── Status-variant overrides for the 8 SOPs that need them ──
+// ── Status-variant overrides for SOPs whose response differs by reservation status ──
 
 interface StatusVariant {
   status: string;
@@ -551,6 +552,96 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     {
       status: 'CHECKED_IN',
       content: '',
+    },
+  ],
+
+  'sop-booking-inquiry': [
+    {
+      status: 'INQUIRY',
+      content: SEED_SOP_CONTENT['sop-booking-inquiry'],
+    },
+    {
+      status: 'CONFIRMED',
+      content: `Guest already has a confirmed booking but is asking about availability or new bookings. Acknowledge their existing reservation and ask if they want to modify it (redirect to sop-booking-modification) or if they're looking to book a separate stay. If separate stay, follow the standard booking inquiry flow.`,
+    },
+    {
+      status: 'CHECKED_IN',
+      content: `Guest is currently checked in but asking about availability or new bookings. Acknowledge their current stay and ask if they want to extend (redirect to sop-booking-modification) or book a future stay. If future stay, follow the standard booking inquiry flow.`,
+    },
+  ],
+
+  'pricing-negotiation': [
+    {
+      status: 'INQUIRY',
+      content: SEED_SOP_CONTENT['pricing-negotiation'],
+    },
+    {
+      status: 'CONFIRMED',
+      content: `Guest has a confirmed booking and is asking about pricing or requesting a discount. The price is already set for this booking. If they want a rate change, this is a booking modification — redirect to sop-booking-modification and escalate. Do not negotiate pricing on confirmed bookings yourself.`,
+    },
+    {
+      status: 'CHECKED_IN',
+      content: `Guest is currently staying and asking about pricing or discounts. The price is set for this booking. If they're asking about extending at a better rate, acknowledge and escalate as info_request with the details. Do not negotiate pricing yourself.`,
+    },
+  ],
+
+  'sop-booking-confirmation': [
+    {
+      status: 'INQUIRY',
+      content: `Guest is asking to confirm a booking but their status is INQUIRY — they haven't booked yet. Let them know you don't see a confirmed reservation and ask if they'd like to proceed with booking. If they claim they already booked, escalate as immediate with details.`,
+    },
+    {
+      status: 'CONFIRMED',
+      content: SEED_SOP_CONTENT['sop-booking-confirmation'],
+    },
+    {
+      status: 'CHECKED_IN',
+      content: `Guest is checked in and asking about their booking details. Confirm the reservation details you have — dates, unit, guest count. If anything looks wrong, escalate as immediate.`,
+    },
+  ],
+
+  'sop-booking-cancellation': [
+    {
+      status: 'INQUIRY',
+      content: `Guest wants to cancel their inquiry or withdraw interest. Acknowledge the request. No formal cancellation is needed since they haven't booked yet. If they want to cancel an inquiry on a specific platform, escalate as info_request with details.`,
+    },
+    {
+      status: 'CONFIRMED',
+      content: SEED_SOP_CONTENT['sop-booking-cancellation'],
+    },
+    {
+      status: 'CHECKED_IN',
+      content: `Guest is currently checked in and wants to leave early or end their stay. This is an early checkout, not a standard cancellation. Acknowledge the request and escalate as immediate with the requested checkout date. Never process early checkouts or promise refunds for unused nights yourself.`,
+    },
+  ],
+
+  'sop-long-term-rental': [
+    {
+      status: 'INQUIRY',
+      content: SEED_SOP_CONTENT['sop-long-term-rental'],
+    },
+    {
+      status: 'CONFIRMED',
+      content: `Guest has a confirmed booking and is asking about long-term rental or extending to a monthly stay. Acknowledge the interest and escalate as info_request with details (desired duration, budget). Monthly rates require manager approval. Redirect to sop-booking-modification for the date change.`,
+    },
+    {
+      status: 'CHECKED_IN',
+      content: `Guest is currently staying and wants to convert to a long-term/monthly rental. Acknowledge the interest and escalate as info_request with details (desired duration, budget). Monthly rates require manager approval. Note the current booking end date in the escalation.`,
+    },
+  ],
+
+  'sop-complaint': [
+    {
+      status: 'INQUIRY',
+      content: `**ALWAYS lead with empathy.** Your first sentence must acknowledge the guest's frustration before discussing any action.\n\nGuest is complaining during the inquiry/booking process — about response time, communication, listing accuracy, or the booking experience. Acknowledge their frustration with genuine empathy. Escalate as immediate with full details. Never be defensive.`,
+    },
+    {
+      status: 'CONFIRMED',
+      content: SEED_SOP_CONTENT['sop-complaint'],
+    },
+    {
+      status: 'CHECKED_IN',
+      content: SEED_SOP_CONTENT['sop-complaint'],
     },
   ],
 };
