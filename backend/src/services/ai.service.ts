@@ -176,7 +176,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string }> }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -207,10 +207,12 @@ async function createMessage(
   };
 
   try {
-    // Build input messages from userContent blocks
-    const inputMessages: any[] = userContent
-      .filter(b => b.type === 'text')
-      .map(b => ({ role: 'user', content: (b as { type: 'text'; text: string }).text }));
+    // Use multi-turn conversation array if provided, otherwise fall back to single-message ContentBlock
+    const inputMessages: any[] = options?.inputTurns
+      ? options.inputTurns
+      : userContent
+          .filter(b => b.type === 'text')
+          .map(b => ({ role: 'user', content: (b as { type: 'text'; text: string }).text }));
 
     // OpenAI Responses API call
     const createParams: any = {
@@ -1542,9 +1544,13 @@ export async function generateAndSendAiReply(
       m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'
     );
 
-    // Full conversation history — no summarization needed with 400K context window.
-    // truncation: "auto" handles overflow automatically if conversations get extremely long.
-    const historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
+    // Build conversation as proper multi-turn {role, content} array for the Responses API.
+    // The model was trained on this format — it understands speaker turns natively.
+    // truncation: "auto" handles overflow automatically with 400K context window.
+    const conversationTurns: Array<{ role: 'user' | 'assistant'; content: string }> = allMsgs.map(m => ({
+      role: (m.role === 'GUEST' ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: m.content,
+    }));
 
     // Current messages = GUEST messages received during THIS debounce window.
     // Small 2-minute buffer needed because Hostaway timestamps messages when the guest
@@ -1755,18 +1761,36 @@ export async function generateAndSendAiReply(
 
     let guestMessage = '';
 
-    const templateVars = {
-      conversationHistory: historyText,
-      propertyInfo,
-      currentMessages: currentMsgsText,
-      localTime,
-      openTasks: openTasksText,
-      knowledgeBase: knowledgeText,
-    };
+    // Build multi-turn input for the Responses API:
+    // - Previous messages as proper {role: 'user'/'assistant'} turns
+    // - Last user message includes property context + current guest message(s)
+    // This format is what the model was trained on — better than a text blob.
+    const lastUserMessage = [
+      `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
+      `### OPEN TASKS ###\n${openTasksText}`,
+      `### KNOWLEDGE BASE ###\n${knowledgeText}`,
+      `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
+      `### CURRENT LOCAL TIME ###\n${localTime}`,
+    ].join('\n\n');
+
+    // Exclude current window messages from history (they're in lastUserMessage)
+    const currentMsgContents = new Set(currentMsgs.map(m => m.content));
+    const historyTurns = conversationTurns.filter(t =>
+      !(t.role === 'user' && currentMsgContents.has(t.content))
+    );
+
+    // Final input: history turns + context block as last user message
+    const inputTurns = [
+      ...historyTurns,
+      { role: 'user' as const, content: lastUserMessage },
+    ];
 
     if (!hasImages) {
       // Text-only branch
-      const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
+      const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, {
+        conversationHistory: '', propertyInfo, currentMessages: currentMsgsText,
+        localTime, openTasks: openTasksText, knowledgeBase: knowledgeText,
+      });
 
       // ─── Tool use: per-agent tools ───
       // Screening agent (INQUIRY): property search tool
@@ -1856,7 +1880,7 @@ export async function generateAndSendAiReply(
         ragContext,
         openTaskCount: openTasks.length,
         totalMessages: allMsgs.length,
-        memorySummarized: tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > 10,
+        memorySummarized: false,
         hasImage: false,
         ragEnabled: tenantConfig?.ragEnabled !== false,
         tools: toolsForCall,
@@ -1864,6 +1888,7 @@ export async function generateAndSendAiReply(
         reasoningEffort,
         agentType: isInquiry ? 'screening' : 'coordinator',
         stream: true,
+        inputTurns, // Multi-turn conversation as proper {role, content} array
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
@@ -1967,7 +1992,12 @@ export async function generateAndSendAiReply(
         }
       }
 
-      const imageContent: ContentBlock[] = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
+      const imageTemplateVars = {
+        conversationHistory: conversationTurns.map(t => `${t.role === 'user' ? 'Guest' : 'Omar'}: ${t.content}`).join('\n'),
+        propertyInfo, currentMessages: currentMsgsText, localTime,
+        openTasks: openTasksText, knowledgeBase: knowledgeText,
+      };
+      const imageContent: ContentBlock[] = buildContentBlocks(personaCfg.contentBlockTemplate, imageTemplateVars);
 
       if (imageBase64) {
         imageContent.push({
