@@ -318,7 +318,9 @@ export function sandboxRouter(prisma: PrismaClient) {
         ? approvedKnowledge.map(k => `Q: ${k.question}\nA: ${k.answer}`).join('\n\n')
         : 'No additional Q&A available.';
 
-      const effectiveModel = tenantConfig?.model || personaCfg.model;
+      // Migrate legacy Claude model names to GPT-5.4 Mini
+      const rawModel = tenantConfig?.model || personaCfg.model;
+      const effectiveModel = rawModel?.startsWith('claude-') ? 'gpt-5.4-mini-2026-03-17' : rawModel;
       const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
       const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
       const effectiveAgentName = tenantConfig?.agentName || agentName;

@@ -1542,33 +1542,9 @@ export async function generateAndSendAiReply(
       m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'
     );
 
-    // Conversation history: last 6 messages (guest + host combined), oldest to newest.
-    // For longer conversations with memory summary enabled, prepend a summary of older messages.
-    let historyText: string;
-    const HISTORY_MESSAGE_COUNT = 6;
-    const recentMsgs = allMsgs.slice(-HISTORY_MESSAGE_COUNT);
-
-    if (tenantConfig?.memorySummaryEnabled !== false && allMsgs.length > HISTORY_MESSAGE_COUNT) {
-      const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
-      if (conversation) {
-        const tiered = await buildTieredContext({
-          conversationId,
-          messages: allMsgs,
-          conversation,
-          prisma,
-          openaiClient: openai,
-        }).catch(() => ({
-          recentMessagesText: recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n'),
-          summaryText: null,
-          totalMessageCount: allMsgs.length,
-        }));
-        historyText = formatConversationContext(tiered);
-      } else {
-        historyText = recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
-      }
-    } else {
-      historyText = recentMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
-    }
+    // Full conversation history — no summarization needed with 400K context window.
+    // truncation: "auto" handles overflow automatically if conversations get extremely long.
+    const historyText = allMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n');
 
     // Current messages = GUEST messages received during THIS debounce window.
     // Small 2-minute buffer needed because Hostaway timestamps messages when the guest
@@ -1655,7 +1631,9 @@ export async function generateAndSendAiReply(
     const isInquiry = context.reservationStatus === 'INQUIRY';
     const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
-    const effectiveModel = tenantConfig?.model || personaCfg.model;
+    // Migrate legacy Claude model names to GPT-5.4 Mini (tenants may have old values in DB)
+    const rawModel = tenantConfig?.model || personaCfg.model;
+    const effectiveModel = rawModel?.startsWith('claude-') ? 'gpt-5.4-mini-2026-03-17' : rawModel;
 
     // Build input messages for classification (OpenAI Responses API format)
     const classificationInput = [{
