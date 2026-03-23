@@ -1462,7 +1462,7 @@ export default function InboxV5() {
     selectedConv?.aiMode === 'autopilot' &&
     selectedConv?.lastMessageSender === 'guest'
   )
-  const isGlowing = (selectedConv?.aiOn && (selectedConv?.aiMode === 'autopilot' || selectedConv?.aiMode === 'copilot')) || aiTyping || !!aiSuggestion
+  const isGlowing = (selectedConv?.aiOn && selectedConv?.aiMode === 'autopilot') || aiTyping || !!aiSuggestion
 
   // ── Filtered conversations ──
   const filteredConvs = conversations.filter(c => {
