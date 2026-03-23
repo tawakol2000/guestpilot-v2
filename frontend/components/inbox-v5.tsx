@@ -1462,7 +1462,7 @@ export default function InboxV5() {
     selectedConv?.aiMode === 'autopilot' &&
     selectedConv?.lastMessageSender === 'guest'
   )
-  const isGlowing = (selectedConv?.aiOn && selectedConv?.aiMode === 'autopilot') || aiTyping || !!aiSuggestion
+  const isGlowing = (selectedConv?.aiOn && (selectedConv?.aiMode === 'autopilot' || selectedConv?.aiMode === 'copilot')) || aiTyping || !!aiSuggestion
 
   // ── Filtered conversations ──
   const filteredConvs = conversations.filter(c => {
@@ -3775,7 +3775,7 @@ export default function InboxV5() {
                               ? (streamingText[selectedConv.id]
                                 ? <span style={{ fontWeight: 400 }}>Streaming response…</span>
                                 : <ShimmerText text="Generating response…" />)
-                              : aiSuggestion ?? 'AI is handling responses automatically'}
+                              : aiSuggestion ?? (selectedConv.aiMode === 'copilot' ? 'Copilot ready — waiting for guest message' : 'AI is handling responses automatically')}
                             {aiSuggestion && (
                               <button
                                 onClick={async () => {
