@@ -5,11 +5,16 @@ import { PrismaClient } from '@prisma/client';
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || '';
-const PUSH_ENABLED = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT);
+let PUSH_ENABLED = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT);
 
 if (PUSH_ENABLED) {
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-  console.log('[Push] VAPID configured — push notifications enabled');
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    console.log('[Push] VAPID configured — push notifications enabled');
+  } catch (err: any) {
+    console.warn('[Push] Invalid VAPID keys — push disabled:', err.message);
+    PUSH_ENABLED = false;
+  }
 } else {
   console.log('[Push] VAPID keys not set — push notifications disabled');
 }
