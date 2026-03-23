@@ -53,12 +53,14 @@ function mapReservationStatus(status?: string): ReservationStatus {
     case 'inquirydenied':
     case 'inquirytimedout':
     case 'inquirynotpossible':
+    case 'unknown':
+      return ReservationStatus.INQUIRY;
+    // Pending — awaiting host/payment/verification
     case 'pending':
     case 'unconfirmed':
     case 'awaitingpayment':
     case 'awaitingguestverification':
-    case 'unknown':
-      return ReservationStatus.INQUIRY;
+      return ReservationStatus.PENDING;
     // Active booking
     case 'new':
     case 'confirmed':

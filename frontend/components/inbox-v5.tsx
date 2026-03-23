@@ -120,7 +120,7 @@ type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
 type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'sop-monitor'
-type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
+type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
   id: string
@@ -199,6 +199,7 @@ const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   'checking-out-today': { label: 'Checkout Today', color: T.status.amber },
   'checked-out': { label: 'Checked Out', color: T.text.tertiary },
   inquiry: { label: 'Inquiry', color: T.accent },
+  pending: { label: 'Pending', color: '#D97706' },
   cancelled: { label: 'Cancelled', color: T.status.red },
 }
 
@@ -212,22 +213,32 @@ function channelFromApi(ch: string): Channel {
 }
 
 function checkInStatusFromApi(status: string, checkIn: string, checkOut?: string): CheckInStatus {
-  if (status === 'INQUIRY') return 'inquiry'
   if (status === 'CANCELLED') return 'cancelled'
   if (status === 'CHECKED_OUT') return 'checked-out'
-  // Compute from dates for CONFIRMED/CHECKED_IN/any active status
+  if (status === 'PENDING') return 'pending'
+
+  // Compute from dates for CONFIRMED/CHECKED_IN/INQUIRY
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const ci = new Date(checkIn)
-  ci.setHours(0, 0, 0, 0)
-  if (checkOut) {
-    const co = new Date(checkOut)
-    co.setHours(0, 0, 0, 0)
-    if (co.getTime() === today.getTime()) return 'checking-out-today'
-    if (today >= co) return 'checked-out'
+
+  if (checkIn) {
+    const ci = new Date(checkIn)
+    ci.setHours(0, 0, 0, 0)
+    if (checkOut) {
+      const co = new Date(checkOut)
+      co.setHours(0, 0, 0, 0)
+      if (co.getTime() === today.getTime()) return status === 'INQUIRY' ? 'inquiry' : 'checking-out-today'
+      if (today >= co) return 'checked-out'
+    }
+    // Only show check-in/checked-in for confirmed+ guests
+    if (status !== 'INQUIRY') {
+      if (ci.getTime() === today.getTime()) return 'checking-in-today'
+      if (today > ci) return 'checked-in'
+      return 'upcoming'
+    }
   }
-  if (ci.getTime() === today.getTime()) return 'checking-in-today'
-  if (today > ci) return 'checked-in'
+
+  if (status === 'INQUIRY') return 'inquiry'
   return 'upcoming'
 }
 

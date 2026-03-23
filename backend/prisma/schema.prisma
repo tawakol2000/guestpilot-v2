@@ -262,6 +262,7 @@ enum Channel {
 
 enum ReservationStatus {
   INQUIRY
+  PENDING
   CONFIRMED
   CHECKED_IN
   CHECKED_OUT

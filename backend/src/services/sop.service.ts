@@ -208,6 +208,8 @@ export async function getSopContent(
 
 function normaliseStatus(raw: string): string {
   const upper = (raw || 'DEFAULT').toUpperCase().replace(/-/g, '_');
+  // PENDING uses INQUIRY SOPs (same screening flow)
+  if (upper === 'PENDING') return 'INQUIRY';
   if (['INQUIRY', 'CONFIRMED', 'CHECKED_IN'].includes(upper)) return upper;
   return 'DEFAULT';
 }

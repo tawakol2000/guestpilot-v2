@@ -60,18 +60,20 @@ function mapReservationStatus(status?: string): ReservationStatus {
   // must NOT grant access to sensitive information.
   if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
-    // Inquiry lifecycle — pre-booking, no calendar block
+    // Inquiry lifecycle — guest asking questions
     case 'inquiry':
     case 'inquirypreapproved':
     case 'inquirydenied':
     case 'inquirytimedout':
     case 'inquirynotpossible':
+    case 'unknown':
+      return ReservationStatus.INQUIRY;
+    // Pending — guest requested to book, awaiting host/payment/verification
     case 'pending':          // Airbnb Request to Book
     case 'unconfirmed':      // Vrbo Request to Book
     case 'awaitingpayment':
     case 'awaitingguestverification':
-    case 'unknown':
-      return ReservationStatus.INQUIRY;
+      return ReservationStatus.PENDING;
     // Active booking — confirmed, blocks calendar
     case 'new':
     case 'confirmed':

@@ -1593,7 +1593,7 @@ export async function generateAndSendAiReply(
     // ─── SOP Classification via Tool Use ────────────────────────────────────
     // Single forced get_sop tool call replaces the 3-tier pipeline.
     // AI classifies the message, we retrieve the matching SOP content.
-    const isInquiry = context.reservationStatus === 'INQUIRY';
+    const isInquiry = context.reservationStatus === 'INQUIRY' || context.reservationStatus === 'PENDING';
     const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
     // Migrate legacy model names to GPT-5.4 Mini (tenants may have old values in DB)
