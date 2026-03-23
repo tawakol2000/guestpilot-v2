@@ -29,7 +29,7 @@ export function toolDefinitionsRouter(prisma: PrismaClient): Router {
     try {
       const tenantId = req.tenantId as string;
       const tools = await getToolDefinitions(tenantId, prisma);
-      res.json({ tools });
+      res.json(tools);
     } catch (err) {
       console.error('[ToolDefinitions] GET failed:', err);
       res.status(500).json({ error: 'Failed to list tool definitions' });
