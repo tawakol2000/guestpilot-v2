@@ -127,6 +127,63 @@ interface SopClassificationResult {
 // SOP categories that benefit from reasoning (complex multi-step logic)
 const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
 
+// ─── Structured output schemas (enforced by OpenAI, replaces prompt-based JSON instructions) ───
+
+const COORDINATOR_SCHEMA = {
+  type: 'json_schema' as const,
+  name: 'coordinator_response',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      guest_message: { type: 'string', description: 'Reply to the guest' },
+      escalation: {
+        anyOf: [
+          { type: 'null' },
+          {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              note: { type: 'string' },
+              urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
+            },
+            required: ['title', 'note', 'urgency'],
+            additionalProperties: false,
+          },
+        ],
+      },
+      resolveTaskId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      updateTaskId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    },
+    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
+    additionalProperties: false,
+  },
+};
+
+const SCREENING_SCHEMA = {
+  type: 'json_schema' as const,
+  name: 'screening_response',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      'guest message': { type: 'string', description: 'Reply to the guest' },
+      manager: {
+        type: 'object',
+        properties: {
+          needed: { type: 'boolean' },
+          title: { type: 'string' },
+          note: { type: 'string' },
+        },
+        required: ['needed', 'title', 'note'],
+        additionalProperties: false,
+      },
+    },
+    required: ['guest message', 'manager'],
+    additionalProperties: false,
+  },
+};
+
 async function classifyMessageSop(
   systemPrompt: string,
   inputMessages: Array<{ role: string; content: string }>,
@@ -176,7 +233,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -220,7 +277,7 @@ async function createMessage(
       ...(reasoningEffort !== 'none' ? { reasoning: { effort: reasoningEffort } } : { reasoning: { effort: 'none' } }),
       ...(reasoningEffort === 'none' && options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(options?.tools?.length ? { tools: options.tools, tool_choice: options.toolChoice ?? 'auto' } : {}),
-      text: { verbosity: 'low' as const },
+      text: options?.outputSchema ? { format: options.outputSchema } : { format: { type: 'text' } },
       truncation: 'auto',
       store: true,
       ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
@@ -296,19 +353,18 @@ async function createMessage(
       console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms`);
 
       // Send tool result back via previous_response_id
-      // Append JSON format reminder so model doesn't drop into plain text after tool results
-      const toolOutput = toolResultContent + '\n\nRespond with raw JSON only. No plain text. Start with { and end with }.';
       // T029: When streaming is enabled, stream the tool follow-up call (the final response to guest)
+      const toolFollowUpTextFormat = options?.outputSchema ? { format: options.outputSchema } : { format: { type: 'text' as const } };
       if (options?.stream && options?.tenantId && options?.conversationId) {
         const toolFollowUpStream = await withRetry(() =>
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
-            text: { verbosity: 'low' as const },
+            text: toolFollowUpTextFormat,
             store: true,
             stream: true,
           })
@@ -355,11 +411,11 @@ async function createMessage(
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
-            text: { verbosity: 'low' as const },
+            text: toolFollowUpTextFormat,
             store: true,
           })
         );
@@ -705,33 +761,12 @@ If the DOCUMENT CHECKLIST section appears in your context with pending items, as
 
 ---
 
-## OUTPUT FORMAT
+## RESPONSE FIELDS
 
-Respond ONLY with raw JSON. No markdown, no code blocks (no \`\`\`), no extra text. Start your response with { and end with }. Nothing else.
-
-When no escalation is needed:
-{"guest_message":"Your message here","escalation":null}
-
-When escalation is needed:
-{"guest_message":"Your message here","escalation":{"title":"kebab-case-label","note":"Actionable note for Abdelrahman with guest name, unit, and details","urgency":"immediate"}}
-
-When no reply is needed (guest sent "okay", "thanks", thumbs up, and conversation is ending):
-{"guest_message":"","escalation":null}
-
-When resolving a completed task (guest confirms issue is fixed):
-{"guest_message":"Glad to hear it.","escalation":null,"resolveTaskId":"task-id-from-open-tasks"}
-
-When updating an existing task with new details:
-{"guest_message":"Got it, I'll update that for you.","escalation":{"title":"updated-label","note":"Updated details...","urgency":"scheduled"},"updateTaskId":"task-id-from-open-tasks"}
-
-Rules:
-- Both keys must ALWAYS be present: "guest_message" and "escalation"
-- When escalation is null, output null — not an empty object
-- When escalation is needed, all three fields (title, note, urgency) are required
-- Always include the guest's name and unit number in escalation notes
-- resolveTaskId: optional — set to a task ID from OPEN TASKS when the guest confirms an issue is resolved
-- updateTaskId: optional — set to a task ID from OPEN TASKS when updating an existing escalation with new info
-- Never include markdown, code blocks, or extra text outside the JSON
+- **guest_message**: Your reply to the guest. Keep it concise (1-2 sentences). Empty string if no reply needed (guest said "thanks", conversation ending).
+- **escalation**: Set to null when no escalation needed. When escalating, include: title (kebab-case label), note (actionable note for Abdelrahman with guest name, unit, and details), urgency ("immediate", "scheduled", or "info_request").
+- **resolveTaskId**: Optional. Set to a task ID from OPEN TASKS when the guest confirms an issue is resolved.
+- **updateTaskId**: Optional. Set to a task ID from OPEN TASKS when updating an existing escalation with new info.
 
 ---
 
@@ -1060,71 +1095,12 @@ Do NOT call this tool when recommending rejection.
 
 ---
 
-## OUTPUT FORMAT
+## RESPONSE FIELDS
 
-Respond ONLY with raw JSON. No markdown, no code blocks, no extra text before or after the JSON.
-
-When no escalation needed (still gathering info or answering basic questions):
-{"guest message":"Your message here","manager":{"needed":false,"title":"","note":""}}
-
-When escalation needed:
-{"guest message":"Your message here","manager":{"needed":true,"title":"category-label","note":"Detailed note for Abdelrahman with guest name, unit, nationality, party details, and recommendation."}}
-
-When no reply needed (guest sent "okay"/"thanks" while awaiting booking decision):
-{"guest message":"","manager":{"needed":true,"title":"awaiting-manager-review","note":"Guest [Name] for [Unit] — screening complete, awaiting manager booking decision. [Recommendation]."}}
-
-IMPORTANT: The first character of your response must be { and the last character must be }. Do NOT wrap in \`\`\`json\`\`\` or any markdown fencing. No backticks anywhere in your output.
-
-WRONG: \`\`\`json\\n{"guest message":"Hi"}\\n\`\`\`
-CORRECT: {"guest message":"Hi","manager":{"needed":false,"title":"","note":""}}
-
----
-
-## EXAMPLES
-
-**Example 1 — Initial inquiry, need info:**
-
-Guest: "Hi, I'd like to book your place"
-
-{"guest message":"Hi, thanks for reaching out. Could you share your nationality and who you'll be traveling with?","manager":{"needed":false,"title":"","note":""}}
-
-**Example 2 — Non-Arab guest, eligible:**
-
-Guest: "I'm French, traveling with my girlfriend"
-
-{"guest message":"Great, we'd be happy to host you. I'll confirm your reservation with the manager shortly.","manager":{"needed":true,"title":"eligible-non-arab","note":"French couple (non-Arab). All criteria met. Recommend acceptance."}}
-
-**Example 3 — Arab married couple, eligible pending cert:**
-
-Guest: "We're an Egyptian married couple"
-
-{"guest message":"We'd be happy to host you. Once the booking is accepted, please send a copy of your marriage certificate through the chat for verification.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Egyptian married couple. Eligible. Marriage certificate requested after booking acceptance. Recommend acceptance."}}
-
-**Example 4 — Arab unmarried couple, not eligible:**
-
-Conversation history: Guest confirmed Egyptian nationality
-Guest: "I'm traveling with my fiancée"
-
-{"guest message":"Unfortunately, we can only accommodate married couples with a valid marriage certificate at this property.","manager":{"needed":true,"title":"violation-arab-unmarried-couple","note":"Egyptian guest traveling with fiancée. Unmarried couple. Violates house rules. Recommend rejection."}}
-
-**Example 5 — Mixed nationality, Arab rules apply:**
-
-Guest: "I'm British, my girlfriend is Egyptian"
-
-{"guest message":"Since one member of your party is Egyptian, we require couples to be married with a valid marriage certificate.","manager":{"needed":true,"title":"violation-mixed-unmarried-couple","note":"British man + Egyptian woman, unmarried. Arab rules apply to entire party. Violates house rules. Recommend rejection."}}
-
-**Example 6 — Guest asks about check-in, but nationality unknown:**
-
-Guest: "If I book now, when can I check in?"
-
-{"guest message":"Check-in is at 3:00 PM. Before we proceed, could you share your nationality and who you'll be staying with?","manager":{"needed":false,"title":"","note":""}}
-
-**Example 7 — Guest asks for booking links, tool returned no URLs:**
-
-Guest: "Can you send me the booking links?"
-(Tool returned 2 properties but booking_link is null for both)
-
-{"guest message":"We have Apartment 105 and Apartment 401 available with pools for your dates. I'll get the booking links from the manager and share them with you.","manager":{"needed":true,"title":"booking-links-needed","note":"Guest [Name] requesting booking links for Apt 105 and Apt 401. Links not available in system. Please send directly."}}
+- **guest message**: Your reply to the guest. Keep it concise (1-2 sentences). Empty string if no reply needed.
+- **manager.needed**: true when you need the manager to act (booking decision, rejection, escalation). false when still gathering info.
+- **manager.title**: kebab-case category label (e.g., "eligible-non-arab", "violation-arab-unmarried-couple", "booking-links-needed"). Empty string when not needed.
+- **manager.note**: Detailed note for Abdelrahman with guest name, unit, nationality, party details, and your recommendation. Empty string when not needed.
 
 ---
 
@@ -2017,14 +1993,15 @@ export async function generateAndSendAiReply(
         reasoningEffort,
         agentType: isInquiry ? 'screening' : 'coordinator',
         stream: true,
-        inputTurns, // Multi-turn conversation as proper {role, content} array
+        inputTurns,
+        outputSchema: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA,
       });
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
 
       try {
         if (isInquiry) {
-          const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
+          const parsed = JSON.parse(rawResponse) as {
             'guest message': string;
             manager?: { needed: boolean; title: string; note: string };
           };
@@ -2039,7 +2016,7 @@ export async function generateAndSendAiReply(
             });
           }
         } else {
-          const parsed = JSON.parse(stripCodeFences(rawResponse)) as {
+          const parsed = JSON.parse(rawResponse) as {
             guest_message: string;
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
@@ -2210,5 +2187,5 @@ export async function generateAndSendAiReply(
   }
 }
 
-export { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, createMessage, stripCodeFences, buildPropertyInfo };
+export { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, COORDINATOR_SCHEMA, SCREENING_SCHEMA, createMessage, stripCodeFences, buildPropertyInfo };
 export type { ContentBlock };

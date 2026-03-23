@@ -10,6 +10,7 @@ import { detectEscalationSignals } from '../services/escalation-enrichment.servi
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
+import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, COORDINATOR_SCHEMA, SCREENING_SCHEMA } from '../services/ai.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -469,7 +470,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         ...(toolsForCall?.length ? { tools: toolsForCall, tool_choice: 'auto' } : {}),
         instructions: effectiveSystemPrompt,
         input: finalInputTurns,
-        text: { verbosity: 'low' as const },
+        text: { format: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA },
         truncation: 'auto',
         store: true,
         prompt_cache_key: `tenant-${tenantId}-sandbox-${isInquiry ? 'screening' : 'coordinator'}`,
@@ -547,16 +548,16 @@ export function sandboxRouter(prisma: PrismaClient) {
         try { toolResults = JSON.parse(toolResultContent); } catch { toolResults = toolResultContent; }
 
         // Follow up with tool result + JSON reminder (matches production)
-        const toolOutput = toolResultContent + '\n\nRespond with raw JSON only. No plain text. Start with { and end with }.';
+        // Schema enforcement replaces the old JSON reminder hack
         response = await withRetry(() =>
           (openai.responses as any).create({
             model: effectiveModel,
             instructions: effectiveSystemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
             previous_response_id: response.id,
             max_output_tokens: effectiveMaxTokens,
             reasoning: { effort: reasoningEffort },
-            text: { verbosity: 'low' as const },
+            text: { format: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA },
             store: true,
           })
         ) as any;
@@ -572,13 +573,12 @@ export function sandboxRouter(prisma: PrismaClient) {
       let manager: { needed: boolean; title: string; note: string } | null = null;
 
       try {
-        const cleaned = stripCodeFences(rawResponseText);
         if (isInquiry) {
-          const parsed = JSON.parse(cleaned) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
+          const parsed = JSON.parse(rawResponseText) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
           responseMessage = parsed['guest message'] || rawResponseText;
           if (parsed.manager) manager = parsed.manager;
         } else {
-          const parsed = JSON.parse(cleaned) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
+          const parsed = JSON.parse(rawResponseText) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
           responseMessage = parsed.guest_message || rawResponseText;
           escalation = parsed.escalation || null;
         }
