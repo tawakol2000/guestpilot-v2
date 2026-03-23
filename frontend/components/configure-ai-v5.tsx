@@ -1247,18 +1247,6 @@ export function ConfigureAiV5(): React.ReactElement {
               />
             )}
 
-            {/* Legacy persona cards */}
-            {PERSONAS.map(({ key, name, accent }) => (
-              <PersonaCard
-                key={key}
-                personaKey={key}
-                name={name}
-                accent={accent}
-                config={config[key] as AiPersonaConfig}
-                onChange={next => updatePersona(key, next)}
-              />
-            ))}
-
             {/* Prompt Playground */}
             <PromptPlayground config={config} />
 
