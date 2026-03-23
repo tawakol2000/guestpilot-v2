@@ -1606,9 +1606,14 @@ export async function generateAndSendAiReply(
     const effectiveModel = rawModel?.startsWith('claude-') ? 'gpt-5.4-mini-2026-03-17' : rawModel;
 
     // Build input messages for classification (OpenAI Responses API format)
+    // Build classification input — clearly separate history from new messages
+    const currentMsgIds = new Set(currentMsgs.map(m => m.id));
+    const historyForClassification = allMsgs.slice(-10).filter(m => !currentMsgIds.has(m.id));
+    const historyText = historyForClassification.map(m => `${m.role === 'GUEST' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n');
+    const newMsgsText = currentMsgs.map(m => `GUEST: ${m.content}`).join('\n');
     const classificationInput = [{
       role: 'user',
-      content: `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`,
+      content: `CONVERSATION HISTORY:\n${historyText}\n\n--- NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} TO CLASSIFY ---\n${newMsgsText}\n\nCLASSIFY THE NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} ABOVE.`,
     }];
 
     // Build tool definition from DB (cached 5min per tenant)
@@ -1738,7 +1743,9 @@ export async function generateAndSendAiReply(
       `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
       `### OPEN TASKS ###\n${openTasksText}`,
       `### KNOWLEDGE BASE ###\n${knowledgeText}`,
-      `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
+      currentMsgs.length > 1
+        ? `### NEW GUEST MESSAGES (${currentMsgs.length} messages — respond to ALL of them in one reply) ###\n${currentMsgsText}`
+        : `### CURRENT GUEST MESSAGE ###\n${currentMsgsText}`,
       `### CURRENT LOCAL TIME ###\n${localTime}`,
     ].join('\n\n');
 
