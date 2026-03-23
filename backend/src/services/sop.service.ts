@@ -352,7 +352,14 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
 /** Default SOP content per category (used as DEFAULT variant during seeding). */
 const SEED_SOP_CONTENT: Record<string, string> = {
   'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
-Cleaning costs $20 per session. Available during working hours only (10am–5pm). Recurring cleaning is OK ($20 each session). If the guest mentions anything that the unit was not cleaned, waive and don't mention the $20 fee.`,
+Cleaning costs $20 per session. Recurring cleaning is OK ($20 each session).
+Process: Ask for preferred time → Guest confirms → Mention $20 fee → Escalate as "scheduled"
+**Exception: If the guest reports the unit was not cleaned on arrival, waive the $20 fee and do not mention it. Escalate as "immediate".**
+
+## SCHEDULING (use CURRENT LOCAL TIME)
+Working hours: 10:00 AM – 5:00 PM
+- During working hours: ask for preferred time. If guest says "now" → escalate immediately
+- After working hours: inform guest it will be arranged for tomorrow, ask for preferred morning time`,
 
   'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
 
@@ -361,13 +368,24 @@ Cleaning costs $20 per session. Available during working hours only (10am–5pm)
 {PROPERTY_AMENITIES}
 
 Check the property amenities list for available items. Only confirm items explicitly listed there.
-- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
-- Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
+- Item on the amenities list → confirm availability and ask for preferred delivery time. Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
+- Item NOT on the list → say "Let me check on that" → escalate as "info_request"
+
+## SCHEDULING (use CURRENT LOCAL TIME)
+Working hours: 10:00 AM – 5:00 PM
+- During working hours: ask for preferred time. If guest says "now" → escalate immediately
+- After working hours: inform guest it will be arranged for tomorrow, ask for preferred morning time
+- Multiple requests: assume one time slot unless the guest explicitly wants separate visits`,
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
 This also includes 'how do I use/turn on X' questions about appliances if the guest seems confused or the item may not be working properly.
 Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it, and escalate immediately.
-**All maintenance/technical issues → urgency: "immediate"**`,
+**All maintenance/technical issues → urgency: "immediate"**
+
+## SCHEDULING (use CURRENT LOCAL TIME)
+Working hours: 10:00 AM – 5:00 PM
+- During working hours: maintenance can come now or at a preferred time
+- After working hours: acknowledge urgency, escalate immediately. Inform guest someone will follow up. For non-urgent issues, arrange for tomorrow morning.`,
 
   'sop-wifi-doorcode': `Guest asks about WiFi password, WiFi network name, internet connection, door code, entry code, lock code, how to get in, or can't open the door.
 WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Give them directly.
