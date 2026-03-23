@@ -1805,7 +1805,7 @@ export async function generateAndSendAiReply(
       }
 
       const toolsForCall = toolDefs
-        .filter(t => t.enabled && (t.agentScope === agentType || t.agentScope === 'both'))
+        .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(context.reservationStatus || 'INQUIRY'))
         .filter(t => t.name !== 'get_sop') // SOP tool handled separately above
         .filter(t => t.name !== 'mark_document_received' || checklistPending) // conditional
         .map(t => ({

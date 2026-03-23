@@ -407,7 +407,36 @@ function ToolCard({ tool, index, onUpdate, onDelete }: {
           {/* Badges */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
             <Badge label={tool.type} style={typeBadgeStyle(tool.type)} />
-            <Badge label={tool.agentScope} style={scopeBadgeStyle(tool.agentScope)} />
+            {/* Booking status toggles */}
+            {['INQUIRY', 'CONFIRMED', 'CHECKED_IN'].map(status => {
+              const statuses = tool.agentScope.split(',').map(s => s.trim())
+              const active = statuses.includes(status)
+              return (
+                <button
+                  key={status}
+                  onClick={async () => {
+                    const newStatuses = active
+                      ? statuses.filter(s => s !== status && s !== (status === 'INQUIRY' ? 'PENDING' : ''))
+                      : [...statuses, status, ...(status === 'INQUIRY' ? ['PENDING'] : [])]
+                    const cleaned = [...new Set(newStatuses.filter(Boolean))]
+                    if (cleaned.length === 0) return // can't have zero statuses
+                    const newScope = cleaned.join(',')
+                    setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: newScope } : t))
+                    try { await apiUpdateTool(tool.id, { agentScope: newScope } as any) } catch { setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: tool.agentScope } : t)) }
+                  }}
+                  style={{
+                    fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
+                    padding: '2px 6px', borderRadius: 4, cursor: 'pointer',
+                    border: `1px solid ${active ? '#15803D40' : T.border.default}`,
+                    background: active ? '#15803D14' : 'transparent',
+                    color: active ? '#15803D' : T.text.tertiary,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {status === 'CHECKED_IN' ? 'Checked In' : status === 'INQUIRY' ? 'Inquiry' : 'Confirmed'}
+                </button>
+              )
+            })}
           </div>
 
           {/* T010: Enabled toggle — clickable */}
@@ -626,7 +655,7 @@ function CreateToolModal({ open, onClose, onCreated }: {
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
-  const [agentScope, setAgentScope] = useState('both')
+  const [agentScope, setAgentScope] = useState('INQUIRY,PENDING,CONFIRMED,CHECKED_IN')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [parametersJson, setParametersJson] = useState(INITIAL_PARAMS)
   const [saving, setSaving] = useState(false)
@@ -659,8 +688,9 @@ function CreateToolModal({ open, onClose, onCreated }: {
     if (!description || description.length < 10) {
       e.description = 'Must be at least 10 characters'
     }
-    if (!['screening', 'coordinator', 'both'].includes(agentScope)) {
-      e.agentScope = 'Select a valid scope'
+    const scopeStatuses = agentScope.split(',').filter(Boolean)
+    if (scopeStatuses.length === 0) {
+      e.agentScope = 'Select at least one booking status'
     }
     try {
       const parsed = JSON.parse(parametersJson)
@@ -793,18 +823,40 @@ function CreateToolModal({ open, onClose, onCreated }: {
             {errors.description && <div style={fieldErrorStyle}>{errors.description}</div>}
           </div>
 
-          {/* Agent Scope */}
+          {/* Booking Statuses */}
           <div>
-            <label style={fieldLabelStyle}>Agent Scope</label>
-            <select
-              value={agentScope}
-              onChange={e => setAgentScope(e.target.value)}
-              style={{ ...fieldInputStyle, ...(errors.agentScope ? { borderColor: T.status.red } : {}) }}
-            >
-              <option value="both">Both (screening + coordinator)</option>
-              <option value="screening">Screening only</option>
-              <option value="coordinator">Coordinator only</option>
-            </select>
+            <label style={fieldLabelStyle}>Available for Booking Statuses</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['INQUIRY', 'CONFIRMED', 'CHECKED_IN'].map(status => {
+                const statuses = agentScope.split(',').map(s => s.trim())
+                const active = statuses.includes(status)
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => {
+                      let newStatuses: string[]
+                      if (active) {
+                        newStatuses = statuses.filter(s => s !== status && s !== (status === 'INQUIRY' ? 'PENDING' : ''))
+                      } else {
+                        newStatuses = [...statuses, status, ...(status === 'INQUIRY' ? ['PENDING'] : [])]
+                      }
+                      const cleaned = [...new Set(newStatuses.filter(Boolean))]
+                      setAgentScope(cleaned.join(','))
+                    }}
+                    style={{
+                      padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                      fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                      border: `1px solid ${active ? T.accent + '40' : T.border.default}`,
+                      background: active ? T.accent + '14' : T.bg.primary,
+                      color: active ? T.accent : T.text.tertiary,
+                    }}
+                  >
+                    {status === 'CHECKED_IN' ? 'Checked In' : status === 'INQUIRY' ? 'Inquiry' : 'Confirmed'}
+                  </button>
+                )
+              })}
+            </div>
             {errors.agentScope && <div style={fieldErrorStyle}>{errors.agentScope}</div>}
           </div>
 

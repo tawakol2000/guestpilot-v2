@@ -368,7 +368,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       }
 
       const toolsForCall: any[] = sbToolDefs
-        .filter(t => t.enabled && (t.agentScope === sbAgentType || t.agentScope === 'both'))
+        .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(reservationStatus))
         .filter(t => t.name !== 'get_sop') // SOP tool handled separately
         .filter(t => t.name !== 'mark_document_received' || sbChecklistPending) // conditional
         .map(t => ({

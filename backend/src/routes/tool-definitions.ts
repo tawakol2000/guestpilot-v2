@@ -52,13 +52,14 @@ export function toolDefinitionsRouter(prisma: PrismaClient): Router {
       }
 
       // Pick only allowed fields
-      const { description, enabled, webhookUrl, displayName, webhookTimeout } = req.body;
+      const { description, enabled, webhookUrl, displayName, webhookTimeout, agentScope } = req.body;
       const updates: Record<string, unknown> = {};
       if (description !== undefined) updates.description = description;
       if (enabled !== undefined) updates.enabled = Boolean(enabled);
       if (webhookUrl !== undefined) updates.webhookUrl = webhookUrl;
       if (displayName !== undefined) updates.displayName = displayName;
       if (webhookTimeout !== undefined) updates.webhookTimeout = Number(webhookTimeout);
+      if (agentScope !== undefined) updates.agentScope = agentScope;
 
       const tool = await updateToolDefinition(id, updates, prisma);
       res.json(tool);

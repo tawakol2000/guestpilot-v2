@@ -101,7 +101,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['reasoning', 'categories', 'confidence'],
       additionalProperties: false,
     },
-    agentScope: 'both',
+    agentScope: 'INQUIRY,PENDING,CONFIRMED,CHECKED_IN',
   },
   {
     name: 'search_available_properties',
@@ -131,7 +131,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['amenities', 'reason', 'min_capacity'],
       additionalProperties: false,
     },
-    agentScope: 'screening',
+    agentScope: 'INQUIRY,PENDING',
   },
   {
     name: 'create_document_checklist',
@@ -159,7 +159,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
       additionalProperties: false,
     },
-    agentScope: 'screening',
+    agentScope: 'INQUIRY,PENDING',
   },
   {
     name: 'check_extend_availability',
@@ -187,7 +187,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['new_checkout', 'reason', 'new_checkin'],
       additionalProperties: false,
     },
-    agentScope: 'coordinator',
+    agentScope: 'CONFIRMED,CHECKED_IN',
   },
   {
     name: 'mark_document_received',
@@ -212,7 +212,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['document_type', 'notes'],
       additionalProperties: false,
     },
-    agentScope: 'coordinator',
+    agentScope: 'CONFIRMED,CHECKED_IN',
   },
 ];
 
@@ -254,6 +254,7 @@ interface ToolUpdateData {
   enabled?: boolean;
   webhookUrl?: string | null;
   webhookTimeout?: number;
+  agentScope?: string;
 }
 
 /**
@@ -265,6 +266,16 @@ export async function updateToolDefinition(
   updates: ToolUpdateData,
   prisma: PrismaClient,
 ): Promise<ToolDefinition> {
+  // Validate agentScope
+  if (updates.agentScope !== undefined) {
+    const VALID_STATUSES = ['INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN'];
+    const scopeStatuses = updates.agentScope.split(',').map(s => s.trim());
+    if (scopeStatuses.length === 0 || !scopeStatuses.every(s => VALID_STATUSES.includes(s))) {
+      const err = new Error('agentScope must be comma-separated booking statuses: INQUIRY,PENDING,CONFIRMED,CHECKED_IN') as any;
+      err.field = 'agentScope';
+      throw err;
+    }
+  }
   // Validate description length
   if (updates.description !== undefined && updates.description.length < 10) {
     const err = new Error('Description must be at least 10 characters') as any;
@@ -324,8 +335,10 @@ export async function createCustomTool(
   }
 
   // Validate agentScope
-  if (!['screening', 'coordinator', 'both'].includes(data.agentScope)) {
-    const err = new Error('agentScope must be "screening", "coordinator", or "both"') as any;
+  const VALID_STATUSES = ['INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN'];
+  const scopeStatuses = data.agentScope.split(',').map(s => s.trim());
+  if (scopeStatuses.length === 0 || !scopeStatuses.every(s => VALID_STATUSES.includes(s))) {
+    const err = new Error('agentScope must be comma-separated booking statuses: INQUIRY,PENDING,CONFIRMED,CHECKED_IN') as any;
     err.field = 'agentScope';
     throw err;
   }
