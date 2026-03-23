@@ -325,45 +325,53 @@ async function createMessage(
       console.log(`[AI-OPS] Rate limit remaining — requests: ${initialOpsHeaders.rateLimitRemaining.requests}, tokens: ${initialOpsHeaders.rateLimitRemaining.tokens}`);
     }
 
-    // ─── Tool use loop: if model wants to call a tool, execute and send result back ───
-    const fnCall = response.output?.find((i: any) => i.type === 'function_call');
-    if (fnCall && options?.toolHandlers) {
-      const handler = options.toolHandlers.get(fnCall.name);
-      const toolStartMs = Date.now();
-      let toolResultContent: string;
-      try {
-        const toolInput = JSON.parse(fnCall.arguments);
-        if (handler) {
-          toolResultContent = await handler(toolInput, options.toolContext);
-        } else {
-          toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}`, found: false, properties: [] });
+    // ─── Tool use loop: process ALL tool calls, send results back, repeat if model calls more ───
+    const MAX_TOOL_ROUNDS = 5; // Safety limit to prevent infinite tool loops
+    let toolRound = 0;
+    let fnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
+
+    while (fnCalls.length > 0 && options?.toolHandlers && toolRound < MAX_TOOL_ROUNDS) {
+      toolRound++;
+      const toolOutputs: Array<{ type: 'function_call_output'; call_id: string; output: string }> = [];
+
+      for (const fnCall of fnCalls) {
+        const handler = options.toolHandlers.get(fnCall.name);
+        const toolStartMs = Date.now();
+        let toolResultContent: string;
+        try {
+          const toolInput = JSON.parse(fnCall.arguments);
+          if (handler) {
+            toolResultContent = await handler(toolInput, options.toolContext);
+          } else {
+            toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}`, found: false, properties: [] });
+          }
+        } catch (toolErr) {
+          console.error(`[AI] Tool handler error for ${fnCall.name}:`, toolErr);
+          toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
         }
-      } catch (toolErr) {
-        console.error(`[AI] Tool handler error for ${fnCall.name}:`, toolErr);
-        toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
+        const toolDurationMs = Date.now() - toolStartMs;
+
+        // Log first tool to ragContext (for backward compat with single-tool logging)
+        if (toolOutputs.length === 0 && options?.ragContext) {
+          options.ragContext.toolUsed = true;
+          options.ragContext.toolName = fnCall.name;
+          try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
+          try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
+          options.ragContext.toolDurationMs = toolDurationMs;
+        }
+
+        console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms (round ${toolRound}, ${fnCalls.length} call${fnCalls.length > 1 ? 's' : ''})`);
+        toolOutputs.push({ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent });
       }
-      const toolDurationMs = Date.now() - toolStartMs;
 
-      // Log tool usage to ragContext
-      if (options?.ragContext) {
-        options.ragContext.toolUsed = true;
-        options.ragContext.toolName = fnCall.name;
-        try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
-        try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
-        options.ragContext.toolDurationMs = toolDurationMs;
-      }
-
-      console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms`);
-
-      // Send tool result back via previous_response_id
-      // T029: When streaming is enabled, stream the tool follow-up call (the final response to guest)
+      // Send ALL tool results back in one follow-up call
       const toolFollowUpTextFormat = options?.outputSchema ? { format: options.outputSchema } : { format: { type: 'text' as const } };
       if (options?.stream && options?.tenantId && options?.conversationId) {
         const toolFollowUpStream = await withRetry(() =>
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            input: toolOutputs,
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
@@ -389,32 +397,20 @@ async function createMessage(
           }
         }
 
-        // Emit final done event
         broadcastToTenant(options.tenantId, 'ai_typing_text', {
           conversationId: options.conversationId,
           delta: '',
           done: true,
         });
 
-        // Use the completed response for usage/headers
         response = streamResponse || { output_text: streamedText, usage: {} };
         if (!response.output_text) response.output_text = streamedText;
-
-        // T042: Log ops headers from tool follow-up
-        const toolOpsHeaders = extractOpsHeaders(response);
-        if (toolOpsHeaders.openaiRequestId) {
-          console.log(`[AI-OPS] Tool follow-up Request ID: ${toolOpsHeaders.openaiRequestId}`);
-        }
-        if (toolOpsHeaders.rateLimitRemaining) {
-          console.log(`[AI-OPS] Tool follow-up rate limit — requests: ${toolOpsHeaders.rateLimitRemaining.requests}, tokens: ${toolOpsHeaders.rateLimitRemaining.tokens}`);
-        }
       } else {
-        // Non-streaming tool follow-up (existing behavior)
         response = await withRetry(() =>
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            input: toolOutputs,
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
@@ -422,17 +418,18 @@ async function createMessage(
             store: true,
           })
         );
-
-        // T042: Log ops headers from tool follow-up
-        const toolOpsHeaders = extractOpsHeaders(response);
-        if (toolOpsHeaders.openaiRequestId) {
-          console.log(`[AI-OPS] Tool follow-up Request ID: ${toolOpsHeaders.openaiRequestId}`);
-        }
-        if (toolOpsHeaders.rateLimitRemaining) {
-          console.log(`[AI-OPS] Tool follow-up rate limit — requests: ${toolOpsHeaders.rateLimitRemaining.requests}, tokens: ${toolOpsHeaders.rateLimitRemaining.tokens}`);
-        }
       }
-    } else if (options?.stream && options?.tenantId && options?.conversationId && !fnCall) {
+
+      // Check if the model wants to call MORE tools after seeing results
+      fnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
+    }
+
+    if (toolRound > 0 && fnCalls.length > 0) {
+      console.warn(`[AI] Tool loop hit max rounds (${MAX_TOOL_ROUNDS}) — stopping. Remaining calls: ${fnCalls.map((f: any) => f.name).join(', ')}`);
+    }
+
+    // Stream non-tool responses (when no tools were called at all)
+    if (toolRound === 0 && options?.stream && options?.tenantId && options?.conversationId) {
       // ─── T029: Streaming for non-tool calls ───
       // Initial call was non-streaming (needed to check for tool calls first).
       // Emit the already-received full text as SSE so the frontend gets the typing effect.
