@@ -1531,6 +1531,9 @@ export default function InboxV5() {
 
   // ── Effect 2: Load detail on selection (deduplicated) ──
   useEffect(() => {
+    // Clear copilot suggestion and typing state when switching conversations
+    setAiSuggestion(null)
+    setAiTyping(false)
     if (!selectedId || fetchedDetails.current.has(selectedId)) return
     setLoadingDetail(true)
     apiGetConversation(selectedId)
