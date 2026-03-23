@@ -461,6 +461,20 @@ export interface AiApiLogEntry {
     chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>
     totalRetrieved: number
     durationMs: number
+    sopToolUsed?: boolean
+    sopCategories?: string[]
+    sopConfidence?: string
+    sopReasoning?: string
+    toolUsed?: boolean
+    toolName?: string
+    toolInput?: any
+    toolResults?: any
+    toolDurationMs?: number
+    cachedInputTokens?: number
+    totalInputTokens?: number
+    reasoningTokens?: number
+    reasoningEffort?: string
+    escalationSignals?: string[]
   } | null
 }
 

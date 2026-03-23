@@ -383,38 +383,81 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           }
         </span>
 
-        {/* RAG chunk count pill */}
-        {entry.ragContext != null ? (
-          entry.ragContext.totalRetrieved > 0 ? (
+        {/* SOP categories pills */}
+        {entry.ragContext?.sopCategories?.length ? (
+          entry.ragContext.sopCategories.map((sop: string) => (
             <span
+              key={sop}
               style={{
-                background: 'rgba(109,40,217,0.08)',
-                color: '#6D28D9',
-                border: '1px solid rgba(109,40,217,0.15)',
+                background: '#1D4ED810',
+                color: T.accent,
+                border: '1px solid #1D4ED820',
                 borderRadius: 999,
-                fontSize: 10,
-                padding: '2px 7px',
+                fontSize: 9,
+                padding: '2px 6px',
                 fontFamily: T.font.mono,
-                fontWeight: 500,
+                fontWeight: 600,
                 flexShrink: 0,
                 whiteSpace: 'nowrap',
               }}
             >
-              {entry.ragContext.totalRetrieved} chunk{entry.ragContext.totalRetrieved !== 1 ? 's' : ''}
+              {sop.replace('sop-', '')}
             </span>
-          ) : (
-            <span
-              style={{
-                color: T.text.tertiary,
-                fontSize: 10,
-                fontFamily: T.font.mono,
-                flexShrink: 0,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              no RAG
-            </span>
-          )
+          ))
+        ) : null}
+
+        {/* SOP confidence */}
+        {entry.ragContext?.sopConfidence && (
+          <span style={{
+            fontSize: 9, fontFamily: T.font.mono, fontWeight: 600, flexShrink: 0,
+            color: entry.ragContext.sopConfidence === 'high' ? '#15803D' : entry.ragContext.sopConfidence === 'medium' ? '#D97706' : '#DC2626',
+          }}>
+            {entry.ragContext.sopConfidence}
+          </span>
+        )}
+
+        {/* Tool pill */}
+        {entry.ragContext?.toolUsed && entry.ragContext?.toolName && (
+          <span
+            style={{
+              background: '#D9770610',
+              color: '#D97706',
+              border: '1px solid #D9770620',
+              borderRadius: 999,
+              fontSize: 9,
+              padding: '2px 6px',
+              fontFamily: T.font.mono,
+              fontWeight: 600,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+            }}
+          >
+            {entry.ragContext.toolName.replace(/_/g, ' ')}
+            {entry.ragContext.toolDurationMs != null && (
+              <span style={{ opacity: 0.7 }}>({entry.ragContext.toolDurationMs}ms)</span>
+            )}
+          </span>
+        )}
+
+        {/* Escalation signals */}
+        {entry.ragContext?.escalationSignals?.length ? (
+          <span style={{
+            background: '#DC262610',
+            color: '#DC2626',
+            border: '1px solid #DC262620',
+            borderRadius: 999,
+            fontSize: 9,
+            padding: '2px 6px',
+            fontFamily: T.font.mono,
+            fontWeight: 600,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}>
+            {entry.ragContext.escalationSignals.length} signal{entry.ragContext.escalationSignals.length !== 1 ? 's' : ''}
+          </span>
         ) : null}
 
         {/* Response preview */}
@@ -504,6 +547,68 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           <ContentBlock label="Response">
             <TextBox content={displayEntry.responseText} maxHeight={280} />
           </ContentBlock>
+
+          {/* SOP Classification */}
+          {(() => {
+            const rc = displayEntry.ragContext as any
+            if (!rc?.sopCategories?.length) return null
+            return (
+              <ContentBlock
+                label={`SOP Classification — ${rc.sopCategories.join(', ')} (${rc.sopConfidence || 'unknown'})`}
+                labelColor={T.accent}
+                defaultExpanded={true}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, fontFamily: T.font.mono }}>
+                  <div><span style={{ color: T.text.tertiary }}>categories: </span>{rc.sopCategories.join(', ')}</div>
+                  <div><span style={{ color: T.text.tertiary }}>confidence: </span><span style={{ fontWeight: 600, color: rc.sopConfidence === 'high' ? '#15803D' : rc.sopConfidence === 'medium' ? '#D97706' : '#DC2626' }}>{rc.sopConfidence}</span></div>
+                  {rc.sopReasoning && <div><span style={{ color: T.text.tertiary }}>reasoning: </span>{rc.sopReasoning}</div>}
+                </div>
+              </ContentBlock>
+            )
+          })()}
+
+          {/* Tool Execution */}
+          {(() => {
+            const rc = displayEntry.ragContext as any
+            if (!rc?.toolUsed) return null
+            return (
+              <ContentBlock
+                label={`Tool: ${rc.toolName || 'unknown'} (${rc.toolDurationMs || 0}ms)`}
+                labelColor="#D97706"
+                defaultExpanded={true}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 11, fontFamily: T.font.mono }}>
+                  {rc.toolInput && (
+                    <div>
+                      <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Input:</div>
+                      <TextBox content={JSON.stringify(rc.toolInput, null, 2)} maxHeight={150} />
+                    </div>
+                  )}
+                  {rc.toolResults && (
+                    <div>
+                      <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Results:</div>
+                      <TextBox content={typeof rc.toolResults === 'string' ? rc.toolResults : JSON.stringify(rc.toolResults, null, 2)} maxHeight={200} />
+                    </div>
+                  )}
+                </div>
+              </ContentBlock>
+            )
+          })()}
+
+          {/* Escalation Signals */}
+          {(() => {
+            const rc = displayEntry.ragContext as any
+            if (!rc?.escalationSignals?.length) return null
+            return (
+              <ContentBlock label={`Escalation Signals (${rc.escalationSignals.length})`} labelColor="#DC2626" defaultExpanded={false}>
+                <div style={{ fontSize: 11, fontFamily: T.font.mono, color: T.text.secondary }}>
+                  {rc.escalationSignals.map((s: string, i: number) => (
+                    <div key={i} style={{ padding: '2px 0' }}>{s}</div>
+                  ))}
+                </div>
+              </ContentBlock>
+            )
+          })()}
 
           {/* Retrieved Context */}
           {(() => {
