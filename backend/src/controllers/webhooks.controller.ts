@@ -287,12 +287,14 @@ async function handleNewMessage(
   }
 
   // Resync reservation data if stale (>1 hour) — fallback for unreliable reservation webhooks
-  if (conversation.reservation && data.reservationId) {
+  // Use data.reservationId if available, otherwise fall back to the reservation's hostawayReservationId
+  const resyncReservationId = data.reservationId ? String(data.reservationId) : conversation.reservation?.hostawayReservationId;
+  if (conversation.reservation && resyncReservationId) {
     const ONE_HOUR = 60 * 60 * 1000;
     const reservationAge = Date.now() - new Date(conversation.reservation.updatedAt).getTime();
     if (reservationAge > ONE_HOUR) {
       console.log(`[Webhook] [${tenantId}] Reservation ${conversation.reservation.id} stale (${Math.round(reservationAge / 60000)}min) — resyncing from Hostaway API`);
-      const fresh = await enrichGuestFromHostaway(tenantId, String(data.reservationId), prisma);
+      const fresh = await enrichGuestFromHostaway(tenantId, resyncReservationId, prisma);
       if (fresh) {
         const freshStatus = fresh.status ? mapReservationStatus(fresh.status) : undefined;
         const isCancelledOrCheckedOut = freshStatus === ReservationStatus.CANCELLED || freshStatus === ReservationStatus.CHECKED_OUT;
