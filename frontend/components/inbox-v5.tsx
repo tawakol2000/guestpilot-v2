@@ -3772,10 +3772,12 @@ export default function InboxV5() {
                           }}>
                             <IntelligenceGlowBorder active={isGlowing} borderRadius={10} />
                             {aiTyping
-                              ? (streamingText[selectedConv.id]
-                                ? <span style={{ fontWeight: 400 }}>Streaming response…</span>
-                                : <ShimmerText text="Generating response…" />)
-                              : aiSuggestion ?? (selectedConv.aiMode === 'copilot' ? 'Copilot ready — waiting for guest message' : 'AI is handling responses automatically')}
+                              ? (selectedConv.aiMode === 'copilot'
+                                ? <ShimmerText text="Copilot is generating a response…" />
+                                : streamingText[selectedConv.id]
+                                  ? <span style={{ fontWeight: 400 }}>Streaming response…</span>
+                                  : <ShimmerText text="Generating response…" />)
+                              : aiSuggestion ?? (selectedConv.aiMode === 'copilot' ? 'Copilot will suggest replies' : 'AI is handling responses automatically')}
                             {aiSuggestion && (
                               <button
                                 onClick={async () => {
