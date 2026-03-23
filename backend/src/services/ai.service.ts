@@ -1607,13 +1607,13 @@ export async function generateAndSendAiReply(
 
     // Build input messages for classification (OpenAI Responses API format)
     // Build classification input — clearly separate history from new messages
-    const currentMsgIds = new Set(currentMsgs.map(m => m.id));
-    const historyForClassification = allMsgs.slice(-10).filter(m => !currentMsgIds.has(m.id));
-    const historyText = historyForClassification.map(m => `${m.role === 'GUEST' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n');
-    const newMsgsText = currentMsgs.map(m => `GUEST: ${m.content}`).join('\n');
+    const classCurrentIds = new Set(currentMsgs.map(m => m.id));
+    const classHistory = allMsgs.slice(-10).filter(m => !classCurrentIds.has(m.id));
+    const classHistoryText = classHistory.map(m => `${m.role === 'GUEST' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n');
+    const classNewText = currentMsgs.map(m => `GUEST: ${m.content}`).join('\n');
     const classificationInput = [{
       role: 'user',
-      content: `CONVERSATION HISTORY:\n${historyText}\n\n--- NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} TO CLASSIFY ---\n${newMsgsText}\n\nCLASSIFY THE NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} ABOVE.`,
+      content: `CONVERSATION HISTORY:\n${classHistoryText}\n\n--- NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} TO CLASSIFY ---\n${classNewText}\n\nCLASSIFY THE NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} ABOVE.`,
     }];
 
     // Build tool definition from DB (cached 5min per tenant)
@@ -1735,11 +1735,16 @@ export async function generateAndSendAiReply(
 
     let guestMessage = '';
 
-    // Build multi-turn input for the Responses API:
-    // - Previous messages as proper {role: 'user'/'assistant'} turns
-    // - Last user message includes property context + current guest message(s)
-    // This format is what the model was trained on — better than a text blob.
-    const lastUserMessage = [
+    // Build single user message with conversation history + context + current guest message(s).
+    // Last 20 messages as labeled text, not separate user/assistant blocks.
+    const currentMsgIds = new Set(currentMsgs.map(m => m.id));
+    const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-20);
+    const historyText = historyMsgs.length > 0
+      ? historyMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n')
+      : 'No previous messages.';
+
+    const userMessage = [
+      `### CONVERSATION HISTORY ###\n${historyText}`,
       `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
       `### OPEN TASKS ###\n${openTasksText}`,
       `### KNOWLEDGE BASE ###\n${knowledgeText}`,
@@ -1747,18 +1752,10 @@ export async function generateAndSendAiReply(
       `### CURRENT LOCAL TIME ###\n${localTime}`,
     ].join('\n\n');
 
-    // Exclude current window messages from history (they're in lastUserMessage)
-    const currentMsgContents = new Set(currentMsgs.map(m => m.content));
-    const historyTurns = conversationTurns.filter(t =>
-      !(t.role === 'user' && currentMsgContents.has(t.content))
-    );
-
-    // Final input: history turns + context block as last user message
-    // content can be string (text) or array (text + image) for OpenAI Responses API
+    // Single user message — no multi-turn splitting
     type InputTurn = { role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> };
     const inputTurns: InputTurn[] = [
-      ...historyTurns,
-      { role: 'user' as const, content: lastUserMessage },
+      { role: 'user' as const, content: userMessage },
     ];
 
     // Single code path for text and text+image
@@ -1874,7 +1871,7 @@ export async function generateAndSendAiReply(
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
             content: [
-              { type: 'input_text', text: lastUserMessage },
+              { type: 'input_text', text: userMessage },
               { type: 'input_image', image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
             ],
           };
@@ -1882,7 +1879,7 @@ export async function generateAndSendAiReply(
           // Download failed — tell the AI an image was sent but couldn't be loaded
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
-            content: `[System: The guest sent an image but it could not be loaded. Acknowledge this and escalate to manager.]\n\n${lastUserMessage}`,
+            content: `[System: The guest sent an image but it could not be loaded. Acknowledge this and escalate to manager.]\n\n${userMessage}`,
           };
         }
       }
