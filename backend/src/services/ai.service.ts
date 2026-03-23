@@ -24,6 +24,7 @@ import { detectEscalationSignals } from './escalation-enrichment.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
 import { getToolDefinitions } from './tool-definition.service';
 import { callWebhook } from './webhook-tool.service';
+import { sendPushToTenant } from './push.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1399,6 +1400,13 @@ async function handleEscalation(
           source: 'ai',
         });
         broadcastToTenant(tenantId, 'new_task', { conversationId, task });
+
+        // Web Push notification for new tasks — fire-and-forget
+        sendPushToTenant(tenantId, {
+          title: `New Task: ${urgency}`,
+          body: `${title} — ${note?.substring(0, 150) || ''}`,
+          data: { conversationId, taskId: task.id, type: 'task' },
+        }, prisma).catch(err => console.warn('[Push] Task notification failed:', err));
       }
 
       // Auto-create knowledge suggestion for info_request escalations

@@ -39,6 +39,7 @@ model Tenant {
   classifierWeights       ClassifierWeights[]
   sopDefinitions          SopDefinition[]
   toolDefinitions         ToolDefinition[]
+  pushSubscriptions       PushSubscription[]
 }
 
 model Property {
@@ -567,4 +568,21 @@ model SopPropertyOverride {
   property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, propertyId, status])
+}
+
+// ─── Push Subscriptions (Web Push VAPID) ────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  tenantId  String
+  endpoint  String
+  p256dh    String
+  auth      String
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, endpoint])
+  @@index([tenantId])
 }

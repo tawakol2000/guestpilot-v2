@@ -11,6 +11,7 @@ import { PrismaClient, MessageRole, Channel, ReservationStatus } from '@prisma/c
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
 import { broadcastToTenant } from '../services/sse.service';
 import { getReservation } from '../services/hostaway.service';
+import { sendPushToTenant } from '../services/push.service';
 
 interface HostawayWebhookPayload {
   event: string;
@@ -220,7 +221,7 @@ async function handleNewMessage(
   // G2: Conversation lookup with fallback chain
   let conversation = await prisma.conversation.findFirst({
     where: { tenantId, hostawayConversationId: hostawayConvId },
-    include: { reservation: true, guest: true },
+    include: { reservation: true, guest: true, property: true },
   });
 
   // Fallback: look up via reservationId when hostawayConversationId doesn't match
@@ -231,7 +232,7 @@ async function handleNewMessage(
     if (reservation) {
       conversation = await prisma.conversation.findFirst({
         where: { tenantId, reservationId: reservation.id },
-        include: { reservation: true, guest: true },
+        include: { reservation: true, guest: true, property: true },
       });
       // G3: Backfill hostawayConversationId
       if (conversation && !conversation.hostawayConversationId) {
@@ -252,7 +253,7 @@ async function handleNewMessage(
       // Retry lookup after creation
       conversation = await prisma.conversation.findFirst({
         where: { tenantId, hostawayConversationId: hostawayConvId },
-        include: { reservation: true, guest: true },
+        include: { reservation: true, guest: true, property: true },
       });
       if (!conversation) {
         // Try by reservationId (all ID formats)
@@ -261,7 +262,7 @@ async function handleNewMessage(
         if (res) {
           conversation = await prisma.conversation.findFirst({
             where: { tenantId, reservationId: res.id },
-            include: { reservation: true, guest: true },
+            include: { reservation: true, guest: true, property: true },
           });
           if (conversation && !conversation.hostawayConversationId) {
             await prisma.conversation.update({
@@ -360,6 +361,25 @@ async function handleNewMessage(
             checkOut: (updates.checkOut as Date)?.toISOString?.() ?? conversation.reservation.checkOut,
             guestCount: updates.guestCount ?? conversation.reservation.guestCount,
           });
+
+          // Web Push for resync status changes — fire-and-forget
+          if (updates.status) {
+            const resyncGuestName = conversation.guest?.name || 'Guest';
+            const resyncPropertyName = conversation.property?.name || 'Property';
+            if (updates.status === ReservationStatus.CANCELLED) {
+              sendPushToTenant(tenantId, {
+                title: 'Booking Cancelled',
+                body: `${resyncGuestName} — ${resyncPropertyName}`,
+                data: { type: 'reservation' },
+              }, prisma).catch(err => console.warn('[Push] Resync cancel notification failed:', err));
+            } else {
+              sendPushToTenant(tenantId, {
+                title: 'Booking Modified',
+                body: `${resyncGuestName} — ${resyncPropertyName}`,
+                data: { type: 'reservation' },
+              }, prisma).catch(err => console.warn('[Push] Resync update notification failed:', err));
+            }
+          }
         }
       }
     }
@@ -417,6 +437,16 @@ async function handleNewMessage(
     } else {
       console.log(`[Webhook] [${tenantId}] AI DISABLED for conv ${conversation.id} — reservation.aiEnabled=false (reservationId=${conversation.reservationId}). Toggle AI on in the dashboard.`);
     }
+
+    // Web Push notification for guest messages — fire-and-forget
+    const guestName = conversation.guest?.name || 'Guest';
+    const propertyName = conversation.property?.name || 'Property';
+    const messageBody = data.body || '';
+    sendPushToTenant(tenantId, {
+      title: `${guestName} — ${propertyName}`,
+      body: messageBody.substring(0, 200),
+      data: { conversationId: conversation.id, type: 'message' },
+    }, prisma).catch(err => console.warn('[Push] Message notification failed:', err));
   } else {
     // G5: Still update lastMessageAt for outgoing messages
     await prisma.conversation.update({
@@ -620,6 +650,15 @@ async function handleNewReservation(
     reservationId: reservation.id,
   });
 
+  // Web Push notification for new bookings — fire-and-forget
+  const checkInStr = data.arrivalDate || 'TBD';
+  const checkOutStr = data.departureDate || 'TBD';
+  sendPushToTenant(tenantId, {
+    title: 'New Booking',
+    body: `${guestName} — ${property.name}, ${checkInStr} to ${checkOutStr}`,
+    data: { type: 'reservation' },
+  }, prisma).catch(err => console.warn('[Push] Reservation notification failed:', err));
+
   console.log(`[Webhook] [${tenantId}] Reservation ${hostawayReservationId} created/updated`);
 }
 
@@ -722,6 +761,33 @@ async function handleReservationUpdated(
     ...(data.departureDate && { checkOut: new Date(data.departureDate).toISOString() }),
     ...(data.numberOfGuests && { guestCount: data.numberOfGuests }),
   });
+
+  // Web Push notification for reservation status changes — fire-and-forget
+  if (newStatus) {
+    const displayGuestName = newGuestName || existingGuest?.name || 'Guest';
+    // Fetch property name for push payload
+    const resProperty = await prisma.property.findUnique({
+      where: { id: reservation.propertyId },
+      select: { name: true },
+    });
+    const displayPropertyName = resProperty?.name || 'Property';
+
+    if (newStatus === ReservationStatus.CANCELLED) {
+      sendPushToTenant(tenantId, {
+        title: 'Booking Cancelled',
+        body: `${displayGuestName} — ${displayPropertyName}`,
+        data: { type: 'reservation' },
+      }, prisma).catch(err => console.warn('[Push] Reservation cancel notification failed:', err));
+    } else {
+      const checkInStr = data.arrivalDate || 'TBD';
+      const checkOutStr = data.departureDate || 'TBD';
+      sendPushToTenant(tenantId, {
+        title: 'Booking Modified',
+        body: `${displayGuestName} — ${displayPropertyName}, ${checkInStr} to ${checkOutStr}`,
+        data: { type: 'reservation' },
+      }, prisma).catch(err => console.warn('[Push] Reservation update notification failed:', err));
+    }
+  }
 
   console.log(`[Webhook] [${tenantId}] Reservation ${hostawayReservationId} updated`);
 }

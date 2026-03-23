@@ -83,6 +83,9 @@ NODE_ENV               # development / production
 RAILWAY_PUBLIC_DOMAIN  # Public URL for webhooks
 CORS_ORIGINS           # Comma-separated frontend URLs
 DRY_RUN                # Restrict to specific conversation IDs
+VAPID_PUBLIC_KEY       # Web Push VAPID public key (optional — push disabled without)
+VAPID_PRIVATE_KEY      # Web Push VAPID private key (optional)
+VAPID_SUBJECT          # mailto:support@guestpilot.com (optional)
 ```
 
 ## Critical Rules
@@ -145,6 +148,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (no schema changes — uses existing `screeningAnswers` JSON field) (017-document-checklist)
 - TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK, Express 4.x, Prisma ORM, axios (webhook calls) (018-tools-management)
 - PostgreSQL + Prisma ORM (new ToolDefinition model) (018-tools-management)
+- TypeScript 5.x on Node.js 18+ + `web-push` npm package, Express 4.x, Prisma ORM (019-web-push)
+- PostgreSQL + Prisma ORM (new PushSubscription model) (019-web-push)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

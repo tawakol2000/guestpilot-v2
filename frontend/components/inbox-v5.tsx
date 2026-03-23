@@ -4268,7 +4268,7 @@ export default function InboxV5() {
       {/* Examples tab removed — classifier training data no longer managed (013-sop-tool-routing) */}
       {navTab === 'tools' && (
         <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           <ToolsV5 />
         </div>
         </ErrorBoundary>
