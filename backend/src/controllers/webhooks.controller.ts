@@ -60,13 +60,23 @@ function mapReservationStatus(status?: string): ReservationStatus {
   // must NOT grant access to sensitive information.
   if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
+    // Inquiry lifecycle — pre-booking, no calendar block
     case 'inquiry':
-    case 'pending':
+    case 'inquirypreapproved':
+    case 'inquirydenied':
+    case 'inquirytimedout':
+    case 'inquirynotpossible':
+    case 'pending':          // Airbnb Request to Book
+    case 'unconfirmed':      // Vrbo Request to Book
+    case 'awaitingpayment':
+    case 'awaitingguestverification':
+    case 'unknown':
       return ReservationStatus.INQUIRY;
+    // Active booking — confirmed, blocks calendar
     case 'new':
     case 'confirmed':
     case 'accepted':
-    case 'modified':
+    case 'modified':         // Guest modified dates/guests on confirmed booking
       return ReservationStatus.CONFIRMED;
     case 'checkedin':
       return ReservationStatus.CHECKED_IN;
@@ -74,6 +84,9 @@ function mapReservationStatus(status?: string): ReservationStatus {
       return ReservationStatus.CHECKED_OUT;
     case 'cancelled':
     case 'canceled':
+    case 'declined':         // Host declined Request to Book
+    case 'expired':          // Inquiry/request expired
+    case 'ownerstay':        // Owner block
       return ReservationStatus.CANCELLED;
     default:
       console.warn(`[Webhook] Unknown reservation status "${status}" — defaulting to INQUIRY (safe)`);

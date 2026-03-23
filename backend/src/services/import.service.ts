@@ -47,9 +47,19 @@ function mapReservationStatus(status?: string): ReservationStatus {
   // Same policy as webhooks.controller.ts mapReservationStatus().
   if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
+    // Inquiry lifecycle
     case 'inquiry':
+    case 'inquirypreapproved':
+    case 'inquirydenied':
+    case 'inquirytimedout':
+    case 'inquirynotpossible':
     case 'pending':
+    case 'unconfirmed':
+    case 'awaitingpayment':
+    case 'awaitingguestverification':
+    case 'unknown':
       return ReservationStatus.INQUIRY;
+    // Active booking
     case 'new':
     case 'confirmed':
     case 'accepted':
@@ -63,6 +73,9 @@ function mapReservationStatus(status?: string): ReservationStatus {
       return ReservationStatus.CHECKED_OUT;
     case 'cancelled':
     case 'canceled':
+    case 'declined':
+    case 'expired':
+    case 'ownerstay':
       return ReservationStatus.CANCELLED;
     default:
       console.warn(`[Import] Unknown reservation status "${status}" — defaulting to INQUIRY (safe)`);
