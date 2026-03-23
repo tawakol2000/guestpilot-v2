@@ -147,6 +147,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         checkOut,
         guestCount,
         messages,
+        reasoningEffort: requestedReasoning,
       } = req.body as {
         propertyId: string;
         reservationStatus: string;
@@ -156,6 +157,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         checkOut: string;
         guestCount: number;
         messages: Array<{ role: 'guest' | 'host'; content: string }>;
+        reasoningEffort?: string;
       };
 
       if (!propertyId || !messages || messages.length === 0) {
@@ -408,9 +410,12 @@ export function sandboxRouter(prisma: PrismaClient) {
       const historyTurns = inputTurns.filter(t => !(t.role === 'user' && currentContents.has(t.content)));
       const finalInputTurns = [...historyTurns, { role: 'user' as const, content: lastUserMessage }];
 
-      // Determine reasoning effort — match production logic
+      // Determine reasoning effort — request override > SOP-based auto
       const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
-      const reasoningEffort = sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' as const : 'none' as const;
+      const VALID_EFFORTS = ['none', 'low', 'medium', 'high'];
+      const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = requestedReasoning && VALID_EFFORTS.includes(requestedReasoning)
+        ? requestedReasoning as any
+        : (sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' : 'none');
 
       // ── Call OpenAI — identical to production createMessage ──────────
       const createParams: any = {

@@ -90,6 +90,7 @@ export default function SandboxChatV5() {
   const [checkIn, setCheckIn] = useState(defaultCheckIn)
   const [checkOut, setCheckOut] = useState(defaultCheckOut)
   const [guestCount, setGuestCount] = useState(2)
+  const [reasoningEffort, setReasoningEffort] = useState<string>('auto')
 
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -156,6 +157,7 @@ export default function SandboxChatV5() {
         checkIn,
         checkOut,
         guestCount,
+        reasoningEffort: reasoningEffort !== 'auto' ? reasoningEffort : undefined,
         messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
       }
 
@@ -376,6 +378,34 @@ export default function SandboxChatV5() {
                 onChange={e => setGuestCount(parseInt(e.target.value) || 1)}
                 style={inputStyle}
               />
+            </FieldGroup>
+
+            {/* Reasoning */}
+            <FieldGroup label="Reasoning">
+              <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.border.default}` }}>
+                {['auto', 'none', 'low', 'medium', 'high'].map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => setReasoningEffort(opt)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 0',
+                      fontSize: 11,
+                      fontWeight: reasoningEffort === opt ? 700 : 500,
+                      fontFamily: T.font.mono,
+                      background: reasoningEffort === opt ? T.accent : T.bg.primary,
+                      color: reasoningEffort === opt ? '#fff' : T.text.secondary,
+                      border: 'none',
+                      borderRight: `1px solid ${T.border.default}`,
+                      cursor: 'pointer',
+                      textTransform: 'capitalize',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
             </FieldGroup>
 
             {/* Reset */}

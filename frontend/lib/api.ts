@@ -910,6 +910,7 @@ export interface SandboxChatRequest {
   checkIn: string
   checkOut: string
   guestCount: number
+  reasoningEffort?: string
   messages: Array<{ role: 'guest' | 'host'; content: string }>
 }
 
