@@ -66,6 +66,7 @@ function mapReservationStatus(status?: string): ReservationStatus {
     case 'new':
     case 'confirmed':
     case 'accepted':
+    case 'modified':
       return ReservationStatus.CONFIRMED;
     case 'checkedin':
       return ReservationStatus.CHECKED_IN;
