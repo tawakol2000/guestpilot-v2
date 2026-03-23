@@ -10,6 +10,7 @@ import {
   apiRevertAiConfigVersion,
   apiGetTenantAiConfig,
   apiUpdateTenantAiConfig,
+  apiResetSystemPrompts,
   apiGetKnowledgeChunks,
   apiUpdateKnowledgeChunk,
   apiDeleteKnowledgeChunk,
@@ -1238,6 +1239,14 @@ export function ConfigureAiV5(): React.ReactElement {
               />
             )}
 
+            {/* System Prompts — editable in DB */}
+            {tenantConfig && (
+              <SystemPromptsSection
+                config={tenantConfig}
+                onChange={setTenantConfig}
+              />
+            )}
+
             {/* Legacy persona cards */}
             {PERSONAS.map(({ key, name, accent }) => (
               <PersonaCard
@@ -1590,6 +1599,202 @@ function TenantConfigSection({
             }}
           >
             {saving ? 'Saving…' : 'Save Settings'}
+          </button>
+          {toast && (
+            <span style={{ fontSize: 13, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>
+              {toast.message}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+// ─── System Prompts Section ──────────────────────────────────────────────────
+
+function SystemPromptsSection({
+  config,
+  onChange,
+}: {
+  config: TenantAiConfig
+  onChange: (c: TenantAiConfig) => void
+}): React.ReactElement {
+  const [coordPrompt, setCoordPrompt] = useState(config.systemPromptCoordinator || '')
+  const [screenPrompt, setScreenPrompt] = useState(config.systemPromptScreening || '')
+  const [saving, setSaving] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [expandedCoord, setExpandedCoord] = useState(false)
+  const [expandedScreen, setExpandedScreen] = useState(false)
+
+  useEffect(() => {
+    setCoordPrompt(config.systemPromptCoordinator || '')
+    setScreenPrompt(config.systemPromptScreening || '')
+  }, [config])
+
+  function showToast(type: 'success' | 'error', message: string): void {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 2500)
+  }
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      const updated = await apiUpdateTenantAiConfig({
+        systemPromptCoordinator: coordPrompt,
+        systemPromptScreening: screenPrompt,
+      })
+      onChange(updated)
+      showToast('success', `System prompts saved (v${updated.systemPromptVersion})`)
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReset(): Promise<void> {
+    if (!confirm('Reset both system prompts to the default seed values? Your edits will be lost.')) return
+    setResetting(true)
+    try {
+      const updated = await apiResetSystemPrompts()
+      onChange(updated)
+      setCoordPrompt(updated.systemPromptCoordinator || '')
+      setScreenPrompt(updated.systemPromptScreening || '')
+      showToast('success', 'Prompts reset to defaults')
+    } catch {
+      showToast('error', 'Failed to reset')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const cardStyle: React.CSSProperties = {
+    background: '#FFFFFF',
+    borderRadius: T.radius.lg,
+    border: `1px solid ${T.border.default}`,
+    boxShadow: T.shadow.sm,
+    overflow: 'hidden',
+  }
+
+  const coordDirty = coordPrompt !== (config.systemPromptCoordinator || '')
+  const screenDirty = screenPrompt !== (config.systemPromptScreening || '')
+  const hasChanges = coordDirty || screenDirty
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border.default}`, background: T.bg.secondary, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: T.radius.sm, background: '#7C3AED18', border: '1px solid #7C3AED28', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Shield size={14} color="#7C3AED" strokeWidth={2.5} />
+          </div>
+          <div>
+            <span style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>System Prompts</span>
+            <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
+              Core AI personality and behavior — v{config.systemPromptVersion}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={handleReset}
+          disabled={resetting}
+          style={{
+            padding: '4px 10px', borderRadius: T.radius.sm,
+            background: T.bg.primary, border: `1px solid ${T.border.default}`,
+            fontSize: 11, fontWeight: 600, fontFamily: T.font.sans,
+            color: T.text.secondary, cursor: 'pointer',
+          }}
+        >
+          {resetting ? 'Resetting…' : 'Reset to Default'}
+        </button>
+      </div>
+
+      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Guest Coordinator Prompt */}
+        <div>
+          <button
+            onClick={() => setExpandedCoord(!expandedCoord)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
+            }}
+          >
+            {expandedCoord ? <ChevronUp size={14} color={T.text.secondary} /> : <ChevronDown size={14} color={T.text.secondary} />}
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>
+              Guest Coordinator
+            </span>
+            <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginLeft: 'auto' }}>
+              {coordPrompt.length.toLocaleString()} chars
+              {coordDirty && <span style={{ color: T.status.amber, marginLeft: 6 }}>modified</span>}
+            </span>
+          </button>
+          {expandedCoord && (
+            <textarea
+              value={coordPrompt}
+              onChange={e => setCoordPrompt(e.target.value)}
+              style={{
+                width: '100%', height: 350, resize: 'vertical', marginTop: 8,
+                fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                padding: 12, borderRadius: T.radius.sm,
+                border: `1px solid ${coordDirty ? T.status.amber : T.border.default}`,
+                background: T.bg.primary, color: T.text.primary,
+                boxSizing: 'border-box',
+              }}
+            />
+          )}
+        </div>
+
+        {/* Screening Agent Prompt */}
+        <div>
+          <button
+            onClick={() => setExpandedScreen(!expandedScreen)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0',
+            }}
+          >
+            {expandedScreen ? <ChevronUp size={14} color={T.text.secondary} /> : <ChevronDown size={14} color={T.text.secondary} />}
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>
+              Screening Agent
+            </span>
+            <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginLeft: 'auto' }}>
+              {screenPrompt.length.toLocaleString()} chars
+              {screenDirty && <span style={{ color: T.status.amber, marginLeft: 6 }}>modified</span>}
+            </span>
+          </button>
+          {expandedScreen && (
+            <textarea
+              value={screenPrompt}
+              onChange={e => setScreenPrompt(e.target.value)}
+              style={{
+                width: '100%', height: 350, resize: 'vertical', marginTop: 8,
+                fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                padding: 12, borderRadius: T.radius.sm,
+                border: `1px solid ${screenDirty ? T.status.amber : T.border.default}`,
+                background: T.bg.primary, color: T.text.primary,
+                boxSizing: 'border-box',
+              }}
+            />
+          )}
+        </div>
+
+        {/* Save */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={handleSave}
+            disabled={saving || !hasChanges}
+            style={{
+              padding: '8px 20px', borderRadius: T.radius.sm,
+              background: !hasChanges ? T.bg.tertiary : saving ? T.bg.tertiary : T.accent,
+              color: !hasChanges ? T.text.tertiary : saving ? T.text.secondary : '#fff',
+              border: 'none', cursor: !hasChanges ? 'not-allowed' : saving ? 'not-allowed' : 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: T.font.sans,
+              transition: 'background 0.2s',
+            }}
+          >
+            {saving ? 'Saving…' : hasChanges ? 'Save Prompts' : 'No Changes'}
           </button>
           {toast && (
             <span style={{ fontSize: 13, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>

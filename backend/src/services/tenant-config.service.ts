@@ -5,6 +5,7 @@
  * Creates default config on first access (upsert).
  */
 import { PrismaClient, TenantAiConfig } from '@prisma/client';
+import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from './ai.service';
 
 interface CacheEntry {
   config: TenantAiConfig;
@@ -29,11 +30,23 @@ export async function getTenantAiConfig(
     return cached.config;
   }
 
-  const config = await prisma.tenantAiConfig.upsert({
+  let config = await prisma.tenantAiConfig.upsert({
     where: { tenantId },
     update: {},
     create: { tenantId },
   });
+
+  // Seed system prompts if not yet set (null = use seed default)
+  if (config.systemPromptCoordinator === null || config.systemPromptScreening === null) {
+    config = await prisma.tenantAiConfig.update({
+      where: { tenantId },
+      data: {
+        ...(config.systemPromptCoordinator === null ? { systemPromptCoordinator: SEED_COORDINATOR_PROMPT } : {}),
+        ...(config.systemPromptScreening === null ? { systemPromptScreening: SEED_SCREENING_PROMPT } : {}),
+      },
+    });
+    console.log(`[TenantConfig] Seeded system prompts for tenant ${tenantId}`);
+  }
 
   _cache.set(tenantId, { config, cachedAt: Date.now() });
   return config;
@@ -127,8 +140,28 @@ export async function updateTenantAiConfig(
     }
   }
 
+  // Validate system prompts
+  for (const field of ['systemPromptCoordinator', 'systemPromptScreening'] as const) {
+    const val = (updates as any)[field];
+    if (val !== undefined) {
+      if (typeof val !== 'string' || val.length < 100) {
+        const err = new Error(`${field} must be at least 100 characters`) as any;
+        err.field = field; throw err;
+      }
+      if (val.length > 50000) {
+        const err = new Error(`${field} max 50000 chars`) as any;
+        err.field = field; throw err;
+      }
+    }
+  }
+
   // Strip non-updatable system fields
-  const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, ...safeUpdates } = updates as any;
+  const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, systemPromptVersion: _spv, ...safeUpdates } = updates as any;
+
+  // Auto-increment prompt version when prompts are edited
+  if (safeUpdates.systemPromptCoordinator !== undefined || safeUpdates.systemPromptScreening !== undefined) {
+    safeUpdates.systemPromptVersion = { increment: 1 };
+  }
 
   const config = await prisma.tenantAiConfig.upsert({
     where: { tenantId },

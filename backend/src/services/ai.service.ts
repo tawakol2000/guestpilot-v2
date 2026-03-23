@@ -557,7 +557,7 @@ function stripCodeFences(text: string): string {
 
 // ─── System Prompts ────────────────────────────────────────
 
-const OMAR_SYSTEM_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residence
+const SEED_COORDINATOR_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residence
 
 You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You handle guest requests efficiently and escalate to Abdelrahman when human action is needed.
 
@@ -818,7 +818,7 @@ Guest confirmed the issue is resolved — resolve the task and no reply needed.
 - When in doubt, escalate — it's better to over-escalate than miss something important
 - Never output anything other than the JSON object`;
 
-const OMAR_SCREENING_SYSTEM_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
+const SEED_SCREENING_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
 
 You are Omar, a guest screening assistant for Boutique Residence serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You screen guest inquiries against house rules, answer basic property questions, and escalate to Abdelrahman when a booking decision is needed.
 
@@ -1619,8 +1619,12 @@ export async function generateAndSendAiReply(
     // Build tool definition from DB (cached 5min per tenant)
     const sopToolDef = await buildToolDefinition(tenantId, prisma);
 
+    // Use DB-backed prompt for classification too (same prompt the AI will use for the reply)
+    const classificationPrompt = isInquiry
+      ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
+      : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
     const sopClassification = await classifyMessageSop(
-      personaCfg.systemPrompt,
+      classificationPrompt,
       classificationInput,
       { model: effectiveModel, tenantId, conversationId, agentType: isInquiry ? 'screening' : 'coordinator' },
       sopToolDef,
@@ -1713,7 +1717,10 @@ export async function generateAndSendAiReply(
     const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
     const effectiveAgentName = tenantConfig?.agentName || agentName;
 
-    let effectiveSystemPrompt = personaCfg.systemPrompt;
+    // DB-backed system prompts (editable via Configure AI), fallback to JSON config
+    let effectiveSystemPrompt = isInquiry
+      ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
+      : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
     // Replace agent name in system prompt if customized
     if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
       effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
@@ -2095,5 +2102,5 @@ export async function generateAndSendAiReply(
   }
 }
 
-export { OMAR_SYSTEM_PROMPT, OMAR_SCREENING_SYSTEM_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, createMessage, stripCodeFences, buildPropertyInfo };
+export { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, MANAGER_TRANSLATOR_SYSTEM_PROMPT, createMessage, stripCodeFences, buildPropertyInfo };
 export type { ContentBlock };

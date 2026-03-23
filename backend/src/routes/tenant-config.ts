@@ -8,7 +8,8 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
-import { getTenantAiConfig, updateTenantAiConfig } from '../services/tenant-config.service';
+import { getTenantAiConfig, updateTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
+import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from '../services/ai.service';
 
 export function tenantConfigRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -45,6 +46,26 @@ export function tenantConfigRouter(prisma: PrismaClient): Router {
       }
       console.error('[TenantConfig] PUT failed:', err);
       res.status(500).json({ error: 'Failed to update tenant config' });
+    }
+  });
+
+  // POST /api/tenant-config/reset-prompts — restore seed defaults
+  router.post('/reset-prompts', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const config = await prisma.tenantAiConfig.update({
+        where: { tenantId },
+        data: {
+          systemPromptCoordinator: SEED_COORDINATOR_PROMPT,
+          systemPromptScreening: SEED_SCREENING_PROMPT,
+          systemPromptVersion: { increment: 1 },
+        },
+      });
+      invalidateTenantConfigCache(tenantId);
+      res.json(config);
+    } catch (err) {
+      console.error('[TenantConfig] Reset prompts failed:', err);
+      res.status(500).json({ error: 'Failed to reset system prompts' });
     }
   });
 

@@ -322,7 +322,9 @@ export function sandboxRouter(prisma: PrismaClient) {
       const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
       const effectiveAgentName = tenantConfig?.agentName || agentName;
 
-      let effectiveSystemPrompt = personaCfg.systemPrompt;
+      let effectiveSystemPrompt = isInquiry
+        ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
+        : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
       if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
         effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
       }

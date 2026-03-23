@@ -380,6 +380,9 @@ export interface TenantAiConfig {
   workingHoursTimezone: string
   reasoningCoordinator: string
   reasoningScreening: string
+  systemPromptCoordinator: string | null
+  systemPromptScreening: string | null
+  systemPromptVersion: number
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
@@ -391,6 +394,10 @@ export async function apiUpdateTenantAiConfig(updates: Partial<Omit<TenantAiConf
     method: 'PUT',
     body: JSON.stringify(updates),
   })
+}
+
+export async function apiResetSystemPrompts(): Promise<TenantAiConfig> {
+  return apiFetch<TenantAiConfig>('/api/tenant-config/reset-prompts', { method: 'POST' })
 }
 
 export async function apiReindexPropertyKnowledge(propertyId: string): Promise<{ ok: boolean }> {

@@ -5,8 +5,8 @@ import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { getAiConfig, updateAiConfig } from '../services/ai-config.service';
 import {
-  OMAR_SYSTEM_PROMPT,
-  OMAR_SCREENING_SYSTEM_PROMPT,
+  SEED_COORDINATOR_PROMPT,
+  SEED_SCREENING_PROMPT,
   createMessage,
   stripCodeFences,
   buildPropertyInfo,
@@ -241,7 +241,9 @@ export function makeAiConfigController(prisma: PrismaClient) {
         const effectiveAgentName = tenantConfig?.agentName || agentName;
 
         // ── Build system prompt ───────────────────────────────────────────────
-        let effectiveSystemPrompt = isInquiry ? OMAR_SCREENING_SYSTEM_PROMPT : OMAR_SYSTEM_PROMPT;
+        let effectiveSystemPrompt = isInquiry
+          ? (tenantConfig?.systemPromptScreening || SEED_SCREENING_PROMPT)
+          : (tenantConfig?.systemPromptCoordinator || SEED_COORDINATOR_PROMPT);
         if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
           effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
         }
