@@ -1196,3 +1196,40 @@ export async function apiDeleteSopPropertyOverride(id: string): Promise<void> {
   await apiFetch(`/api/knowledge/sop-property-overrides/${id}`, { method: 'DELETE' })
 }
 
+// ── Tool Definitions (018-tools-management) ──
+
+export interface ApiToolDefinition {
+  id: string
+  tenantId: string
+  name: string
+  displayName: string
+  description: string
+  defaultDescription: string
+  parameters: Record<string, unknown>
+  agentScope: string
+  type: string
+  enabled: boolean
+  webhookUrl: string | null
+  webhookTimeout: number
+}
+
+export async function apiGetTools(): Promise<ApiToolDefinition[]> {
+  return apiFetch<ApiToolDefinition[]>('/api/tools')
+}
+
+export async function apiUpdateTool(id: string, data: Partial<Pick<ApiToolDefinition, 'description' | 'enabled' | 'webhookUrl' | 'displayName'>>): Promise<ApiToolDefinition> {
+  return apiFetch<ApiToolDefinition>(`/api/tools/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function apiCreateTool(data: { name: string; displayName: string; description: string; parameters: Record<string, unknown>; agentScope: string; webhookUrl: string }): Promise<ApiToolDefinition> {
+  return apiFetch<ApiToolDefinition>('/api/tools', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function apiDeleteTool(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/tools/${id}`, { method: 'DELETE' })
+}
+
+export async function apiResetToolDescription(id: string): Promise<ApiToolDefinition> {
+  return apiFetch<ApiToolDefinition>(`/api/tools/${id}/reset`, { method: 'POST' })
+}
+

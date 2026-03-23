@@ -11,6 +11,8 @@ import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
 import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, COORDINATOR_SCHEMA, SCREENING_SCHEMA } from '../services/ai.service';
+import { getToolDefinitions } from '../services/tool-definition.service';
+import { callWebhook } from '../services/webhook-tool.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -356,72 +358,26 @@ export function sandboxRouter(prisma: PrismaClient) {
       const sbChecklistData = (reservation?.screeningAnswers as any)?.documentChecklist as DocumentChecklist | undefined;
       const sbChecklistPending = hasPendingItems(sbChecklistData ?? null);
 
-      const toolsForCall: any[] = isInquiry ? [
-        {
-          type: 'function',
-          name: 'search_available_properties',
-          description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
-              min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
-              reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
-            },
-            required: ['amenities', 'reason', 'min_capacity'],
-            additionalProperties: false,
-          },
-        },
-        {
-          type: 'function',
-          name: 'create_document_checklist',
-          description: 'Create a document checklist for this booking. Call this when you have determined the guest is eligible and are about to escalate to the manager with an acceptance recommendation. Do NOT call this when recommending rejection.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              passports_needed: { type: 'number', description: 'Number of passport/ID documents needed (one per guest in the party)' },
-              marriage_certificate_needed: { type: 'boolean', description: 'Whether a marriage certificate is required (true for Arab married couples)' },
-              reason: { type: 'string', description: 'Brief note, e.g. \'Egyptian married couple, 2 guests\'' },
-            },
-            required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
-            additionalProperties: false,
-          },
-        },
-      ] : [
-        {
-          type: 'function',
-          name: 'check_extend_availability',
-          description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
-              new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
-              reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
-            },
-            required: ['new_checkout', 'reason', 'new_checkin'],
-            additionalProperties: false,
-          },
-        },
-        ...(sbChecklistPending ? [{
-          type: 'function',
-          name: 'mark_document_received',
-          description: 'Mark a document as received after the guest sends it through the chat. Call this when you see an image that is clearly a government-issued ID or marriage certificate. Do NOT call for unclear images.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              document_type: { type: 'string', enum: ['passport', 'marriage_certificate'], description: 'Type of document received' },
-              notes: { type: 'string', description: 'Brief description' },
-            },
-            required: ['document_type', 'notes'],
-            additionalProperties: false,
-          },
-        }] : []),
-      ];
+      // ─── DB-driven tool definitions ───
+      const sbAgentType = isInquiry ? 'screening' : 'coordinator';
+      let sbToolDefs: Awaited<ReturnType<typeof getToolDefinitions>> = [];
+      try {
+        sbToolDefs = await getToolDefinitions(tenantId, prisma);
+      } catch (err) {
+        console.warn('[Sandbox] Failed to load tool definitions — falling back to no tools:', err);
+      }
+
+      const toolsForCall: any[] = sbToolDefs
+        .filter(t => t.enabled && (t.agentScope === sbAgentType || t.agentScope === 'both'))
+        .filter(t => t.name !== 'get_sop') // SOP tool handled separately
+        .filter(t => t.name !== 'mark_document_received' || sbChecklistPending) // conditional
+        .map(t => ({
+          type: 'function' as const,
+          name: t.name,
+          description: t.description,
+          strict: t.type === 'system',
+          parameters: t.parameters as Record<string, unknown>,
+        }));
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -538,7 +494,13 @@ export function sandboxRouter(prisma: PrismaClient) {
               toolResultContent = JSON.stringify({ error: 'No reservation in sandbox context' });
             }
           } else {
-            toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}` });
+            // Webhook fallback for custom tools
+            const customToolDef = sbToolDefs.find(t => t.name === fnCall.name);
+            if (customToolDef?.webhookUrl) {
+              toolResultContent = await callWebhook(customToolDef.webhookUrl, toolInput, customToolDef.webhookTimeout);
+            } else {
+              toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}` });
+            }
           }
         } catch (toolErr) {
           console.error('[Sandbox] Tool handler error:', toolErr);

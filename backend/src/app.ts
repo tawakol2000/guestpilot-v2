@@ -18,6 +18,7 @@ import { tenantConfigRouter } from './routes/tenant-config';
 import { aiPipelineRouter } from './routes/ai-pipeline';
 import { sandboxRouter } from './routes/sandbox';
 import { documentChecklistRouter } from './routes/document-checklist';
+import { toolDefinitionsRouter } from './routes/tool-definitions';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { registerSSEClient } from './services/sse.service';
@@ -72,6 +73,7 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/ai-pipeline', aiPipelineRouter(prisma));
   app.use('/api/sandbox', sandboxRouter(prisma));
   app.use('/api/conversations', documentChecklistRouter(prisma));
+  app.use('/api/tools', toolDefinitionsRouter(prisma));
 
   // Property knowledge reindex endpoint
   app.post('/api/properties/:id/reindex-knowledge', authMiddleware as any, async (req: any, res) => {

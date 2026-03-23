@@ -1,0 +1,411 @@
+/**
+ * Tool Definition Service
+ *
+ * CRUD + caching + lazy seeding for ToolDefinition model.
+ * System tools are seeded on first access per tenant (same pattern as tenant-config.service.ts).
+ * Custom tools support webhook forwarding.
+ */
+import { Prisma, PrismaClient, ToolDefinition } from '@prisma/client';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Cache
+// ════════════════════════════════════════════════════════════════════════════
+
+interface CacheEntry {
+  tools: ToolDefinition[];
+  cachedAt: number;
+}
+
+const _cache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function invalidateToolCache(tenantId: string): void {
+  _cache.delete(tenantId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §1  getToolDefinitions()
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Returns ALL tool definitions (enabled AND disabled) for the tenant.
+ * Lazy-seeds system tools on first access.
+ * Cached for 5 minutes.
+ */
+export async function getToolDefinitions(
+  tenantId: string,
+  prisma: PrismaClient,
+): Promise<ToolDefinition[]> {
+  const cached = _cache.get(tenantId);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.tools;
+  }
+
+  // Lazy seed: if no tools exist for this tenant, seed system tools
+  const count = await prisma.toolDefinition.count({ where: { tenantId } });
+  if (count === 0) {
+    await seedToolDefinitions(tenantId, prisma);
+  }
+
+  const tools = await prisma.toolDefinition.findMany({
+    where: { tenantId },
+    orderBy: { name: 'asc' },
+  });
+
+  _cache.set(tenantId, { tools, cachedAt: Date.now() });
+  return tools;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §2  seedToolDefinitions()
+// ════════════════════════════════════════════════════════════════════════════
+
+/** System tool seed definitions. */
+const SYSTEM_TOOLS: Array<{
+  name: string;
+  displayName: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  agentScope: string;
+}> = [
+  {
+    name: 'get_sop',
+    displayName: 'SOP Classification',
+    description:
+      'Classifies a guest message to determine which Standard Operating Procedure should guide the response. ' +
+      'Call this for EVERY guest message. Returns the SOP category that best matches the guest\'s primary intent. ' +
+      'For simple greetings, acknowledgments, or messages that don\'t require procedure-based responses, use "none". ' +
+      'For messages requiring human intervention, use "escalate".',
+    parameters: {
+      type: 'object',
+      properties: {
+        reasoning: {
+          type: 'string',
+          description: 'Brief reasoning for classification (1 sentence)',
+        },
+        categories: {
+          type: 'array',
+          items: {
+            type: 'string',
+          },
+          minItems: 1,
+          maxItems: 3,
+          description: 'SOP categories matching the guest\'s intent(s), ordered by priority. Most messages have exactly one intent.',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['high', 'medium', 'low'],
+          description: 'Classification confidence. Use \'low\' when ambiguous between multiple SOPs or unclear intent.',
+        },
+      },
+      required: ['reasoning', 'categories', 'confidence'],
+      additionalProperties: false,
+    },
+    agentScope: 'both',
+  },
+  {
+    name: 'search_available_properties',
+    displayName: 'Property Search',
+    description:
+      'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. ' +
+      'Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses ' +
+      'a preference for different property attributes (size, view, amenities). ' +
+      'Do NOT use this when the guest is asking about amenities this property already has.',
+    parameters: {
+      type: 'object',
+      properties: {
+        amenities: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.',
+        },
+        min_capacity: {
+          type: ['number', 'null'],
+          description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.',
+        },
+      },
+      required: ['amenities', 'reason', 'min_capacity'],
+      additionalProperties: false,
+    },
+    agentScope: 'screening',
+  },
+  {
+    name: 'create_document_checklist',
+    displayName: 'Document Checklist',
+    description:
+      'Create a document checklist for this booking. Call this when you have determined the guest is eligible and are about ' +
+      'to escalate to the manager with an acceptance recommendation. Records what documents the guest will need to submit after ' +
+      'booking acceptance. Do NOT call this when recommending rejection.',
+    parameters: {
+      type: 'object',
+      properties: {
+        passports_needed: {
+          type: 'number',
+          description: 'Number of passport/ID documents needed (one per guest in the party)',
+        },
+        marriage_certificate_needed: {
+          type: 'boolean',
+          description: 'Whether a marriage certificate is required (true for Arab married couples)',
+        },
+        reason: {
+          type: 'string',
+          description: 'Brief note, e.g. \'Egyptian married couple, 2 guests\'',
+        },
+      },
+      required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
+      additionalProperties: false,
+    },
+    agentScope: 'screening',
+  },
+  {
+    name: 'check_extend_availability',
+    displayName: 'Extend Stay',
+    description:
+      'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. ' +
+      'Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. ' +
+      'Do NOT use for unrelated questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        new_checkout: {
+          type: 'string',
+          description: 'The requested new checkout date in YYYY-MM-DD format.',
+        },
+        new_checkin: {
+          type: ['string', 'null'],
+          description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.',
+        },
+      },
+      required: ['new_checkout', 'reason', 'new_checkin'],
+      additionalProperties: false,
+    },
+    agentScope: 'coordinator',
+  },
+  {
+    name: 'mark_document_received',
+    displayName: 'Mark Document Received',
+    description:
+      'Mark a document as received after the guest sends it through the chat. Call this when you see an image that is clearly a ' +
+      'government-issued ID (passport, national ID, driver\'s license) or marriage certificate. ' +
+      'Do NOT call this for unclear images — escalate those instead.',
+    parameters: {
+      type: 'object',
+      properties: {
+        document_type: {
+          type: 'string',
+          enum: ['passport', 'marriage_certificate'],
+          description: 'Type of document received',
+        },
+        notes: {
+          type: 'string',
+          description: 'Brief description, e.g. \'passport for Mohamed\' or \'marriage certificate\'',
+        },
+      },
+      required: ['document_type', 'notes'],
+      additionalProperties: false,
+    },
+    agentScope: 'coordinator',
+  },
+];
+
+/**
+ * Upsert all system tools for a tenant.
+ * Uses `update: {}` so existing (potentially edited) records are never overwritten.
+ */
+export async function seedToolDefinitions(
+  tenantId: string,
+  prisma: PrismaClient,
+): Promise<void> {
+  for (const tool of SYSTEM_TOOLS) {
+    await prisma.toolDefinition.upsert({
+      where: { tenantId_name: { tenantId, name: tool.name } },
+      update: {}, // never overwrite — preserves operator edits
+      create: {
+        tenantId,
+        name: tool.name,
+        displayName: tool.displayName,
+        description: tool.description,
+        defaultDescription: tool.description,
+        parameters: tool.parameters as unknown as Prisma.InputJsonValue,
+        agentScope: tool.agentScope,
+        type: 'system',
+        enabled: true,
+      },
+    });
+  }
+  console.log(`[ToolDefinition] Seeded ${SYSTEM_TOOLS.length} system tools for tenant ${tenantId}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §3  updateToolDefinition()
+// ════════════════════════════════════════════════════════════════════════════
+
+interface ToolUpdateData {
+  description?: string;
+  displayName?: string;
+  enabled?: boolean;
+  webhookUrl?: string | null;
+  webhookTimeout?: number;
+}
+
+/**
+ * Update a tool definition. Validates description min 10 chars.
+ * Invalidates cache on success.
+ */
+export async function updateToolDefinition(
+  id: string,
+  updates: ToolUpdateData,
+  prisma: PrismaClient,
+): Promise<ToolDefinition> {
+  // Validate description length
+  if (updates.description !== undefined && updates.description.length < 10) {
+    const err = new Error('Description must be at least 10 characters') as any;
+    err.field = 'description';
+    throw err;
+  }
+
+  const tool = await prisma.toolDefinition.findUnique({ where: { id } });
+  if (!tool) {
+    throw new Error('Tool definition not found');
+  }
+
+  const updated = await prisma.toolDefinition.update({
+    where: { id },
+    data: updates,
+  });
+
+  invalidateToolCache(tool.tenantId);
+  return updated;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §4  createCustomTool()
+// ════════════════════════════════════════════════════════════════════════════
+
+interface CreateCustomToolData {
+  name: string;
+  displayName: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  agentScope: string;
+  webhookUrl?: string;
+  webhookTimeout?: number;
+}
+
+/**
+ * Create a custom (webhook-backed) tool for a tenant.
+ * Validates unique name and description length.
+ */
+export async function createCustomTool(
+  tenantId: string,
+  data: CreateCustomToolData,
+  prisma: PrismaClient,
+): Promise<ToolDefinition> {
+  // Validate name format (slug-like)
+  if (!data.name || !/^[a-z][a-z0-9_]*$/.test(data.name)) {
+    const err = new Error('Name must start with a lowercase letter and contain only lowercase letters, numbers, and underscores') as any;
+    err.field = 'name';
+    throw err;
+  }
+
+  // Validate description
+  if (!data.description || data.description.length < 10) {
+    const err = new Error('Description must be at least 10 characters') as any;
+    err.field = 'description';
+    throw err;
+  }
+
+  // Validate agentScope
+  if (!['screening', 'coordinator', 'both'].includes(data.agentScope)) {
+    const err = new Error('agentScope must be "screening", "coordinator", or "both"') as any;
+    err.field = 'agentScope';
+    throw err;
+  }
+
+  // Check unique name
+  const existing = await prisma.toolDefinition.findUnique({
+    where: { tenantId_name: { tenantId, name: data.name } },
+  });
+  if (existing) {
+    const err = new Error(`A tool with name "${data.name}" already exists`) as any;
+    err.field = 'name';
+    throw err;
+  }
+
+  const tool = await prisma.toolDefinition.create({
+    data: {
+      tenantId,
+      name: data.name,
+      displayName: data.displayName,
+      description: data.description,
+      defaultDescription: data.description,
+      parameters: data.parameters as unknown as Prisma.InputJsonValue,
+      agentScope: data.agentScope,
+      type: 'custom',
+      enabled: true,
+      webhookUrl: data.webhookUrl || null,
+      webhookTimeout: data.webhookTimeout ?? 10000,
+    },
+  });
+
+  invalidateToolCache(tenantId);
+  return tool;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §5  deleteCustomTool()
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Delete a custom tool. Rejects deletion of system tools.
+ */
+export async function deleteCustomTool(
+  id: string,
+  prisma: PrismaClient,
+): Promise<void> {
+  const tool = await prisma.toolDefinition.findUnique({ where: { id } });
+  if (!tool) {
+    throw new Error('Tool definition not found');
+  }
+  if (tool.type === 'system') {
+    const err = new Error('Cannot delete system tools') as any;
+    err.status = 403;
+    throw err;
+  }
+
+  await prisma.toolDefinition.delete({ where: { id } });
+  invalidateToolCache(tool.tenantId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §6  resetDescription()
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Reset a tool's description to its defaultDescription.
+ */
+export async function resetDescription(
+  id: string,
+  prisma: PrismaClient,
+): Promise<ToolDefinition> {
+  const tool = await prisma.toolDefinition.findUnique({ where: { id } });
+  if (!tool) {
+    throw new Error('Tool definition not found');
+  }
+
+  const updated = await prisma.toolDefinition.update({
+    where: { id },
+    data: { description: tool.defaultDescription },
+  });
+
+  invalidateToolCache(tool.tenantId);
+  return updated;
+}

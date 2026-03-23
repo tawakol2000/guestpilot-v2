@@ -38,6 +38,7 @@ model Tenant {
   opusReports             OpusReport[]
   classifierWeights       ClassifierWeights[]
   sopDefinitions          SopDefinition[]
+  toolDefinitions         ToolDefinition[]
 }
 
 model Property {
@@ -494,6 +495,29 @@ model ClassifierWeights {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt(sort: Desc)])
+}
+
+// ─── Tool Definitions (per-tenant, system + custom) ─────────────────────────
+
+model ToolDefinition {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  displayName        String
+  description        String   @db.Text
+  defaultDescription String   @db.Text
+  parameters         Json
+  agentScope         String   // "screening" | "coordinator" | "both"
+  type               String   // "system" | "custom"
+  enabled            Boolean  @default(true)
+  webhookUrl         String?
+  webhookTimeout     Int      @default(10000)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
 }
 
 // ─── SOP Definitions (per-tenant, editable by operators) ────────────────────

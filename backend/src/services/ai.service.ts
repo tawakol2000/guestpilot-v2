@@ -22,6 +22,8 @@ import { buildTieredContext, formatConversationContext } from './memory.service'
 import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
+import { getToolDefinitions } from './tool-definition.service';
+import { callWebhook } from './webhook-tool.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1787,81 +1789,27 @@ export async function generateAndSendAiReply(
         localTime, openTasks: openTasksText, knowledgeBase: knowledgeText,
       });
 
-      // ─── Tool use: per-agent tools ───
-      // Screening agent (INQUIRY): property search tool
-      // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
-      // Build per-agent tool lists
-      const screeningTools: any[] = [
-        {
-          type: 'function',
-          name: 'search_available_properties',
-          description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
-              min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
-              reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
-            },
-            required: ['amenities', 'reason', 'min_capacity'],
-            additionalProperties: false,
-          },
-        },
-        {
-          type: 'function',
-          name: 'create_document_checklist',
-          description: 'Create a document checklist for this booking. Call this when you have determined the guest is eligible and are about to escalate to the manager with an acceptance recommendation. Records what documents the guest will need to submit after booking acceptance. Do NOT call this when recommending rejection.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              passports_needed: { type: 'number', description: 'Number of passport/ID documents needed (one per guest in the party)' },
-              marriage_certificate_needed: { type: 'boolean', description: 'Whether a marriage certificate is required (true for Arab married couples)' },
-              reason: { type: 'string', description: 'Brief note, e.g. \'Egyptian married couple, 2 guests\'' },
-            },
-            required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
-            additionalProperties: false,
-          },
-        },
-      ];
+      // ─── Tool use: DB-driven tool definitions ───
+      // Load tool definitions from DB (cached 5min), filter by agent scope + enabled
+      const agentType = isInquiry ? 'screening' : 'coordinator';
+      let toolDefs: Awaited<ReturnType<typeof getToolDefinitions>> = [];
+      try {
+        toolDefs = await getToolDefinitions(tenantId, prisma);
+      } catch (err) {
+        console.warn(`[AI] [${conversationId}] Failed to load tool definitions — falling back to no tools:`, err);
+      }
 
-      const coordinatorTools: any[] = [
-        {
-          type: 'function',
-          name: 'check_extend_availability',
-          description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
-              new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
-              reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
-            },
-            required: ['new_checkout', 'reason', 'new_checkin'],
-            additionalProperties: false,
-          },
-        },
-        // mark_document_received — only when checklist has pending items
-        ...(checklistPending ? [{
-          type: 'function',
-          name: 'mark_document_received',
-          description: 'Mark a document as received after the guest sends it through the chat. Call this when you see an image that is clearly a government-issued ID (passport, national ID, driver\'s license) or marriage certificate. Do NOT call this for unclear images — escalate those instead.',
-          strict: true,
-          parameters: {
-            type: 'object' as const,
-            properties: {
-              document_type: { type: 'string', enum: ['passport', 'marriage_certificate'], description: 'Type of document received' },
-              notes: { type: 'string', description: 'Brief description, e.g. \'passport for Mohamed\' or \'marriage certificate\'' },
-            },
-            required: ['document_type', 'notes'],
-            additionalProperties: false,
-          },
-        }] : []),
-      ];
-
-      const toolsForCall = isInquiry ? screeningTools : coordinatorTools;
+      const toolsForCall = toolDefs
+        .filter(t => t.enabled && (t.agentScope === agentType || t.agentScope === 'both'))
+        .filter(t => t.name !== 'get_sop') // SOP tool handled separately above
+        .filter(t => t.name !== 'mark_document_received' || checklistPending) // conditional
+        .map(t => ({
+          type: 'function' as const,
+          name: t.name,
+          description: t.description,
+          strict: t.type === 'system', // only strict for system tools
+          parameters: t.parameters as Record<string, unknown>,
+        }));
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -1872,7 +1820,8 @@ export async function generateAndSendAiReply(
         } catch { /* fallback: empty */ }
       }
 
-      const toolHandlersForCall: Map<string, ToolHandler> = isInquiry ? new Map([
+      // System tool handlers — keyed by name, same logic as before
+      const systemToolHandlers = new Map<string, ToolHandler>([
         ['search_available_properties', async (input: unknown) => {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
           const currentAddress = context.listing?.address || context.customKnowledgeBase?.address as string || '';
@@ -1904,7 +1853,6 @@ export async function generateAndSendAiReply(
             return JSON.stringify({ error: err.message, created: false });
           }
         }],
-      ]) : new Map([
         ['check_extend_availability', async (input: unknown) => {
           return checkExtendAvailability(input, {
             listingId: hostawayListingId,
@@ -1916,7 +1864,7 @@ export async function generateAndSendAiReply(
             hostawayApiKey: context.hostawayApiKey,
           });
         }],
-        ...(checklistPending ? [['mark_document_received', async (input: unknown) => {
+        ['mark_document_received', async (input: unknown) => {
           const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
           if (!context.reservationId) return JSON.stringify({ error: 'No reservation linked' });
           try {
@@ -1935,8 +1883,26 @@ export async function generateAndSendAiReply(
             console.warn(`[AI] mark_document_received failed (non-fatal):`, err.message);
             return JSON.stringify({ error: err.message });
           }
-        }] as [string, ToolHandler]] : []),
+        }],
       ]);
+
+      // Build unified handler map: system handlers + webhook fallback for custom tools
+      const toolHandlersForCall = new Map<string, ToolHandler>();
+      for (const t of toolsForCall) {
+        const systemHandler = systemToolHandlers.get(t.name);
+        if (systemHandler) {
+          toolHandlersForCall.set(t.name, systemHandler);
+        } else {
+          // Custom tool — use webhook if configured
+          const toolDef = toolDefs.find(d => d.name === t.name);
+          if (toolDef?.webhookUrl) {
+            toolHandlersForCall.set(t.name, async (input: unknown) => {
+              return callWebhook(toolDef.webhookUrl!, input, toolDef.webhookTimeout);
+            });
+          }
+          // If no handler and no webhook, the createMessage fallback handles "Unknown tool"
+        }
+      }
 
       // Determine reasoning effort: tenant config > SOP-based auto > none
       const tenantReasoning = isInquiry
