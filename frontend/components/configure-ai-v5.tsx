@@ -1456,6 +1456,60 @@ function TenantConfigSection({
           </div>
         </div>
 
+        {/* Debounce settings */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <label style={labelStyle}>Adaptive Debounce</label>
+            <button
+              onClick={() => setLocal(prev => ({ ...prev, adaptiveDebounce: !prev.adaptiveDebounce }))}
+              style={{
+                width: 44, height: 24, borderRadius: 12,
+                background: local.adaptiveDebounce ? T.accent : T.bg.tertiary,
+                border: 'none', cursor: 'pointer', position: 'relative',
+                transition: 'background 0.2s', flexShrink: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 3, left: local.adaptiveDebounce ? 23 : 3,
+                width: 18, height: 18, borderRadius: 9,
+                background: '#fff', transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, lineHeight: 1.5 }}>
+            {local.adaptiveDebounce ? (
+              <>
+                When a guest sends rapid-fire messages, the reply delay automatically extends:
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  {[
+                    { label: '3+ msgs / 60s', mult: '3x', value: Math.round(local.debounceDelayMs * 3 / 1000) },
+                    { label: '6+ msgs / 60s', mult: '6x', value: Math.round(local.debounceDelayMs * 6 / 1000) },
+                  ].map(tier => (
+                    <div
+                      key={tier.mult}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        background: T.bg.secondary,
+                        border: `1px solid ${T.border.default}`,
+                        textAlign: 'center',
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 600, color: T.text.primary, fontFamily: T.font.mono }}>{tier.mult}</div>
+                      <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 2 }}>{tier.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.font.mono, marginTop: 4 }}>{tier.value}s</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>Fixed delay of {Math.round(local.debounceDelayMs / 1000)}s for every message, regardless of how fast the guest types.</>
+            )}
+          </div>
+        </div>
+
         {/* Custom instructions */}
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Custom Instructions</label>
@@ -1475,9 +1529,8 @@ function TenantConfigSection({
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Features</label>
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
-          {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           <div style={{ borderBottom: 'none' }}>
-            {toggleRow('Adaptive Debounce', 'Automatically extends debounce when guests send multiple messages rapidly', local.adaptiveDebounce, 'adaptiveDebounce')}
+            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           </div>
         </div>
 
