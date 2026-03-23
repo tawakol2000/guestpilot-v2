@@ -925,7 +925,7 @@ export default function ToolsV5() {
     <div
       className="tools-scroll"
       style={{
-        flex: 1,
+        height: '100%',
         overflow: 'auto',
         background: T.bg.secondary,
         padding: 24,
