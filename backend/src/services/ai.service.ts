@@ -1,7 +1,7 @@
 /**
  * AI Service
  * All OpenAI GPT-5.4 Mini API calls, system prompts, and AI logic.
- * Migrated from Anthropic Claude to OpenAI Responses API (014-openai-migration).
+ * AI service — OpenAI Responses API (GPT-5.4 Mini).
  */
 
 import OpenAI from 'openai';
@@ -175,7 +175,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -295,13 +295,15 @@ async function createMessage(
       console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms`);
 
       // Send tool result back via previous_response_id
+      // Append JSON format reminder so model doesn't drop into plain text after tool results
+      const toolOutput = toolResultContent + '\n\nRespond with raw JSON only. No plain text. Start with { and end with }.';
       // T029: When streaming is enabled, stream the tool follow-up call (the final response to guest)
       if (options?.stream && options?.tenantId && options?.conversationId) {
         const toolFollowUpStream = await withRetry(() =>
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
@@ -352,7 +354,7 @@ async function createMessage(
           (openai.responses as any).create({
             model,
             instructions: systemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
@@ -1635,11 +1637,11 @@ export async function generateAndSendAiReply(
 
     // ─── SOP Classification via Tool Use ────────────────────────────────────
     // Single forced get_sop tool call replaces the 3-tier pipeline.
-    // Claude classifies the message, we retrieve the matching SOP content.
+    // AI classifies the message, we retrieve the matching SOP content.
     const isInquiry = context.reservationStatus === 'INQUIRY';
     const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
-    // Migrate legacy Claude model names to GPT-5.4 Mini (tenants may have old values in DB)
+    // Migrate legacy model names to GPT-5.4 Mini (tenants may have old values in DB)
     const rawModel = tenantConfig?.model || personaCfg.model;
     const effectiveModel = rawModel?.startsWith('claude-') ? 'gpt-5.4-mini-2026-03-17' : rawModel;
 
@@ -1730,7 +1732,7 @@ export async function generateAndSendAiReply(
       context.reservationStatus
     );
 
-    // T014 / FR-012: Inject escalation signals into prompt so Claude can factor them in
+    // Inject escalation signals into prompt so the AI can factor them in
     if (escalationSignals.length > 0) {
       propertyInfo += '\n### SYSTEM SIGNALS\n';
       propertyInfo += escalationSignals.map(s => `⚠ ${s.signal}`).join('\n');
@@ -1762,7 +1764,7 @@ export async function generateAndSendAiReply(
     } else if (sopClassification.categories.includes('none')) {
       // No SOP needed — respond from general knowledge
     } else if (sopCategories.length > 0) {
-      // SOP retrieval failed (content missing) — Claude responds from general knowledge
+      // SOP retrieval failed (content missing) — AI responds from general knowledge
       effectiveSystemPrompt += `\n\n## NOTE\nSOP temporarily unavailable. Respond helpfully based on your general knowledge and system instructions.`;
     }
 
@@ -1875,8 +1877,13 @@ export async function generateAndSendAiReply(
         }],
       ]);
 
-      // Determine reasoning effort based on SOP classification
-      const reasoningEffort = sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' as const : 'none' as const;
+      // Determine reasoning effort: tenant config > SOP-based auto > none
+      const tenantReasoning = isInquiry
+        ? (tenantConfig as any)?.reasoningScreening || 'none'
+        : (tenantConfig as any)?.reasoningCoordinator || 'auto';
+      const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = tenantReasoning === 'auto'
+        ? (sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' : 'none')
+        : tenantReasoning;
 
       // ─── Image handling: download and attach to last inputTurns entry ───
       let imageBase64 = '';

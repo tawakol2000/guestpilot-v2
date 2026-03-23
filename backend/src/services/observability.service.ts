@@ -1,5 +1,5 @@
 /**
- * Langfuse observability — fire-and-forget tracing for every Claude API call.
+ * Langfuse observability — fire-and-forget tracing for every AI API call.
  * Gracefully disabled when LANGFUSE env vars are missing.
  * Never throws, never crashes the AI pipeline.
  */

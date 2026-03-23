@@ -1,5 +1,5 @@
 /**
- * Task Manager Agent — Lightweight Haiku post-processor for escalation deduplication.
+ * Task Manager Agent — Lightweight post-processor for escalation deduplication.
  *
  * Fires ONLY when Omar generates an escalation. Compares the new escalation against
  * open tasks for the same conversation and decides: CREATE / UPDATE / RESOLVE / SKIP.

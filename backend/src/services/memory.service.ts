@@ -2,7 +2,7 @@
  * Tiered conversation memory service.
  *
  * For conversations with >10 messages: keeps last 10 verbatim + compresses
- * older messages into a bullet-point summary using Claude Haiku.
+ * older messages into a bullet-point summary using GPT-5.4 Mini.
  * Summary is cached in DB — only regenerated when new older messages arrive.
  *
  * For short conversations (<= 10 messages): no summary needed, return all verbatim.
@@ -82,7 +82,7 @@ export async function buildTieredContext(params: {
     };
   }
 
-  // Generate fresh summary via Claude Haiku
+  // Generate fresh summary via GPT-5.4 Mini
   try {
     const historyText = formatMessages(olderMessages);
     const response = await (openaiClient.responses as any).create({

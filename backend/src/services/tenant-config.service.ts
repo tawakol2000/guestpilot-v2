@@ -15,11 +15,9 @@ const _cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds — reduced for faster config propagation
 
 const ALLOWED_MODELS = [
-  'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-5',
-  'claude-opus-4-5',
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
+  'gpt-5.4-mini-2026-03-17',
+  'gpt-5.4-nano-2026-03-17',
+  'gpt-5.4-2026-03-17',
 ];
 
 export async function getTenantAiConfig(
@@ -109,6 +107,14 @@ export async function updateTenantAiConfig(
     ) {
       const err = new Error('sopOverrides must be a JSON object') as any;
       err.field = 'sopOverrides';
+      throw err;
+    }
+  }
+  const VALID_REASONING = ['none', 'low', 'medium', 'high', 'auto'];
+  for (const field of ['reasoningCoordinator', 'reasoningScreening'] as const) {
+    if ((updates as any)[field] !== undefined && !VALID_REASONING.includes((updates as any)[field])) {
+      const err = new Error(`${field} must be one of: ${VALID_REASONING.join(', ')}`) as any;
+      err.field = field;
       throw err;
     }
   }

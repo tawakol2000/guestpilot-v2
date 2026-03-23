@@ -1311,6 +1311,8 @@ function TenantConfigSection({
         customInstructions: local.customInstructions,
         ragEnabled: local.ragEnabled,
         memorySummaryEnabled: local.memorySummaryEnabled,
+        reasoningCoordinator: local.reasoningCoordinator,
+        reasoningScreening: local.reasoningScreening,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -1477,6 +1479,47 @@ function TenantConfigSection({
           <div style={{ borderBottom: 'none' }}>
             {toggleRow('Adaptive Debounce', 'Automatically extends debounce when guests send multiple messages rapidly', local.adaptiveDebounce, 'adaptiveDebounce')}
           </div>
+        </div>
+
+        {/* Reasoning level per agent */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Reasoning Level</label>
+          <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 10 }}>
+            Higher reasoning = smarter responses but slower and more expensive. &quot;Auto&quot; enables reasoning only for complex SOPs.
+          </div>
+          {(['Guest Coordinator', 'Screening Agent'] as const).map((agentLabel, idx) => {
+            const key = idx === 0 ? 'reasoningCoordinator' : 'reasoningScreening'
+            const value = local[key] || (idx === 0 ? 'auto' : 'none')
+            const options = idx === 0 ? ['none', 'auto', 'low', 'medium', 'high'] : ['none', 'low', 'medium', 'high']
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: idx === 0 ? `1px solid ${T.border.default}` : 'none' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>{agentLabel}</span>
+                <div style={{ display: 'flex', gap: 0, borderRadius: T.radius.sm, overflow: 'hidden', border: `1px solid ${T.border.default}` }}>
+                  {options.map(opt => (
+                    <button
+                      key={opt}
+                      onClick={() => setLocal(prev => ({ ...prev, [key]: opt }))}
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        fontWeight: value === opt ? 700 : 500,
+                        fontFamily: T.font.mono,
+                        background: value === opt ? T.accent : T.bg.secondary,
+                        color: value === opt ? '#fff' : T.text.secondary,
+                        border: 'none',
+                        cursor: 'pointer',
+                        borderRight: `1px solid ${T.border.default}`,
+                        textTransform: 'capitalize',
+                        transition: 'background 0.15s, color 0.15s',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
         {/* Save */}

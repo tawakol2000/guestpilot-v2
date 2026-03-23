@@ -183,11 +183,11 @@ export async function generatePipelineSnapshot(tenantId: string, prisma: PrismaC
       }).join('\n')
     : 'No misclassifications found.';
 
-  // ── 5. Haiku Health Summary ─────────────────────────────────────────────────
+  // ── 5. AI Health Summary ───────────────────────────────────────────────────
 
   let healthSummary = '[Health summary generation failed]';
 
-  const metricsForHaiku = JSON.stringify({
+  const metricsForSummary = JSON.stringify({
     accuracy: {
       overall: `${overallAccuracy}% (${overallCorrect}/${overallTotal})`,
       emptyLabelRate: `${emptyLabelRate}%`,
@@ -213,7 +213,7 @@ export async function generatePipelineSnapshot(tenantId: string, prisma: PrismaC
       model: 'gpt-5.4-mini-2026-03-17',
       max_output_tokens: 500,
       instructions: 'You are a pipeline health analyst. Given these metrics, write a concise health assessment: overall status, worst-performing categories, self-improvement velocity, and top 3 recommended actions.',
-      input: metricsForHaiku,
+      input: metricsForSummary,
       reasoning: { effort: 'none' },
       store: true,
     });
@@ -222,7 +222,7 @@ export async function generatePipelineSnapshot(tenantId: string, prisma: PrismaC
       healthSummary = response.output_text;
     }
   } catch (err) {
-    console.warn('[Snapshot] Haiku health summary generation failed:', err);
+    console.warn('[Snapshot] AI health summary generation failed:', err);
   }
 
   // ── 6. Assemble Markdown ───────────────────────────────────────────────────

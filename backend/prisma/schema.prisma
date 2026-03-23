@@ -361,7 +361,7 @@ model TenantAiConfig {
   agentName            String   @default("Omar")
   agentPersonality     String   @db.Text @default("")
   customInstructions   String   @db.Text @default("")
-  model                String   @default("claude-haiku-4-5-20251001")
+  model                String   @default("gpt-5.4-mini-2026-03-17")
   temperature          Float    @default(0.25)
   maxTokens            Int      @default(1024)
   debounceDelayMs      Int      @default(30000)
@@ -387,6 +387,8 @@ model TenantAiConfig {
   workingHoursTimezone String   @default("UTC")
   judgeMode            String   @default("evaluate_all")
   sopOverrides         Json     @default("{}")
+  reasoningCoordinator String   @default("auto")  // "none" | "low" | "medium" | "high" | "auto"
+  reasoningScreening   String   @default("none")   // "none" | "low" | "medium" | "high"
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

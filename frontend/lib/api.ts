@@ -118,6 +118,7 @@ export interface ApiMessage {
   channel: string
   sentAt: string
   imageUrls?: string[]
+  aiMeta?: { sopCategories?: string[]; toolName?: string }
 }
 
 export interface ApiConversationDetail {
@@ -377,6 +378,8 @@ export interface TenantAiConfig {
   workingHoursStart: string
   workingHoursEnd: string
   workingHoursTimezone: string
+  reasoningCoordinator: string
+  reasoningScreening: string
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {

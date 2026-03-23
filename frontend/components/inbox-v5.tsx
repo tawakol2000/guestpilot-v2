@@ -44,6 +44,8 @@ import {
   CalendarClock,
   Loader2,
   ArrowRight,
+  FileText,
+  Wrench,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -127,6 +129,7 @@ interface Message {
   channel?: Channel
   fromSelf?: boolean
   imageUrls?: string[]
+  aiMeta?: { sopCategories?: string[]; toolName?: string }
 }
 
 interface Guest {
@@ -299,7 +302,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
           const fromSelf = m.role === 'AI_PRIVATE' || m.role === 'MANAGER_PRIVATE'
           return [{ id: m.id, sender: 'private', text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', fromSelf, imageUrls: imgs }]
         }
-        return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs }]
+        return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs, ...(m.aiMeta ? { aiMeta: m.aiMeta } : {}) }]
       })
       // Preserve SSE-appended messages not yet in the API response (e.g., arrived during the fetch window).
       // Deduped by trimmed text to avoid duplicates once the API catches up.
@@ -3413,6 +3416,50 @@ export default function InboxV5() {
                             >
                               {msg.time}
                             </span>
+                            {/* SOP & tool badges for AI messages */}
+                            {isAI && msg.aiMeta?.sopCategories?.length ? (
+                              <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                                {msg.aiMeta.sopCategories.map((sop: string) => (
+                                  <span
+                                    key={sop}
+                                    title={sop}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 2,
+                                      fontSize: 9,
+                                      fontFamily: T.font.mono,
+                                      color: T.text.tertiary,
+                                      background: T.accent + '12',
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                    }}
+                                  >
+                                    <FileText size={8} strokeWidth={2} />
+                                    {sop.replace('sop-', '').replace(/-/g, ' ')}
+                                  </span>
+                                ))}
+                                {msg.aiMeta.toolName && (
+                                  <span
+                                    title={`Tool: ${msg.aiMeta.toolName}`}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 2,
+                                      fontSize: 9,
+                                      fontFamily: T.font.mono,
+                                      color: T.text.tertiary,
+                                      background: T.status.orange + '18',
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                    }}
+                                  >
+                                    <Wrench size={8} strokeWidth={2} />
+                                    {msg.aiMeta.toolName.replace(/_/g, ' ')}
+                                  </span>
+                                )}
+                              </span>
+                            ) : null}
                             {/* AI message rating buttons */}
                             {isAI && (
                               <span style={{ display: 'flex', gap: 2, marginLeft: 2, alignItems: 'center' }}>

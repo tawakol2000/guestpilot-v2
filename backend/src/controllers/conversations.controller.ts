@@ -74,6 +74,37 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         await prisma.conversation.updateMany({ where: { id, tenantId }, data: { unreadCount: 0 } });
 
+        // Fetch AI logs for this conversation to attach SOP/tool metadata to AI messages
+        const aiLogs = await prisma.aiApiLog.findMany({
+          where: { conversationId: id, tenantId },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true, ragContext: true },
+        });
+
+        // Build a lookup: for each AI message, find the closest AiApiLog by timestamp
+        const aiMessages = conversation.messages.filter(m => m.role === 'AI');
+        const aiMetaMap = new Map<string, { sopCategories?: string[]; toolName?: string }>();
+        for (const aiMsg of aiMessages) {
+          let bestLog: (typeof aiLogs)[0] | null = null;
+          let bestDiff = Infinity;
+          for (const log of aiLogs) {
+            const diff = Math.abs(aiMsg.sentAt.getTime() - log.createdAt.getTime());
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestLog = log;
+            }
+          }
+          if (bestLog && bestDiff < 60000) { // within 60 seconds
+            const rc = bestLog.ragContext as any;
+            if (rc) {
+              aiMetaMap.set(aiMsg.id, {
+                sopCategories: rc.sopCategories || rc.classifierLabels || undefined,
+                toolName: rc.toolName || undefined,
+              });
+            }
+          }
+        }
+
         res.json({
           id: conversation.id,
           status: conversation.status,
@@ -110,6 +141,7 @@ export function makeConversationsController(prisma: PrismaClient) {
             channel: m.channel,
             sentAt: m.sentAt,
             imageUrls: m.imageUrls,
+            ...(aiMetaMap.has(m.id) ? { aiMeta: aiMetaMap.get(m.id) } : {}),
           })),
         });
       } catch (err) {
