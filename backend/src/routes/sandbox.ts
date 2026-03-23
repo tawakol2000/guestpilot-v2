@@ -444,78 +444,84 @@ export function sandboxRouter(prisma: PrismaClient) {
       let toolResults: any;
       let toolDurationMs: number | undefined;
 
-      const fnCall = response.output?.find((i: any) => i.type === 'function_call');
-      if (fnCall) {
-        toolUsed = true;
-        toolName = fnCall.name;
-        toolInput = JSON.parse(fnCall.arguments);
+      // ─── Multi-tool loop: process ALL tool calls, repeat up to 5 rounds ───
+      const MAX_TOOL_ROUNDS = 5;
+      let sbToolRound = 0;
+      let sbFnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
+
+      const safeTenant = tenant!; // Already null-checked above
+      async function executeSandboxTool(fnCall: any): Promise<string> {
+        const input = JSON.parse(fnCall.arguments);
+        if (fnCall.name === 'search_available_properties') {
+          const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
+          const currentAddress = listing.address || '';
+          const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
+          const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
+          return searchAvailableProperties(typedInput, {
+            tenantId, currentPropertyId: propertyId, checkIn, checkOut,
+            channel: channel || 'DIRECT', hostawayAccountId: safeTenant.hostawayAccountId,
+            hostawayApiKey: safeTenant.hostawayApiKey, currentCity,
+          });
+        } else if (fnCall.name === 'create_document_checklist') {
+          const typedInput = input as { passports_needed: number; marriage_certificate_needed: boolean; reason: string };
+          if (reservation?.id) {
+            const cl = await createChecklist(reservation.id, { passportsNeeded: typedInput.passports_needed, marriageCertNeeded: typedInput.marriage_certificate_needed, reason: typedInput.reason }, prisma);
+            return JSON.stringify({ created: true, passportsNeeded: cl.passportsNeeded, marriageCertNeeded: cl.marriageCertNeeded });
+          }
+          return JSON.stringify({ created: false, error: 'No reservation in sandbox context' });
+        } else if (fnCall.name === 'check_extend_availability') {
+          return checkExtendAvailability(input, {
+            listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut,
+            channel: channel || 'DIRECT', numberOfGuests: guestCount || 1,
+            hostawayAccountId: safeTenant.hostawayAccountId, hostawayApiKey: safeTenant.hostawayApiKey,
+          });
+        } else if (fnCall.name === 'mark_document_received') {
+          const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
+          if (reservation?.id) {
+            const updated = await updateChecklist(reservation.id, { documentType: typedInput.document_type, notes: typedInput.notes }, prisma);
+            return JSON.stringify({ passportsReceived: updated.passportsReceived, passportsNeeded: updated.passportsNeeded, marriageCertReceived: updated.marriageCertReceived, allComplete: !hasPendingItems(updated) });
+          }
+          return JSON.stringify({ error: 'No reservation in sandbox context' });
+        } else {
+          const customToolDef = sbToolDefs.find(t => t.name === fnCall.name);
+          if (customToolDef?.webhookUrl) {
+            return callWebhook(customToolDef.webhookUrl, input, customToolDef.webhookTimeout);
+          }
+          return JSON.stringify({ error: `Unknown tool: ${fnCall.name}` });
+        }
+      }
+
+      while (sbFnCalls.length > 0 && sbToolRound < MAX_TOOL_ROUNDS) {
+        sbToolRound++;
+        const toolOutputs: Array<{ type: 'function_call_output'; call_id: string; output: string }> = [];
         const toolStartMs = Date.now();
 
-        let toolResultContent: string;
-        try {
-          if (fnCall.name === 'search_available_properties') {
-            const typedInput = toolInput as { amenities: string[]; min_capacity?: number; reason?: string };
-            const currentAddress = listing.address || '';
-            const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
-            const currentCity = cityParts[cityParts.length - 1] || cityParts[0] || '';
-            toolResultContent = await searchAvailableProperties(typedInput, {
-              tenantId,
-              currentPropertyId: propertyId,
-              checkIn, checkOut,
-              channel: channel || 'DIRECT',
-              hostawayAccountId: tenant.hostawayAccountId,
-              hostawayApiKey: tenant.hostawayApiKey,
-              currentCity,
-            });
-          } else if (fnCall.name === 'create_document_checklist') {
-            const typedInput = toolInput as { passports_needed: number; marriage_certificate_needed: boolean; reason: string };
-            if (reservation?.id) {
-              const cl = await createChecklist(reservation.id, { passportsNeeded: typedInput.passports_needed, marriageCertNeeded: typedInput.marriage_certificate_needed, reason: typedInput.reason }, prisma);
-              toolResultContent = JSON.stringify({ created: true, passportsNeeded: cl.passportsNeeded, marriageCertNeeded: cl.marriageCertNeeded });
-            } else {
-              toolResultContent = JSON.stringify({ created: false, error: 'No reservation in sandbox context' });
+        for (const fnCall of sbFnCalls) {
+          try {
+            const result = await executeSandboxTool(fnCall);
+            toolOutputs.push({ type: 'function_call_output', call_id: fnCall.call_id, output: result });
+
+            // Log first tool for response metadata
+            if (!toolUsed) {
+              toolUsed = true;
+              toolName = fnCall.name;
+              try { toolInput = JSON.parse(fnCall.arguments); } catch { toolInput = fnCall.arguments; }
+              try { toolResults = JSON.parse(result); } catch { toolResults = result; }
             }
-          } else if (fnCall.name === 'check_extend_availability') {
-            toolResultContent = await checkExtendAvailability(toolInput, {
-              listingId: hostawayListingId,
-              currentCheckIn: checkIn,
-              currentCheckOut: checkOut,
-              channel: channel || 'DIRECT',
-              numberOfGuests: guestCount || 1,
-              hostawayAccountId: tenant.hostawayAccountId,
-              hostawayApiKey: tenant.hostawayApiKey,
-            });
-          } else if (fnCall.name === 'mark_document_received') {
-            const typedInput = toolInput as { document_type: 'passport' | 'marriage_certificate'; notes: string };
-            if (reservation?.id) {
-              const updated = await updateChecklist(reservation.id, { documentType: typedInput.document_type, notes: typedInput.notes }, prisma);
-              toolResultContent = JSON.stringify({ passportsReceived: updated.passportsReceived, passportsNeeded: updated.passportsNeeded, marriageCertReceived: updated.marriageCertReceived, allComplete: !hasPendingItems(updated) });
-            } else {
-              toolResultContent = JSON.stringify({ error: 'No reservation in sandbox context' });
-            }
-          } else {
-            // Webhook fallback for custom tools
-            const customToolDef = sbToolDefs.find(t => t.name === fnCall.name);
-            if (customToolDef?.webhookUrl) {
-              toolResultContent = await callWebhook(customToolDef.webhookUrl, toolInput, customToolDef.webhookTimeout);
-            } else {
-              toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}` });
-            }
+          } catch (toolErr) {
+            console.error(`[Sandbox] Tool handler error for ${fnCall.name}:`, toolErr);
+            toolOutputs.push({ type: 'function_call_output', call_id: fnCall.call_id, output: JSON.stringify({ error: 'Tool execution failed' }) });
           }
-        } catch (toolErr) {
-          console.error('[Sandbox] Tool handler error:', toolErr);
-          toolResultContent = JSON.stringify({ error: 'Tool execution failed', found: false, properties: [] });
         }
         toolDurationMs = Date.now() - toolStartMs;
-        try { toolResults = JSON.parse(toolResultContent); } catch { toolResults = toolResultContent; }
 
-        // Follow up with tool result + JSON reminder (matches production)
-        // Schema enforcement replaces the old JSON reminder hack
+        console.log(`[Sandbox] Tool round ${sbToolRound}: ${sbFnCalls.map((f: any) => f.name).join(', ')} (${toolDurationMs}ms)`);
+
         response = await withRetry(() =>
           (openai.responses as any).create({
             model: effectiveModel,
             instructions: effectiveSystemPrompt,
-            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent }],
+            input: toolOutputs,
             previous_response_id: response.id,
             max_output_tokens: effectiveMaxTokens,
             reasoning: { effort: reasoningEffort },
@@ -523,6 +529,8 @@ export function sandboxRouter(prisma: PrismaClient) {
             store: true,
           })
         ) as any;
+
+        sbFnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
       }
 
       // ── Extract response text ──────────────────────────────────────────
