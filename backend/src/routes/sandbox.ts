@@ -344,36 +344,36 @@ export function sandboxRouter(prisma: PrismaClient) {
         knowledgeBase: knowledgeText,
       };
 
-      const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, templateVars);
-
-      // ── Tool definitions — per-agent tools ──────────────────────────
-      // Screening agent (INQUIRY): property search tool
-      // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
+      // ── Tool definitions — identical to production (ai.service.ts) ──
       const toolsForCall: any[] = isInquiry ? [{
         type: 'function',
         name: 'search_available_properties',
         description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
+        strict: true,
         parameters: {
           type: 'object' as const,
           properties: {
             amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
-            min_capacity: { type: 'number', description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+            min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
             reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
           },
-          required: ['amenities', 'reason'],
+          required: ['amenities', 'reason', 'min_capacity'],
+          additionalProperties: false,
         },
       }] : [{
         type: 'function',
         name: 'check_extend_availability',
         description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
+        strict: true,
         parameters: {
           type: 'object' as const,
           properties: {
             new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
-            new_checkin: { type: 'string', description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+            new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
             reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
           },
-          required: ['new_checkout', 'reason'],
+          required: ['new_checkout', 'reason', 'new_checkin'],
+          additionalProperties: false,
         },
       }];
 
@@ -386,21 +386,45 @@ export function sandboxRouter(prisma: PrismaClient) {
         } catch { /* fallback: empty */ }
       }
 
-      // ── Call OpenAI ───────────────────────────────────────────────────
-      const userText = userContent.map(b => b.text).join('\n\n');
+      // Build multi-turn inputTurns — identical to production
+      const lastUserMessage = [
+        `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
+        `### OPEN TASKS ###\nNo open tasks.`,
+        `### KNOWLEDGE BASE ###\n${knowledgeText}`,
+        `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
+        `### CURRENT LOCAL TIME ###\n${localTime}`,
+      ].join('\n\n');
+
+      // Build history as proper {role, content} turns (matches production inputTurns)
+      const inputTurns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      for (const turn of messages) {
+        inputTurns.push({
+          role: turn.role === 'guest' ? 'user' : 'assistant',
+          content: turn.content,
+        });
+      }
+      // Exclude current window messages from history (they're in lastUserMessage)
+      const currentContents = new Set(lastGuestMessages.map(m => m.content));
+      const historyTurns = inputTurns.filter(t => !(t.role === 'user' && currentContents.has(t.content)));
+      const finalInputTurns = [...historyTurns, { role: 'user' as const, content: lastUserMessage }];
+
+      // Determine reasoning effort — match production logic
+      const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
+      const reasoningEffort = sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' as const : 'none' as const;
+
+      // ── Call OpenAI — identical to production createMessage ──────────
       const createParams: any = {
         model: effectiveModel,
         max_output_tokens: effectiveMaxTokens,
-        ...(effectiveTemperature !== undefined ? { temperature: effectiveTemperature } : {}),
-        ...(personaCfg.topP !== undefined ? { top_p: personaCfg.topP } : {}),
+        ...(reasoningEffort !== 'none' ? { reasoning: { effort: reasoningEffort } } : { reasoning: { effort: 'none' } }),
+        ...(reasoningEffort === 'none' && effectiveTemperature !== undefined ? { temperature: effectiveTemperature } : {}),
         ...(toolsForCall?.length ? { tools: toolsForCall, tool_choice: 'auto' } : {}),
         instructions: effectiveSystemPrompt,
-        input: [{ role: 'user', content: userText }],
-        reasoning: { effort: 'none' },
-        text: { verbosity: 'low' },
+        input: finalInputTurns,
+        text: { verbosity: 'low' as const },
         truncation: 'auto',
         store: true,
-        prompt_cache_key: 'sandbox',
+        prompt_cache_key: `tenant-${tenantId}-sandbox-${isInquiry ? 'screening' : 'coordinator'}`,
         prompt_cache_retention: '24h',
       };
 
@@ -408,7 +432,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         (openai.responses as any).create(createParams)
       ) as any;
 
-      // ── Tool use loop ──────────────────────────────────────────────────
+      // ── Tool use loop — identical to production ──────────────────────
       let toolUsed = false;
       let toolName: string | undefined;
       let toolInput: any;
@@ -458,17 +482,19 @@ export function sandboxRouter(prisma: PrismaClient) {
         toolDurationMs = Date.now() - toolStartMs;
         try { toolResults = JSON.parse(toolResultContent); } catch { toolResults = toolResultContent; }
 
-        // Follow up with tool result
-        const followUpParams: any = {
-          ...createParams,
-          input: [
-            { role: 'user', content: userText },
-            ...response.output,
-            { type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent },
-          ],
-        };
+        // Follow up with tool result + JSON reminder (matches production)
+        const toolOutput = toolResultContent + '\n\nRespond with raw JSON only. No plain text. Start with { and end with }.';
         response = await withRetry(() =>
-          (openai.responses as any).create(followUpParams)
+          (openai.responses as any).create({
+            model: effectiveModel,
+            instructions: effectiveSystemPrompt,
+            input: [{ type: 'function_call_output', call_id: fnCall.call_id, output: toolOutput }],
+            previous_response_id: response.id,
+            max_output_tokens: effectiveMaxTokens,
+            reasoning: { effort: reasoningEffort },
+            text: { verbosity: 'low' as const },
+            store: true,
+          })
         ) as any;
       }
 
