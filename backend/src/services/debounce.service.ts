@@ -158,11 +158,10 @@ export async function scheduleAiReply(
   });
 
   if (activeFired) {
-    // Worker is currently processing — create a NEW pending reply instead of resetting
-    // The unique constraint is on conversationId, so we can't upsert with fired: false
-    // Just log and let the current response handle the accumulated messages
-    console.log(`[Debounce] Worker already processing conv ${conversationId} — skipping re-schedule`);
-    return;
+    // Worker is currently processing — delete the old fired record and create a new pending one.
+    // This ensures new messages are NOT dropped while the AI is mid-response.
+    console.log(`[Debounce] Worker processing conv ${conversationId} — queuing follow-up reply`);
+    await prisma.pendingAiReply.delete({ where: { id: activeFired.id } }).catch(() => {});
   }
 
   // Atomic upsert — eliminates findFirst+create/update race condition (FR-006)
