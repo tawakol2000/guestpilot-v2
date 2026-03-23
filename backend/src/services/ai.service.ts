@@ -1743,9 +1743,7 @@ export async function generateAndSendAiReply(
       `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
       `### OPEN TASKS ###\n${openTasksText}`,
       `### KNOWLEDGE BASE ###\n${knowledgeText}`,
-      currentMsgs.length > 1
-        ? `### NEW GUEST MESSAGES (${currentMsgs.length} messages — respond to ALL of them in one reply) ###\n${currentMsgsText}`
-        : `### CURRENT GUEST MESSAGE ###\n${currentMsgsText}`,
+      `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
       `### CURRENT LOCAL TIME ###\n${localTime}`,
     ].join('\n\n');
 
