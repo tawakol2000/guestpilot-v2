@@ -110,6 +110,8 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         listingDescription: property.listingDescription,
         aiMode,
         channel: reservation.channel,
+        reservationId: reservation.id,
+        screeningAnswers: reservation.screeningAnswers as Record<string, unknown>,
       };
 
       await generateAndSendAiReply(context, prisma);

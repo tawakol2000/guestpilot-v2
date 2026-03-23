@@ -21,6 +21,7 @@ import { evaluateEscalation } from './task-manager.service';
 import { buildTieredContext, formatConversationContext } from './memory.service';
 import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
+import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -690,10 +691,17 @@ When a guest sends an image:
 Common image types:
 - Broken item photos = maintenance escalation
 - Leak/damage photos = urgent repair escalation
-- Passport/ID = visitor verification escalation
+- Passport/ID = if DOCUMENT CHECKLIST has pending items, call mark_document_received tool. Otherwise, visitor verification escalation.
+- Marriage certificate = if DOCUMENT CHECKLIST has pending items, call mark_document_received tool. Otherwise, escalate.
 - Appliance photos = troubleshooting or malfunction escalation
 
 Never ignore images. The image is often the most important part of the message.
+
+---
+
+## DOCUMENT CHECKLIST
+
+If the DOCUMENT CHECKLIST section appears in your context with pending items, ask the guest to send their documents through the chat. Ask on your first message after booking acceptance. On subsequent messages, only remind when natural — don't repeat on every message. When all documents are received, don't mention documents at all.
 
 ---
 
@@ -1040,6 +1048,15 @@ The guest MUST receive the link in the FIRST message that mentions the property.
 {"guest message":"You can book that one directly here: https://www.airbnb.com/rooms/123456\\n\\nJust decline or cancel this current inquiry and book through that link. Let me know if you need anything else!","manager":{"needed":true,"title":"property-switch-request","note":"Guest wants to switch to [property name]. Directed to book via link. Current inquiry should be cancelled."}}
 
 **If no results:** Politely say none of our properties have that feature for their dates. Offer to escalate for manual assistance.
+
+---
+
+## DOCUMENT CHECKLIST TOOL
+
+When you escalate with a booking acceptance recommendation, also call the \`create_document_checklist\` tool to record what documents the guest will need to submit after acceptance. Base it on what you learned during screening:
+- All guests need passport/ID (one per person in the party — use the guest count)
+- Arab married couples additionally need a marriage certificate
+Do NOT call this tool when recommending rejection.
 
 ---
 
@@ -1483,6 +1500,8 @@ export interface AiReplyContext {
   listingDescription?: string;
   aiMode?: string;
   channel?: string;  // AIRBNB | BOOKING | DIRECT | OTHER | WHATSAPP — used for channel-aware tool results
+  reservationId?: string;
+  screeningAnswers?: Record<string, unknown>;
 }
 
 export async function generateAndSendAiReply(
@@ -1708,6 +1727,19 @@ export async function generateAndSendAiReply(
       propertyInfo += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.\n';
     }
 
+    // Read document checklist from reservation (used for context injection + conditional tool availability)
+    const checklistData = (context.screeningAnswers as any)?.documentChecklist as DocumentChecklist | undefined;
+    const checklistPending = hasPendingItems(checklistData ?? null);
+
+    // Inject document checklist if pending (only for coordinator — CONFIRMED/CHECKED_IN)
+    if (!isInquiry && checklistData && checklistPending) {
+      propertyInfo += '\n### DOCUMENT CHECKLIST ###\n';
+      propertyInfo += `Passports/IDs: ${checklistData.passportsReceived}/${checklistData.passportsNeeded} received\n`;
+      if (checklistData.marriageCertNeeded) {
+        propertyInfo += `Marriage Certificate: ${checklistData.marriageCertReceived ? 'received' : 'pending'}\n`;
+      }
+    }
+
     // Check for image attachments in current window messages (from DB imageUrls field)
     const hasImages = currentMsgs.some(m => m.imageUrls && m.imageUrls.length > 0);
 
@@ -1774,37 +1806,78 @@ export async function generateAndSendAiReply(
       // ─── Tool use: per-agent tools ───
       // Screening agent (INQUIRY): property search tool
       // Guest coordinator (CONFIRMED/CHECKED_IN): extend-stay tool
-      const toolsForCall: any[] | undefined = isInquiry ? [{
-        type: 'function',
-        name: 'search_available_properties',
-        description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
-        strict: true,
-        parameters: {
-          type: 'object' as const,
-          properties: {
-            amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
-            min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
-            reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
+      // Build per-agent tool lists
+      const screeningTools: any[] = [
+        {
+          type: 'function',
+          name: 'search_available_properties',
+          description: 'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses a preference for different property attributes (size, view, amenities). Do NOT use this when the guest is asking about amenities this property already has.',
+          strict: true,
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              amenities: { type: 'array', items: { type: 'string' }, description: 'Amenities or features the guest is looking for, e.g. [\'pool\', \'parking\', \'sea view\']. Use simple English terms.' },
+              min_capacity: { type: ['number', 'null'], description: 'Minimum number of guests the property should accommodate. Only include if the guest mentioned needing more space or has a specific group size.' },
+              reason: { type: 'string', description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.' },
+            },
+            required: ['amenities', 'reason', 'min_capacity'],
+            additionalProperties: false,
           },
-          required: ['amenities', 'reason', 'min_capacity'],
-          additionalProperties: false,
         },
-      }] : [{
-        type: 'function',
-        name: 'check_extend_availability',
-        description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
-        strict: true,
-        parameters: {
-          type: 'object' as const,
-          properties: {
-            new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
-            new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
-            reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
+        {
+          type: 'function',
+          name: 'create_document_checklist',
+          description: 'Create a document checklist for this booking. Call this when you have determined the guest is eligible and are about to escalate to the manager with an acceptance recommendation. Records what documents the guest will need to submit after booking acceptance. Do NOT call this when recommending rejection.',
+          strict: true,
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              passports_needed: { type: 'number', description: 'Number of passport/ID documents needed (one per guest in the party)' },
+              marriage_certificate_needed: { type: 'boolean', description: 'Whether a marriage certificate is required (true for Arab married couples)' },
+              reason: { type: 'string', description: 'Brief note, e.g. \'Egyptian married couple, 2 guests\'' },
+            },
+            required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
+            additionalProperties: false,
           },
-          required: ['new_checkout', 'reason', 'new_checkin'],
-          additionalProperties: false,
         },
-      }];
+      ];
+
+      const coordinatorTools: any[] = [
+        {
+          type: 'function',
+          name: 'check_extend_availability',
+          description: 'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. Do NOT use for unrelated questions.',
+          strict: true,
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              new_checkout: { type: 'string', description: 'The requested new checkout date in YYYY-MM-DD format.' },
+              new_checkin: { type: ['string', 'null'], description: 'The requested new check-in date in YYYY-MM-DD format. Only needed if the guest wants to arrive earlier or later.' },
+              reason: { type: 'string', description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.' },
+            },
+            required: ['new_checkout', 'reason', 'new_checkin'],
+            additionalProperties: false,
+          },
+        },
+        // mark_document_received — only when checklist has pending items
+        ...(checklistPending ? [{
+          type: 'function',
+          name: 'mark_document_received',
+          description: 'Mark a document as received after the guest sends it through the chat. Call this when you see an image that is clearly a government-issued ID (passport, national ID, driver\'s license) or marriage certificate. Do NOT call this for unclear images — escalate those instead.',
+          strict: true,
+          parameters: {
+            type: 'object' as const,
+            properties: {
+              document_type: { type: 'string', enum: ['passport', 'marriage_certificate'], description: 'Type of document received' },
+              notes: { type: 'string', description: 'Brief description, e.g. \'passport for Mohamed\' or \'marriage certificate\'' },
+            },
+            required: ['document_type', 'notes'],
+            additionalProperties: false,
+          },
+        }] : []),
+      ];
+
+      const toolsForCall = isInquiry ? screeningTools : coordinatorTools;
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -1832,6 +1905,21 @@ export async function generateAndSendAiReply(
             currentCity,
           });
         }],
+        ['create_document_checklist', async (input: unknown) => {
+          const typedInput = input as { passports_needed: number; marriage_certificate_needed: boolean; reason: string };
+          if (!context.reservationId) return JSON.stringify({ error: 'No reservation linked', created: false });
+          try {
+            const cl = await createChecklist(context.reservationId, {
+              passportsNeeded: typedInput.passports_needed,
+              marriageCertNeeded: typedInput.marriage_certificate_needed,
+              reason: typedInput.reason,
+            }, prisma);
+            return JSON.stringify({ created: true, passportsNeeded: cl.passportsNeeded, marriageCertNeeded: cl.marriageCertNeeded });
+          } catch (err: any) {
+            console.warn(`[AI] create_document_checklist failed (non-fatal):`, err.message);
+            return JSON.stringify({ error: err.message, created: false });
+          }
+        }],
       ]) : new Map([
         ['check_extend_availability', async (input: unknown) => {
           return checkExtendAvailability(input, {
@@ -1844,6 +1932,26 @@ export async function generateAndSendAiReply(
             hostawayApiKey: context.hostawayApiKey,
           });
         }],
+        ...(checklistPending ? [['mark_document_received', async (input: unknown) => {
+          const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
+          if (!context.reservationId) return JSON.stringify({ error: 'No reservation linked' });
+          try {
+            const updated = await updateChecklist(context.reservationId, {
+              documentType: typedInput.document_type,
+              notes: typedInput.notes,
+            }, prisma);
+            return JSON.stringify({
+              passportsReceived: updated.passportsReceived,
+              passportsNeeded: updated.passportsNeeded,
+              marriageCertReceived: updated.marriageCertReceived,
+              marriageCertNeeded: updated.marriageCertNeeded,
+              allComplete: !hasPendingItems(updated),
+            });
+          } catch (err: any) {
+            console.warn(`[AI] mark_document_received failed (non-fatal):`, err.message);
+            return JSON.stringify({ error: err.message });
+          }
+        }] as [string, ToolHandler]] : []),
       ]);
 
       // Determine reasoning effort: tenant config > SOP-based auto > none

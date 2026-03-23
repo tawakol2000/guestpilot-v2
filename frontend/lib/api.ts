@@ -151,6 +151,20 @@ export interface ApiConversationDetail {
     aiMode: string
   }
   messages: ApiMessage[]
+  documentChecklist?: {
+    passportsNeeded: number
+    passportsReceived: number
+    marriageCertNeeded: boolean
+    marriageCertReceived: boolean
+  } | null
+}
+
+export async function apiGetConversationChecklist(conversationId: string): Promise<{ checklist: ApiConversationDetail['documentChecklist'] }> {
+  return apiFetch(`/api/conversations/${conversationId}/checklist`)
+}
+
+export async function apiUpdateConversationChecklist(conversationId: string, data: { passportsReceived?: number; marriageCertReceived?: boolean }): Promise<{ checklist: ApiConversationDetail['documentChecklist'] }> {
+  return apiFetch(`/api/conversations/${conversationId}/checklist`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
 export async function apiGetConversations(): Promise<ApiConversationSummary[]> {

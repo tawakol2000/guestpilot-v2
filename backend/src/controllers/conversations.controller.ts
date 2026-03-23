@@ -134,6 +134,7 @@ export function makeConversationsController(prisma: PrismaClient) {
             aiEnabled: conversation.reservation.aiEnabled,
             aiMode: conversation.reservation.aiMode,
           },
+          documentChecklist: ((conversation.reservation.screeningAnswers as any)?.documentChecklist) || null,
           messages: conversation.messages.map(m => ({
             id: m.id,
             role: m.role,

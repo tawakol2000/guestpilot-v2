@@ -58,6 +58,7 @@ import {
   apiApproveSuggestion,
   apiSendNote,
   apiGetConversationTasks,
+  apiUpdateConversationChecklist,
   apiUpdateTask,
   apiRateMessage,
   apiToggleStar,
@@ -178,6 +179,7 @@ interface Conversation {
   guest: Guest
   booking: Booking
   property: Property
+  documentChecklist?: { passportsNeeded: number; passportsReceived: number; marriageCertNeeded: boolean; marriageCertReceived: boolean } | null
 }
 
 // ─── Data Mapping ─────────────────────────────────────────────────────────────
@@ -338,6 +340,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
       checkInTime: ((kb.checkInTime || kb.check_in_time || '') as string),
       checkOutTime: ((kb.checkOutTime || kb.check_out_time || '') as string),
     },
+    documentChecklist: detail.documentChecklist ?? null,
   }
 }
 
@@ -2218,6 +2221,73 @@ export default function InboxV5() {
         return wrapPanelSection('tasks', (
           <div style={{ pointerEvents: wiggleMode ? 'none' : 'auto' }}>
             <TasksBox key={selectedConv.id} conversationId={selectedConv.id} dragHandle={dragHandle} />
+            {/* Document Checklist — below tasks */}
+            {selectedConv.documentChecklist && (
+              <div style={{ marginTop: 12, padding: '10px 12px', background: T.bg.secondary, borderRadius: T.radius.sm, border: `1px solid ${T.border.default}` }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileText size={12} strokeWidth={2.5} />
+                  DOCUMENTS
+                </div>
+                {/* Passports */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontFamily: T.font.sans, color: T.text.secondary }}>
+                    Passports/IDs
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, fontFamily: T.font.mono,
+                      color: selectedConv.documentChecklist.passportsReceived >= selectedConv.documentChecklist.passportsNeeded ? T.status.green : T.status.amber,
+                    }}>
+                      {selectedConv.documentChecklist.passportsReceived}/{selectedConv.documentChecklist.passportsNeeded}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const current = selectedConv.documentChecklist!.passportsReceived
+                        const needed = selectedConv.documentChecklist!.passportsNeeded
+                        const next = current >= needed ? 0 : current + 1
+                        apiUpdateConversationChecklist(selectedConv.id, { passportsReceived: next }).catch(console.error)
+                        setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
+                          ...c, documentChecklist: { ...c.documentChecklist!, passportsReceived: next }
+                        } : c))
+                      }}
+                      title="Toggle passport count"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', fontSize: 10, color: T.text.tertiary }}
+                    >
+                      {selectedConv.documentChecklist.passportsReceived >= selectedConv.documentChecklist.passportsNeeded ? <Check size={12} color={T.status.green} /> : <Circle size={12} />}
+                    </button>
+                  </div>
+                </div>
+                {/* Marriage Certificate */}
+                {selectedConv.documentChecklist.marriageCertNeeded && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 11, fontFamily: T.font.sans, color: T.text.secondary }}>
+                      Marriage Cert
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, fontFamily: T.font.mono,
+                        color: selectedConv.documentChecklist.marriageCertReceived ? T.status.green : T.status.amber,
+                      }}>
+                        {selectedConv.documentChecklist.marriageCertReceived ? 'received' : 'pending'}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const next = !selectedConv.documentChecklist!.marriageCertReceived
+                          apiUpdateConversationChecklist(selectedConv.id, { marriageCertReceived: next }).catch(console.error)
+                          setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
+                            ...c, documentChecklist: { ...c.documentChecklist!, marriageCertReceived: next }
+                          } : c))
+                        }}
+                        title="Toggle marriage certificate"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', fontSize: 10, color: T.text.tertiary }}
+                      >
+                        {selectedConv.documentChecklist.marriageCertReceived ? <Check size={12} color={T.status.green} /> : <Circle size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))
 
