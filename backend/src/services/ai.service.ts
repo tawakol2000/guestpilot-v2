@@ -18,7 +18,7 @@ import { retrieveRelevantKnowledge } from './rag.service';
 import { getSopContent, buildToolDefinition, SOP_CATEGORIES } from './sop.service';
 import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
-import { buildTieredContext, formatConversationContext } from './memory.service';
+// memory.service imports removed — conversation history built inline
 import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
@@ -629,17 +629,18 @@ IMPORTANT — BATCHED MESSAGES: The guest may have sent multiple messages in seq
 
 ## DATA SECTIONS
 
-You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {OPEN_TASKS}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}, {DOCUMENT_CHECKLIST}.
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {OPEN_TASKS}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}, {DOCUMENT_CHECKLIST}.
 
 - **{CONVERSATION_HISTORY}** — all prior messages. If the conversation is long, older messages appear as a summary followed by recent messages verbatim.
 - **{PROPERTY_GUEST_INFO}** — guest name, reservation dates, guest count, access codes, property description. **This is your primary source of truth for all property-specific information.**
 - **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
+- **{ON_REQUEST_AMENITIES}** — amenities available on request only. Guest must ask, then you confirm and schedule delivery.
 - **{OPEN_TASKS}** — currently open escalation tasks. Check before creating duplicates.
 - **{CURRENT_MESSAGES}** — the message(s) you need to respond to now.
 - **{CURRENT_LOCAL_TIME}** — the property's current local time for scheduling decisions.
 - **{DOCUMENT_CHECKLIST}** — pending documents the guest needs to submit (when applicable).
 
-**Data rule:** Only answer using information explicitly provided in {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, or in the SOPs below. If a guest asks about something not covered, tell them you'll check and escalate. Never guess or invent details.
+**Data rule:** Only answer using information explicitly provided in {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, or in the SOPs below. If a guest asks about something not covered, tell them you'll check and escalate. Never guess or invent details.
 
 **History rule:** Before asking the guest any question, check {CONVERSATION_HISTORY} first. If the information was already provided, do NOT ask again. Avoid repeating the same property list or information the guest has already seen.
 
@@ -882,11 +883,12 @@ This rule overrides all injected SOPs. Even if a booking-inquiry or amenity SOP 
 
 ## DATA SECTIONS
 
-You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}.
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}.
 
 - **{CONVERSATION_HISTORY}** — all previous messages between you and the guest.
 - **{PROPERTY_GUEST_INFO}** — guest name, booking dates, number of guests, unit details.
 - **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
+- **{ON_REQUEST_AMENITIES}** — amenities available on request only. Guest must ask, then you confirm.
 - **{CURRENT_MESSAGES}** — the guest's latest message(s).
 - **{CURRENT_LOCAL_TIME}** — the property's current local time.
 
@@ -1300,32 +1302,6 @@ Number of Guests: ${guestCount}
   }
 
   return info;
-}
-
-// ─── Content block builder from template ─────────────────────────────────────
-
-function buildContentBlocks(
-  template: string | undefined,
-  vars: Record<string, string>
-): ContentBlock[] {
-  if (!template) {
-    // Fallback: hardcoded default content blocks
-    return [
-      { type: 'text', text: `### CONVERSATION HISTORY ###\n${vars.conversationHistory || ''}` },
-      { type: 'text', text: `### PROPERTY & GUEST INFO ###\n\n${vars.propertyInfo || ''}` },
-      { type: 'text', text: `### CURRENT GUEST MESSAGE(S) ###\n${vars.currentMessages || ''}\n\n### CURRENT LOCAL TIME###\n${vars.localTime || ''}` },
-    ];
-  }
-
-  // Split template on ### headers and interpolate {{variables}}
-  const sections = template.split(/(?=### )/).filter(s => s.trim());
-  return sections.map(section => {
-    let text = section;
-    for (const [key, value] of Object.entries(vars)) {
-      text = text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-    }
-    return { type: 'text' as const, text };
-  });
 }
 
 // ─── Escalation handler — creates Task + private [MANAGER] message ───────────
@@ -1844,7 +1820,10 @@ export async function generateAndSendAiReply(
       AVAILABLE_AMENITIES: availableAmenityList.length > 0
         ? applyPropertyOverrides(availableAmenityList.join(', '), varOverrides.AVAILABLE_AMENITIES) : '',
       ON_REQUEST_AMENITIES: onRequestAmenityList.length > 0
-        ? applyPropertyOverrides(onRequestAmenityList.join(', '), varOverrides.ON_REQUEST_AMENITIES) : '',
+        ? applyPropertyOverrides(
+            `The following amenities are available ON REQUEST ONLY (guest must ask, then confirm delivery time):\n${onRequestAmenityList.map(a => `- ${a}`).join('\n')}`,
+            varOverrides.ON_REQUEST_AMENITIES,
+          ) : '',
       OPEN_TASKS: openTasksText,
       CURRENT_MESSAGES: currentMsgsText,
       CURRENT_LOCAL_TIME: localTime,

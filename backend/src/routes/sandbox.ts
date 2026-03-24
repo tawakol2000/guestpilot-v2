@@ -7,6 +7,7 @@ import { getTenantAiConfig } from '../services/tenant-config.service';
 import { retrieveRelevantKnowledge } from '../services/rag.service';
 import { getSopContent, buildToolDefinition } from '../services/sop.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
+import { resolveVariables } from '../services/template-variable.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
@@ -111,29 +112,7 @@ Number of Guests: ${guestCount}
   return info;
 }
 
-// ─── Content block builder (same as ai.service.ts) ───────────────────────────
-type ContentBlock = { type: 'text'; text: string };
-
-function buildContentBlocks(
-  template: string | undefined,
-  vars: Record<string, string>,
-): ContentBlock[] {
-  if (!template) {
-    return [
-      { type: 'text', text: `### CONVERSATION HISTORY ###\n${vars.conversationHistory || ''}` },
-      { type: 'text', text: `### PROPERTY & GUEST INFO ###\n\n${vars.propertyInfo || ''}` },
-      { type: 'text', text: `### CURRENT GUEST MESSAGE(S) ###\n${vars.currentMessages || ''}\n\n### CURRENT LOCAL TIME###\n${vars.localTime || ''}` },
-    ];
-  }
-  const sections = template.split(/(?=### )/).filter(s => s.trim());
-  return sections.map(section => {
-    let text = section;
-    for (const [key, value] of Object.entries(vars)) {
-      text = text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-    }
-    return { type: 'text' as const, text };
-  });
-}
+// Content block building now uses resolveVariables() from template-variable.service.ts
 
 export function sandboxRouter(prisma: PrismaClient) {
   const router = Router();
@@ -388,14 +367,23 @@ export function sandboxRouter(prisma: PrismaClient) {
         } catch { /* fallback: empty */ }
       }
 
-      // Build multi-turn inputTurns — identical to production
-      const lastUserMessage = [
-        `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
-        `### OPEN TASKS ###\nNo open tasks.`,
-        `### KNOWLEDGE BASE ###\n${knowledgeText}`,
-        `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
-        `### CURRENT LOCAL TIME ###\n${localTime}`,
-      ].join('\n\n');
+      // Build content blocks via template variable system — identical to production
+      const sandboxAgentType = isInquiry ? 'screening' as const : 'coordinator' as const;
+      const { contentBlocks: sandboxBlocks } = resolveVariables(
+        effectiveSystemPrompt,
+        {
+          CONVERSATION_HISTORY: '', // history is handled via multi-turn inputTurns below
+          PROPERTY_GUEST_INFO: propertyInfo,
+          AVAILABLE_AMENITIES: '', // sandbox doesn't have amenity classifications
+          ON_REQUEST_AMENITIES: '',
+          OPEN_TASKS: 'No open tasks.',
+          CURRENT_MESSAGES: currentMsgsText,
+          CURRENT_LOCAL_TIME: localTime,
+          DOCUMENT_CHECKLIST: '',
+        },
+        sandboxAgentType,
+      );
+      const lastUserMessage = sandboxBlocks.map(b => b.text).join('\n\n');
 
       // Build history as proper {role, content} turns (matches production inputTurns)
       const inputTurns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
