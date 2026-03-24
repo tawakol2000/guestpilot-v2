@@ -6,6 +6,7 @@
  */
 import { PrismaClient, TenantAiConfig } from '@prisma/client';
 import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from './ai.service';
+import { hasMinimumVariables, hasMigrationSentinel, buildMigrationBlock } from './template-variable.service';
 
 interface CacheEntry {
   config: TenantAiConfig;
@@ -46,6 +47,28 @@ export async function getTenantAiConfig(
       },
     });
     console.log(`[TenantConfig] Seeded system prompts for tenant ${tenantId}`);
+  }
+
+  // Migrate legacy prompts: append variable reference block if prompt lacks template variables.
+  // Idempotent — checks for >=3 recognized variables AND a sentinel marker to avoid double-append.
+  const coordPrompt = config.systemPromptCoordinator || '';
+  const screenPrompt = config.systemPromptScreening || '';
+  const needsCoordMigration = coordPrompt && !hasMinimumVariables(coordPrompt) && !hasMigrationSentinel(coordPrompt);
+  const needsScreenMigration = screenPrompt && !hasMinimumVariables(screenPrompt) && !hasMigrationSentinel(screenPrompt);
+  if (needsCoordMigration || needsScreenMigration) {
+    const updates: Record<string, unknown> = {};
+    if (needsCoordMigration) {
+      updates.systemPromptCoordinator = coordPrompt + buildMigrationBlock('coordinator');
+    }
+    if (needsScreenMigration) {
+      updates.systemPromptScreening = screenPrompt + buildMigrationBlock('screening');
+    }
+    updates.systemPromptVersion = { increment: 1 };
+    config = await prisma.tenantAiConfig.update({
+      where: { tenantId },
+      data: updates,
+    });
+    console.log(`[TenantConfig] Migrated prompts to template variables for tenant ${tenantId}`);
   }
 
   _cache.set(tenantId, { config, cachedAt: Date.now() });

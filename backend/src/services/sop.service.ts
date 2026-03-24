@@ -216,18 +216,30 @@ function normaliseStatus(raw: string): string {
 
 /**
  * Replace template variables in SOP content.
- * For sop-amenity-request: {PROPERTY_AMENITIES} is replaced with the amenities list.
- * When amenity classifications exist, the caller (ai.service.ts) passes only "on_request"
- * items here — "available" items go into buildPropertyInfo() instead. When no classifications
- * exist, the full amenities string is passed for backward compatibility.
+ * For sop-amenity-request: {ON_REQUEST_AMENITIES} (or legacy alias {PROPERTY_AMENITIES})
+ * is replaced with the on-request amenities list.
+ * When amenity classifications exist, the caller passes only "on_request" items.
+ * When no classifications exist, the full amenities string is passed for backward compatibility.
  */
 function applyTemplates(content: string, category: string, propertyAmenities?: string): string {
-  if (category === 'sop-amenity-request' && content.includes('{PROPERTY_AMENITIES}')) {
-    if (propertyAmenities) {
-      const list = propertyAmenities.split(',').map(a => `• ${a.trim()}`).filter(Boolean).join('\n');
-      return content.replace('{PROPERTY_AMENITIES}', list);
+  if (category === 'sop-amenity-request') {
+    // Support both new name and legacy alias
+    const hasNew = content.includes('{ON_REQUEST_AMENITIES}');
+    const hasLegacy = content.includes('{PROPERTY_AMENITIES}');
+    if (hasNew || hasLegacy) {
+      if (propertyAmenities) {
+        const list = propertyAmenities.split(',').map(a => `• ${a.trim()}`).filter(Boolean).join('\n');
+        let result = content;
+        if (hasNew) result = result.replace('{ON_REQUEST_AMENITIES}', list);
+        if (hasLegacy) result = result.replace('{PROPERTY_AMENITIES}', list);
+        return result;
+      }
+      let result = content;
+      const fallback = 'No amenities data available for this property.';
+      if (hasNew) result = result.replace('{ON_REQUEST_AMENITIES}', fallback);
+      if (hasLegacy) result = result.replace('{PROPERTY_AMENITIES}', fallback);
+      return result;
     }
-    return content.replace('{PROPERTY_AMENITIES}', 'No amenities data available for this property.');
   }
   return content;
 }
@@ -372,9 +384,9 @@ Working hours: 10:00 AM – 5:00 PM
 
   'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
 
-## AVAILABLE PROPERTY AMENITIES
+## ON-REQUEST PROPERTY AMENITIES
 
-{PROPERTY_AMENITIES}
+{ON_REQUEST_AMENITIES}
 
 Check the property amenities list for available items. Only confirm items explicitly listed there.
 - Item on the amenities list → confirm availability and ask for preferred delivery time. Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"

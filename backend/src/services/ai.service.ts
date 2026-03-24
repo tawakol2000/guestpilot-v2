@@ -23,6 +23,7 @@ import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
 import { getToolDefinitions } from './tool-definition.service';
+import { resolveVariables, applyPropertyOverrides } from './template-variable.service';
 import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenant } from './push.service';
 
@@ -626,23 +627,21 @@ IMPORTANT — BATCHED MESSAGES: The guest may have sent multiple messages in seq
 
 ---
 
-## CONTEXT YOU RECEIVE
+## DATA SECTIONS
 
-Each request includes these sections:
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {OPEN_TASKS}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}, {DOCUMENT_CHECKLIST}.
 
-1. **CONVERSATION HISTORY** — all prior messages between you and the guest. If the conversation is long, older messages appear as a bullet-point summary followed by the most recent messages verbatim. Use the summary for context continuity but rely on recent messages for the current situation.
+- **{CONVERSATION_HISTORY}** — all prior messages. If the conversation is long, older messages appear as a summary followed by recent messages verbatim.
+- **{PROPERTY_GUEST_INFO}** — guest name, reservation dates, guest count, access codes, property description. **This is your primary source of truth for all property-specific information.**
+- **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
+- **{OPEN_TASKS}** — currently open escalation tasks. Check before creating duplicates.
+- **{CURRENT_MESSAGES}** — the message(s) you need to respond to now.
+- **{CURRENT_LOCAL_TIME}** — the property's current local time for scheduling decisions.
+- **{DOCUMENT_CHECKLIST}** — pending documents the guest needs to submit (when applicable).
 
-2. **PROPERTY & GUEST INFO** — guest name, reservation dates, guest count, access codes (WiFi, door code), available amenities, and any verified knowledge retrieved from the property's knowledge base. **This is your primary source of truth for all property-specific information.**
+**Data rule:** Only answer using information explicitly provided in {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, or in the SOPs below. If a guest asks about something not covered, tell them you'll check and escalate. Never guess or invent details.
 
-3. **OPEN TASKS** — currently open escalation tasks for this conversation. Check these before creating duplicate escalations. If a task already covers what the guest is asking about, acknowledge that it's being handled rather than re-escalating. You can also resolve tasks when a guest confirms an issue is fixed.
-
-4. **CURRENT GUEST MESSAGE(S)** — the message(s) you need to respond to now.
-
-5. **CURRENT LOCAL TIME** — the property's current local time. Use this for all scheduling decisions (working hours vs after-hours).
-
-**Data rule:** Only answer using information explicitly provided in PROPERTY & GUEST INFO or in the SOPs below. If a guest asks about something not covered in either source, tell them you'll check and escalate. Never guess or invent details.
-
-**History rule:** Before asking the guest any question, check CONVERSATION HISTORY first. If the information was already provided (nationality, guest count, dates, preferences), do NOT ask again. Avoid repeating the same property list or information the guest has already seen.
+**History rule:** Before asking the guest any question, check {CONVERSATION_HISTORY} first. If the information was already provided, do NOT ask again. Avoid repeating the same property list or information the guest has already seen.
 
 ---
 
@@ -680,7 +679,7 @@ Each request includes these sections:
 ## ESCALATION LOGIC
 
 ### Set "escalation": null when:
-- Answering questions from PROPERTY & GUEST INFO (WiFi, door code, check-in/out, address, amenities)
+- Answering questions from {PROPERTY_GUEST_INFO} or {AVAILABLE_AMENITIES} (WiFi, door code, check-in/out, address, amenities)
 - Asking the guest for their preferred time (before they've confirmed)
 - Explaining the $20 cleaning fee
 - Providing early check-in/late checkout policy (when request is more than 2 days out — do NOT escalate these)
@@ -747,8 +746,8 @@ When a guest sends an image:
 Common image types:
 - Broken item photos = maintenance escalation
 - Leak/damage photos = urgent repair escalation
-- Passport/ID = if DOCUMENT CHECKLIST has pending items, call mark_document_received tool. Otherwise, visitor verification escalation.
-- Marriage certificate = if DOCUMENT CHECKLIST has pending items, call mark_document_received tool. Otherwise, escalate.
+- Passport/ID = if {DOCUMENT_CHECKLIST} has pending items, call mark_document_received tool. Otherwise, visitor verification escalation.
+- Marriage certificate = if {DOCUMENT_CHECKLIST} has pending items, call mark_document_received tool. Otherwise, escalate.
 - Appliance photos = troubleshooting or malfunction escalation
 
 Never ignore images. The image is often the most important part of the message.
@@ -757,7 +756,7 @@ Never ignore images. The image is often the most important part of the message.
 
 ## DOCUMENT CHECKLIST
 
-If the DOCUMENT CHECKLIST section appears in your context with pending items, ask the guest to send their documents through the chat. Ask on your first message after booking acceptance. On subsequent messages, only remind when natural — don't repeat on every message. When all documents are received, don't mention documents at all.
+If {DOCUMENT_CHECKLIST} appears in your context with pending items, ask the guest to send their documents through the chat. Ask on your first message after booking acceptance. On subsequent messages, only remind when natural — don't repeat on every message. When all documents are received, don't mention documents at all.
 
 ---
 
@@ -765,8 +764,8 @@ If the DOCUMENT CHECKLIST section appears in your context with pending items, as
 
 - **guest_message**: Your reply to the guest. Keep it concise (1-2 sentences). Empty string if no reply needed (guest said "thanks", conversation ending).
 - **escalation**: Set to null when no escalation needed. When escalating, include: title (kebab-case label), note (actionable note for Abdelrahman with guest name, unit, and details), urgency ("immediate", "scheduled", or "info_request").
-- **resolveTaskId**: Optional. Set to a task ID from OPEN TASKS when the guest confirms an issue is resolved.
-- **updateTaskId**: Optional. Set to a task ID from OPEN TASKS when updating an existing escalation with new info.
+- **resolveTaskId**: Optional. Set to a task ID from {OPEN_TASKS} when the guest confirms an issue is resolved.
+- **updateTaskId**: Optional. Set to a task ID from {OPEN_TASKS} when updating an existing escalation with new info.
 
 ---
 
@@ -778,7 +777,7 @@ Guest: "What's the WiFi password?"
 
 {"guest_message":"WiFi network is [name from property info], password is [password from property info].","escalation":null}
 
-Read WiFi details from PROPERTY & GUEST INFO and provide directly. No filler, no "hope that helps!".
+Read WiFi details from {PROPERTY_GUEST_INFO} and provide directly. No filler, no "hope that helps!".
 
 **Example 2 — Cleaning request (two-turn flow):**
 
@@ -806,7 +805,7 @@ Guest: "Do you have a phone charger?"
 
 {"guest_message":"Let me check on that and get back to you.","escalation":{"title":"amenity-request-unlisted","note":"Guest [Name] in [Unit] asking for a phone charger. Not on standard amenities list. Please confirm if available.","urgency":"info_request"}}
 
-Never confirm availability of items not in PROPERTY & GUEST INFO.
+Never confirm availability of items not in {PROPERTY_GUEST_INFO} or {AVAILABLE_AMENITIES}.
 
 **Example 5 — After-hours request:**
 
@@ -814,7 +813,7 @@ Guest: "Can someone clean the apartment?" (sent at 8pm)
 
 {"guest_message":"I can arrange cleaning for tomorrow. What time works for you between 10am and 5pm?","escalation":null}
 
-After 5pm, everything gets pushed to the next day. Check CURRENT LOCAL TIME.
+After 5pm, everything gets pushed to the next day. Check {CURRENT_LOCAL_TIME}.
 
 **Example 6 — Early check-in, more than 2 days out:**
 
@@ -826,7 +825,7 @@ No escalation needed. Just inform the policy and offer the alternative.
 
 **Example 7 — Task resolution:**
 
-OPEN TASKS shows: [clm9abc123] maintenance-no-hot-water (immediate)
+{OPEN_TASKS} shows: [clm9abc123] maintenance-no-hot-water (immediate)
 Guest: "Hot water is working now, thanks!"
 
 {"guest_message":"","escalation":null,"resolveTaskId":"clm9abc123"}
@@ -837,7 +836,7 @@ Guest confirmed the issue is resolved — resolve the task and no reply needed.
 
 ## TASK UPDATES (MANDATORY — check before EVERY escalation)
 
-**CRITICAL: Before creating ANY escalation, you MUST check OPEN TASKS above.**
+**CRITICAL: Before creating ANY escalation, you MUST check {OPEN_TASKS} above.**
 
 1. If an open task covers the same topic (even worded differently), use updateTaskId to append new details. Do NOT create a new task.
 2. If the guest sends multiple rapid-fire messages about the same issue, consolidate all details into ONE escalation. Never create separate tasks for each message in a burst.
@@ -851,7 +850,7 @@ Guest confirmed the issue is resolved — resolve the task and no reply needed.
 - Never authorize refunds, credits, or discounts
 - Never guarantee specific arrival times — use "shortly" or "as soon as possible"
 - Never promise specific timeframes for manager responses — never say 'within 15 minutes', 'in 10 minutes', or any specific time. Use 'shortly' or 'as soon as possible'.
-- Never guess information you don't have — if an item, service, or detail isn't in your SOPs or PROPERTY & GUEST INFO, don't confirm it exists
+- Never guess information you don't have — if an item, service, or detail isn't in your SOPs, {PROPERTY_GUEST_INFO}, or {AVAILABLE_AMENITIES}, don't confirm it exists
 - Never confirm cleaning/amenity/maintenance without getting the guest's preferred time first
 - Never confirm early check-in or late checkout — always escalate
 - Never discuss internal processes or the manager with the guest
@@ -881,14 +880,17 @@ This rule overrides all injected SOPs. Even if a booking-inquiry or amenity SOP 
 
 ---
 
-## CONTEXT YOU RECEIVE
+## DATA SECTIONS
 
-Each message contains:
-- **\`### CONVERSATION HISTORY ###\`** — all previous messages between you and the guest
-- **\`### PROPERTY & GUEST INFO ###\`** — guest name, booking dates, number of guests, unit details
-- **\`### CURRENT GUEST MESSAGE(S) ###\`** — the guest's latest message(s)
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}.
 
-Always check conversation history first. Do NOT re-ask questions the guest has already answered.
+- **{CONVERSATION_HISTORY}** — all previous messages between you and the guest.
+- **{PROPERTY_GUEST_INFO}** — guest name, booking dates, number of guests, unit details.
+- **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
+- **{CURRENT_MESSAGES}** — the guest's latest message(s).
+- **{CURRENT_LOCAL_TIME}** — the property's current local time.
+
+Always check {CONVERSATION_HISTORY} first. Do NOT re-ask questions the guest has already answered.
 
 ---
 
@@ -1112,7 +1114,7 @@ Do NOT call this tool when recommending rejection.
 - Never confirm personalized arrival plans, share access codes, or say "everything is ready" for Inquiry guests — booking must be accepted first. General info (check-in is 3 PM) is okay.
 - Never offer to "proceed with the reservation" before nationality and party composition are established
 - Never share screening criteria or mention government regulations with the guest
-- Never guess information you don't have — if it's not in your SOPs or property info, escalate
+- Never guess information you don't have — if it's not in your SOPs, {PROPERTY_GUEST_INFO}, or {AVAILABLE_AMENITIES}, escalate
 - Never discuss internal processes, the manager, or AI with the guest
 - Always request marriage certificate/passports AFTER booking acceptance, not before
 - When in doubt, escalate
@@ -1279,23 +1281,8 @@ Number of Guests: ${guestCount}
     }
   }
 
-  // T006: Classified amenities — split into available vs on-request
-  const amenitiesStr = customKnowledgeBase?.amenities
-    ? String(customKnowledgeBase.amenities) : undefined;
-  const amenityClassifications = customKnowledgeBase?.amenityClassifications as
-    Record<string, string> | undefined;
-  const { available: availableAmenities, onRequest: onRequestAmenities } =
-    classifyAmenities(amenitiesStr, amenityClassifications);
-
-  if (availableAmenities.length > 0 || onRequestAmenities.length > 0) {
-    info += '\n### AMENITIES\n';
-    if (availableAmenities.length > 0) {
-      info += `Available Amenities: ${availableAmenities.join(', ')}\n`;
-    }
-    if (onRequestAmenities.length > 0) {
-      info += `On-Request Amenities: ${onRequestAmenities.join(', ')}\n`;
-    }
-  }
+  // Amenities are now separate template variables ({AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES})
+  // and are NOT included in buildPropertyInfo() — they resolve as separate content blocks.
 
   // T010: Use summarized description if available, fall back to listingDescription
   const description = (customKnowledgeBase?.summarizedDescription as string)
@@ -1787,14 +1774,22 @@ export async function generateAndSendAiReply(
     const checklistData = (context.screeningAnswers as any)?.documentChecklist as DocumentChecklist | undefined;
     const checklistPending = hasPendingItems(checklistData ?? null);
 
-    // Inject document checklist if pending (only for coordinator — CONFIRMED/CHECKED_IN)
+    // Build document checklist text as a separate variable (no longer inline in propertyInfo)
+    let documentChecklistText = '';
     if (!isInquiry && checklistData && checklistPending) {
-      propertyInfo += '\n### DOCUMENT CHECKLIST ###\n';
-      propertyInfo += `Passports/IDs: ${checklistData.passportsReceived}/${checklistData.passportsNeeded} received\n`;
+      documentChecklistText = `Passports/IDs: ${checklistData.passportsReceived}/${checklistData.passportsNeeded} received`;
       if (checklistData.marriageCertNeeded) {
-        propertyInfo += `Marriage Certificate: ${checklistData.marriageCertReceived ? 'received' : 'pending'}\n`;
+        documentChecklistText += `\nMarriage Certificate: ${checklistData.marriageCertReceived ? 'received' : 'pending'}`;
       }
     }
+
+    // Build amenity variables (separate from propertyInfo)
+    const varAmenitiesStr = context.customKnowledgeBase?.amenities
+      ? String(context.customKnowledgeBase.amenities) : undefined;
+    const varAmenityClasses = context.customKnowledgeBase?.amenityClassifications as
+      Record<string, string> | undefined;
+    const { available: availableAmenityList, onRequest: onRequestAmenityList } =
+      classifyAmenities(varAmenitiesStr, varAmenityClasses);
 
     // Check for image attachments in current window messages (from DB imageUrls field)
     const hasImages = currentMsgs.some(m => m.imageUrls && m.imageUrls.length > 0);
@@ -1830,22 +1825,42 @@ export async function generateAndSendAiReply(
 
     let guestMessage = '';
 
-    // Build single user message with conversation history + context + current guest message(s).
-    // Last 20 messages as labeled text, not separate user/assistant blocks.
+    // Build conversation history text — last 20 messages as labeled lines
     const currentMsgIds = new Set(currentMsgs.map(m => m.id));
     const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-20);
     const historyText = historyMsgs.length > 0
       ? historyMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n')
-      : 'No previous messages.';
+      : '';
 
-    const userMessage = [
-      `### CONVERSATION HISTORY ###\n${historyText}`,
-      `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}`,
-      `### OPEN TASKS ###\n${openTasksText}`,
-      `### KNOWLEDGE BASE ###\n${knowledgeText}`,
-      `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}`,
-      `### CURRENT LOCAL TIME ###\n${localTime}`,
-    ].join('\n\n');
+    // Apply per-listing variable overrides if configured
+    const varOverrides = (context.customKnowledgeBase?.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
+    const finalPropertyInfo = applyPropertyOverrides(propertyInfo, varOverrides.PROPERTY_GUEST_INFO);
+
+    // Build the template variable data map — all dynamic content as named entries
+    const agentType = isInquiry ? 'screening' as const : 'coordinator' as const;
+    const variableDataMap: Record<string, string> = {
+      CONVERSATION_HISTORY: historyText,
+      PROPERTY_GUEST_INFO: finalPropertyInfo,
+      AVAILABLE_AMENITIES: availableAmenityList.length > 0
+        ? applyPropertyOverrides(availableAmenityList.join(', '), varOverrides.AVAILABLE_AMENITIES) : '',
+      ON_REQUEST_AMENITIES: onRequestAmenityList.length > 0
+        ? applyPropertyOverrides(onRequestAmenityList.join(', '), varOverrides.ON_REQUEST_AMENITIES) : '',
+      OPEN_TASKS: openTasksText,
+      CURRENT_MESSAGES: currentMsgsText,
+      CURRENT_LOCAL_TIME: localTime,
+      DOCUMENT_CHECKLIST: documentChecklistText
+        ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+    };
+
+    // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
+    const { contentBlocks: userContent } = resolveVariables(
+      effectiveSystemPrompt,
+      variableDataMap,
+      agentType,
+    );
+
+    // For backward compat: build userMessage string for AiApiLog (full text of what AI received)
+    const userMessage = userContent.map(b => b.text).join('\n\n');
 
     // Single user message — no multi-turn splitting
     type InputTurn = { role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> };
@@ -1853,15 +1868,8 @@ export async function generateAndSendAiReply(
       { role: 'user' as const, content: userMessage },
     ];
 
-    // Single code path for text and text+image
-    const userContent = buildContentBlocks(personaCfg.contentBlockTemplate, {
-        conversationHistory: '', propertyInfo, currentMessages: currentMsgsText,
-        localTime, openTasks: openTasksText, knowledgeBase: knowledgeText,
-      });
-
       // ─── Tool use: DB-driven tool definitions ───
       // Load tool definitions from DB (cached 5min), filter by agent scope + enabled
-      const agentType = isInquiry ? 'screening' : 'coordinator';
       let toolDefs: Awaited<ReturnType<typeof getToolDefinitions>> = [];
       try {
         toolDefs = await getToolDefinitions(tenantId, prisma);

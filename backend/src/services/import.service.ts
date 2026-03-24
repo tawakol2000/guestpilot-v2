@@ -224,7 +224,7 @@ export async function runImport(
 
     // Merge Hostaway KB into existing KB, preserving user-managed keys
     // (amenityClassifications, summarizedDescription, originalDescription, etc.)
-    const USER_MANAGED_KEYS = ['amenityClassifications', 'summarizedDescription', 'originalDescription'];
+    const USER_MANAGED_KEYS = ['amenityClassifications', 'summarizedDescription', 'originalDescription', 'variableOverrides'];
     const existing = await prisma.property.findUnique({
       where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: String(listing.id) } },
       select: { customKnowledgeBase: true },
