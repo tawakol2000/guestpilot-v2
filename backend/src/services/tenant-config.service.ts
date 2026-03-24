@@ -159,13 +159,17 @@ export async function updateTenantAiConfig(
   const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, systemPromptVersion: _spv, ...safeUpdates } = updates as any;
 
   // Auto-increment prompt version when prompts are edited
-  if (safeUpdates.systemPromptCoordinator !== undefined || safeUpdates.systemPromptScreening !== undefined) {
-    safeUpdates.systemPromptVersion = { increment: 1 };
+  const bumpPromptVersion = safeUpdates.systemPromptCoordinator !== undefined || safeUpdates.systemPromptScreening !== undefined;
+
+  // Separate update and create data — increment only works in update, not create
+  const updateData = { ...safeUpdates };
+  if (bumpPromptVersion) {
+    updateData.systemPromptVersion = { increment: 1 };
   }
 
   const config = await prisma.tenantAiConfig.upsert({
     where: { tenantId },
-    update: safeUpdates,
+    update: updateData,
     create: { tenantId, ...safeUpdates },
   });
 

@@ -241,6 +241,19 @@ export async function seedToolDefinitions(
       },
     });
   }
+  // Migrate legacy agentScope values (screening/coordinator/both → booking statuses)
+  const SCOPE_MIGRATION: Record<string, string> = {
+    'both': 'INQUIRY,PENDING,CONFIRMED,CHECKED_IN',
+    'screening': 'INQUIRY,PENDING',
+    'coordinator': 'CONFIRMED,CHECKED_IN',
+  };
+  for (const [oldScope, newScope] of Object.entries(SCOPE_MIGRATION)) {
+    await prisma.toolDefinition.updateMany({
+      where: { tenantId, agentScope: oldScope },
+      data: { agentScope: newScope },
+    });
+  }
+
   console.log(`[ToolDefinition] Seeded ${SYSTEM_TOOLS.length} system tools for tenant ${tenantId}`);
 }
 
