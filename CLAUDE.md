@@ -150,6 +150,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (new ToolDefinition model) (018-tools-management)
 - TypeScript 5.x on Node.js 18+ + `web-push` npm package, Express 4.x, Prisma ORM (019-web-push)
 - PostgreSQL + Prisma ORM (new PushSubscription model) (019-web-push)
+- TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK (summarization), Express 4.x, Prisma ORM (020-listings-management)
+- PostgreSQL + Prisma ORM (no schema changes — uses existing `customKnowledgeBase` JSON + `listingDescription`) (020-listings-management)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

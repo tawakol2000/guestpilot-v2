@@ -1178,6 +1178,32 @@ Your response:
 // ─── Context builder helpers ──────────────────────────────────────────────────
 
 // Upgrade 5a: Grounded property info — AI only answers from verified data
+
+/** Split amenities into available vs on-request based on amenityClassifications. */
+function classifyAmenities(
+  amenitiesStr: string | undefined,
+  classifications?: Record<string, string>,
+): { available: string[]; onRequest: string[] } {
+  if (!amenitiesStr) return { available: [], onRequest: [] };
+  const items = amenitiesStr.split(',').map(a => a.trim()).filter(Boolean);
+  if (!classifications || Object.keys(classifications).length === 0) {
+    // No classifications — all amenities are "available" (backward compatible)
+    return { available: items, onRequest: [] };
+  }
+  const available: string[] = [];
+  const onRequest: string[] = [];
+  for (const item of items) {
+    const cls = classifications[item];
+    if (cls === 'on_request') {
+      onRequest.push(item);
+    } else {
+      // "available", "default", or unclassified → available (backward compatible)
+      available.push(item);
+    }
+  }
+  return { available, onRequest };
+}
+
 function buildPropertyInfo(
   guestName: string,
   checkIn: string,
@@ -1197,7 +1223,9 @@ function buildPropertyInfo(
     wifiPassword?: string;
   },
   retrievedChunks?: Array<{ content: string; category: string }>,
-  reservationStatus?: string
+  reservationStatus?: string,
+  customKnowledgeBase?: Record<string, unknown>,
+  listingDescription?: string,
 ): string {
   // Compute human-readable booking status
   const bookingStatusDisplay = (() => {
@@ -1246,6 +1274,31 @@ Number of Guests: ${guestCount}
     if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
       info += `WiFi Password: ${listing.wifiPassword}\n`;
     }
+  }
+
+  // T006: Classified amenities — split into available vs on-request
+  const amenitiesStr = customKnowledgeBase?.amenities
+    ? String(customKnowledgeBase.amenities) : undefined;
+  const amenityClassifications = customKnowledgeBase?.amenityClassifications as
+    Record<string, string> | undefined;
+  const { available: availableAmenities, onRequest: onRequestAmenities } =
+    classifyAmenities(amenitiesStr, amenityClassifications);
+
+  if (availableAmenities.length > 0 || onRequestAmenities.length > 0) {
+    info += '\n### AMENITIES\n';
+    if (availableAmenities.length > 0) {
+      info += `Available Amenities: ${availableAmenities.join(', ')}\n`;
+    }
+    if (onRequestAmenities.length > 0) {
+      info += `On-Request Amenities: ${onRequestAmenities.join(', ')}\n`;
+    }
+  }
+
+  // T010: Use summarized description if available, fall back to listingDescription
+  const description = (customKnowledgeBase?.summarizedDescription as string)
+    || listingDescription;
+  if (description) {
+    info += `\n### PROPERTY DESCRIPTION\n${description}\n`;
   }
 
   if (retrievedChunks && retrievedChunks.length > 0) {
@@ -1576,9 +1629,16 @@ export async function generateAndSendAiReply(
 
     const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
 
-    // Property amenities string for dynamic SOP injection
-    const propertyAmenities = context.customKnowledgeBase?.amenities
+    // Property amenities for dynamic SOP injection — use on-request items only when classified
+    const rawAmenitiesStr = context.customKnowledgeBase?.amenities
       ? String(context.customKnowledgeBase.amenities) : undefined;
+    const amenityClasses = context.customKnowledgeBase?.amenityClassifications as
+      Record<string, string> | undefined;
+    const { onRequest: sopOnRequestItems } = classifyAmenities(rawAmenitiesStr, amenityClasses);
+    // For SOP {PROPERTY_AMENITIES}: use on-request items if classifications exist, else full list (backward compatible)
+    const propertyAmenities = (amenityClasses && Object.keys(amenityClasses).length > 0 && sopOnRequestItems.length > 0)
+      ? sopOnRequestItems.join(', ')
+      : rawAmenitiesStr;
 
     // Upgrade 5c: RAG — retrieve relevant property knowledge for this query.
     // When multiple messages are batched (guest sent several in debounce window),
@@ -1708,7 +1768,9 @@ export async function generateAndSendAiReply(
       context.guestCount,
       context.listing,
       retrievedChunks,
-      context.reservationStatus
+      context.reservationStatus,
+      context.customKnowledgeBase,
+      context.listingDescription
     );
 
     // Inject escalation signals into prompt so the AI can factor them in

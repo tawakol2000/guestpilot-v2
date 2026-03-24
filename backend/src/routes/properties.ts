@@ -1,10 +1,66 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
+import OpenAI from 'openai';
 import { authMiddleware } from '../middleware/auth';
 import { makePropertiesController } from '../controllers/properties.controller';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { ingestPropertyKnowledge } from '../services/rag.service';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const SUMMARIZE_INSTRUCTIONS = 'Summarize this property listing into a concise, factual paragraph (~100 words) for an AI assistant. Keep: location, nearby landmarks, transport, key features, capacity. Remove: marketing language, superlatives, booking calls-to-action.';
+
+/**
+ * Summarize a property's listingDescription using GPT-5.4 Mini.
+ * Saves the result to customKnowledgeBase.summarizedDescription and
+ * preserves the original in customKnowledgeBase.originalDescription.
+ * Returns the summary string, or null if no description available.
+ */
+async function summarizeProperty(
+  prisma: PrismaClient,
+  propertyId: string,
+  tenantId: string,
+): Promise<{ summary: string; propertyName: string } | null> {
+  const property = await prisma.property.findFirst({
+    where: { id: propertyId, tenantId },
+  });
+  if (!property) return null;
+
+  const description = property.listingDescription;
+  if (!description || !description.trim()) return null;
+
+  const response = await (openai.responses as any).create({
+    model: 'gpt-5.4-mini-2026-03-17',
+    max_output_tokens: 300,
+    instructions: SUMMARIZE_INSTRUCTIONS,
+    input: description,
+    reasoning: { effort: 'none' },
+    store: true,
+  });
+
+  const summary: string = response.output_text || '';
+  if (!summary) return null;
+
+  // Read existing KB to merge (don't overwrite other fields)
+  const existingKb = (property.customKnowledgeBase as Record<string, unknown>) || {};
+  const updatedKb: Record<string, unknown> = {
+    ...existingKb,
+    summarizedDescription: summary,
+  };
+  // Preserve original description on first summarize
+  if (!existingKb.originalDescription) {
+    updatedKb.originalDescription = description;
+  }
+
+  await prisma.property.update({
+    where: { id: propertyId },
+    data: { customKnowledgeBase: updatedKb as never },
+  });
+
+  console.log(`[Properties] Summarized description for ${property.name} (${propertyId})`);
+  return { summary, propertyName: property.name };
+}
 
 function formatHour(h: number | undefined): string {
   if (h === undefined || h === null) return '';
@@ -23,6 +79,76 @@ export function propertiesRouter(prisma: PrismaClient): Router {
   router.get('/ai-status', ((req, res) => ctrl.listWithAiStatus(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/:id', ((req, res) => ctrl.get(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.put('/:id/knowledge-base', ((req, res) => ctrl.updateKnowledgeBase(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // POST /api/properties/summarize-all — batch summarize all tenant property descriptions (T009)
+  router.post('/summarize-all', (async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+
+      const properties = await prisma.property.findMany({
+        where: { tenantId, listingDescription: { not: '' } },
+        select: { id: true, name: true, listingDescription: true },
+      });
+
+      // Filter out properties with null/empty descriptions
+      const withDescription = properties.filter(p => p.listingDescription && p.listingDescription.trim());
+      if (withDescription.length === 0) {
+        res.json({ count: 0, results: [] });
+        return;
+      }
+
+      const results: Array<{ id: string; name: string; summary: string }> = [];
+      for (const prop of withDescription) {
+        try {
+          const result = await summarizeProperty(prisma, prop.id, tenantId);
+          if (result) {
+            results.push({ id: prop.id, name: result.propertyName, summary: result.summary });
+          }
+        } catch (err) {
+          console.warn(`[Properties] Summarize failed for ${prop.name} (${prop.id}):`, err);
+          // Continue with next property — don't fail the whole batch
+        }
+      }
+
+      console.log(`[Properties] Batch summarized ${results.length}/${withDescription.length} properties for tenant ${tenantId}`);
+      res.json({ count: results.length, results });
+    } catch (err) {
+      console.error('[Properties] Batch summarize failed:', err);
+      res.status(500).json({ error: 'Batch summarization failed' });
+    }
+  }) as RequestHandler);
+
+  // POST /api/properties/:id/summarize — summarize a single property description (T008)
+  router.post('/:id/summarize', (async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const propertyId = req.params.id as string;
+
+      const property = await prisma.property.findFirst({
+        where: { id: propertyId, tenantId },
+        select: { id: true, listingDescription: true },
+      });
+      if (!property) {
+        res.status(404).json({ error: 'Property not found' });
+        return;
+      }
+      if (!property.listingDescription || !property.listingDescription.trim()) {
+        res.status(400).json({ error: 'No description to summarize' });
+        return;
+      }
+
+      const result = await summarizeProperty(prisma, propertyId, tenantId);
+      if (!result) {
+        res.status(500).json({ error: 'Summarization returned no result' });
+        return;
+      }
+
+      res.json({ summary: result.summary });
+    } catch (err) {
+      console.error('[Properties] Summarize failed:', err);
+      res.status(500).json({ error: 'Summarization failed' });
+    }
+  }) as RequestHandler);
 
   // POST /api/properties/:id/resync — fetch fresh listing from Hostaway, update DB, rebuild RAG chunks
   router.post('/:id/resync', (async (req: any, res) => {

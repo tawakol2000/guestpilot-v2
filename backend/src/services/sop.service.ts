@@ -214,6 +214,13 @@ function normaliseStatus(raw: string): string {
   return 'DEFAULT';
 }
 
+/**
+ * Replace template variables in SOP content.
+ * For sop-amenity-request: {PROPERTY_AMENITIES} is replaced with the amenities list.
+ * When amenity classifications exist, the caller (ai.service.ts) passes only "on_request"
+ * items here — "available" items go into buildPropertyInfo() instead. When no classifications
+ * exist, the full amenities string is passed for backward compatibility.
+ */
 function applyTemplates(content: string, category: string, propertyAmenities?: string): string {
   if (category === 'sop-amenity-request' && content.includes('{PROPERTY_AMENITIES}')) {
     if (propertyAmenities) {

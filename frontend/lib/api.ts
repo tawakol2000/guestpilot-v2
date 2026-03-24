@@ -274,6 +274,14 @@ export async function apiUpdateKnowledgeBase(
   })
 }
 
+export async function apiSummarizeDescription(id: string): Promise<{ summary: string }> {
+  return apiFetch<{ summary: string }>(`/api/properties/${id}/summarize`, { method: 'POST' })
+}
+
+export async function apiSummarizeAll(): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>('/api/properties/summarize-all', { method: 'POST' })
+}
+
 // ─── Import ────────────────────────────────────────────────────────────────────
 export interface ImportProgress {
   phase: 'idle' | 'deleting' | 'listings' | 'reservations' | 'messages' | 'done' | 'error'

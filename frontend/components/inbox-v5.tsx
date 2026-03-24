@@ -86,6 +86,7 @@ import SopEditorV5 from '@/components/sop-editor-v5'
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import SopMonitorV5 from '@/components/sop-monitor-v5'
+import ListingsV5 from '@/components/listings-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'sop-monitor'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'sop-monitor' | 'listings'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -2421,6 +2422,7 @@ export default function InboxV5() {
             { id: 'tools', label: 'Tools' },
             { id: 'sandbox', label: 'Sandbox' },
             /* OPUS tab removed — 014-openai-migration */
+            { id: 'listings', label: 'Listings' },
             { id: 'sop-monitor', label: 'SOP Monitor' },
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -4281,6 +4283,13 @@ export default function InboxV5() {
         </ErrorBoundary>
       )}
       {/* OPUS tab render removed — 014-openai-migration */}
+      {navTab === 'listings' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <ListingsV5 />
+        </div>
+        </ErrorBoundary>
+      )}
       {navTab === 'sop-monitor' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>

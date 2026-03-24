@@ -6,7 +6,6 @@ import {
   apiGetImportProgress,
   apiRunImport,
   apiGetProperties,
-  apiUpdateKnowledgeBase,
   apiGetTemplates,
   apiUpdateTemplate,
   apiEnhanceTemplate,
@@ -430,163 +429,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
 
 // ─── Section B: Properties ────────────────────────────────────────────────────
 
-// Key label mapping matching the backend
-const KB_LABELS: Record<string, string> = {
-  internalListingName: 'Unit Number',
-  personCapacity: 'Person Capacity',
-  roomType: 'Property Type',
-  bedroomsNumber: 'Bedrooms',
-  bathroomsNumber: 'Bathrooms',
-  doorCode: 'Door Code',
-  wifiName: 'WiFi Name',
-  wifiPassword: 'WiFi Password',
-  checkInTime: 'Check-in Time',
-  checkOutTime: 'Check-out Time',
-  houseRules: 'House Rules',
-  specialInstruction: 'Special Instructions',
-  keyPickup: 'Key Pickup',
-  amenities: 'Amenities',
-  cleaningFee: 'Cleaning Fee',
-  squareMeters: 'Size (sqm)',
-  bedTypes: 'Bed Types',
-}
-
-function PropertyInfoEditor({ prop, onSaved }: { prop: ApiProperty; onSaved: (updated: ApiProperty) => void }): React.ReactElement {
-  const [rows, setRows] = useState<Array<{ key: string; value: string }>>(() => {
-    const kb = prop.customKnowledgeBase ?? {}
-    const entries = Object.entries(kb as Record<string, unknown>)
-    return entries.length > 0
-      ? entries.map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) }))
-      : [{ key: '', value: '' }]
-  })
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const saveBtnHover = useHover()
-  const addBtnHover = useHover()
-
-  function handleRowChange(index: number, field: 'key' | 'value', val: string): void {
-    setRows(prev => prev.map((r, i) => i === index ? { ...r, [field]: val } : r))
-  }
-
-  function handleAddRow(): void {
-    setRows(prev => [...prev, { key: '', value: '' }])
-  }
-
-  function handleRemoveRow(index: number): void {
-    setRows(prev => prev.length <= 1 ? [{ key: '', value: '' }] : prev.filter((_, i) => i !== index))
-  }
-
-  async function handleSave(): Promise<void> {
-    setSaving(true)
-    try {
-      const obj: Record<string, string> = {}
-      for (const row of rows) {
-        if (row.key.trim()) obj[row.key.trim()] = row.value
-      }
-      await apiUpdateKnowledgeBase(prop.id, obj)
-      onSaved({ ...prop, customKnowledgeBase: obj })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const inputStyle: React.CSSProperties = {
-    fontSize: 12,
-    padding: '6px 10px',
-    border: `1px solid ${T.border.default}`,
-    borderRadius: T.radius.sm,
-    background: T.bg.primary,
-    color: T.text.primary,
-    fontFamily: T.font.sans,
-    outline: 'none',
-    boxSizing: 'border-box',
-    ...focusInputStyle,
-  }
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
-        Property Info
-      </div>
-      {rows.map((row, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'flex',
-            gap: 8,
-            marginBottom: 6,
-            alignItems: 'center',
-            padding: '4px 0',
-            background: i % 2 === 0 ? 'transparent' : T.bg.secondary,
-            borderRadius: T.radius.sm,
-          }}
-        >
-          <input
-            placeholder="Key"
-            value={KB_LABELS[row.key] || row.key}
-            onChange={e => handleRowChange(i, 'key', e.target.value)}
-            style={{ ...inputStyle, width: '30%', fontWeight: 600 }}
-            title={row.key}
-          />
-          <input
-            placeholder="Value"
-            value={row.value}
-            onChange={e => handleRowChange(i, 'value', e.target.value)}
-            style={{ ...inputStyle, flex: 1 }}
-          />
-          <button
-            onClick={() => handleRemoveRow(i)}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: T.text.tertiary,
-              padding: '4px 6px',
-              fontSize: 14,
-              lineHeight: 1,
-              borderRadius: T.radius.sm,
-              transition: 'color 0.15s ease',
-            }}
-          >
-            x
-          </button>
-        </div>
-      ))}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-        <button
-          style={{
-            ...btnGhost,
-            height: 28,
-            padding: '0 12px',
-            fontSize: 11,
-            background: addBtnHover.hovered ? T.bg.secondary : 'transparent',
-          }}
-          onClick={handleAddRow}
-          {...addBtnHover.handlers}
-        >
-          + Add Row
-        </button>
-        <button
-          style={{
-            ...btnPrimary,
-            opacity: saving ? 0.5 : saveBtnHover.hovered ? 0.85 : 1,
-            cursor: saving ? 'not-allowed' : 'pointer',
-          }}
-          disabled={saving}
-          onClick={handleSave}
-          {...saveBtnHover.handlers}
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <SavedFeedback visible={saved} />
-      </div>
-    </div>
-  )
-}
+/* PropertyInfoEditor removed — moved to Listings page (020-listings-management) */
 
 function PropertyDescriptionEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
   const [desc, setDesc] = useState(prop.listingDescription || '')
@@ -779,7 +622,7 @@ function PropertyCard({ prop, isOpen, onToggle, onUpdate }: { prop: ApiProperty;
               </span>
             )}
           </div>
-          <PropertyInfoEditor prop={prop} onSaved={onUpdate} />
+          {/* PropertyInfoEditor removed — use Listings page (020-listings-management) */}
           <PropertyDescriptionEditor prop={prop} />
           <LearnedAnswersViewer propertyId={prop.id} />
         </div>
