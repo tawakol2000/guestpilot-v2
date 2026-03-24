@@ -201,7 +201,7 @@ async function classifyMessageSop(
       instructions: systemPrompt,
       input: inputMessages,
       tools: [sopToolDef],
-      tool_choice: { type: 'function', name: 'get_sop' },
+      tool_choice: 'auto',
       reasoning: { effort: 'none' },
       max_output_tokens: 200,
       prompt_cache_key: options.tenantId ? `tenant-${options.tenantId}-${options.agentType || 'default'}` : undefined,
