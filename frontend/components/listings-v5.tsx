@@ -1260,37 +1260,44 @@ export default function ListingsV5(): React.ReactElement {
         const sorted = [...allAmenities.entries()].sort((a, b) => a[0].localeCompare(b[0]))
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setBulkAmenityOpen(false)}>
-            <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '95vw', maxHeight: '85vh', overflow: 'auto', background: T.bg.card, borderRadius: T.radius.lg, boxShadow: T.shadow.lg, padding: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, fontFamily: T.font.sans, margin: 0 }}>Bulk Edit Amenities ({sorted.length})</h3>
-                <button onClick={() => setBulkAmenityOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: T.text.tertiary }}>✕</button>
+            <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: T.bg.card, borderRadius: T.radius.lg, boxShadow: T.shadow.lg }}>
+              {/* Header */}
+              <div style={{ padding: '24px 24px 0 24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, fontFamily: T.font.sans, margin: 0 }}>Bulk Edit Amenities ({sorted.length})</h3>
+                  <button onClick={() => setBulkAmenityOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: T.text.tertiary }}>✕</button>
+                </div>
+                <p style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 16 }}>Changes apply to ALL listings that have this amenity.</p>
               </div>
-              <p style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 16 }}>Changes apply to ALL listings that have this amenity.</p>
-              {sorted.map(([name, cc]) => (
-                <AmenityToggle key={name} name={name} classification={cc} onChange={nc => {
-                  properties.forEach(p => {
-                    const s = editStates[p.id]; if (!s) return
-                    if (!parseAmenities(String(s.kb.amenities || '')).includes(name)) return
-                    const cur = { ...((s.kb.amenityClassifications || {}) as Record<string, AmenityClassification>) }; cur[name] = nc
-                    setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenityClassifications: cur }, dirty: true } }))
-                  })
-                }} />
-              ))}
-              <div style={{ marginTop: 12 }}>
-                <input placeholder="Add amenity to all listings... (press Enter)" onKeyDown={e => {
-                  if (e.key !== 'Enter') return; const val = (e.target as HTMLInputElement).value.trim(); if (!val) return
-                  properties.forEach(p => {
-                    const s = editStates[p.id]; if (!s) return
-                    const list = parseAmenities(String(s.kb.amenities || '')); if (list.includes(val)) return
-                    setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenities: [...list, val].join(', ') }, dirty: true } }))
-                  })
-                  ;(e.target as HTMLInputElement).value = ''
-                }} style={{ width: '100%', padding: '8px 12px', fontSize: 12, fontFamily: T.font.sans, border: `1px solid ${T.border.default}`, borderRadius: 6, background: T.bg.primary, boxSizing: 'border-box' as const }} />
+              {/* Scrollable amenity list */}
+              <div className="listings-scroll" style={{ flex: 1, overflow: 'auto', padding: '0 24px', minHeight: 0 }}>
+                {sorted.map(([name, cc]) => (
+                  <AmenityToggle key={name} name={name} classification={cc} onChange={nc => {
+                    properties.forEach(p => {
+                      const s = editStates[p.id]; if (!s) return
+                      if (!parseAmenities(String(s.kb.amenities || '')).includes(name)) return
+                      const cur = { ...((s.kb.amenityClassifications || {}) as Record<string, AmenityClassification>) }; cur[name] = nc
+                      setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenityClassifications: cur }, dirty: true } }))
+                    })
+                  }} />
+                ))}
+                <div style={{ marginTop: 12, paddingBottom: 8 }}>
+                  <input placeholder="Add amenity to all listings... (press Enter)" onKeyDown={e => {
+                    if (e.key !== 'Enter') return; const val = (e.target as HTMLInputElement).value.trim(); if (!val) return
+                    properties.forEach(p => {
+                      const s = editStates[p.id]; if (!s) return
+                      const list = parseAmenities(String(s.kb.amenities || '')); if (list.includes(val)) return
+                      setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenities: [...list, val].join(', ') }, dirty: true } }))
+                    })
+                    ;(e.target as HTMLInputElement).value = ''
+                  }} style={{ width: '100%', padding: '8px 12px', fontSize: 12, fontFamily: T.font.sans, border: `1px solid ${T.border.default}`, borderRadius: 6, background: T.bg.primary, boxSizing: 'border-box' as const }} />
+                </div>
               </div>
+              {/* Sticky footer */}
               {(() => {
                 const dirtyIds = properties.filter(p => editStates[p.id]?.dirty).map(p => p.id)
                 return (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <div style={{ padding: '16px 24px', borderTop: `1px solid ${T.border.default}`, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
                     {dirtyIds.length > 0 && <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginRight: 'auto' }}>{dirtyIds.length} listing{dirtyIds.length > 1 ? 's' : ''} modified</span>}
                     <button
                       disabled={dirtyIds.length === 0}
