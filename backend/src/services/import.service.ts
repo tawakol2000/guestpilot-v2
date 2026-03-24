@@ -243,13 +243,13 @@ export async function runImport(
         name,
         address,
         listingDescription: listing.description || '',
-        customKnowledgeBase: mergedKb,
+        customKnowledgeBase: mergedKb as never,
       },
       update: {
         name,
         address,
         listingDescription: listing.description || '',
-        customKnowledgeBase: mergedKb,
+        customKnowledgeBase: mergedKb as never,
       },
     });
     result.properties++;

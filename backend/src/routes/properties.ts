@@ -224,7 +224,7 @@ export function propertiesRouter(prisma: PrismaClient): Router {
           name,
           address,
           listingDescription: listing.description || property.listingDescription,
-          customKnowledgeBase: mergedKb,
+          customKnowledgeBase: mergedKb as never,
         },
       });
 
