@@ -694,62 +694,36 @@ function PropertyCard({
         </Section>
 
         {/* ── Amenities ── */}
-        <div style={{ borderTop: `1px solid ${T.border.default}` }}>
-          <div style={{
-            padding: '12px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}>
-            <span style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: T.text.secondary,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              fontFamily: T.font.sans,
-            }}>
-              Amenities
-            </span>
-            <span style={{
-              fontSize: 11,
-              color: T.text.tertiary,
-              fontFamily: T.font.sans,
-            }}>
-              {amenities.length > 0 ? `${amenities.length} items` : 'No amenities listed'}
-            </span>
+        <Section title={`Amenities${amenities.length > 0 ? ` (${amenities.length})` : ''}`}>
+          {amenities.map(name => (
+            <AmenityToggle
+              key={name}
+              name={name}
+              classification={amenityClassifications[name] || 'default'}
+              onChange={c => updateAmenityClassification(name, c)}
+            />
+          ))}
+          {/* Add amenity input */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <input
+              placeholder="Add amenity..."
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const val = (e.target as HTMLInputElement).value.trim()
+                  if (!val || amenities.includes(val)) return
+                  const newList = [...amenities, val].join(', ')
+                  onKbChange('amenities', newList)
+                  ;(e.target as HTMLInputElement).value = ''
+                }
+              }}
+              style={{
+                flex: 1, padding: '6px 10px', fontSize: 12, fontFamily: T.font.sans,
+                border: `1px solid ${T.border.default}`, borderRadius: 6,
+                background: T.bg.primary,
+              }}
+            />
           </div>
-          <div style={{ padding: '0 20px 16px' }}>
-            {amenities.map(name => (
-              <AmenityToggle
-                key={name}
-                name={name}
-                classification={amenityClassifications[name] || 'default'}
-                onChange={c => updateAmenityClassification(name, c)}
-              />
-            ))}
-            {/* Add amenity input */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input
-                placeholder="Add amenity..."
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    const val = (e.target as HTMLInputElement).value.trim()
-                    if (!val || amenities.includes(val)) return
-                    const newList = [...amenities, val].join(', ')
-                    onKbChange('amenities', newList)
-                    ;(e.target as HTMLInputElement).value = ''
-                  }
-                }}
-                style={{
-                  flex: 1, padding: '6px 10px', fontSize: 12, fontFamily: T.font.sans,
-                  border: `1px solid ${T.border.default}`, borderRadius: 6,
-                  background: T.bg.primary,
-                }}
-              />
-            </div>
-          </div>
-        </div>
+        </Section>
 
         {/* ── Description ── */}
         <Section title="Description" defaultOpen={false}>
