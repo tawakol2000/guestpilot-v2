@@ -955,6 +955,7 @@ export default function ListingsV5(): React.ReactElement {
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())
   const [summarizingAll, setSummarizingAll] = useState(false)
   const [bulkAmenityOpen, setBulkAmenityOpen] = useState(false)
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   useEffect(() => { ensureStyles() }, [])
 
@@ -1286,7 +1287,67 @@ export default function ListingsV5(): React.ReactElement {
                   ;(e.target as HTMLInputElement).value = ''
                 }} style={{ width: '100%', padding: '8px 12px', fontSize: 12, fontFamily: T.font.sans, border: `1px solid ${T.border.default}`, borderRadius: 6, background: T.bg.primary, boxSizing: 'border-box' as const }} />
               </div>
-              <p style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginTop: 16 }}>Save each listing card after bulk changes.</p>
+              {(() => {
+                const dirtyIds = properties.filter(p => editStates[p.id]?.dirty).map(p => p.id)
+                return (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {dirtyIds.length > 0 && <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginRight: 'auto' }}>{dirtyIds.length} listing{dirtyIds.length > 1 ? 's' : ''} modified</span>}
+                    <button
+                      disabled={dirtyIds.length === 0}
+                      onClick={() => {
+                        const states: Record<string, PropertyEditState> = {}
+                        for (const p of properties) {
+                          states[p.id] = { kb: { ...(p.customKnowledgeBase || {}) }, dirty: false }
+                        }
+                        setEditStates(states)
+                      }}
+                      style={{
+                        padding: '8px 16px', fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                        border: `1px solid ${T.border.strong}`, borderRadius: T.radius.sm,
+                        background: 'transparent', color: dirtyIds.length === 0 ? T.text.tertiary : T.text.secondary,
+                        cursor: dirtyIds.length === 0 ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Revert All
+                    </button>
+                    <button
+                      disabled={dirtyIds.length === 0 || bulkSaving}
+                      onClick={async () => {
+                        setBulkSaving(true)
+                        try {
+                          await Promise.all(dirtyIds.map(id => {
+                            const s = editStates[id]; if (!s) return Promise.resolve()
+                            return apiUpdateKnowledgeBase(id, s.kb)
+                          }))
+                          setEditStates(prev => {
+                            const next = { ...prev }
+                            dirtyIds.forEach(id => { if (next[id]) next[id] = { ...next[id], dirty: false } })
+                            return next
+                          })
+                          // Update properties source-of-truth so revert uses saved values
+                          setProperties(prev => prev.map(p => {
+                            const s = editStates[p.id]
+                            if (!s?.dirty) return p
+                            return { ...p, customKnowledgeBase: { ...s.kb } }
+                          }))
+                        } catch (err) { console.error('Bulk save failed:', err) }
+                        finally { setBulkSaving(false) }
+                      }}
+                      style={{
+                        padding: '8px 20px', fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                        border: 'none', borderRadius: T.radius.sm,
+                        background: dirtyIds.length === 0 || bulkSaving ? T.bg.tertiary : T.accent,
+                        color: dirtyIds.length === 0 || bulkSaving ? T.text.tertiary : T.text.inverse,
+                        cursor: dirtyIds.length === 0 || bulkSaving ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      {bulkSaving && <Spinner size={12} />}
+                      {bulkSaving ? 'Saving...' : `Save All${dirtyIds.length > 0 ? ` (${dirtyIds.length})` : ''}`}
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )

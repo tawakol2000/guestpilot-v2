@@ -209,6 +209,14 @@ export function propertiesRouter(prisma: PrismaClient): Router {
       const name = listing.internalListingName || listing.name || property.name;
       const address = [listing.address, listing.city].filter(Boolean).join(', ') || property.address;
 
+      // Merge Hostaway KB into existing KB, preserving user-managed keys
+      const USER_MANAGED_KEYS = ['amenityClassifications', 'summarizedDescription', 'originalDescription'];
+      const existingKb = (property.customKnowledgeBase as Record<string, unknown>) || {};
+      const mergedKb: Record<string, unknown> = { ...kb };
+      for (const key of USER_MANAGED_KEYS) {
+        if (existingKb[key] !== undefined) mergedKb[key] = existingKb[key];
+      }
+
       // Update property in DB
       const updated = await prisma.property.update({
         where: { id: propertyId },
@@ -216,7 +224,7 @@ export function propertiesRouter(prisma: PrismaClient): Router {
           name,
           address,
           listingDescription: listing.description || property.listingDescription,
-          customKnowledgeBase: kb,
+          customKnowledgeBase: mergedKb,
         },
       });
 

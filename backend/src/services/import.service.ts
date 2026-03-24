@@ -222,6 +222,19 @@ export async function runImport(
     if (listing.squareMeters) kb.squareMeters = String(listing.squareMeters);
     if (listing.bedTypes) kb.bedTypes = Array.isArray(listing.bedTypes) ? (listing.bedTypes as string[]).join(', ') : String(listing.bedTypes);
 
+    // Merge Hostaway KB into existing KB, preserving user-managed keys
+    // (amenityClassifications, summarizedDescription, originalDescription, etc.)
+    const USER_MANAGED_KEYS = ['amenityClassifications', 'summarizedDescription', 'originalDescription'];
+    const existing = await prisma.property.findUnique({
+      where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: String(listing.id) } },
+      select: { customKnowledgeBase: true },
+    });
+    const existingKb = (existing?.customKnowledgeBase as Record<string, unknown>) || {};
+    const mergedKb: Record<string, unknown> = { ...kb };
+    for (const key of USER_MANAGED_KEYS) {
+      if (existingKb[key] !== undefined) mergedKb[key] = existingKb[key];
+    }
+
     const property = await prisma.property.upsert({
       where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: String(listing.id) } },
       create: {
@@ -230,13 +243,13 @@ export async function runImport(
         name,
         address,
         listingDescription: listing.description || '',
-        customKnowledgeBase: kb,
+        customKnowledgeBase: mergedKb,
       },
       update: {
         name,
         address,
         listingDescription: listing.description || '',
-        customKnowledgeBase: kb,
+        customKnowledgeBase: mergedKb,
       },
     });
     result.properties++;
