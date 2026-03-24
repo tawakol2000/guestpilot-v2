@@ -7,7 +7,9 @@ import {
   apiResyncProperty,
   apiSummarizeDescription,
   apiSummarizeAll,
+  apiGetVariablePreview,
   type ApiProperty,
+  type VariablePreview,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -464,6 +466,258 @@ function Spinner({ size = 14 }: { size?: number }): React.ReactElement {
   )
 }
 
+// ─── Variable Preview ──────────────────────────────────────────────────────
+const PREVIEW_VARS = ['PROPERTY_GUEST_INFO', 'AVAILABLE_AMENITIES', 'ON_REQUEST_AMENITIES', 'DOCUMENT_CHECKLIST'] as const
+type PreviewVarName = typeof PREVIEW_VARS[number]
+
+const VAR_LABELS: Record<PreviewVarName, string> = {
+  PROPERTY_GUEST_INFO: 'Property & Guest Info',
+  AVAILABLE_AMENITIES: 'Available Amenities',
+  ON_REQUEST_AMENITIES: 'On-Request Amenities',
+  DOCUMENT_CHECKLIST: 'Document Checklist',
+}
+
+function VariablePreviewSection({
+  propertyId,
+  variableOverrides,
+  onOverrideChange,
+}: {
+  propertyId: string
+  variableOverrides: Record<string, { customTitle?: string; notes?: string }>
+  onOverrideChange: (varName: string, field: 'customTitle' | 'notes', value: string) => void
+}): React.ReactElement {
+  const [preview, setPreview] = useState<VariablePreview['variables'] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [expandedVars, setExpandedVars] = useState<Set<string>>(new Set())
+
+  const loadPreview = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await apiGetVariablePreview(propertyId)
+      setPreview(result.variables)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load preview')
+    } finally {
+      setLoading(false)
+    }
+  }, [propertyId])
+
+  const toggleVar = (name: string) => {
+    setExpandedVars(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button
+          onClick={loadPreview}
+          disabled={loading}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: T.font.sans,
+            border: `1px solid ${T.accent}`,
+            borderRadius: T.radius.sm,
+            background: 'transparent',
+            color: loading ? T.text.tertiary : T.accent,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            transition: 'all 150ms',
+          }}
+        >
+          {loading && <Spinner size={12} />}
+          {loading ? 'Loading...' : preview ? 'Refresh Preview' : 'Load Preview'}
+        </button>
+        {preview && (
+          <span style={{
+            fontSize: 11,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+          }}>
+            Shows what the AI sees for this property
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <div style={{
+          padding: 10,
+          background: '#FEF2F2',
+          border: `1px solid ${T.status.red}30`,
+          borderRadius: T.radius.sm,
+          color: T.status.red,
+          fontSize: 12,
+          fontFamily: T.font.sans,
+          marginBottom: 12,
+        }}>
+          {error}
+        </div>
+      )}
+
+      {preview && PREVIEW_VARS.map(varName => {
+        const value = preview[varName]
+        const overrides = variableOverrides[varName] || {}
+        const isExpanded = expandedVars.has(varName)
+        const isEmpty = !value || !value.trim()
+
+        return (
+          <div key={varName} style={{
+            marginBottom: 10,
+            border: `1px solid ${T.border.default}`,
+            borderRadius: T.radius.sm,
+            overflow: 'hidden',
+          }}>
+            {/* Variable header */}
+            <button
+              onClick={() => toggleVar(varName)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                width: '100%',
+                padding: '10px 12px',
+                background: T.bg.secondary,
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: T.font.sans,
+                fontSize: 12,
+                fontWeight: 600,
+                color: T.text.primary,
+                textAlign: 'left',
+              }}
+            >
+              <span style={{
+                display: 'inline-block',
+                transition: 'transform 150ms',
+                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                fontSize: 9,
+                color: T.text.tertiary,
+              }}>
+                &#9654;
+              </span>
+              <span>{VAR_LABELS[varName]}</span>
+              <span style={{
+                fontSize: 10,
+                fontFamily: T.font.mono,
+                color: T.text.tertiary,
+                fontWeight: 400,
+              }}>
+                {'{' + varName + '}'}
+              </span>
+              {isEmpty && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: T.text.tertiary,
+                  background: T.bg.tertiary,
+                  padding: '1px 6px',
+                  borderRadius: 3,
+                  marginLeft: 'auto',
+                }}>
+                  Empty
+                </span>
+              )}
+            </button>
+
+            {isExpanded && (
+              <div style={{ padding: 12 }}>
+                {/* Read-only resolved preview */}
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: T.text.secondary,
+                  marginBottom: 4,
+                  fontFamily: T.font.sans,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}>
+                  Resolved Output
+                </div>
+                <pre style={{
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: T.text.secondary,
+                  fontFamily: T.font.mono,
+                  padding: 10,
+                  background: T.bg.primary,
+                  border: `1px solid ${T.border.default}`,
+                  borderRadius: T.radius.sm,
+                  marginBottom: 12,
+                  maxHeight: 200,
+                  overflow: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  margin: '0 0 12px 0',
+                }}>
+                  {isEmpty ? '(empty — this block will be omitted from the AI prompt)' : value}
+                </pre>
+
+                {/* Editable override fields */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: T.text.secondary,
+                      marginBottom: 4,
+                      fontFamily: T.font.sans,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}>
+                      Custom Title
+                    </label>
+                    <input
+                      className="listings-input"
+                      type="text"
+                      value={overrides.customTitle || ''}
+                      onChange={e => onOverrideChange(varName, 'customTitle', e.target.value)}
+                      placeholder="Prepended header line..."
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={{
+                      display: 'block',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: T.text.secondary,
+                      marginBottom: 4,
+                      fontFamily: T.font.sans,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                    }}>
+                      Notes
+                    </label>
+                    <input
+                      className="listings-input"
+                      type="text"
+                      value={overrides.notes || ''}
+                      onChange={e => onOverrideChange(varName, 'notes', e.target.value)}
+                      placeholder="Appended after content..."
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Property Card ────────────────────────────────────────────────────────────
 function PropertyCard({
   property,
@@ -884,6 +1138,23 @@ function PropertyCard({
             {summarizing && <Spinner size={12} />}
             {summarizing ? 'Summarizing...' : summarizedDescription ? 'Re-summarize' : 'Summarize Description'}
           </button>
+        </Section>
+
+        {/* ── Variable Preview ── */}
+        <Section title="Variable Preview">
+          <VariablePreviewSection
+            propertyId={property.id}
+            variableOverrides={(kb.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>}
+            onOverrideChange={(varName, field, value) => {
+              const currentOverrides = ((kb.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>)
+              const currentVar = currentOverrides[varName] || {}
+              const updated = {
+                ...currentOverrides,
+                [varName]: { ...currentVar, [field]: value },
+              }
+              onKbChange('variableOverrides', updated)
+            }}
+          />
         </Section>
 
         {/* ── Save Button ── */}

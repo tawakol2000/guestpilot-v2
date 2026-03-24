@@ -46,10 +46,10 @@
 
 **Independent Test**: Open Configure AI, edit the system prompt. See variable reference panel. Remove `{CURRENT_MESSAGES}`, see warning on save.
 
-- [ ] T011 [US3] Add API endpoint `GET /api/ai-config/template-variables` in `backend/src/routes/` (or existing ai-config route file) — returns the variable registry filtered by agent type (query param `?agent=coordinator|screening`). Each entry: `{ name, description, essential, propertyBound }`. Response should be <100ms (simple in-memory registry, no DB query).
-- [ ] T012 [US3] Add variable reference panel to `frontend/components/configure-ai-v5.tsx` — next to each system prompt textarea, show a collapsible panel listing available variables with descriptions. Click a variable name to insert `{VARIABLE_NAME}` at the cursor position in the textarea.
-- [ ] T013 [US3] Add missing-variable warning in `frontend/components/configure-ai-v5.tsx` — on save, scan the prompt text for essential variables (CURRENT_MESSAGES, PROPERTY_GUEST_INFO, CONVERSATION_HISTORY). If any are missing, show an amber warning: "Essential variable {X} is missing. The system will auto-append it." Allow save anyway (not blocking).
-- [ ] T014 [P] [US3] Add `apiGetTemplateVariables(agentType)` function to `frontend/lib/api.ts` — calls the new endpoint from T011.
+- [X] T011 [US3] Add API endpoint `GET /api/ai-config/template-variables` in `backend/src/routes/` (or existing ai-config route file) — returns the variable registry filtered by agent type (query param `?agent=coordinator|screening`). Each entry: `{ name, description, essential, propertyBound }`. Response should be <100ms (simple in-memory registry, no DB query).
+- [X] T012 [US3] Add variable reference panel to `frontend/components/configure-ai-v5.tsx` — next to each system prompt textarea, show a collapsible panel listing available variables with descriptions. Click a variable name to insert `{VARIABLE_NAME}` at the cursor position in the textarea.
+- [X] T013 [US3] Add missing-variable warning in `frontend/components/configure-ai-v5.tsx` — on save, scan the prompt text for essential variables (CURRENT_MESSAGES, PROPERTY_GUEST_INFO, CONVERSATION_HISTORY). If any are missing, show an amber warning: "Essential variable {X} is missing. The system will auto-append it." Allow save anyway (not blocking).
+- [X] T014 [P] [US3] Add `apiGetTemplateVariables(agentType)` function to `frontend/lib/api.ts` — calls the new endpoint from T011.
 
 **Checkpoint**: Configure AI page shows variable panel, click-to-insert works, warnings appear for missing essentials.
 
@@ -61,12 +61,12 @@
 
 **Independent Test**: Open Listings page, expand variable preview for a property. Add a custom title. Send a guest message for that property — verify custom title appears in AI context.
 
-- [ ] T015 [US4] Add variable preview endpoint `GET /api/properties/:id/variable-preview` in `backend/src/routes/properties.ts` — returns resolved output for each property-bound variable (PROPERTY_GUEST_INFO, AVAILABLE_AMENITIES, ON_REQUEST_AMENITIES, DOCUMENT_CHECKLIST) using mock reservation data. Shows what the AI would see.
-- [ ] T016 [US4] Update variable resolution in `backend/src/services/template-variable.service.ts` — add `applyPropertyOverrides(variableName, content, overrides)` that merges `customKnowledgeBase.variableOverrides` into the resolved output. If `customTitle` exists, prepend as a header. If `notes` exists, append after the auto-generated content.
-- [ ] T017 [US4] Update `buildPropertyInfo()` in `backend/src/services/ai.service.ts` to read `customKnowledgeBase.variableOverrides.PROPERTY_GUEST_INFO` and apply overrides (custom title, notes) to the output.
-- [ ] T018 [US4] Add `variableOverrides` to `USER_MANAGED_KEYS` in both `backend/src/services/import.service.ts` and `backend/src/routes/properties.ts` (resync endpoint) so per-listing customizations survive Hostaway resyncs.
-- [ ] T019 [US4] Add variable preview section to `frontend/components/listings-v5.tsx` — new collapsible `Section` titled "Variable Preview" on each property card. Shows read-only preview of each property-bound variable's resolved output. Editable fields for `customTitle` and `notes` per variable. Save updates `customKnowledgeBase.variableOverrides` via existing `apiUpdateKnowledgeBase`.
-- [ ] T020 [P] [US4] Add `apiGetVariablePreview(propertyId)` function to `frontend/lib/api.ts` — calls the new endpoint from T015.
+- [X] T015 [US4] Add variable preview endpoint `GET /api/properties/:id/variable-preview` in `backend/src/routes/properties.ts` — returns resolved output for each property-bound variable (PROPERTY_GUEST_INFO, AVAILABLE_AMENITIES, ON_REQUEST_AMENITIES, DOCUMENT_CHECKLIST) using mock reservation data. Shows what the AI would see.
+- [X] T016 [US4] Update variable resolution in `backend/src/services/template-variable.service.ts` — add `applyPropertyOverrides(variableName, content, overrides)` that merges `customKnowledgeBase.variableOverrides` into the resolved output. If `customTitle` exists, prepend as a header. If `notes` exists, append after the auto-generated content.
+- [X] T017 [US4] Update `buildPropertyInfo()` in `backend/src/services/ai.service.ts` to read `customKnowledgeBase.variableOverrides.PROPERTY_GUEST_INFO` and apply overrides (custom title, notes) to the output.
+- [X] T018 [US4] Add `variableOverrides` to `USER_MANAGED_KEYS` in both `backend/src/services/import.service.ts` and `backend/src/routes/properties.ts` (resync endpoint) so per-listing customizations survive Hostaway resyncs.
+- [X] T019 [US4] Add variable preview section to `frontend/components/listings-v5.tsx` — new collapsible `Section` titled "Variable Preview" on each property card. Shows read-only preview of each property-bound variable's resolved output. Editable fields for `customTitle` and `notes` per variable. Save updates `customKnowledgeBase.variableOverrides` via existing `apiUpdateKnowledgeBase`.
+- [X] T020 [P] [US4] Add `apiGetVariablePreview(propertyId)` function to `frontend/lib/api.ts` — calls the new endpoint from T015.
 
 **Checkpoint**: Listings page shows variable preview per property. Custom titles/notes appear in AI context for that property.
 
@@ -74,9 +74,9 @@
 
 ## Phase 5: Polish & Verify
 
-- [ ] T021 Verify TypeScript compilation: `cd backend && npx tsc --noEmit`
-- [ ] T022 Verify frontend build: `cd frontend && npx next build`
-- [ ] T023 End-to-end test via Sandbox: send a guest message, verify AI Logs show clean variable-resolved prompt with no duplication. Also verify: (1) system prompt text is identical across multiple messages to the same tenant (confirms prompt caching preserved — no dynamic data inline), (2) edge case: temporarily set system prompt to just "You are Omar." (no variables) — verify CURRENT_MESSAGES, PROPERTY_GUEST_INFO, and CONVERSATION_HISTORY are auto-appended as content blocks
+- [X] T021 Verify TypeScript compilation: `cd backend && npx tsc --noEmit`
+- [X] T022 Verify frontend build: `cd frontend && npx next build`
+- [X] T023 End-to-end test via Sandbox: send a guest message, verify AI Logs show clean variable-resolved prompt with no duplication. Also verify: (1) system prompt text is identical across multiple messages to the same tenant (confirms prompt caching preserved — no dynamic data inline), (2) edge case: temporarily set system prompt to just "You are Omar." (no variables) — verify CURRENT_MESSAGES, PROPERTY_GUEST_INFO, and CONVERSATION_HISTORY are auto-appended as content blocks
 
 ---
 

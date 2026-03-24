@@ -17,6 +17,7 @@ import type { ContentBlock } from '../services/ai.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
+import { getAvailableVariables } from '../services/template-variable.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -180,6 +181,27 @@ export function makeAiConfigController(prisma: PrismaClient) {
         res.json(updated);
       } catch (err) {
         console.error('[AiConfig] revertVersion error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    // ─── Template Variables — list available prompt variables for the editor ─────
+    async getTemplateVariables(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const agent = (req.query.agent as string) || 'coordinator';
+        if (agent !== 'coordinator' && agent !== 'screening') {
+          res.status(400).json({ error: 'agent must be "coordinator" or "screening"' });
+          return;
+        }
+        const variables = getAvailableVariables(agent).map(v => ({
+          name: v.name,
+          description: v.description,
+          essential: v.essential,
+          propertyBound: v.propertyBound,
+        }));
+        res.json(variables);
+      } catch (err) {
+        console.error('[AiConfig] getTemplateVariables error:', err);
         res.status(500).json({ error: 'Internal server error' });
       }
     },

@@ -282,6 +282,19 @@ export async function apiSummarizeAll(): Promise<{ count: number }> {
   return apiFetch<{ count: number }>('/api/properties/summarize-all', { method: 'POST' })
 }
 
+export interface VariablePreview {
+  variables: {
+    PROPERTY_GUEST_INFO: string
+    AVAILABLE_AMENITIES: string
+    ON_REQUEST_AMENITIES: string
+    DOCUMENT_CHECKLIST: string
+  }
+}
+
+export async function apiGetVariablePreview(propertyId: string): Promise<VariablePreview> {
+  return apiFetch<VariablePreview>(`/api/properties/${propertyId}/variable-preview`)
+}
+
 // ─── Import ────────────────────────────────────────────────────────────────────
 export interface ImportProgress {
   phase: 'idle' | 'deleting' | 'listings' | 'reservations' | 'messages' | 'done' | 'error'
@@ -382,6 +395,17 @@ export async function apiRevertAiConfigVersion(id: string): Promise<AiConfig> {
   return apiFetch<AiConfig>(`/api/ai-config/versions/${id}/revert`, {
     method: 'POST',
   })
+}
+
+export interface TemplateVariableInfo {
+  name: string
+  description: string
+  essential: boolean
+  propertyBound: boolean
+}
+
+export async function apiGetTemplateVariables(agentType: 'coordinator' | 'screening'): Promise<TemplateVariableInfo[]> {
+  return apiFetch<TemplateVariableInfo[]>(`/api/ai-config/template-variables?agent=${agentType}`)
 }
 
 export interface TenantAiConfig {

@@ -6,6 +6,8 @@ import { makePropertiesController } from '../controllers/properties.controller';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { ingestPropertyKnowledge } from '../services/rag.service';
+import { buildPropertyInfo, classifyAmenities } from '../services/ai.service';
+import { applyPropertyOverrides } from '../services/template-variable.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -246,6 +248,91 @@ export function propertiesRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Properties] Resync failed:', err);
       res.status(500).json({ error: 'Resync failed' });
+    }
+  }) as RequestHandler);
+
+  // GET /api/properties/:id/variable-preview — preview resolved template variables for a property (T015)
+  router.get('/:id/variable-preview', (async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const propertyId = req.params.id as string;
+
+      const property = await prisma.property.findFirst({
+        where: { id: propertyId, tenantId },
+      });
+      if (!property) {
+        res.status(404).json({ error: 'Property not found' });
+        return;
+      }
+
+      const kb = (property.customKnowledgeBase as Record<string, unknown>) || {};
+      const varOverrides = (kb.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
+
+      // Build mock property info using sample reservation data
+      const listing = {
+        name: property.name,
+        internalListingName: kb.internalListingName as string | undefined,
+        personCapacity: kb.personCapacity ? Number(kb.personCapacity) : undefined,
+        roomType: kb.roomType as string | undefined,
+        bedroomsNumber: kb.bedroomsNumber ? Number(kb.bedroomsNumber) : undefined,
+        bathroomsNumber: kb.bathroomsNumber ? Number(kb.bathroomsNumber) : undefined,
+        address: property.address,
+        doorSecurityCode: kb.doorCode as string | undefined,
+        wifiUsername: kb.wifiName as string | undefined,
+        wifiPassword: kb.wifiPassword as string | undefined,
+      };
+
+      // Sample reservation data for preview
+      const sampleCheckIn = new Date();
+      sampleCheckIn.setDate(sampleCheckIn.getDate() + 1);
+      const sampleCheckOut = new Date();
+      sampleCheckOut.setDate(sampleCheckOut.getDate() + 4);
+
+      let propertyInfo = buildPropertyInfo(
+        'Sample Guest',
+        sampleCheckIn.toISOString().slice(0, 10),
+        sampleCheckOut.toISOString().slice(0, 10),
+        2,
+        listing,
+        undefined, // retrievedChunks
+        'CONFIRMED',
+        kb,
+        property.listingDescription || undefined,
+      );
+
+      // Apply variable overrides
+      propertyInfo = applyPropertyOverrides(propertyInfo, varOverrides.PROPERTY_GUEST_INFO);
+
+      // Classify amenities
+      const amenitiesStr = kb.amenities as string | undefined;
+      const amenityClasses = kb.amenityClassifications as Record<string, string> | undefined;
+      const { available, onRequest } = classifyAmenities(amenitiesStr, amenityClasses);
+
+      let availableAmenities = available.length > 0
+        ? `Available amenities: ${available.join(', ')}`
+        : '';
+      let onRequestAmenities = onRequest.length > 0
+        ? `The following amenities are available ON REQUEST ONLY (guest must ask, and you confirm they will be arranged):\n${onRequest.map(a => `- ${a}`).join('\n')}`
+        : '';
+
+      // Apply overrides to amenity variables
+      availableAmenities = applyPropertyOverrides(availableAmenities, varOverrides.AVAILABLE_AMENITIES);
+      onRequestAmenities = applyPropertyOverrides(onRequestAmenities, varOverrides.ON_REQUEST_AMENITIES);
+
+      // Document checklist is empty in preview (depends on per-reservation screening data)
+      const documentChecklist = applyPropertyOverrides('', varOverrides.DOCUMENT_CHECKLIST);
+
+      res.json({
+        variables: {
+          PROPERTY_GUEST_INFO: propertyInfo,
+          AVAILABLE_AMENITIES: availableAmenities,
+          ON_REQUEST_AMENITIES: onRequestAmenities,
+          DOCUMENT_CHECKLIST: documentChecklist,
+        },
+      });
+    } catch (err) {
+      console.error('[Properties] Variable preview failed:', err);
+      res.status(500).json({ error: 'Variable preview failed' });
     }
   }) as RequestHandler);
 

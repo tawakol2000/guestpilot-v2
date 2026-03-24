@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History, Database } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History, Database, Code } from 'lucide-react'
 import {
   apiGetAIConfig,
   apiUpdateAIConfig,
@@ -17,6 +17,7 @@ import {
   apiSeedSops,
   apiGetProperties,
   apiGetChunkStats,
+  apiGetTemplateVariables,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
@@ -24,6 +25,7 @@ import {
   type KnowledgeChunk,
   type ApiProperty,
   type ChunkStat,
+  type TemplateVariableInfo,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -1600,6 +1602,142 @@ function TenantConfigSection({
 }
 
 
+// ─── Essential variable names (used for missing-variable warning) ────────────
+const ESSENTIAL_VARIABLE_NAMES = ['CURRENT_MESSAGES', 'PROPERTY_GUEST_INFO', 'CONVERSATION_HISTORY']
+
+// ─── Variable Reference Panel ────────────────────────────────────────────────
+
+function VariableReferencePanel({
+  agentType,
+  textareaRef,
+  promptValue,
+  onInsert,
+}: {
+  agentType: 'coordinator' | 'screening'
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  promptValue: string
+  onInsert: (newValue: string) => void
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false)
+  const [variables, setVariables] = useState<TemplateVariableInfo[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (expanded && !loaded) {
+      apiGetTemplateVariables(agentType)
+        .then(vars => { setVariables(vars); setLoaded(true) })
+        .catch(() => setLoaded(true))
+    }
+  }, [expanded, loaded, agentType])
+
+  function handleInsert(varName: string): void {
+    const tag = `{${varName}}`
+    const el = textareaRef.current
+    if (el) {
+      const start = el.selectionStart ?? promptValue.length
+      const end = el.selectionEnd ?? start
+      const newValue = promptValue.slice(0, start) + tag + promptValue.slice(end)
+      onInsert(newValue)
+      // Restore focus and cursor position after React re-render
+      requestAnimationFrame(() => {
+        el.focus()
+        const newCursor = start + tag.length
+        el.setSelectionRange(newCursor, newCursor)
+      })
+    } else {
+      onInsert(promptValue + tag)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+        }}
+      >
+        <Code size={12} color={T.text.tertiary} />
+        <span style={{ fontSize: 11, fontWeight: 600, color: T.text.tertiary, fontFamily: T.font.sans }}>
+          Template Variables
+        </span>
+        {expanded ? <ChevronUp size={11} color={T.text.tertiary} /> : <ChevronDown size={11} color={T.text.tertiary} />}
+      </button>
+      {expanded && (
+        <div style={{
+          marginTop: 6, padding: 10, borderRadius: T.radius.sm,
+          background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+          maxHeight: 200, overflowY: 'auto',
+        }}>
+          {!loaded ? (
+            <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>Loading...</span>
+          ) : variables.length === 0 ? (
+            <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>No variables available</span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {variables.map(v => (
+                <div key={v.name} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <button
+                    onClick={() => handleInsert(v.name)}
+                    title={`Insert {${v.name}} at cursor`}
+                    style={{
+                      padding: '2px 6px', borderRadius: 4,
+                      background: v.essential ? '#1D4ED810' : T.bg.primary,
+                      border: `1px solid ${v.essential ? '#1D4ED830' : T.border.default}`,
+                      fontFamily: T.font.mono, fontSize: 10, fontWeight: 600,
+                      color: v.essential ? T.accent : T.text.primary,
+                      cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {'{' + v.name + '}'}
+                  </button>
+                  <span style={{ fontSize: 10, color: T.text.secondary, fontFamily: T.font.sans, lineHeight: 1.4, paddingTop: 2 }}>
+                    {v.description}
+                    {v.essential && (
+                      <span style={{ color: T.accent, fontWeight: 600, marginLeft: 4 }}>required</span>
+                    )}
+                    {v.propertyBound && (
+                      <span style={{ color: T.text.tertiary, marginLeft: 4 }}>per-listing</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Missing Variable Warning ────────────────────────────────────────────────
+
+function MissingVariableWarning({ promptText }: { promptText: string }): React.ReactElement | null {
+  const missing = ESSENTIAL_VARIABLE_NAMES.filter(name => !promptText.includes(`{${name}}`))
+  if (missing.length === 0) return null
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px',
+      borderRadius: T.radius.sm, background: '#FEF3C710',
+      border: `1px solid ${T.status.amber}30`,
+    }}>
+      <AlertTriangle size={14} color={T.status.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+      <div style={{ fontSize: 11, color: T.text.secondary, fontFamily: T.font.sans, lineHeight: 1.5 }}>
+        {missing.map((name, i) => (
+          <span key={name}>
+            {i > 0 && ', '}
+            Essential variable <span style={{ fontFamily: T.font.mono, fontWeight: 600, color: T.status.amber }}>
+              {'{' + name + '}'}
+            </span> is missing
+          </span>
+        ))}
+        <span style={{ color: T.text.tertiary }}> — the system will auto-append {missing.length === 1 ? 'it' : 'them'}.</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── System Prompts Section ──────────────────────────────────────────────────
 
 function SystemPromptsSection({
@@ -1616,6 +1754,10 @@ function SystemPromptsSection({
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [expandedCoord, setExpandedCoord] = useState(false)
   const [expandedScreen, setExpandedScreen] = useState(false)
+  const [saveWarnings, setSaveWarnings] = useState<string[]>([])
+
+  const coordTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const screenTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     setCoordPrompt(config.systemPromptCoordinator || '')
@@ -1627,7 +1769,25 @@ function SystemPromptsSection({
     setTimeout(() => setToast(null), 2500)
   }
 
+  function checkMissingEssentials(coordText: string, screenText: string): string[] {
+    const warnings: string[] = []
+    for (const name of ESSENTIAL_VARIABLE_NAMES) {
+      const tag = `{${name}}`
+      if (coordText && !coordText.includes(tag)) {
+        warnings.push(`Coordinator prompt: {${name}} missing`)
+      }
+      if (screenText && !screenText.includes(tag)) {
+        warnings.push(`Screening prompt: {${name}} missing`)
+      }
+    }
+    return warnings
+  }
+
   async function handleSave(): Promise<void> {
+    // Show missing-variable warnings (non-blocking)
+    const warnings = checkMissingEssentials(coordPrompt, screenPrompt)
+    setSaveWarnings(warnings)
+
     setSaving(true)
     try {
       const updated = await apiUpdateTenantAiConfig({
@@ -1646,6 +1806,7 @@ function SystemPromptsSection({
   async function handleReset(): Promise<void> {
     if (!confirm('Reset both system prompts to the default seed values? Your edits will be lost.')) return
     setResetting(true)
+    setSaveWarnings([])
     try {
       const updated = await apiResetSystemPrompts()
       onChange(updated)
@@ -1695,7 +1856,7 @@ function SystemPromptsSection({
             color: T.text.secondary, cursor: 'pointer',
           }}
         >
-          {resetting ? 'Resetting…' : 'Reset to Default'}
+          {resetting ? 'Resetting...' : 'Reset to Default'}
         </button>
       </div>
 
@@ -1719,18 +1880,27 @@ function SystemPromptsSection({
             </span>
           </button>
           {expandedCoord && (
-            <textarea
-              value={coordPrompt}
-              onChange={e => setCoordPrompt(e.target.value)}
-              style={{
-                width: '100%', height: 350, resize: 'vertical', marginTop: 8,
-                fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
-                padding: 12, borderRadius: T.radius.sm,
-                border: `1px solid ${coordDirty ? T.status.amber : T.border.default}`,
-                background: T.bg.primary, color: T.text.primary,
-                boxSizing: 'border-box',
-              }}
-            />
+            <>
+              <textarea
+                ref={coordTextareaRef}
+                value={coordPrompt}
+                onChange={e => setCoordPrompt(e.target.value)}
+                style={{
+                  width: '100%', height: 350, resize: 'vertical', marginTop: 8,
+                  fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                  padding: 12, borderRadius: T.radius.sm,
+                  border: `1px solid ${coordDirty ? T.status.amber : T.border.default}`,
+                  background: T.bg.primary, color: T.text.primary,
+                  boxSizing: 'border-box',
+                }}
+              />
+              <VariableReferencePanel
+                agentType="coordinator"
+                textareaRef={coordTextareaRef}
+                promptValue={coordPrompt}
+                onInsert={setCoordPrompt}
+              />
+            </>
           )}
         </div>
 
@@ -1753,20 +1923,54 @@ function SystemPromptsSection({
             </span>
           </button>
           {expandedScreen && (
-            <textarea
-              value={screenPrompt}
-              onChange={e => setScreenPrompt(e.target.value)}
-              style={{
-                width: '100%', height: 350, resize: 'vertical', marginTop: 8,
-                fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
-                padding: 12, borderRadius: T.radius.sm,
-                border: `1px solid ${screenDirty ? T.status.amber : T.border.default}`,
-                background: T.bg.primary, color: T.text.primary,
-                boxSizing: 'border-box',
-              }}
-            />
+            <>
+              <textarea
+                ref={screenTextareaRef}
+                value={screenPrompt}
+                onChange={e => setScreenPrompt(e.target.value)}
+                style={{
+                  width: '100%', height: 350, resize: 'vertical', marginTop: 8,
+                  fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                  padding: 12, borderRadius: T.radius.sm,
+                  border: `1px solid ${screenDirty ? T.status.amber : T.border.default}`,
+                  background: T.bg.primary, color: T.text.primary,
+                  boxSizing: 'border-box',
+                }}
+              />
+              <VariableReferencePanel
+                agentType="screening"
+                textareaRef={screenTextareaRef}
+                promptValue={screenPrompt}
+                onInsert={setScreenPrompt}
+              />
+            </>
           )}
         </div>
+
+        {/* Missing variable warnings (shown after save) */}
+        {saveWarnings.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px',
+            borderRadius: T.radius.sm, background: '#FEF3C710',
+            border: `1px solid ${T.status.amber}30`,
+          }}>
+            <AlertTriangle size={14} color={T.status.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 11, color: T.text.secondary, fontFamily: T.font.sans, lineHeight: 1.5 }}>
+              {saveWarnings.map((w, i) => (
+                <div key={i} style={{ fontFamily: T.font.sans }}>
+                  <span style={{ fontWeight: 600, color: T.status.amber }}>{w}</span>
+                  {i === saveWarnings.length - 1 && (
+                    <span style={{ color: T.text.tertiary }}> — the system will auto-append missing essentials.</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Inline essential-variable hints (live, per-prompt) */}
+        {expandedCoord && coordPrompt && <MissingVariableWarning promptText={coordPrompt} />}
+        {expandedScreen && screenPrompt && <MissingVariableWarning promptText={screenPrompt} />}
 
         {/* Save */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1782,7 +1986,7 @@ function SystemPromptsSection({
               transition: 'background 0.2s',
             }}
           >
-            {saving ? 'Saving…' : hasChanges ? 'Save Prompts' : 'No Changes'}
+            {saving ? 'Saving...' : hasChanges ? 'Save Prompts' : 'No Changes'}
           </button>
           {toast && (
             <span style={{ fontSize: 13, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>
