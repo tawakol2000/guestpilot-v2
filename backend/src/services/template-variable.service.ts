@@ -113,18 +113,24 @@ export interface ContentBlock {
   text: string;
 }
 
+const CONTENT_BLOCKS_DELIMITER = '<!-- CONTENT_BLOCKS -->';
+const BLOCK_DELIMITER = '<!-- BLOCK -->';
+
 /**
  * Resolve template variables from a system prompt into ordered content blocks.
  *
- * - Scans the prompt for {VARIABLE_NAME} patterns
- * - Builds content blocks in the order variables appear in the prompt
- * - Auto-appends essential variables if missing
- * - Handles empty values per the emptyDefault in the registry
- * - Leaves unrecognized {SOME_TEXT} as-is in the prompt
+ * Two modes:
+ * 1. **Explicit blocks** — if the prompt contains `<!-- CONTENT_BLOCKS -->`,
+ *    everything after that delimiter is split on `<!-- BLOCK -->` into separate
+ *    content blocks. Each block's {VARIABLE} references are replaced with data.
+ *    The prompt text BEFORE the delimiter is the static system prompt.
+ *
+ * 2. **Auto-derive** (legacy) — if no delimiter exists, scan the prompt for
+ *    {VARIABLE_NAME} patterns and build one content block per variable found,
+ *    in order of appearance. Auto-append essential variables if missing.
  *
  * Returns:
- *   cleanedPrompt — system prompt with recognized {VARIABLE} references left as-is
- *                    (they serve as labels for the AI to understand what blocks follow)
+ *   cleanedPrompt — system prompt text (before delimiter, or full text in legacy mode)
  *   contentBlocks — ordered user message content blocks with actual data
  */
 export function resolveVariables(
@@ -138,7 +144,68 @@ export function resolveVariables(
       .map(v => v.name),
   );
 
-  // Track which variables are referenced in the prompt (in order of appearance)
+  // ─── Mode 1: Explicit content blocks ───
+  if (promptText.includes(CONTENT_BLOCKS_DELIMITER)) {
+    const [systemPart, blocksPart] = promptText.split(CONTENT_BLOCKS_DELIMITER, 2);
+    const blockTemplates = blocksPart
+      .split(BLOCK_DELIMITER)
+      .map(b => b.trim())
+      .filter(Boolean);
+
+    const contentBlocks: ContentBlock[] = [];
+    const usedVars = new Set<string>();
+
+    for (const template of blockTemplates) {
+      // Replace all {VARIABLE} references in this block with actual data
+      let blockText = template;
+      const blockRegex = new RegExp(VARIABLE_PATTERN.source, 'g');
+      let blockMatch: RegExpExecArray | null;
+      let hasContent = false;
+
+      while ((blockMatch = blockRegex.exec(template)) !== null) {
+        const varName = blockMatch[1];
+        if (VARIABLE_NAMES.has(varName) && scopedVars.has(varName)) {
+          const value = dataMap[varName] || '';
+          const varDef = TEMPLATE_VARIABLES.find(v => v.name === varName);
+          usedVars.add(varName);
+
+          if (value.trim()) {
+            blockText = blockText.replace(`{${varName}}`, value);
+            hasContent = true;
+          } else if (varDef?.emptyDefault !== null) {
+            blockText = blockText.replace(`{${varName}}`, varDef?.emptyDefault || '');
+            hasContent = true;
+          } else {
+            // emptyDefault is null — omit this variable's value
+            blockText = blockText.replace(`{${varName}}`, '');
+          }
+        }
+      }
+
+      // Only add block if it has meaningful content after variable replacement
+      const cleaned = blockText.trim();
+      if (cleaned && hasContent) {
+        contentBlocks.push({ type: 'text', text: cleaned });
+      }
+    }
+
+    // Auto-append essential variables not referenced in any block
+    for (const essential of ESSENTIAL_NAMES) {
+      if (!usedVars.has(essential) && scopedVars.has(essential)) {
+        const value = dataMap[essential] || '';
+        if (value.trim()) {
+          contentBlocks.push({
+            type: 'text',
+            text: `### ${essential.replace(/_/g, ' ')} ###\n${value}`,
+          });
+        }
+      }
+    }
+
+    return { cleanedPrompt: systemPart.trim(), contentBlocks };
+  }
+
+  // ─── Mode 2: Auto-derive from variable positions (legacy) ───
   const referencedVars: string[] = [];
   const seen = new Set<string>();
 
@@ -166,11 +233,7 @@ export function resolveVariables(
     const varDef = TEMPLATE_VARIABLES.find(v => v.name === varName);
 
     if (!value.trim()) {
-      // Empty value — check emptyDefault
-      if (varDef?.emptyDefault === null) {
-        // Omit block entirely
-        continue;
-      }
+      if (varDef?.emptyDefault === null) continue;
       contentBlocks.push({
         type: 'text',
         text: `### ${varName.replace(/_/g, ' ')} ###\n${varDef?.emptyDefault || ''}`,
@@ -185,6 +248,9 @@ export function resolveVariables(
 
   return { cleanedPrompt: promptText, contentBlocks };
 }
+
+/** Exported delimiters for frontend block parsing */
+export { CONTENT_BLOCKS_DELIMITER, BLOCK_DELIMITER };
 
 // ════════════════════════════════════════════════════════════════════════════
 // §4  applyPropertyOverrides()

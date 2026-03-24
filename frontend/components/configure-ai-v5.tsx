@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History, Database, Code } from 'lucide-react'
+import { ChevronDown, ChevronUp, Play, Shield, AlertTriangle, History, Database, Code, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import {
   apiGetAIConfig,
   apiUpdateAIConfig,
@@ -1738,6 +1738,293 @@ function MissingVariableWarning({ promptText }: { promptText: string }): React.R
   )
 }
 
+// ─── Content Block delimiter helpers ─────────────────────────────────────────
+
+const CONTENT_BLOCKS_DELIMITER = '<!-- CONTENT_BLOCKS -->'
+const BLOCK_DELIMITER = '<!-- BLOCK -->'
+
+/** Split a full prompt string into { systemPrompt, blocks } */
+function parseContentBlocks(fullPrompt: string): { systemPrompt: string; blocks: string[] } {
+  const idx = fullPrompt.indexOf(CONTENT_BLOCKS_DELIMITER)
+  if (idx === -1) return { systemPrompt: fullPrompt, blocks: [] }
+  const systemPrompt = fullPrompt.slice(0, idx).trimEnd()
+  const rest = fullPrompt.slice(idx + CONTENT_BLOCKS_DELIMITER.length)
+  const blocks = rest.split(BLOCK_DELIMITER).map(b => b.replace(/^\n/, '').replace(/\n$/, ''))
+  // Filter out completely empty leading block that results from leading newline
+  if (blocks.length > 0 && blocks[0].trim() === '') blocks.shift()
+  return { systemPrompt, blocks }
+}
+
+/** Join system prompt + blocks back into a single string */
+function joinContentBlocks(systemPrompt: string, blocks: string[]): string {
+  if (blocks.length === 0) return systemPrompt
+  return systemPrompt.trimEnd() + '\n\n' + CONTENT_BLOCKS_DELIMITER + '\n' + blocks.join('\n' + BLOCK_DELIMITER + '\n')
+}
+
+// ─── Content Blocks Editor ──────────────────────────────────────────────────
+
+const BLOCK_VARIABLES = [
+  'CONVERSATION_HISTORY',
+  'PROPERTY_GUEST_INFO',
+  'CURRENT_MESSAGES',
+  'OPEN_TASKS',
+  'CURRENT_LOCAL_TIME',
+  'TOOLS_DEFINITIONS',
+  'AVAILABLE_SOPS',
+]
+
+function ContentBlocksEditor({
+  blocks,
+  onChange,
+  agentType,
+}: {
+  blocks: string[]
+  onChange: (blocks: string[]) => void
+  agentType: 'coordinator' | 'screening'
+}): React.ReactElement {
+  const blockRefs = useRef<(HTMLTextAreaElement | null)[]>([])
+
+  function updateBlock(index: number, value: string): void {
+    const next = [...blocks]
+    next[index] = value
+    onChange(next)
+  }
+
+  function addBlock(): void {
+    onChange([...blocks, '### NEW BLOCK\n'])
+  }
+
+  function removeBlock(index: number): void {
+    onChange(blocks.filter((_, i) => i !== index))
+  }
+
+  function moveBlock(index: number, direction: -1 | 1): void {
+    const target = index + direction
+    if (target < 0 || target >= blocks.length) return
+    const next = [...blocks]
+    const tmp = next[index]
+    next[index] = next[target]
+    next[target] = tmp
+    onChange(next)
+  }
+
+  function insertVariable(index: number, varName: string): void {
+    const tag = `{${varName}}`
+    const el = blockRefs.current[index]
+    if (el) {
+      const start = el.selectionStart ?? blocks[index].length
+      const end = el.selectionEnd ?? start
+      const val = blocks[index]
+      const newVal = val.slice(0, start) + tag + val.slice(end)
+      updateBlock(index, newVal)
+      requestAnimationFrame(() => {
+        el.focus()
+        const cursor = start + tag.length
+        el.setSelectionRange(cursor, cursor)
+      })
+    } else {
+      updateBlock(index, blocks[index] + tag)
+    }
+  }
+
+  if (blocks.length === 0) {
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 8,
+        }}>
+          <span style={{
+            fontSize: 11, fontWeight: 600, color: T.text.secondary,
+            fontFamily: T.font.sans, letterSpacing: '0.04em', textTransform: 'uppercase',
+          }}>
+            Content Blocks
+          </span>
+        </div>
+        <div style={{
+          padding: '12px 14px', borderRadius: T.radius.sm,
+          background: T.bg.secondary, border: `1px dashed ${T.border.default}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
+            No content blocks defined. The full prompt is sent as one system message.
+          </span>
+          <button
+            onClick={addBlock}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px', borderRadius: T.radius.sm,
+              background: T.bg.primary, border: `1px solid ${T.border.default}`,
+              fontSize: 11, fontWeight: 600, fontFamily: T.font.sans,
+              color: T.accent, cursor: 'pointer',
+            }}
+          >
+            <Plus size={11} /> Add Block
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 600, color: T.text.secondary,
+          fontFamily: T.font.sans, letterSpacing: '0.04em', textTransform: 'uppercase',
+        }}>
+          Content Blocks ({blocks.length})
+        </span>
+        <button
+          onClick={addBlock}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '3px 8px', borderRadius: T.radius.sm,
+            background: T.bg.primary, border: `1px solid ${T.border.default}`,
+            fontSize: 10, fontWeight: 600, fontFamily: T.font.sans,
+            color: T.accent, cursor: 'pointer',
+          }}
+        >
+          <Plus size={10} /> Add Block
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {blocks.map((block, i) => (
+          <div
+            key={i}
+            style={{
+              borderRadius: T.radius.sm,
+              border: `1px solid ${T.border.default}`,
+              background: T.bg.primary,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Block header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 10px',
+              background: T.bg.secondary,
+              borderBottom: `1px solid ${T.border.default}`,
+            }}>
+              <span style={{
+                fontSize: 10, fontWeight: 700, color: T.text.secondary,
+                fontFamily: T.font.mono, minWidth: 48,
+              }}>
+                Block {i + 1}
+              </span>
+
+              {/* Move up */}
+              <button
+                onClick={() => moveBlock(i, -1)}
+                disabled={i === 0}
+                title="Move up"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 20, height: 20, borderRadius: 4,
+                  background: 'none', border: 'none',
+                  color: i === 0 ? T.text.tertiary : T.text.secondary,
+                  cursor: i === 0 ? 'default' : 'pointer',
+                  opacity: i === 0 ? 0.4 : 1,
+                  padding: 0,
+                }}
+              >
+                <ArrowUp size={11} />
+              </button>
+
+              {/* Move down */}
+              <button
+                onClick={() => moveBlock(i, 1)}
+                disabled={i === blocks.length - 1}
+                title="Move down"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 20, height: 20, borderRadius: 4,
+                  background: 'none', border: 'none',
+                  color: i === blocks.length - 1 ? T.text.tertiary : T.text.secondary,
+                  cursor: i === blocks.length - 1 ? 'default' : 'pointer',
+                  opacity: i === blocks.length - 1 ? 0.4 : 1,
+                  padding: 0,
+                }}
+              >
+                <ArrowDown size={11} />
+              </button>
+
+              {/* Insert variable dropdown */}
+              <select
+                value=""
+                onChange={e => {
+                  if (e.target.value) insertVariable(i, e.target.value)
+                  e.target.value = ''
+                }}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '1px 4px', borderRadius: 4,
+                  background: T.bg.primary, border: `1px solid ${T.border.default}`,
+                  fontSize: 10, fontFamily: T.font.mono,
+                  color: T.text.secondary, cursor: 'pointer',
+                  appearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%2357534E' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 4px center',
+                  paddingRight: 16,
+                }}
+              >
+                <option value="">+ Variable</option>
+                {BLOCK_VARIABLES.map(v => (
+                  <option key={v} value={v}>{'{' + v + '}'}</option>
+                ))}
+              </select>
+
+              {/* Delete */}
+              <button
+                onClick={() => removeBlock(i)}
+                title="Delete block"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 20, height: 20, borderRadius: 4,
+                  background: 'none', border: 'none',
+                  color: T.text.tertiary, cursor: 'pointer',
+                  padding: 0,
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = T.status.red }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = T.text.tertiary }}
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+
+            {/* Block textarea */}
+            <textarea
+              ref={el => { blockRefs.current[i] = el }}
+              value={block}
+              onChange={e => updateBlock(i, e.target.value)}
+              spellCheck={false}
+              rows={4}
+              style={{
+                width: '100%', resize: 'vertical',
+                fontFamily: T.font.mono, fontSize: 10.5, lineHeight: 1.55,
+                padding: '8px 10px', border: 'none',
+                background: T.bg.primary, color: T.text.primary,
+                boxSizing: 'border-box', outline: 'none',
+              }}
+              onFocus={e => {
+                (e.currentTarget.parentElement as HTMLElement).style.borderColor = T.accent
+              }}
+              onBlur={e => {
+                (e.currentTarget.parentElement as HTMLElement).style.borderColor = T.border.default
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── System Prompts Section ──────────────────────────────────────────────────
 
 function SystemPromptsSection({
@@ -1747,6 +2034,7 @@ function SystemPromptsSection({
   config: TenantAiConfig
   onChange: (c: TenantAiConfig) => void
 }): React.ReactElement {
+  // Full prompt strings (what gets saved to the API)
   const [coordPrompt, setCoordPrompt] = useState(config.systemPromptCoordinator || '')
   const [screenPrompt, setScreenPrompt] = useState(config.systemPromptScreening || '')
   const [saving, setSaving] = useState(false)
@@ -1763,6 +2051,24 @@ function SystemPromptsSection({
     setCoordPrompt(config.systemPromptCoordinator || '')
     setScreenPrompt(config.systemPromptScreening || '')
   }, [config])
+
+  // Derived: split each full prompt into system-prompt part + content blocks
+  const coordParsed = parseContentBlocks(coordPrompt)
+  const screenParsed = parseContentBlocks(screenPrompt)
+
+  // Update handlers that rebuild the full string when either part changes
+  function setCoordSystemPart(text: string): void {
+    setCoordPrompt(joinContentBlocks(text, coordParsed.blocks))
+  }
+  function setCoordBlocks(blocks: string[]): void {
+    setCoordPrompt(joinContentBlocks(coordParsed.systemPrompt, blocks))
+  }
+  function setScreenSystemPart(text: string): void {
+    setScreenPrompt(joinContentBlocks(text, screenParsed.blocks))
+  }
+  function setScreenBlocks(blocks: string[]): void {
+    setScreenPrompt(joinContentBlocks(screenParsed.systemPrompt, blocks))
+  }
 
   function showToast(type: 'success' | 'error', message: string): void {
     setToast({ type, message })
@@ -1876,29 +2182,46 @@ function SystemPromptsSection({
             </span>
             <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginLeft: 'auto' }}>
               {coordPrompt.length.toLocaleString()} chars
+              {coordParsed.blocks.length > 0 && (
+                <span style={{ marginLeft: 6 }}>{coordParsed.blocks.length} block{coordParsed.blocks.length !== 1 ? 's' : ''}</span>
+              )}
               {coordDirty && <span style={{ color: T.status.amber, marginLeft: 6 }}>modified</span>}
             </span>
           </button>
           {expandedCoord && (
             <>
-              <textarea
-                ref={coordTextareaRef}
-                value={coordPrompt}
-                onChange={e => setCoordPrompt(e.target.value)}
-                style={{
-                  width: '100%', height: 350, resize: 'vertical', marginTop: 8,
-                  fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
-                  padding: 12, borderRadius: T.radius.sm,
-                  border: `1px solid ${coordDirty ? T.status.amber : T.border.default}`,
-                  background: T.bg.primary, color: T.text.primary,
-                  boxSizing: 'border-box',
-                }}
-              />
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: T.text.tertiary,
+                  fontFamily: T.font.sans, letterSpacing: '0.04em', textTransform: 'uppercase',
+                  marginBottom: 4,
+                }}>
+                  System Instructions
+                </div>
+                <textarea
+                  ref={coordTextareaRef}
+                  value={coordParsed.systemPrompt}
+                  onChange={e => setCoordSystemPart(e.target.value)}
+                  style={{
+                    width: '100%', height: 350, resize: 'vertical',
+                    fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                    padding: 12, borderRadius: T.radius.sm,
+                    border: `1px solid ${coordDirty ? T.status.amber : T.border.default}`,
+                    background: T.bg.primary, color: T.text.primary,
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
               <VariableReferencePanel
                 agentType="coordinator"
                 textareaRef={coordTextareaRef}
-                promptValue={coordPrompt}
-                onInsert={setCoordPrompt}
+                promptValue={coordParsed.systemPrompt}
+                onInsert={setCoordSystemPart}
+              />
+              <ContentBlocksEditor
+                blocks={coordParsed.blocks}
+                onChange={setCoordBlocks}
+                agentType="coordinator"
               />
             </>
           )}
@@ -1919,29 +2242,46 @@ function SystemPromptsSection({
             </span>
             <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginLeft: 'auto' }}>
               {screenPrompt.length.toLocaleString()} chars
+              {screenParsed.blocks.length > 0 && (
+                <span style={{ marginLeft: 6 }}>{screenParsed.blocks.length} block{screenParsed.blocks.length !== 1 ? 's' : ''}</span>
+              )}
               {screenDirty && <span style={{ color: T.status.amber, marginLeft: 6 }}>modified</span>}
             </span>
           </button>
           {expandedScreen && (
             <>
-              <textarea
-                ref={screenTextareaRef}
-                value={screenPrompt}
-                onChange={e => setScreenPrompt(e.target.value)}
-                style={{
-                  width: '100%', height: 350, resize: 'vertical', marginTop: 8,
-                  fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
-                  padding: 12, borderRadius: T.radius.sm,
-                  border: `1px solid ${screenDirty ? T.status.amber : T.border.default}`,
-                  background: T.bg.primary, color: T.text.primary,
-                  boxSizing: 'border-box',
-                }}
-              />
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 600, color: T.text.tertiary,
+                  fontFamily: T.font.sans, letterSpacing: '0.04em', textTransform: 'uppercase',
+                  marginBottom: 4,
+                }}>
+                  System Instructions
+                </div>
+                <textarea
+                  ref={screenTextareaRef}
+                  value={screenParsed.systemPrompt}
+                  onChange={e => setScreenSystemPart(e.target.value)}
+                  style={{
+                    width: '100%', height: 350, resize: 'vertical',
+                    fontFamily: T.font.mono, fontSize: 11, lineHeight: 1.6,
+                    padding: 12, borderRadius: T.radius.sm,
+                    border: `1px solid ${screenDirty ? T.status.amber : T.border.default}`,
+                    background: T.bg.primary, color: T.text.primary,
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
               <VariableReferencePanel
                 agentType="screening"
                 textareaRef={screenTextareaRef}
-                promptValue={screenPrompt}
-                onInsert={setScreenPrompt}
+                promptValue={screenParsed.systemPrompt}
+                onInsert={setScreenSystemPart}
+              />
+              <ContentBlocksEditor
+                blocks={screenParsed.blocks}
+                onChange={setScreenBlocks}
+                agentType="screening"
               />
             </>
           )}
