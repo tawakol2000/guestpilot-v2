@@ -1194,7 +1194,10 @@ function classifyAmenities(
   const onRequest: string[] = [];
   for (const item of items) {
     const cls = classifications[item];
-    if (cls === 'on_request') {
+    if (cls === 'off') {
+      // Hidden from AI — not listed anywhere
+      continue;
+    } else if (cls === 'on_request') {
       onRequest.push(item);
     } else {
       // "available", "default", or unclassified → available (backward compatible)

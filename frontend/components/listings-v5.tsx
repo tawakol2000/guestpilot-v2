@@ -66,7 +66,7 @@ function ensureStyles(): void {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type AmenityClassification = 'default' | 'available' | 'on_request'
+type AmenityClassification = 'default' | 'available' | 'on_request' | 'off'
 
 interface PropertyEditState {
   kb: Record<string, unknown>
@@ -259,6 +259,7 @@ function AmenityToggle({
     { value: 'default', label: 'Default', color: T.text.tertiary, bg: T.bg.tertiary },
     { value: 'available', label: 'Available', color: '#FFFFFF', bg: T.status.green },
     { value: 'on_request', label: 'On Request', color: '#FFFFFF', bg: T.status.amber },
+    { value: 'off', label: 'Off', color: '#FFFFFF', bg: T.status.red },
   ]
 
   return (
@@ -718,18 +719,36 @@ function PropertyCard({
               {amenities.length > 0 ? `${amenities.length} items` : 'No amenities listed'}
             </span>
           </div>
-          {amenities.length > 0 && (
-            <div style={{ padding: '0 20px 16px' }}>
-              {amenities.map(name => (
-                <AmenityToggle
-                  key={name}
-                  name={name}
-                  classification={amenityClassifications[name] || 'default'}
-                  onChange={c => updateAmenityClassification(name, c)}
-                />
-              ))}
+          <div style={{ padding: '0 20px 16px' }}>
+            {amenities.map(name => (
+              <AmenityToggle
+                key={name}
+                name={name}
+                classification={amenityClassifications[name] || 'default'}
+                onChange={c => updateAmenityClassification(name, c)}
+              />
+            ))}
+            {/* Add amenity input */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input
+                placeholder="Add amenity..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim()
+                    if (!val || amenities.includes(val)) return
+                    const newList = [...amenities, val].join(', ')
+                    onKbChange('amenities', newList)
+                    ;(e.target as HTMLInputElement).value = ''
+                  }
+                }}
+                style={{
+                  flex: 1, padding: '6px 10px', fontSize: 12, fontFamily: T.font.sans,
+                  border: `1px solid ${T.border.default}`, borderRadius: 6,
+                  background: T.bg.primary,
+                }}
+              />
             </div>
-          )}
+          </div>
         </div>
 
         {/* ── Description ── */}
@@ -935,6 +954,7 @@ export default function ListingsV5(): React.ReactElement {
   const [resyncingIds, setResyncingIds] = useState<Set<string>>(new Set())
   const [summarizingIds, setSummarizingIds] = useState<Set<string>>(new Set())
   const [summarizingAll, setSummarizingAll] = useState(false)
+  const [bulkAmenityOpen, setBulkAmenityOpen] = useState(false)
 
   useEffect(() => { ensureStyles() }, [])
 
@@ -1135,6 +1155,26 @@ export default function ListingsV5(): React.ReactElement {
           {summarizingAll && <Spinner size={12} />}
           {summarizingAll ? 'Summarizing...' : 'Summarize All Descriptions'}
         </button>
+        <button
+          onClick={() => setBulkAmenityOpen(true)}
+          disabled={loading || properties.length === 0}
+          style={{
+            padding: '8px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: T.font.sans,
+            border: `1px solid ${T.status.amber}`,
+            borderRadius: T.radius.sm,
+            background: 'transparent',
+            color: T.status.amber,
+            cursor: loading || properties.length === 0 ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          Bulk Edit Amenities
+        </button>
       </div>
 
       {/* ── Content ── */}
@@ -1208,6 +1248,50 @@ export default function ListingsV5(): React.ReactElement {
           />
         ))}
       </div>
+      {bulkAmenityOpen && (() => {
+        const allAmenities = new Map<string, AmenityClassification>()
+        properties.forEach(prop => {
+          const state = editStates[prop.id]
+          const kb = state?.kb || (prop.customKnowledgeBase as Record<string, unknown>) || {}
+          const cls = (kb.amenityClassifications || {}) as Record<string, AmenityClassification>
+          parseAmenities(String(kb.amenities || '')).forEach(n => { if (!allAmenities.has(n)) allAmenities.set(n, cls[n] || 'default') })
+        })
+        const sorted = [...allAmenities.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setBulkAmenityOpen(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '95vw', maxHeight: '85vh', overflow: 'auto', background: T.bg.card, borderRadius: T.radius.lg, boxShadow: T.shadow.lg, padding: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700, fontFamily: T.font.sans, margin: 0 }}>Bulk Edit Amenities ({sorted.length})</h3>
+                <button onClick={() => setBulkAmenityOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: T.text.tertiary }}>✕</button>
+              </div>
+              <p style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 16 }}>Changes apply to ALL listings that have this amenity.</p>
+              {sorted.map(([name, cc]) => (
+                <AmenityToggle key={name} name={name} classification={cc} onChange={nc => {
+                  properties.forEach(p => {
+                    const s = editStates[p.id]; if (!s) return
+                    if (!parseAmenities(String(s.kb.amenities || '')).includes(name)) return
+                    const cur = { ...((s.kb.amenityClassifications || {}) as Record<string, AmenityClassification>) }; cur[name] = nc
+                    setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenityClassifications: cur }, dirty: true } }))
+                  })
+                  setBulkAmenityOpen(false); setTimeout(() => setBulkAmenityOpen(true), 0)
+                }} />
+              ))}
+              <div style={{ marginTop: 12 }}>
+                <input placeholder="Add amenity to all listings... (press Enter)" onKeyDown={e => {
+                  if (e.key !== 'Enter') return; const val = (e.target as HTMLInputElement).value.trim(); if (!val) return
+                  properties.forEach(p => {
+                    const s = editStates[p.id]; if (!s) return
+                    const list = parseAmenities(String(s.kb.amenities || '')); if (list.includes(val)) return
+                    setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenities: [...list, val].join(', ') }, dirty: true } }))
+                  })
+                  ;(e.target as HTMLInputElement).value = ''; setBulkAmenityOpen(false); setTimeout(() => setBulkAmenityOpen(true), 0)
+                }} style={{ width: '100%', padding: '8px 12px', fontSize: 12, fontFamily: T.font.sans, border: `1px solid ${T.border.default}`, borderRadius: 6, background: T.bg.primary, boxSizing: 'border-box' as const }} />
+              </div>
+              <p style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginTop: 16 }}>Save each listing card after bulk changes.</p>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
