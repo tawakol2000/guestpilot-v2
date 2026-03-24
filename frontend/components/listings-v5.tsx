@@ -1273,7 +1273,6 @@ export default function ListingsV5(): React.ReactElement {
                     const cur = { ...((s.kb.amenityClassifications || {}) as Record<string, AmenityClassification>) }; cur[name] = nc
                     setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenityClassifications: cur }, dirty: true } }))
                   })
-                  setBulkAmenityOpen(false); setTimeout(() => setBulkAmenityOpen(true), 0)
                 }} />
               ))}
               <div style={{ marginTop: 12 }}>
@@ -1284,7 +1283,7 @@ export default function ListingsV5(): React.ReactElement {
                     const list = parseAmenities(String(s.kb.amenities || '')); if (list.includes(val)) return
                     setEditStates(prev => ({ ...prev, [p.id]: { ...prev[p.id], kb: { ...prev[p.id].kb, amenities: [...list, val].join(', ') }, dirty: true } }))
                   })
-                  ;(e.target as HTMLInputElement).value = ''; setBulkAmenityOpen(false); setTimeout(() => setBulkAmenityOpen(true), 0)
+                  ;(e.target as HTMLInputElement).value = ''
                 }} style={{ width: '100%', padding: '8px 12px', fontSize: 12, fontFamily: T.font.sans, border: `1px solid ${T.border.default}`, borderRadius: 6, background: T.bg.primary, boxSizing: 'border-box' as const }} />
               </div>
               <p style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginTop: 16 }}>Save each listing card after bulk changes.</p>
