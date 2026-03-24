@@ -298,13 +298,54 @@ function AmenityToggle({
               background: classification === opt.value ? opt.bg : T.bg.card,
               color: classification === opt.value ? opt.color : T.text.tertiary,
               transition: 'all 150ms',
-              borderRight: opt.value !== 'on_request' ? `1px solid ${T.border.default}` : 'none',
+              borderRight: opt.value !== 'off' ? `1px solid ${T.border.default}` : 'none',
             }}
           >
             {opt.label}
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ─── Add Amenity Input ────────────────────────────────────────────────────────
+function AddAmenityInput({ onAdd, existingAmenities }: { onAdd: (name: string) => void; existingAmenities: string[] }): React.ReactElement {
+  const [value, setValue] = useState('')
+  const submit = () => {
+    const val = value.trim()
+    if (!val || existingAmenities.includes(val)) return
+    onAdd(val)
+    setValue('')
+  }
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <input
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder="Add amenity..."
+        onKeyDown={e => { if (e.key === 'Enter') submit() }}
+        style={{
+          flex: 1, padding: '6px 10px', fontSize: 12, fontFamily: T.font.sans,
+          border: `1px solid ${T.border.default}`, borderRadius: 6,
+          background: T.bg.primary,
+        }}
+        className="listings-input"
+      />
+      <button
+        onClick={submit}
+        disabled={!value.trim() || existingAmenities.includes(value.trim())}
+        style={{
+          padding: '6px 12px', fontSize: 11, fontWeight: 600, fontFamily: T.font.sans,
+          border: `1px solid ${T.border.default}`, borderRadius: 6,
+          background: !value.trim() ? T.bg.tertiary : T.accent,
+          color: !value.trim() ? T.text.tertiary : T.text.inverse,
+          cursor: !value.trim() ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        + Add
+      </button>
     </div>
   )
 }
@@ -704,25 +745,10 @@ function PropertyCard({
             />
           ))}
           {/* Add amenity input */}
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <input
-              placeholder="Add amenity..."
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  const val = (e.target as HTMLInputElement).value.trim()
-                  if (!val || amenities.includes(val)) return
-                  const newList = [...amenities, val].join(', ')
-                  onKbChange('amenities', newList)
-                  ;(e.target as HTMLInputElement).value = ''
-                }
-              }}
-              style={{
-                flex: 1, padding: '6px 10px', fontSize: 12, fontFamily: T.font.sans,
-                border: `1px solid ${T.border.default}`, borderRadius: 6,
-                background: T.bg.primary,
-              }}
-            />
-          </div>
+          <AddAmenityInput onAdd={val => {
+            const newList = [...amenities, val].join(', ')
+            onKbChange('amenities', newList)
+          }} existingAmenities={amenities} />
         </Section>
 
         {/* ── Description ── */}
