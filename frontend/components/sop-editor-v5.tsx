@@ -452,12 +452,20 @@ function SopRow({ def, isPropertyView, propertyId, overrides, onOverridesChange,
           {def.category}
         </span>
 
-        {/* Enable/Disable toggle */}
-        <ToggleSwitch checked={def.enabled} onChange={toggleDefinition} />
-        <span style={{ fontSize: 11, color: def.enabled ? T.status.green : T.text.tertiary, fontWeight: 600, fontFamily: T.font.sans }}>
-          {def.enabled ? 'Enabled' : 'Disabled'}
-        </span>
-        {errors.toggle && <span style={{ fontSize: 11, color: T.status.red, fontFamily: T.font.sans }}>{errors.toggle}</span>}
+        {/* Enable/Disable toggle — none and escalate are always on (required for classification) */}
+        {def.category === 'none' || def.category === 'escalate' ? (
+          <span style={{ fontSize: 11, color: T.text.tertiary, fontWeight: 600, fontFamily: T.font.sans, fontStyle: 'italic' }}>
+            Always Active
+          </span>
+        ) : (
+          <>
+            <ToggleSwitch checked={def.enabled} onChange={toggleDefinition} />
+            <span style={{ fontSize: 11, color: def.enabled ? T.status.green : T.text.tertiary, fontWeight: 600, fontFamily: T.font.sans }}>
+              {def.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            {errors.toggle && <span style={{ fontSize: 11, color: T.status.red, fontFamily: T.font.sans }}>{errors.toggle}</span>}
+          </>
+        )}
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
