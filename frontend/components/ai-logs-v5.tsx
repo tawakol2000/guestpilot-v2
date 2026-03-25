@@ -346,14 +346,27 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           }}
         >
           <span style={{ color: T.text.tertiary }}>{entry.inputTokens.toLocaleString()}</span>
-          {(() => {
-            const cached = (entry.ragContext as any)?.cachedInputTokens ?? 0;
-            return cached > 0 ? (
-              <span style={{ color: '#15803D', fontSize: 9, fontWeight: 600 }}>({cached.toLocaleString()} cached)</span>
-            ) : null;
-          })()}
           <span style={{ color: T.border.default, fontSize: 9 }}>{'\u2192'}</span>
           <span style={{ color: T.text.secondary }}>{entry.outputTokens.toLocaleString()}</span>
+          {(() => {
+            const cached = (entry.ragContext as any)?.cachedInputTokens ?? 0;
+            const total = (entry.ragContext as any)?.totalInputTokens ?? entry.inputTokens ?? 0;
+            if (cached > 0 && total > 0) {
+              const pct = Math.round((cached / total) * 100);
+              return (
+                <span style={{
+                  fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
+                  padding: '1px 5px', borderRadius: 4,
+                  background: pct > 50 ? 'rgba(21,128,61,0.08)' : 'rgba(217,119,6,0.08)',
+                  color: pct > 50 ? '#15803D' : '#D97706',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {pct}% cached
+                </span>
+              );
+            }
+            return null;
+          })()}
         </span>
 
         {/* Cost */}
