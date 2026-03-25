@@ -83,8 +83,8 @@ export function sandboxRouter(prisma: PrismaClient) {
       const listing = {
         name: property.name,
         address: property.address || (kb?.address as string) || '',
-        doorSecurityCode: (kb?.doorSecurityCode as string) || (kb?.door_security_code as string) || undefined,
-        wifiUsername: (kb?.wifiUsername as string) || (kb?.wifi_username as string) || undefined,
+        doorSecurityCode: (kb?.doorCode as string) || (kb?.doorSecurityCode as string) || (kb?.door_security_code as string) || undefined,
+        wifiUsername: (kb?.wifiName as string) || (kb?.wifiUsername as string) || (kb?.wifi_username as string) || undefined,
         wifiPassword: (kb?.wifiPassword as string) || (kb?.wifi_password as string) || undefined,
       };
 
