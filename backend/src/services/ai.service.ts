@@ -772,10 +772,26 @@ If {DOCUMENT_CHECKLIST} appears in your context with pending items, ask the gues
 
 ## TOOL USAGE RULES
 
-- For ANY guest request involving cleaning, amenities, maintenance, complaints, WiFi issues, check-in/out, visitors, booking changes, pricing, or refunds: ALWAYS call get_sop FIRST to get the correct procedure. Do NOT respond from memory or examples.
+Before you call a tool, explain why you are calling it.
+
+<tool_persistence_rules>
+- Use tools whenever they materially improve correctness, completeness, or grounding.
+- For ANY guest request involving cleaning, amenities, maintenance, complaints, WiFi issues, check-in/out, visitors, booking changes, pricing, or refunds: ALWAYS call get_sop FIRST.
+- Do not answer procedural questions from general knowledge when get_sop is available.
 - For simple greetings ("hi", "hey"), acknowledgments ("ok", "thanks"), or conversation-ending messages: respond directly without tools.
-- NEVER guess at procedures. If you're unsure, call get_sop. The SOP content will guide your exact response.
-- NEVER promise to take action without first checking the relevant SOP procedure.
+- If a tool returns empty or partial results, retry with a different strategy.
+</tool_persistence_rules>
+
+<dependency_checks>
+- Before responding to any service request, check whether a procedure lookup is required.
+- Do not skip prerequisite steps just because the response seems obvious.
+- If the guest mentions any task, issue, or request that could have an SOP, call get_sop first.
+</dependency_checks>
+
+<completeness_contract>
+- Treat the request as incomplete until you have retrieved and applied the relevant SOP.
+- NEVER guess at procedures, pricing, or escalation rules — get_sop has the authoritative answer.
+</completeness_contract>
 
 ---
 
@@ -923,9 +939,19 @@ When declining:
 
 ## TOOL USAGE RULES
 
-- For ANY guest question about amenities, availability, property features, or booking logistics: ALWAYS call get_sop FIRST if you're unsure.
-- For screening questions (nationality, party composition, eligibility): respond directly from your screening rules above.
+Before you call a tool, explain why you are calling it.
+
+<tool_persistence_rules>
+- For ANY guest question about amenities, availability, property features, or booking logistics: call get_sop FIRST to get the correct procedure.
+- For screening questions (nationality, party composition, eligibility): respond directly from your screening rules above — no tool needed.
+- Do not answer procedural questions from general knowledge when get_sop is available.
+</tool_persistence_rules>
+
+<dependency_checks>
+- Before responding to any service-related question, check whether a procedure lookup is required.
+- Do not skip prerequisite steps just because the response seems obvious.
 - NEVER guess at information not in your context. If it's not in {PROPERTY_GUEST_INFO} or {AVAILABLE_AMENITIES}, call get_sop or escalate.
+</dependency_checks>
 
 ---
 
@@ -1906,12 +1932,13 @@ export async function generateAndSendAiReply(
         }
       }
 
-      // Determine reasoning effort: tenant config > SOP-based auto > none
+      // Determine reasoning effort: tenant config > minimum 'low' for tool reliability
       const tenantReasoning = isInquiry
         ? (tenantConfig as any)?.reasoningScreening || 'none'
         : (tenantConfig as any)?.reasoningCoordinator || 'auto';
+      // Minimum 'low' when auto — GPT-5.4 Mini needs reasoning budget to reliably decide on tool calls
       const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = tenantReasoning === 'auto'
-        ? (sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' : 'none')
+        ? 'low'
         : tenantReasoning;
 
       // ─── Image handling: download and attach to last inputTurns entry ───
