@@ -1652,50 +1652,17 @@ export async function generateAndSendAiReply(
       content: `CONVERSATION HISTORY:\n${classHistoryText}\n\n--- NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} TO CLASSIFY ---\n${classNewText}\n\nCLASSIFY THE NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} ABOVE.`,
     }];
 
-    // Build tool definition from DB (cached 5min per tenant)
+    // Build SOP tool definition (will be included in main tool set — no separate classification call)
     const sopToolDef = await buildToolDefinition(tenantId, prisma);
 
-    // Use DB-backed prompt for classification too (same prompt the AI will use for the reply)
-    const classificationPrompt = isInquiry
-      ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
-      : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
-    const sopClassification = await classifyMessageSop(
-      classificationPrompt,
-      classificationInput,
-      { model: effectiveModel, tenantId, conversationId, agentType: isInquiry ? 'screening' : 'coordinator' },
-      sopToolDef,
-    );
-
-    // Fetch SOP content for classified categories (skip none, escalate gets SOP if paired with other categories)
-    const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
-    const sopTexts = await Promise.all(
-      sopCategories.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma))
-    );
-    const sopContent = sopTexts.filter(Boolean).join('\n\n---\n\n');
-
-    // Handle escalation category
-    if (sopClassification.categories.includes('escalate')) {
-      try {
-        await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
-          'sop-tool-escalation', `AI classified as escalate: ${sopClassification.reasoning}`,
-          'immediate');
-        console.log(`[AI] [${conversationId}] Escalation triggered by SOP classification: ${sopClassification.reasoning}`);
-      } catch (err) {
-        console.warn(`[AI] Escalation task creation failed (non-fatal):`, err);
-      }
-    }
-
-    // Handle SOP retrieval failure (in-memory map — only fails on code bugs)
-    if (sopCategories.length > 0 && sopTexts.length === 0) {
-      try {
-        await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
-          'sop-retrieval-failure', `SOP content missing for categories: [${sopCategories.join(', ')}]`,
-          'info_request');
-        console.warn(`[AI] [${conversationId}] SOP retrieval failure — no content for [${sopCategories.join(', ')}]`);
-      } catch (err) {
-        console.warn(`[AI] SOP failure escalation task creation failed:`, err);
-      }
-    }
+    // SOP classification is now handled inline via the main tool loop.
+    // The AI calls get_sop when it needs SOP guidance, gets content back, and uses it in the response.
+    // For simple greetings/acks, it won't call get_sop at all — saving a full API call.
+    let sopClassification: SopClassificationResult = {
+      categories: ['none'], confidence: 'high', reasoning: 'No SOP classification — handled inline via tool loop',
+      inputTokens: 0, outputTokens: 0, durationMs: 0,
+    };
+    let sopContent = '';
 
     // —— Escalation enrichment (post-routing) ——————————————
     const escalationSignals = detectEscalationSignals(ragQuery);
@@ -1789,15 +1756,8 @@ export async function generateAndSendAiReply(
       effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
     }
 
-    // Inject SOP content from tool classification into system prompt
-    if (sopContent) {
-      effectiveSystemPrompt += `\n\n## STANDARD OPERATING PROCEDURE\nFollow this procedure for the guest's current request:\n${sopContent}`;
-    } else if (sopClassification.categories.includes('none')) {
-      // No SOP needed — respond from general knowledge
-    } else if (sopCategories.length > 0) {
-      // SOP retrieval failed (content missing) — AI responds from general knowledge
-      effectiveSystemPrompt += `\n\n## NOTE\nSOP temporarily unavailable. Respond helpfully based on your general knowledge and system instructions.`;
-    }
+    // SOP content is now injected via the get_sop tool handler in the main tool loop.
+    // No pre-injection needed — the AI calls get_sop when it needs guidance.
 
     let guestMessage = '';
 
@@ -1856,17 +1816,20 @@ export async function generateAndSendAiReply(
         console.warn(`[AI] [${conversationId}] Failed to load tool definitions — falling back to no tools:`, err);
       }
 
+      // Build tool set — get_sop uses dynamic definition, others from DB
       const toolsForCall = toolDefs
         .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(context.reservationStatus || 'INQUIRY'))
-        .filter(t => t.name !== 'get_sop') // SOP tool handled separately above
+        .filter(t => t.name !== 'get_sop') // get_sop uses dynamic definition with category enum
         .filter(t => t.name !== 'mark_document_received' || checklistPending) // conditional
         .map(t => ({
           type: 'function' as const,
           name: t.name,
           description: t.description,
-          strict: t.type === 'system', // only strict for system tools
+          strict: t.type === 'system',
           parameters: t.parameters as Record<string, unknown>,
         }));
+      // Add get_sop with dynamic category descriptions from enabled SOP definitions
+      toolsForCall.push(sopToolDef);
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -1879,6 +1842,38 @@ export async function generateAndSendAiReply(
 
       // System tool handlers — keyed by name, same logic as before
       const systemToolHandlers = new Map<string, ToolHandler>([
+        ['get_sop', async (input: unknown) => {
+          const typedInput = input as { categories: string[]; confidence: string; reasoning: string };
+          // Update sopClassification for logging/metadata
+          sopClassification = {
+            categories: typedInput.categories,
+            confidence: typedInput.confidence as 'high' | 'medium' | 'low',
+            reasoning: typedInput.reasoning,
+            inputTokens: 0, outputTokens: 0, durationMs: 0,
+          };
+          console.log(`[AI] SOP classification (inline): [${typedInput.categories.join(', ')}] confidence=${typedInput.confidence} — ${typedInput.reasoning}`);
+
+          const cats = typedInput.categories.filter(c => c !== 'none' && c !== 'escalate');
+
+          // Handle escalation category
+          if (typedInput.categories.includes('escalate')) {
+            try {
+              await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
+                'sop-tool-escalation', `AI classified as escalate: ${typedInput.reasoning}`,
+                'immediate');
+            } catch (err) {
+              console.warn(`[AI] Escalation task creation failed (non-fatal):`, err);
+            }
+          }
+
+          // Fetch and return SOP content
+          if (cats.length === 0) return JSON.stringify({ category: 'none', content: '' });
+          const texts = await Promise.all(
+            cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma))
+          );
+          sopContent = texts.filter(Boolean).join('\n\n---\n\n');
+          return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
+        }],
         ['search_available_properties', async (input: unknown) => {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
           const currentAddress = context.listing?.address || context.customKnowledgeBase?.address as string || '';

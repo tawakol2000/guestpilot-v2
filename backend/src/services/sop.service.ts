@@ -303,9 +303,9 @@ export async function buildToolDefinition(
     name: 'get_sop',
     description:
       'Classifies a guest message to determine which Standard Operating Procedure should guide the response. ' +
-      'Call this for EVERY guest message. Returns the SOP category that best matches the guest\'s primary intent. ' +
-      'For simple greetings, acknowledgments, or messages that don\'t require procedure-based responses, use "none". ' +
-      'For messages requiring human intervention, use "escalate".',
+      'Only call this when the guest has an actionable request or question that may need SOP guidance. ' +
+      'Do NOT call this for simple greetings ("hi", "hello", "thanks"), acknowledgments ("ok", "got it"), or conversation-ending messages — just respond directly. ' +
+      'For messages requiring human intervention, classify as "escalate".',
     strict: true,
     parameters: {
       type: 'object',
