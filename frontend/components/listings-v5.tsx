@@ -467,11 +467,13 @@ function Spinner({ size = 14 }: { size?: number }): React.ReactElement {
 }
 
 // ─── Variable Preview ──────────────────────────────────────────────────────
-const PREVIEW_VARS = ['PROPERTY_GUEST_INFO', 'AVAILABLE_AMENITIES', 'ON_REQUEST_AMENITIES', 'DOCUMENT_CHECKLIST'] as const
+const PREVIEW_VARS = ['RESERVATION_DETAILS', 'ACCESS_CONNECTIVITY', 'PROPERTY_DESCRIPTION', 'AVAILABLE_AMENITIES', 'ON_REQUEST_AMENITIES', 'DOCUMENT_CHECKLIST'] as const
 type PreviewVarName = typeof PREVIEW_VARS[number]
 
 const VAR_LABELS: Record<PreviewVarName, string> = {
-  PROPERTY_GUEST_INFO: 'Property & Guest Info',
+  RESERVATION_DETAILS: 'Reservation Details',
+  ACCESS_CONNECTIVITY: 'Access & Connectivity',
+  PROPERTY_DESCRIPTION: 'Property Description',
   AVAILABLE_AMENITIES: 'Available Amenities',
   ON_REQUEST_AMENITIES: 'On-Request Amenities',
   DOCUMENT_CHECKLIST: 'Document Checklist',
