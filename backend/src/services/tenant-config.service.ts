@@ -177,6 +177,14 @@ export async function updateTenantAiConfig(
       }
     }
   }
+  // Validate image handling instructions
+  if ((updates as any).imageHandlingInstructions !== undefined) {
+    const val = (updates as any).imageHandlingInstructions;
+    if (val !== null && (typeof val !== 'string' || val.length > 5000)) {
+      const err = new Error('imageHandlingInstructions max 5000 chars') as any;
+      err.field = 'imageHandlingInstructions'; throw err;
+    }
+  }
 
   // Strip non-updatable system fields
   const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, systemPromptVersion: _spv, systemPromptHistory: _sph, ...safeUpdates } = updates as any;

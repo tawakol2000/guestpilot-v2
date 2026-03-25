@@ -75,7 +75,8 @@ function sleep(ms: number): Promise<void> {
 type ContentBlock = { type: 'text'; text: string };
 
 // ─── Image handling instructions (injected only when guest sends an image) ───
-const IMAGE_HANDLING_INSTRUCTIONS = `[System: The guest sent an image. Follow these rules:]
+// Used as default when tenant hasn't customized via Configure AI
+const DEFAULT_IMAGE_HANDLING = `[System: The guest sent an image. Follow these rules:]
 1. Respond naturally based on what you see — don't describe the image back to the guest.
 2. Always escalate to manager. In the escalation note, describe what the image shows.
 3. If unclear: tell the guest you're looking into it and escalate.
@@ -1825,7 +1826,8 @@ export async function generateAndSendAiReply(
       let imageMimeType = 'image/jpeg';
       if (hasImages) {
         // Append image handling to END of system prompt (static prefix stays cached)
-        effectiveSystemPrompt += `\n\n${IMAGE_HANDLING_INSTRUCTIONS}`;
+        const imageInstructions = (tenantConfig as any)?.imageHandlingInstructions || DEFAULT_IMAGE_HANDLING;
+        effectiveSystemPrompt += `\n\n${imageInstructions}`;
 
         const msgWithImage = currentMsgs.find((m: { imageUrls: string[] }) => m.imageUrls && m.imageUrls.length > 0);
         const imageUrl = msgWithImage?.imageUrls?.[0];

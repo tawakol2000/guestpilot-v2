@@ -395,6 +395,7 @@ model TenantAiConfig {
   systemPromptCoordinator String? @db.Text
   systemPromptScreening   String? @db.Text
   systemPromptVersion     Int     @default(1)
+  imageHandlingInstructions String? @db.Text // Appended to system prompt when guest sends an image
   systemPromptHistory     Json    @default("[]") // Array of {version, timestamp, coordinator?, screening?, note?}
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

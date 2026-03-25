@@ -1250,6 +1250,14 @@ export function ConfigureAiV5(): React.ReactElement {
               />
             )}
 
+            {/* Image Handling Instructions */}
+            {tenantConfig && (
+              <ImageHandlingSection
+                config={tenantConfig}
+                onChange={setTenantConfig}
+              />
+            )}
+
             {/* Prompt Playground */}
             <PromptPlayground config={config} />
 
@@ -2412,6 +2420,126 @@ function SystemPromptsSection({
   )
 }
 
+
+// ─── Image Handling Instructions ──────────────────────────────────────────────
+
+const DEFAULT_IMAGE_HANDLING_TEXT = `[System: The guest sent an image. Follow these rules:]
+1. Respond naturally based on what you see — don't describe the image back to the guest.
+2. Always escalate to manager. In the escalation note, describe what the image shows.
+3. If unclear: tell the guest you're looking into it and escalate.
+Common types: broken items → maintenance escalation, leaks/damage → urgent repair, passport/ID → call mark_document_received if document checklist has pending items (otherwise visitor verification escalation), marriage certificate → same, appliance issues → troubleshooting escalation.
+Never ignore images.`
+
+function ImageHandlingSection({
+  config,
+  onChange,
+}: {
+  config: TenantAiConfig
+  onChange: (c: TenantAiConfig) => void
+}): React.ReactElement {
+  const [value, setValue] = useState((config as any).imageHandlingInstructions || '')
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const hasChanges = value !== ((config as any).imageHandlingInstructions || '')
+  const isDefault = !value.trim()
+
+  async function handleSave(): Promise<void> {
+    setSaving(true)
+    try {
+      const updated = await apiUpdateTenantAiConfig({ imageHandlingInstructions: value || null } as any)
+      onChange(updated)
+      setToast({ type: 'success', message: 'Saved' })
+      setTimeout(() => setToast(null), 2000)
+    } catch (err: any) {
+      setToast({ type: 'error', message: err.message || 'Save failed' })
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: T.bg.card, borderRadius: T.radius.lg, border: `1px solid ${T.border.default}`, boxShadow: T.shadow.sm, overflow: 'hidden' }}>
+      <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${T.border.default}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: T.radius.sm, background: '#EA580C18', border: '1px solid #EA580C28', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
+            📷
+          </div>
+          <div>
+            <span style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>Image Handling</span>
+            <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
+              Appended to system prompt when guest sends an image {isDefault ? '(using default)' : '(customized)'}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            padding: '4px 10px', borderRadius: T.radius.sm,
+            background: T.bg.primary, border: `1px solid ${T.border.default}`,
+            fontSize: 11, fontWeight: 600, fontFamily: T.font.sans,
+            color: T.text.secondary, cursor: 'pointer',
+          }}
+        >
+          {expanded ? 'Collapse' : 'Edit'}
+        </button>
+      </div>
+      {expanded && (
+        <div style={{ padding: '16px 20px' }}>
+          <textarea
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder={DEFAULT_IMAGE_HANDLING_TEXT}
+            rows={8}
+            style={{
+              width: '100%', padding: 12, fontSize: 12, fontFamily: T.font.mono,
+              border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm,
+              background: T.bg.primary, resize: 'vertical', lineHeight: 1.5,
+              boxSizing: 'border-box' as const,
+            }}
+            className="listings-textarea"
+          />
+          <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginTop: 4 }}>
+            {value.length} chars · {isDefault ? 'Empty = uses default instructions' : 'Custom'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <button
+              onClick={handleSave}
+              disabled={saving || !hasChanges}
+              style={{
+                padding: '6px 16px', borderRadius: T.radius.sm,
+                background: !hasChanges ? T.bg.tertiary : T.accent,
+                color: !hasChanges ? T.text.tertiary : '#fff',
+                border: 'none', cursor: !hasChanges ? 'not-allowed' : 'pointer',
+                fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+              }}
+            >
+              {saving ? 'Saving...' : hasChanges ? 'Save' : 'No Changes'}
+            </button>
+            {value.trim() && (
+              <button
+                onClick={() => setValue('')}
+                style={{
+                  padding: '6px 12px', borderRadius: T.radius.sm,
+                  background: 'transparent', border: `1px solid ${T.border.default}`,
+                  fontSize: 11, fontWeight: 600, fontFamily: T.font.sans,
+                  color: T.text.secondary, cursor: 'pointer',
+                }}
+              >
+                Reset to Default
+              </button>
+            )}
+            {toast && (
+              <span style={{ fontSize: 12, color: toast.type === 'success' ? T.status.green : T.status.red, fontFamily: T.font.sans }}>
+                {toast.message}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── General Settings ────────────────────────────────────────────────────────
 
