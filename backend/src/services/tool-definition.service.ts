@@ -73,9 +73,9 @@ const SYSTEM_TOOLS: Array<{
     displayName: 'SOP Classification',
     description:
       'Classifies a guest message to determine which Standard Operating Procedure should guide the response. ' +
-      'Call this for EVERY guest message. Returns the SOP category that best matches the guest\'s primary intent. ' +
-      'For simple greetings, acknowledgments, or messages that don\'t require procedure-based responses, use "none". ' +
-      'For messages requiring human intervention, use "escalate".',
+      'Only call this when the guest has an actionable request or question that may need SOP guidance. ' +
+      'Do NOT call this for simple greetings ("hi", "hello", "thanks"), acknowledgments ("ok", "got it"), or conversation-ending messages — just respond directly. ' +
+      'For messages requiring human intervention, classify as "escalate".',
     parameters: {
       type: 'object',
       properties: {
@@ -227,7 +227,10 @@ export async function seedToolDefinitions(
   for (const tool of SYSTEM_TOOLS) {
     await prisma.toolDefinition.upsert({
       where: { tenantId_name: { tenantId, name: tool.name } },
-      update: {}, // never overwrite — preserves operator edits
+      update: {
+        // Update defaultDescription to latest seed value (preserves operator's custom description if different)
+        defaultDescription: tool.description,
+      },
       create: {
         tenantId,
         name: tool.name,
@@ -253,6 +256,16 @@ export async function seedToolDefinitions(
       data: { agentScope: newScope },
     });
   }
+
+  // Migrate get_sop description: remove "Call this for EVERY guest message" (now optional with tool_choice: auto)
+  const OLD_GET_SOP_PREFIX = 'Classifies a guest message to determine which Standard Operating Procedure should guide the response. Call this for EVERY guest message.';
+  await prisma.toolDefinition.updateMany({
+    where: { tenantId, name: 'get_sop', description: { startsWith: OLD_GET_SOP_PREFIX } },
+    data: {
+      description: SYSTEM_TOOLS.find(t => t.name === 'get_sop')!.description,
+      defaultDescription: SYSTEM_TOOLS.find(t => t.name === 'get_sop')!.description,
+    },
+  });
 
   console.log(`[ToolDefinition] Seeded ${SYSTEM_TOOLS.length} system tools for tenant ${tenantId}`);
 }
