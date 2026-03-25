@@ -302,9 +302,11 @@ export async function buildToolDefinition(
     type: 'function',
     name: 'get_sop',
     description:
-      'Classifies a guest message to determine which Standard Operating Procedure should guide the response. ' +
-      'Only call this when the guest has an actionable request or question that may need SOP guidance. ' +
-      'Do NOT call this for simple greetings ("hi", "hello", "thanks"), acknowledgments ("ok", "got it"), or conversation-ending messages — just respond directly. ' +
+      'Classifies a guest message and retrieves the Standard Operating Procedure that should guide your response. ' +
+      'You MUST call this for any guest request involving: cleaning, amenities, maintenance, complaints, check-in/out, booking changes, ' +
+      'early check-in, late checkout, WiFi issues, noise, visitors, extend stay, pricing, refunds, or any question needing action. ' +
+      'ONLY skip this for pure greetings ("hi", "hey"), simple acknowledgments ("ok", "thanks"), and conversation-ending messages. ' +
+      'When in doubt, call it — the SOP content guides your response quality. ' +
       'For messages requiring human intervention, classify as "escalate".',
     strict: true,
     parameters: {
