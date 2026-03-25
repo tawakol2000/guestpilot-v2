@@ -179,10 +179,32 @@ export async function updateTenantAiConfig(
   }
 
   // Strip non-updatable system fields
-  const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, systemPromptVersion: _spv, ...safeUpdates } = updates as any;
+  const { id: _id, tenantId: _tid, createdAt: _c, updatedAt: _u, systemPromptVersion: _spv, systemPromptHistory: _sph, ...safeUpdates } = updates as any;
 
   // Auto-increment prompt version when prompts are edited
   const bumpPromptVersion = safeUpdates.systemPromptCoordinator !== undefined || safeUpdates.systemPromptScreening !== undefined;
+
+  // Snapshot previous prompt version before overwriting (keep last 10 versions)
+  if (bumpPromptVersion) {
+    const current = await prisma.tenantAiConfig.findUnique({ where: { tenantId } });
+    if (current) {
+      const history = Array.isArray(current.systemPromptHistory) ? [...(current.systemPromptHistory as any[])] : [];
+      const snapshot: Record<string, unknown> = {
+        version: current.systemPromptVersion,
+        timestamp: new Date().toISOString(),
+      };
+      if (safeUpdates.systemPromptCoordinator !== undefined && current.systemPromptCoordinator) {
+        snapshot.coordinator = current.systemPromptCoordinator;
+      }
+      if (safeUpdates.systemPromptScreening !== undefined && current.systemPromptScreening) {
+        snapshot.screening = current.systemPromptScreening;
+      }
+      history.push(snapshot);
+      // Keep only last 10 versions
+      while (history.length > 10) history.shift();
+      safeUpdates.systemPromptHistory = history;
+    }
+  }
 
   // Separate update and create data — increment only works in update, not create
   const updateData = { ...safeUpdates };

@@ -206,6 +206,20 @@ export function makeAiConfigController(prisma: PrismaClient) {
       }
     },
 
+    async getPromptHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const config = await prisma.tenantAiConfig.findUnique({
+          where: { tenantId: req.tenantId },
+          select: { systemPromptHistory: true, systemPromptVersion: true },
+        });
+        const history = Array.isArray(config?.systemPromptHistory) ? config.systemPromptHistory : [];
+        res.json({ currentVersion: config?.systemPromptVersion || 1, history });
+      } catch (err) {
+        console.error('[AiConfig] getPromptHistory error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     // ─── Sandbox Chat — test AI responses without creating real bookings ────────
     async sandboxChat(req: AuthenticatedRequest, res: Response): Promise<void> {
       const startMs = Date.now();

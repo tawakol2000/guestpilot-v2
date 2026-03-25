@@ -408,6 +408,17 @@ export async function apiGetTemplateVariables(agentType: 'coordinator' | 'screen
   return apiFetch<TemplateVariableInfo[]>(`/api/ai-config/template-variables?agent=${agentType}`)
 }
 
+export interface PromptHistoryEntry {
+  version: number
+  timestamp: string
+  coordinator?: string
+  screening?: string
+}
+
+export async function apiGetPromptHistory(): Promise<{ currentVersion: number; history: PromptHistoryEntry[] }> {
+  return apiFetch(`/api/ai-config/prompt-history`)
+}
+
 export interface TenantAiConfig {
   id: string
   tenantId: string

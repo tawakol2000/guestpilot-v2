@@ -18,6 +18,7 @@ import {
   apiGetProperties,
   apiGetChunkStats,
   apiGetTemplateVariables,
+  apiGetPromptHistory,
   type AiConfig,
   type AiPersonaConfig,
   type AiConfigVersion,
@@ -2043,6 +2044,9 @@ function SystemPromptsSection({
   const [expandedCoord, setExpandedCoord] = useState(false)
   const [expandedScreen, setExpandedScreen] = useState(false)
   const [saveWarnings, setSaveWarnings] = useState<string[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<Array<{ version: number; timestamp: string; coordinator?: string; screening?: string }>>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const coordTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const screenTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -2311,6 +2315,75 @@ function SystemPromptsSection({
         {/* Inline essential-variable hints (live, per-prompt) */}
         {expandedCoord && coordPrompt && <MissingVariableWarning promptText={coordPrompt} />}
         {expandedScreen && screenPrompt && <MissingVariableWarning promptText={screenPrompt} />}
+
+        {/* Version History */}
+        <div style={{ borderTop: `1px solid ${T.border.default}`, paddingTop: 12 }}>
+          <button
+            onClick={async () => {
+              if (!historyOpen && history.length === 0) {
+                setHistoryLoading(true)
+                try {
+                  const data = await apiGetPromptHistory()
+                  setHistory(data.history as any[])
+                } catch { /* ignore */ }
+                setHistoryLoading(false)
+              }
+              setHistoryOpen(!historyOpen)
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              fontSize: 12, fontWeight: 600, fontFamily: T.font.sans, color: T.text.secondary,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <span style={{ transform: historyOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+            Version History ({config.systemPromptVersion} current)
+          </button>
+          {historyOpen && (
+            <div style={{ marginTop: 8 }}>
+              {historyLoading && <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>Loading...</span>}
+              {!historyLoading && history.length === 0 && (
+                <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>No previous versions saved yet. History starts from next save.</span>
+              )}
+              {!historyLoading && history.slice().reverse().map((entry, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderRadius: T.radius.sm,
+                  background: i % 2 === 0 ? T.bg.primary : T.bg.card,
+                  marginBottom: 2,
+                }}>
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: T.font.sans, color: T.text.primary }}>
+                      v{entry.version}
+                    </span>
+                    <span style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginLeft: 8 }}>
+                      {new Date(entry.timestamp).toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.sans, marginLeft: 8 }}>
+                      {entry.coordinator ? 'coordinator' : ''}{entry.coordinator && entry.screening ? ' + ' : ''}{entry.screening ? 'screening' : ''}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (entry.coordinator) setCoordPrompt(entry.coordinator)
+                      if (entry.screening) setScreenPrompt(entry.screening)
+                      setToast({ type: 'success', message: `Restored v${entry.version} — save to apply` })
+                      setTimeout(() => setToast(null), 3000)
+                    }}
+                    style={{
+                      padding: '3px 10px', borderRadius: T.radius.sm,
+                      background: T.bg.primary, border: `1px solid ${T.border.default}`,
+                      fontSize: 10, fontWeight: 600, fontFamily: T.font.sans,
+                      color: T.text.secondary, cursor: 'pointer',
+                    }}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Save */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
