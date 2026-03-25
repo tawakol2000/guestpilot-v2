@@ -1612,7 +1612,7 @@ function TenantConfigSection({
 
 
 // ─── Essential variable names (used for missing-variable warning) ────────────
-const ESSENTIAL_VARIABLE_NAMES = ['CURRENT_MESSAGES', 'PROPERTY_GUEST_INFO', 'CONVERSATION_HISTORY']
+const ESSENTIAL_VARIABLE_NAMES = ['CURRENT_MESSAGES', 'RESERVATION_DETAILS', 'CONVERSATION_HISTORY']
 
 // ─── Variable Reference Panel ────────────────────────────────────────────────
 
@@ -1774,12 +1774,15 @@ function joinContentBlocks(systemPrompt: string, blocks: string[]): string {
 
 const BLOCK_VARIABLES = [
   'CONVERSATION_HISTORY',
-  'PROPERTY_GUEST_INFO',
+  'RESERVATION_DETAILS',
+  'ACCESS_CONNECTIVITY',
+  'PROPERTY_DESCRIPTION',
+  'AVAILABLE_AMENITIES',
+  'ON_REQUEST_AMENITIES',
   'CURRENT_MESSAGES',
   'OPEN_TASKS',
   'CURRENT_LOCAL_TIME',
-  'TOOLS_DEFINITIONS',
-  'AVAILABLE_SOPS',
+  'DOCUMENT_CHECKLIST',
 ]
 
 function ContentBlocksEditor({
