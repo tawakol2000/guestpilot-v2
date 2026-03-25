@@ -729,7 +729,23 @@ If pending documents are listed above, remind the guest naturally when relevant 
 - Always uphold house rules — escalate any pushback immediately
 - Prioritize safety threats above all else
 - When in doubt, escalate
-- Never output anything other than the JSON object`;
+- Never output anything other than the JSON object
+
+<!-- CONTENT_BLOCKS -->
+### RESERVATION DETAILS
+{RESERVATION_DETAILS}
+<!-- BLOCK -->
+### OPEN TASKS
+{OPEN_TASKS}
+<!-- BLOCK -->
+### CONVERSATION HISTORY
+{CONVERSATION_HISTORY}
+<!-- BLOCK -->
+### CURRENT GUEST MESSAGE
+{CURRENT_MESSAGES}
+<!-- BLOCK -->
+### CURRENT LOCAL TIME
+{CURRENT_LOCAL_TIME}`;
 
 const SEED_SCREENING_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
 
@@ -822,7 +838,23 @@ Raw JSON only. Start with { end with }. Nothing else.
 - Never guess info you don't have — escalate
 - Never promise specific timeframes for manager responses
 - When in doubt, escalate
-- Never output anything other than the JSON object`;
+- Never output anything other than the JSON object
+
+<!-- CONTENT_BLOCKS -->
+### RESERVATION DETAILS
+{RESERVATION_DETAILS}
+<!-- BLOCK -->
+### OPEN TASKS
+{OPEN_TASKS}
+<!-- BLOCK -->
+### CONVERSATION HISTORY
+{CONVERSATION_HISTORY}
+<!-- BLOCK -->
+### CURRENT GUEST MESSAGE
+{CURRENT_MESSAGES}
+<!-- BLOCK -->
+### CURRENT LOCAL TIME
+{CURRENT_LOCAL_TIME}`;
 
 const MANAGER_TRANSLATOR_SYSTEM_PROMPT = `## SYSTEM INSTRUCTIONS - MANAGER REPLY TRANSLATOR BOT
 
