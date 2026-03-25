@@ -388,6 +388,8 @@ async function createMessage(
             text: toolFollowUpTextFormat,
             store: true,
             stream: true,
+            ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
+            prompt_cache_retention: '24h',
           })
         );
 
@@ -426,6 +428,8 @@ async function createMessage(
             reasoning: { effort: reasoningEffort },
             text: toolFollowUpTextFormat,
             store: true,
+            ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
+            prompt_cache_retention: '24h',
           })
         );
       }
