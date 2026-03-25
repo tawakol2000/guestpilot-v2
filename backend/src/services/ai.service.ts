@@ -1499,11 +1499,13 @@ export async function generateAndSendAiReply(
     };
 
     // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
-    const { contentBlocks: userContent } = resolveVariables(
+    const { cleanedPrompt, contentBlocks: userContent } = resolveVariables(
       effectiveSystemPrompt,
       variableDataMap,
       agentType,
     );
+    // Use cleanedPrompt (without content blocks) for instructions — blocks go in input
+    effectiveSystemPrompt = cleanedPrompt;
 
     // For backward compat: build userMessage string for AiApiLog (full text of what AI received)
     const userMessage = userContent.map(b => b.text).join('\n\n');
