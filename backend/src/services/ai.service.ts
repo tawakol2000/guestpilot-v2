@@ -629,10 +629,11 @@ IMPORTANT — BATCHED MESSAGES: The guest may have sent multiple messages in seq
 
 ## DATA SECTIONS
 
-You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {OPEN_TASKS}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}, {DOCUMENT_CHECKLIST}.
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {OPEN_TASKS}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}, {DOCUMENT_CHECKLIST}.
 
-- **{CONVERSATION_HISTORY}** — all prior messages. If the conversation is long, older messages appear as a summary followed by recent messages verbatim.
-- **{PROPERTY_GUEST_INFO}** — guest name, reservation dates, guest count, access codes, property description. **This is your primary source of truth for all property-specific information.**
+- **{RESERVATION_DETAILS}** — guest name, booking status, check-in/out dates, guest count. **Primary source of truth for the booking.**
+- **{ACCESS_CONNECTIVITY}** — door code, WiFi name and password (only for confirmed/checked-in guests).
+- **{PROPERTY_DESCRIPTION}** — property location, features, capacity, nearby landmarks.
 - **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
 - **{ON_REQUEST_AMENITIES}** — amenities available on request only. Guest must ask, then you confirm and schedule delivery.
 - **{OPEN_TASKS}** — currently open escalation tasks. Check before creating duplicates.
@@ -640,7 +641,7 @@ You will receive the following data as separate content blocks: {CONVERSATION_HI
 - **{CURRENT_LOCAL_TIME}** — the property's current local time for scheduling decisions.
 - **{DOCUMENT_CHECKLIST}** — pending documents the guest needs to submit (when applicable).
 
-**Data rule:** Only answer using information explicitly provided in {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, or in the SOPs below. If a guest asks about something not covered, tell them you'll check and escalate. Never guess or invent details.
+**Data rule:** Only answer using information explicitly provided in {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, or in the SOPs below. If a guest asks about something not covered, tell them you'll check and escalate. Never guess or invent details.
 
 **History rule:** Before asking the guest any question, check {CONVERSATION_HISTORY} first. If the information was already provided, do NOT ask again. Avoid repeating the same property list or information the guest has already seen.
 
@@ -680,7 +681,7 @@ You will receive the following data as separate content blocks: {CONVERSATION_HI
 ## ESCALATION LOGIC
 
 ### Set "escalation": null when:
-- Answering questions from {PROPERTY_GUEST_INFO} or {AVAILABLE_AMENITIES} (WiFi, door code, check-in/out, address, amenities)
+- Answering questions from {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, or {AVAILABLE_AMENITIES} (WiFi, door code, check-in/out, address, amenities)
 - Asking the guest for their preferred time (before they've confirmed)
 - Explaining the $20 cleaning fee
 - Providing early check-in/late checkout policy (when request is more than 2 days out — do NOT escalate these)
@@ -812,7 +813,7 @@ Before you call a tool, explain why you are calling it.
 - Never authorize refunds, credits, or discounts
 - Never guarantee specific arrival times — use "shortly" or "as soon as possible"
 - Never promise specific timeframes for manager responses — never say 'within 15 minutes', 'in 10 minutes', or any specific time. Use 'shortly' or 'as soon as possible'.
-- Never guess information you don't have — if an item, service, or detail isn't in your SOPs, {PROPERTY_GUEST_INFO}, or {AVAILABLE_AMENITIES}, don't confirm it exists
+- Never guess information you don't have — if an item, service, or detail isn't in your SOPs, {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, or {AVAILABLE_AMENITIES}, don't confirm it exists
 - Never confirm cleaning/amenity/maintenance without getting the guest's preferred time first
 - Never confirm early check-in or late checkout — always escalate
 - Never discuss internal processes or the manager with the guest
@@ -844,12 +845,14 @@ This rule overrides all injected SOPs. Even if a booking-inquiry or amenity SOP 
 
 ## DATA SECTIONS
 
-You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {PROPERTY_GUEST_INFO}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}.
+You will receive the following data as separate content blocks: {CONVERSATION_HISTORY}, {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, {AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES}, {CURRENT_MESSAGES}, {CURRENT_LOCAL_TIME}.
 
 - **{CONVERSATION_HISTORY}** — all previous messages between you and the guest.
-- **{PROPERTY_GUEST_INFO}** — guest name, booking dates, number of guests, unit details.
+- **{RESERVATION_DETAILS}** — guest name, booking status, check-in/out dates, guest count.
+- **{ACCESS_CONNECTIVITY}** — door code, WiFi (only for confirmed/checked-in guests).
+- **{PROPERTY_DESCRIPTION}** — property location, features, capacity.
 - **{AVAILABLE_AMENITIES}** — amenities confirmed available at this property.
-- **{ON_REQUEST_AMENITIES}** — amenities available on request only. Guest must ask, then you confirm.
+- **{ON_REQUEST_AMENITIES}** — amenities available on request only.
 - **{CURRENT_MESSAGES}** — the guest's latest message(s).
 - **{CURRENT_LOCAL_TIME}** — the property's current local time.
 
@@ -950,7 +953,7 @@ Before you call a tool, explain why you are calling it.
 <dependency_checks>
 - Before responding to any service-related question, check whether a procedure lookup is required.
 - Do not skip prerequisite steps just because the response seems obvious.
-- NEVER guess at information not in your context. If it's not in {PROPERTY_GUEST_INFO} or {AVAILABLE_AMENITIES}, call get_sop or escalate.
+- NEVER guess at information not in your context. If it's not in {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, or {AVAILABLE_AMENITIES}, call get_sop or escalate.
 </dependency_checks>
 
 ---
@@ -1096,7 +1099,7 @@ Do NOT call this tool when recommending rejection.
 - Never confirm personalized arrival plans, share access codes, or say "everything is ready" for Inquiry guests — booking must be accepted first. General info (check-in is 3 PM) is okay.
 - Never offer to "proceed with the reservation" before nationality and party composition are established
 - Never share screening criteria or mention government regulations with the guest
-- Never guess information you don't have — if it's not in your SOPs, {PROPERTY_GUEST_INFO}, or {AVAILABLE_AMENITIES}, escalate
+- Never guess information you don't have — if it's not in your SOPs, {RESERVATION_DETAILS}, {ACCESS_CONNECTIVITY}, {PROPERTY_DESCRIPTION}, or {AVAILABLE_AMENITIES}, escalate
 - Never discuss internal processes, the manager, or AI with the guest
 - Always request marriage certificate/passports AFTER booking acceptance, not before
 - When in doubt, escalate
@@ -1213,7 +1216,7 @@ function buildPropertyInfo(
   reservationStatus?: string,
   customKnowledgeBase?: Record<string, unknown>,
   listingDescription?: string,
-): string {
+): { reservationDetails: string; accessConnectivity: string; propertyDescription: string } {
   // Compute human-readable booking status
   const bookingStatusDisplay = (() => {
     if (!reservationStatus) return 'Unknown';
@@ -1235,53 +1238,29 @@ function buildPropertyInfo(
     }
   })();
 
-  let info = `## PROPERTY DATA — AUTHORITATIVE SOURCE
-CRITICAL INSTRUCTION: You MUST only answer questions using data explicitly listed in this section.
-If a guest asks about something not listed here, respond with "Let me check on that for you" and set escalate to true.
-NEVER use general hotel, apartment, or hospitality knowledge to fill information gaps. If it is not listed below, it does not exist.
-
-### RESERVATION DETAILS
-Guest Name: ${guestName}
-Booking Status: ${bookingStatusDisplay}
-Check-in: ${checkIn}
-Check-out: ${checkOut}
-Number of Guests: ${guestCount}
-`;
+  const reservationDetails = `Guest Name: ${guestName}\nBooking Status: ${bookingStatusDisplay}\nCheck-in: ${checkIn}\nCheck-out: ${checkOut}\nNumber of Guests: ${guestCount}`;
 
   // SECURITY: Only include access codes for CONFIRMED or CHECKED_IN guests.
-  // Allowlist approach — any other status (INQUIRY, CANCELLED, CHECKED_OUT, unknown) is blocked.
+  let accessConnectivity = '';
   if (reservationStatus === 'CONFIRMED' || reservationStatus === 'CHECKED_IN') {
-    info += '\n### ACCESS & CONNECTIVITY\n';
+    const parts: string[] = [];
     if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
-      info += `Door Code: ${listing.doorSecurityCode}\n`;
+      parts.push(`Door Code: ${listing.doorSecurityCode}`);
     }
     if (listing.wifiUsername && listing.wifiUsername !== 'N/A') {
-      info += `WiFi Network Name: ${listing.wifiUsername}\n`;
+      parts.push(`WiFi Network Name: ${listing.wifiUsername}`);
     }
     if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
-      info += `WiFi Password: ${listing.wifiPassword}\n`;
+      parts.push(`WiFi Password: ${listing.wifiPassword}`);
     }
+    accessConnectivity = parts.join('\n');
   }
 
-  // Amenities are now separate template variables ({AVAILABLE_AMENITIES}, {ON_REQUEST_AMENITIES})
-  // and are NOT included in buildPropertyInfo() — they resolve as separate content blocks.
+  // Use summarized description if available, fall back to listingDescription
+  const propertyDescription = (customKnowledgeBase?.summarizedDescription as string)
+    || listingDescription || '';
 
-  // T010: Use summarized description if available, fall back to listingDescription
-  const description = (customKnowledgeBase?.summarizedDescription as string)
-    || listingDescription;
-  if (description) {
-    info += `\n### PROPERTY DESCRIPTION\n${description}\n`;
-  }
-
-  if (retrievedChunks && retrievedChunks.length > 0) {
-    info += '\n### RELEVANT PROCEDURES & KNOWLEDGE\n';
-    info += "The following was retrieved based on the guest's current question:\n";
-    for (const chunk of retrievedChunks) {
-      info += `[${chunk.category}] ${chunk.content}\n`;
-    }
-  }
-
-  return info;
+  return { reservationDetails, accessConnectivity, propertyDescription };
 }
 
 // ─── Escalation handler — creates Task + private [MANAGER] message ───────────
@@ -1670,7 +1649,7 @@ export async function generateAndSendAiReply(
       escalationSignals: escalationSignals.map(s => s.signal),
     };
 
-    let propertyInfo = buildPropertyInfo(
+    const { reservationDetails, accessConnectivity, propertyDescription } = buildPropertyInfo(
       context.guestName,
       context.checkIn,
       context.checkOut,
@@ -1682,11 +1661,12 @@ export async function generateAndSendAiReply(
       context.listingDescription
     );
 
-    // Inject escalation signals into prompt so the AI can factor them in
+    // Inject escalation signals into reservation details so the AI can factor them in
+    let reservationDetailsWithSignals = reservationDetails;
     if (escalationSignals.length > 0) {
-      propertyInfo += '\n### SYSTEM SIGNALS\n';
-      propertyInfo += escalationSignals.map(s => `⚠ ${s.signal}`).join('\n');
-      propertyInfo += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.\n';
+      reservationDetailsWithSignals += '\n\n### SYSTEM SIGNALS\n';
+      reservationDetailsWithSignals += escalationSignals.map(s => `⚠ ${s.signal}`).join('\n');
+      reservationDetailsWithSignals += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.';
     }
 
     // Read document checklist from reservation (used for context injection + conditional tool availability)
@@ -1746,13 +1726,16 @@ export async function generateAndSendAiReply(
 
     // Apply per-listing variable overrides if configured
     const varOverrides = (context.customKnowledgeBase?.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
-    const finalPropertyInfo = applyPropertyOverrides(propertyInfo, varOverrides.PROPERTY_GUEST_INFO);
 
     // Build the template variable data map — all dynamic content as named entries
     const agentType = isInquiry ? 'screening' as const : 'coordinator' as const;
     const variableDataMap: Record<string, string> = {
       CONVERSATION_HISTORY: historyText,
-      PROPERTY_GUEST_INFO: finalPropertyInfo,
+      RESERVATION_DETAILS: applyPropertyOverrides(reservationDetailsWithSignals, varOverrides.RESERVATION_DETAILS),
+      ACCESS_CONNECTIVITY: accessConnectivity
+        ? applyPropertyOverrides(accessConnectivity, varOverrides.ACCESS_CONNECTIVITY) : '',
+      PROPERTY_DESCRIPTION: propertyDescription
+        ? applyPropertyOverrides(propertyDescription, varOverrides.PROPERTY_DESCRIPTION) : '',
       AVAILABLE_AMENITIES: availableAmenityList.length > 0
         ? applyPropertyOverrides(availableAmenityList.join(', '), varOverrides.AVAILABLE_AMENITIES) : '',
       ON_REQUEST_AMENITIES: onRequestAmenityList.length > 0

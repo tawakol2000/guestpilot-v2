@@ -17,7 +17,7 @@ import type { ContentBlock } from '../services/ai.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
-import { getAvailableVariables } from '../services/template-variable.service';
+import { getAvailableVariables, resolveVariables } from '../services/template-variable.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -299,7 +299,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
         };
 
         // ── Build property info (same as real pipeline) ───────────────────────
-        const propertyInfo = buildPropertyInfo(
+        const { reservationDetails, accessConnectivity, propertyDescription } = buildPropertyInfo(
           guestName,
           checkIn,
           checkOut,
@@ -337,12 +337,16 @@ export function makeAiConfigController(prisma: PrismaClient) {
 
         // ── Build content blocks (same format as real pipeline) ───────────────
         const templateVars: Record<string, string> = {
-          conversationHistory: historyText,
-          propertyInfo,
-          currentMessages: currentMsgsText,
-          localTime,
-          openTasks: 'No open tasks.',
-          knowledgeBase: 'No additional Q&A available.',
+          CONVERSATION_HISTORY: historyText,
+          RESERVATION_DETAILS: reservationDetails,
+          ACCESS_CONNECTIVITY: accessConnectivity,
+          PROPERTY_DESCRIPTION: propertyDescription,
+          AVAILABLE_AMENITIES: '',
+          ON_REQUEST_AMENITIES: '',
+          OPEN_TASKS: 'No open tasks.',
+          CURRENT_MESSAGES: currentMsgsText,
+          CURRENT_LOCAL_TIME: localTime,
+          DOCUMENT_CHECKLIST: '',
         };
 
         let userContent: ContentBlock[];
@@ -357,12 +361,9 @@ export function makeAiConfigController(prisma: PrismaClient) {
             return { type: 'text' as const, text };
           });
         } else {
-          // Fallback: hardcoded default content blocks
-          userContent = [
-            { type: 'text' as const, text: `### CONVERSATION HISTORY ###\n${historyText}` },
-            { type: 'text' as const, text: `### PROPERTY & GUEST INFO ###\n\n${propertyInfo}` },
-            { type: 'text' as const, text: `### CURRENT GUEST MESSAGE(S) ###\n${currentMsgsText}\n\n### CURRENT LOCAL TIME###\n${localTime}` },
-          ];
+          // Fallback: use resolveVariables with template vars
+          const { contentBlocks } = resolveVariables(effectiveSystemPrompt, templateVars, isInquiry ? 'screening' : 'coordinator');
+          userContent = contentBlocks;
         }
 
         // ── Set up tools — per-agent tools ──────────────────────────────────

@@ -29,12 +29,28 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
     emptyDefault: 'No previous messages.',
   },
   {
-    name: 'PROPERTY_GUEST_INFO',
-    description: 'Reservation details, access codes, property description',
+    name: 'RESERVATION_DETAILS',
+    description: 'Guest name, booking status, check-in/out dates, guest count',
     essential: true,
     agentScope: ['coordinator', 'screening'],
+    propertyBound: false,
+    emptyDefault: 'No reservation data available.',
+  },
+  {
+    name: 'ACCESS_CONNECTIVITY',
+    description: 'Door code, WiFi name and password (only for confirmed/checked-in guests)',
+    essential: false,
+    agentScope: ['coordinator', 'screening'],
     propertyBound: true,
-    emptyDefault: 'No property data available.',
+    emptyDefault: null, // omit for INQUIRY guests (security)
+  },
+  {
+    name: 'PROPERTY_DESCRIPTION',
+    description: 'Property location, features, capacity, and nearby landmarks',
+    essential: false,
+    agentScope: ['coordinator', 'screening'],
+    propertyBound: true,
+    emptyDefault: null, // omit if no description
   },
   {
     name: 'AVAILABLE_AMENITIES',

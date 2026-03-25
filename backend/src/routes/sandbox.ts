@@ -373,8 +373,10 @@ export function sandboxRouter(prisma: PrismaClient) {
         effectiveSystemPrompt,
         {
           CONVERSATION_HISTORY: '', // history is handled via multi-turn inputTurns below
-          PROPERTY_GUEST_INFO: propertyInfo,
-          AVAILABLE_AMENITIES: '', // sandbox doesn't have amenity classifications
+          RESERVATION_DETAILS: propertyInfo, // sandbox uses full propertyInfo for reservation
+          ACCESS_CONNECTIVITY: '',
+          PROPERTY_DESCRIPTION: '',
+          AVAILABLE_AMENITIES: '',
           ON_REQUEST_AMENITIES: '',
           OPEN_TASKS: 'No open tasks.',
           CURRENT_MESSAGES: currentMsgsText,

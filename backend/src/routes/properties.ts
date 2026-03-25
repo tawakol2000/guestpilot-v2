@@ -288,7 +288,7 @@ export function propertiesRouter(prisma: PrismaClient): Router {
       const sampleCheckOut = new Date();
       sampleCheckOut.setDate(sampleCheckOut.getDate() + 4);
 
-      let propertyInfo = buildPropertyInfo(
+      const { reservationDetails, accessConnectivity, propertyDescription } = buildPropertyInfo(
         'Sample Guest',
         sampleCheckIn.toISOString().slice(0, 10),
         sampleCheckOut.toISOString().slice(0, 10),
@@ -300,9 +300,6 @@ export function propertiesRouter(prisma: PrismaClient): Router {
         property.listingDescription || undefined,
       );
 
-      // Apply variable overrides
-      propertyInfo = applyPropertyOverrides(propertyInfo, varOverrides.PROPERTY_GUEST_INFO);
-
       // Classify amenities
       const amenitiesStr = kb.amenities as string | undefined;
       const amenityClasses = kb.amenityClassifications as Record<string, string> | undefined;
@@ -312,19 +309,22 @@ export function propertiesRouter(prisma: PrismaClient): Router {
         ? `Available amenities: ${available.join(', ')}`
         : '';
       let onRequestAmenities = onRequest.length > 0
-        ? `The following amenities are available ON REQUEST ONLY (guest must ask, and you confirm they will be arranged):\n${onRequest.map(a => `- ${a}`).join('\n')}`
+        ? `The following amenities are available ON REQUEST ONLY:\n${onRequest.map(a => `- ${a}`).join('\n')}`
         : '';
 
-      // Apply overrides to amenity variables
+      // Apply overrides
+      const finalReservation = applyPropertyOverrides(reservationDetails, varOverrides.RESERVATION_DETAILS);
+      const finalAccess = accessConnectivity ? applyPropertyOverrides(accessConnectivity, varOverrides.ACCESS_CONNECTIVITY) : '';
+      const finalDescription = propertyDescription ? applyPropertyOverrides(propertyDescription, varOverrides.PROPERTY_DESCRIPTION) : '';
       availableAmenities = applyPropertyOverrides(availableAmenities, varOverrides.AVAILABLE_AMENITIES);
       onRequestAmenities = applyPropertyOverrides(onRequestAmenities, varOverrides.ON_REQUEST_AMENITIES);
-
-      // Document checklist is empty in preview (depends on per-reservation screening data)
       const documentChecklist = applyPropertyOverrides('', varOverrides.DOCUMENT_CHECKLIST);
 
       res.json({
         variables: {
-          PROPERTY_GUEST_INFO: propertyInfo,
+          RESERVATION_DETAILS: finalReservation,
+          ACCESS_CONNECTIVITY: finalAccess,
+          PROPERTY_DESCRIPTION: finalDescription,
           AVAILABLE_AMENITIES: availableAmenities,
           ON_REQUEST_AMENITIES: onRequestAmenities,
           DOCUMENT_CHECKLIST: documentChecklist,
