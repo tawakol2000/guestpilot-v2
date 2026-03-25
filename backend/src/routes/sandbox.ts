@@ -7,11 +7,11 @@ import { getTenantAiConfig } from '../services/tenant-config.service';
 import { retrieveRelevantKnowledge } from '../services/rag.service';
 import { getSopContent, buildToolDefinition } from '../services/sop.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
-import { resolveVariables } from '../services/template-variable.service';
+import { resolveVariables, applyPropertyOverrides } from '../services/template-variable.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, COORDINATOR_SCHEMA, SCREENING_SCHEMA } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, buildPropertyInfo, classifyAmenities } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 
@@ -34,85 +34,6 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   }
   throw lastErr;
 }
-
-// ─── Code fence stripper (same as ai.service.ts) ─────────────────────────────
-function stripCodeFences(text: string): string {
-  let s = text.trim();
-  if (s.startsWith('```')) {
-    const firstNewline = s.indexOf('\n');
-    if (firstNewline !== -1) s = s.substring(firstNewline + 1);
-  }
-  if (s.endsWith('```')) s = s.substring(0, s.lastIndexOf('```'));
-  return s.trim();
-}
-
-// ─── Build property info block (same as ai.service.ts) ───────────────────────
-function buildPropertyInfo(
-  guestName: string, checkIn: string, checkOut: string, guestCount: number,
-  listing: {
-    name?: string; address?: string; doorSecurityCode?: string;
-    wifiUsername?: string; wifiPassword?: string;
-  },
-  retrievedChunks: Array<{ content: string; category: string }>,
-  reservationStatus: string,
-): string {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const ci = new Date(checkIn); ci.setHours(0, 0, 0, 0);
-  const co = new Date(checkOut); co.setHours(0, 0, 0, 0);
-  const bookingStatusDisplay = (() => {
-    switch (reservationStatus) {
-      case 'INQUIRY': return 'Inquiry (pre-booking)';
-      case 'CONFIRMED':
-        if (ci.getTime() === today.getTime()) return 'Confirmed (Checking in today)';
-        if (ci > today) return 'Confirmed (Upcoming)';
-        return 'Confirmed';
-      case 'CHECKED_IN':
-        if (co.getTime() === today.getTime()) return 'Checked In (Checking out today)';
-        return 'Checked In';
-      case 'CHECKED_OUT': return 'Checked Out';
-      case 'CANCELLED': return 'Cancelled';
-      default: return reservationStatus;
-    }
-  })();
-
-  let info = `## PROPERTY DATA — AUTHORITATIVE SOURCE
-CRITICAL INSTRUCTION: You MUST only answer questions using data explicitly listed in this section.
-If a guest asks about something not listed here, respond with "Let me check on that for you" and set escalate to true.
-NEVER use general hotel, apartment, or hospitality knowledge to fill information gaps. If it is not listed below, it does not exist.
-
-### RESERVATION DETAILS
-Guest Name: ${guestName}
-Booking Status: ${bookingStatusDisplay}
-Check-in: ${checkIn}
-Check-out: ${checkOut}
-Number of Guests: ${guestCount}
-`;
-
-  if (reservationStatus === 'CONFIRMED' || reservationStatus === 'CHECKED_IN') {
-    info += '\n### ACCESS & CONNECTIVITY\n';
-    if (listing.doorSecurityCode && listing.doorSecurityCode !== 'N/A') {
-      info += `Door Code: ${listing.doorSecurityCode}\n`;
-    }
-    if (listing.wifiUsername && listing.wifiUsername !== 'N/A') {
-      info += `WiFi Network Name: ${listing.wifiUsername}\n`;
-    }
-    if (listing.wifiPassword && listing.wifiPassword !== 'N/A') {
-      info += `WiFi Password: ${listing.wifiPassword}\n`;
-    }
-  }
-
-  if (retrievedChunks.length > 0) {
-    info += '\n### RELEVANT PROCEDURES & KNOWLEDGE\n';
-    info += "The following was retrieved based on the guest's current question:\n";
-    for (const chunk of retrievedChunks) {
-      info += `[${chunk.category}] ${chunk.content}\n`;
-    }
-  }
-
-  return info;
-}
-
-// Content block building now uses resolveVariables() from template-variable.service.ts
 
 export function sandboxRouter(prisma: PrismaClient) {
   const router = Router();
@@ -172,12 +93,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
       const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
 
-      // ── Build conversation history text ────────────────────────────────
-      const historyText = messages
-        .map(m => `${m.role === 'guest' ? 'Guest' : (tenantConfig?.agentName || 'Omar')}: ${m.content}`)
-        .join('\n');
-
-      // Current message = last guest message(s)
+      // ── Current message = last guest message(s) ─────────────────────────
       const lastGuestMessages = [];
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'guest') lastGuestMessages.unshift(messages[i]);
@@ -191,8 +107,25 @@ export function sandboxRouter(prisma: PrismaClient) {
         return;
       }
 
+      // ── Build conversation history text ─────────────────────────────────
+      // Exclude current window messages from history (they go into CURRENT_MESSAGES block)
+      const currentContents = new Set(lastGuestMessages.map(m => m.content));
+      const historyMsgs = messages.filter(m => !(m.role === 'guest' && currentContents.has(m.content)));
+      const historyText = historyMsgs.length > 0
+        ? historyMsgs.map(m => `${m.role === 'guest' ? 'Guest' : (tenantConfig?.agentName || 'Omar')}: ${m.content}`).join('\n')
+        : '';
+
       // ── RAG retrieval ──────────────────────────────────────────────────
-      const propertyAmenities = kb?.amenities ? String(kb.amenities) : undefined;
+      const rawAmenitiesStr = kb?.amenities ? String(kb.amenities) : undefined;
+      const amenityClasses = kb?.amenityClassifications as Record<string, string> | undefined;
+      const { available: availableAmenityList, onRequest: onRequestAmenityList } =
+        classifyAmenities(rawAmenitiesStr, amenityClasses);
+      // For SOP {PROPERTY_AMENITIES}: use on-request items if classifications exist, else full list
+      const { onRequest: sopOnRequestItems } = classifyAmenities(rawAmenitiesStr, amenityClasses);
+      const propertyAmenities = (amenityClasses && Object.keys(amenityClasses).length > 0 && sopOnRequestItems.length > 0)
+        ? sopOnRequestItems.join(', ')
+        : rawAmenitiesStr;
+
       const recentForRag = messages.slice(-10).map(m => ({
         role: m.role === 'guest' ? 'guest' : 'host',
         content: m.content,
@@ -214,89 +147,38 @@ export function sandboxRouter(prisma: PrismaClient) {
 
       const retrievedChunks = ragResult.chunks;
 
-      // ── SOP Classification via Tool Use ─────────────────────────────
-      // Single forced get_sop tool call — replaces the 3-tier pipeline.
+      // ── SOP Classification — handled inline via tool loop (matches production) ──
+      // No separate classification call. The AI calls get_sop when it needs SOP guidance.
       let sopClassification: { categories: string[]; confidence: string; reasoning: string; inputTokens: number; outputTokens: number; durationMs: number } = {
-        categories: ['none'], confidence: 'low', reasoning: 'Classification not run', inputTokens: 0, outputTokens: 0, durationMs: 0,
+        categories: ['none'], confidence: 'high', reasoning: 'No SOP classification — handled inline via tool loop', inputTokens: 0, outputTokens: 0, durationMs: 0,
       };
-      try {
-        const classificationUserText = `CONVERSATION:\n${recentForRag.map(m => `${m.role === 'guest' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n')}\n\nCLASSIFY THE LATEST GUEST MESSAGE.`;
-        const sopToolDef = await buildToolDefinition(tenantId, prisma);
-        const sopStart = Date.now();
-        const sopResponse = await withRetry(() =>
-          (openai.responses as any).create({
-            model: 'gpt-5.4-mini-2026-03-17',
-            max_output_tokens: 200,
-            temperature: 0,
-            instructions: personaCfg.systemPrompt,
-            input: [{ role: 'user', content: classificationUserText }],
-            tools: [sopToolDef],
-            tool_choice: { type: 'function' as const, name: 'get_sop' },
-            reasoning: { effort: 'none' },
-            truncation: 'auto',
-            store: true,
-          })
-        ) as any;
-        const sopDurationMs = Date.now() - sopStart;
-        const sopFnCall = sopResponse.output?.find((i: any) => i.type === 'function_call');
-        if (sopFnCall) {
-          const input = JSON.parse(sopFnCall.arguments) as { categories: string[]; confidence: string; reasoning: string };
-          sopClassification = {
-            categories: input.categories,
-            confidence: input.confidence,
-            reasoning: input.reasoning,
-            inputTokens: sopResponse.usage?.input_tokens || 0,
-            outputTokens: sopResponse.usage?.output_tokens || 0,
-            durationMs: sopDurationMs,
-          };
-          console.log(`[Sandbox] SOP classification: [${input.categories.join(', ')}] confidence=${input.confidence} (${sopDurationMs}ms) — ${input.reasoning}`);
-        } else {
-          console.warn('[Sandbox] SOP classification returned no function_call — defaulting to none');
-          sopClassification.durationMs = sopDurationMs;
-          sopClassification.inputTokens = sopResponse.usage?.input_tokens || 0;
-          sopClassification.outputTokens = sopResponse.usage?.output_tokens || 0;
-        }
-      } catch (err) {
-        console.warn('[Sandbox] SOP classification failed (non-fatal):', err);
-      }
-
-      // Fetch SOP content for classified categories
-      const sopCategories = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate');
-      const sopTexts = await Promise.all(
-        sopCategories.map(c => getSopContent(tenantId, c, reservationStatus || 'DEFAULT', propertyId, propertyAmenities, prisma))
-      );
-      const sopContent = sopTexts.filter(Boolean).join('\n\n---\n\n');
+      let sopContent = '';
 
       // ── Escalation signals ─────────────────────────────────────────────
       const escalationSignals = detectEscalationSignals(ragQuery);
 
-      // ── Build prompt ───────────────────────────────────────────────────
-      let propertyInfo = buildPropertyInfo(
-        guestName || 'Test Guest', checkIn, checkOut, guestCount || 2,
-        listing, retrievedChunks, reservationStatus,
+      // ── Build property info (matches production buildPropertyInfo) ──────
+      const { reservationDetails, accessConnectivity, propertyDescription } = buildPropertyInfo(
+        guestName || 'Test Guest',
+        checkIn,
+        checkOut,
+        guestCount || 2,
+        listing,
+        retrievedChunks,
+        reservationStatus,
+        kb,
+        (kb?.summarizedDescription as string) || property.listingDescription || '',
       );
 
+      // Inject escalation signals into reservation details
+      let reservationDetailsWithSignals = reservationDetails;
       if (escalationSignals.length > 0) {
-        propertyInfo += '\n### SYSTEM SIGNALS\n';
-        propertyInfo += escalationSignals.map(s => s.signal).join('\n');
-        propertyInfo += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.\n';
+        reservationDetailsWithSignals += '\n\n### SYSTEM SIGNALS\n';
+        reservationDetailsWithSignals += escalationSignals.map(s => `\u26a0 ${s.signal}`).join('\n');
+        reservationDetailsWithSignals += '\nNote: These signals were automatically detected from the guest message. Consider them when deciding whether to escalate.';
       }
 
       const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
-
-      // Approved knowledge base
-      const approvedKnowledge = await prisma.knowledgeSuggestion.findMany({
-        where: {
-          tenantId,
-          status: 'approved',
-          OR: [{ propertyId }, { propertyId: null }],
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: 20,
-      });
-      const knowledgeText = approvedKnowledge.length > 0
-        ? approvedKnowledge.map(k => `Q: ${k.question}\nA: ${k.answer}`).join('\n\n')
-        : 'No additional Q&A available.';
 
       // Migrate legacy model names to GPT-5.4 Mini
       const rawModel = tenantConfig?.model || personaCfg.model;
@@ -305,6 +187,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
       const effectiveAgentName = tenantConfig?.agentName || agentName;
 
+      // DB-backed system prompts (editable via Configure AI), fallback to JSON config
       let effectiveSystemPrompt = isInquiry
         ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
         : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
@@ -312,33 +195,27 @@ export function sandboxRouter(prisma: PrismaClient) {
         effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
       }
       if (tenantConfig?.customInstructions) {
-        effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\n${tenantConfig.customInstructions}`;
+        effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
       }
 
-      // Inject SOP content from tool classification into system prompt
-      if (sopContent) {
-        effectiveSystemPrompt += `\n\n## STANDARD OPERATING PROCEDURE\nFollow this procedure for the guest's current request:\n${sopContent}`;
-      } else if (!sopClassification.categories.includes('none') && sopCategories.length > 0) {
-        effectiveSystemPrompt += `\n\n## NOTE\nSOP temporarily unavailable. Respond helpfully based on your general knowledge and system instructions.`;
-      }
+      // SOP content is injected via the get_sop tool handler in the main tool loop.
+      // No pre-injection needed — matches production.
 
-      const templateVars = {
-        conversationHistory: historyText,
-        propertyInfo,
-        currentMessages: currentMsgsText,
-        localTime,
-        openTasks: 'No open tasks.',
-        knowledgeBase: knowledgeText,
-      };
-
-      // ── Tool definitions — identical to production (ai.service.ts) ──
-      // Read checklist for conditional tool availability
+      // ── Read document checklist for conditional tool availability ────────
       const reservation = await prisma.reservation.findFirst({ where: { id: { not: undefined }, conversations: { some: { property: { id: propertyId } } } }, select: { id: true, screeningAnswers: true } });
       const sbChecklistData = (reservation?.screeningAnswers as any)?.documentChecklist as DocumentChecklist | undefined;
       const sbChecklistPending = hasPendingItems(sbChecklistData ?? null);
 
-      // ─── DB-driven tool definitions ───
-      const sbAgentType = isInquiry ? 'screening' : 'coordinator';
+      // Build document checklist text
+      let documentChecklistText = '';
+      if (!isInquiry && sbChecklistData && sbChecklistPending) {
+        documentChecklistText = `Passports/IDs: ${sbChecklistData.passportsReceived}/${sbChecklistData.passportsNeeded} received`;
+        if (sbChecklistData.marriageCertNeeded) {
+          documentChecklistText += `\nMarriage Certificate: ${sbChecklistData.marriageCertReceived ? 'received' : 'pending'}`;
+        }
+      }
+
+      // ── Tool definitions — identical to production (ai.service.ts) ──────
       let sbToolDefs: Awaited<ReturnType<typeof getToolDefinitions>> = [];
       try {
         sbToolDefs = await getToolDefinitions(tenantId, prisma);
@@ -346,9 +223,10 @@ export function sandboxRouter(prisma: PrismaClient) {
         console.warn('[Sandbox] Failed to load tool definitions — falling back to no tools:', err);
       }
 
+      // Build tool set — get_sop uses dynamic definition, others from DB
       const toolsForCall: any[] = sbToolDefs
         .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(reservationStatus))
-        .filter(t => t.name !== 'get_sop') // SOP tool handled separately
+        .filter(t => t.name !== 'get_sop') // get_sop uses dynamic definition with category enum
         .filter(t => t.name !== 'mark_document_received' || sbChecklistPending) // conditional
         .map(t => ({
           type: 'function' as const,
@@ -357,6 +235,9 @@ export function sandboxRouter(prisma: PrismaClient) {
           strict: t.type === 'system',
           parameters: t.parameters as Record<string, unknown>,
         }));
+      // Add get_sop with dynamic category descriptions from enabled SOP definitions
+      const sopToolDef = await buildToolDefinition(tenantId, prisma);
+      toolsForCall.push(sopToolDef);
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -367,47 +248,61 @@ export function sandboxRouter(prisma: PrismaClient) {
         } catch { /* fallback: empty */ }
       }
 
-      // Build content blocks via template variable system — identical to production
-      const sandboxAgentType = isInquiry ? 'screening' as const : 'coordinator' as const;
-      const { contentBlocks: sandboxBlocks } = resolveVariables(
+      // ── Build content blocks via template variable system — identical to production ──
+      const agentType = isInquiry ? 'screening' as const : 'coordinator' as const;
+
+      // Apply per-listing variable overrides if configured
+      const varOverrides = (kb?.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
+
+      const variableDataMap: Record<string, string> = {
+        CONVERSATION_HISTORY: historyText,
+        RESERVATION_DETAILS: applyPropertyOverrides(reservationDetailsWithSignals, varOverrides.RESERVATION_DETAILS),
+        ACCESS_CONNECTIVITY: accessConnectivity
+          ? applyPropertyOverrides(accessConnectivity, varOverrides.ACCESS_CONNECTIVITY) : '',
+        PROPERTY_DESCRIPTION: propertyDescription
+          ? applyPropertyOverrides(propertyDescription, varOverrides.PROPERTY_DESCRIPTION) : '',
+        AVAILABLE_AMENITIES: availableAmenityList.length > 0
+          ? applyPropertyOverrides(availableAmenityList.join(', '), varOverrides.AVAILABLE_AMENITIES) : '',
+        ON_REQUEST_AMENITIES: onRequestAmenityList.length > 0
+          ? applyPropertyOverrides(
+              `The following amenities are available ON REQUEST ONLY (guest must ask, then confirm delivery time):\n${onRequestAmenityList.map(a => `- ${a}`).join('\n')}`,
+              varOverrides.ON_REQUEST_AMENITIES,
+            ) : '',
+        OPEN_TASKS: 'No open tasks.',
+        CURRENT_MESSAGES: currentMsgsText,
+        CURRENT_LOCAL_TIME: localTime,
+        DOCUMENT_CHECKLIST: documentChecklistText
+          ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+      };
+
+      // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
+      const { contentBlocks: userContent } = resolveVariables(
         effectiveSystemPrompt,
-        {
-          CONVERSATION_HISTORY: '', // history is handled via multi-turn inputTurns below
-          RESERVATION_DETAILS: propertyInfo, // sandbox uses full propertyInfo for reservation
-          ACCESS_CONNECTIVITY: '',
-          PROPERTY_DESCRIPTION: '',
-          AVAILABLE_AMENITIES: '',
-          ON_REQUEST_AMENITIES: '',
-          OPEN_TASKS: 'No open tasks.',
-          CURRENT_MESSAGES: currentMsgsText,
-          CURRENT_LOCAL_TIME: localTime,
-          DOCUMENT_CHECKLIST: '',
-        },
-        sandboxAgentType,
+        variableDataMap,
+        agentType,
       );
-      const lastUserMessage = sandboxBlocks.map(b => b.text).join('\n\n');
 
-      // Build history as proper {role, content} turns (matches production inputTurns)
-      const inputTurns: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-      for (const turn of messages) {
-        inputTurns.push({
-          role: turn.role === 'guest' ? 'user' : 'assistant',
-          content: turn.content,
-        });
-      }
-      // Exclude current window messages from history (they're in lastUserMessage)
-      const currentContents = new Set(lastGuestMessages.map(m => m.content));
-      const historyTurns = inputTurns.filter(t => !(t.role === 'user' && currentContents.has(t.content)));
-      const finalInputTurns = [...historyTurns, { role: 'user' as const, content: lastUserMessage }];
+      // Single user message — matches production (no multi-turn splitting)
+      const userMessage = userContent.map(b => b.text).join('\n\n');
+      const inputTurns: Array<{ role: 'user' | 'assistant'; content: string }> = [
+        { role: 'user' as const, content: userMessage },
+      ];
 
-      // Determine reasoning effort — request override > SOP-based auto
-      const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
+      // ── Determine reasoning effort — matches production logic ───────────
       const VALID_EFFORTS = ['none', 'low', 'medium', 'high'];
-      const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = requestedReasoning && VALID_EFFORTS.includes(requestedReasoning)
-        ? requestedReasoning as any
-        : (sopClassification.categories.some(c => REASONING_CATEGORIES.has(c)) ? 'low' : 'none');
+      let reasoningEffort: 'none' | 'low' | 'medium' | 'high';
+      if (requestedReasoning && VALID_EFFORTS.includes(requestedReasoning)) {
+        // Sandbox allows explicit override for testing
+        reasoningEffort = requestedReasoning as any;
+      } else {
+        // Production logic: tenant config > minimum 'low' when 'auto'
+        const tenantReasoning = isInquiry
+          ? (tenantConfig as any)?.reasoningScreening || 'none'
+          : (tenantConfig as any)?.reasoningCoordinator || 'auto';
+        reasoningEffort = tenantReasoning === 'auto' ? 'low' : tenantReasoning;
+      }
 
-      // ── Call OpenAI — identical to production createMessage ──────────
+      // ── Call OpenAI — identical to production createMessage ──────────────
       const createParams: any = {
         model: effectiveModel,
         max_output_tokens: effectiveMaxTokens,
@@ -415,11 +310,11 @@ export function sandboxRouter(prisma: PrismaClient) {
         ...(reasoningEffort === 'none' && effectiveTemperature !== undefined ? { temperature: effectiveTemperature } : {}),
         ...(toolsForCall?.length ? { tools: toolsForCall, tool_choice: 'auto' } : {}),
         instructions: effectiveSystemPrompt,
-        input: finalInputTurns,
+        input: inputTurns,
         text: { format: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA },
         truncation: 'auto',
         store: true,
-        prompt_cache_key: `tenant-${tenantId}-sandbox-${isInquiry ? 'screening' : 'coordinator'}`,
+        prompt_cache_key: `tenant-${tenantId}-${isInquiry ? 'screening' : 'coordinator'}`,
         prompt_cache_retention: '24h',
       };
 
@@ -427,14 +322,13 @@ export function sandboxRouter(prisma: PrismaClient) {
         (openai.responses as any).create(createParams)
       ) as any;
 
-      // ── Tool use loop — identical to production ──────────────────────
+      // ── Tool use loop — identical to production ────────────────────────
       let toolUsed = false;
       let toolName: string | undefined;
       let toolInput: any;
       let toolResults: any;
       let toolDurationMs: number | undefined;
 
-      // ─── Multi-tool loop: process ALL tool calls, repeat up to 5 rounds ───
       const MAX_TOOL_ROUNDS = 5;
       let sbToolRound = 0;
       let sbFnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
@@ -442,7 +336,29 @@ export function sandboxRouter(prisma: PrismaClient) {
       const safeTenant = tenant!; // Already null-checked above
       async function executeSandboxTool(fnCall: any): Promise<string> {
         const input = JSON.parse(fnCall.arguments);
-        if (fnCall.name === 'search_available_properties') {
+
+        if (fnCall.name === 'get_sop') {
+          // ── get_sop handler — matches production ──
+          const typedInput = input as { categories: string[]; confidence: string; reasoning: string };
+          // Update sopClassification for logging/metadata
+          sopClassification = {
+            categories: typedInput.categories,
+            confidence: typedInput.confidence,
+            reasoning: typedInput.reasoning,
+            inputTokens: 0, outputTokens: 0, durationMs: 0,
+          };
+          console.log(`[Sandbox] SOP classification (inline): [${typedInput.categories.join(', ')}] confidence=${typedInput.confidence} — ${typedInput.reasoning}`);
+
+          const cats = typedInput.categories.filter(c => c !== 'none' && c !== 'escalate');
+
+          // Fetch and return SOP content
+          if (cats.length === 0) return JSON.stringify({ category: 'none', content: '' });
+          const texts = await Promise.all(
+            cats.map(c => getSopContent(tenantId, c, reservationStatus || 'DEFAULT', propertyId, propertyAmenities, prisma))
+          );
+          sopContent = texts.filter(Boolean).join('\n\n---\n\n');
+          return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
+        } else if (fnCall.name === 'search_available_properties') {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
           const currentAddress = listing.address || '';
           const cityParts = currentAddress.split(',').map(s => s.trim()).filter(Boolean);
