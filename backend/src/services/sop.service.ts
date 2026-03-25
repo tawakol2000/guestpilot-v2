@@ -105,6 +105,7 @@ export async function getSopContent(
   propertyId?: string,
   propertyAmenities?: string,
   prisma?: PrismaClient,
+  variableDataMap?: Record<string, string>,
 ): Promise<string> {
   // Normalise status to match DB values
   const status = normaliseStatus(reservationStatus);
@@ -199,7 +200,7 @@ export async function getSopContent(
     }
 
     cacheSet(cacheKey, content);
-    return applyTemplates(content, category, propertyAmenities);
+    return applyTemplates(content, category, propertyAmenities, variableDataMap);
   } finally {
     // Only disconnect if we created the client
     if (!prisma) await db.$disconnect();
@@ -221,27 +222,33 @@ function normaliseStatus(raw: string): string {
  * When amenity classifications exist, the caller passes only "on_request" items.
  * When no classifications exist, the full amenities string is passed for backward compatibility.
  */
-function applyTemplates(content: string, category: string, propertyAmenities?: string): string {
-  if (category === 'sop-amenity-request') {
-    // Support both new name and legacy alias
-    const hasNew = content.includes('{ON_REQUEST_AMENITIES}');
-    const hasLegacy = content.includes('{PROPERTY_AMENITIES}');
-    if (hasNew || hasLegacy) {
-      if (propertyAmenities) {
-        const list = propertyAmenities.split(',').map(a => `• ${a.trim()}`).filter(Boolean).join('\n');
-        let result = content;
-        if (hasNew) result = result.replace('{ON_REQUEST_AMENITIES}', list);
-        if (hasLegacy) result = result.replace('{PROPERTY_AMENITIES}', list);
-        return result;
+function applyTemplates(content: string, category: string, propertyAmenities?: string, variableDataMap?: Record<string, string>): string {
+  let result = content;
+
+  // Resolve ALL {VARIABLE} placeholders from the data map
+  if (variableDataMap) {
+    result = result.replace(/\{([A-Z_]+)\}/g, (match, varName) => {
+      if (varName in variableDataMap) {
+        return variableDataMap[varName] || '';
       }
-      let result = content;
-      const fallback = 'No amenities data available for this property.';
-      if (hasNew) result = result.replace('{ON_REQUEST_AMENITIES}', fallback);
-      if (hasLegacy) result = result.replace('{PROPERTY_AMENITIES}', fallback);
-      return result;
-    }
+      return match; // Leave unresolved if not in map
+    });
   }
-  return content;
+
+  // Legacy: resolve {ON_REQUEST_AMENITIES} and {PROPERTY_AMENITIES} from propertyAmenities string
+  if (propertyAmenities) {
+    if (result.includes('{ON_REQUEST_AMENITIES}') || result.includes('{PROPERTY_AMENITIES}')) {
+      const list = propertyAmenities.split(',').map(a => `• ${a.trim()}`).filter(Boolean).join('\n');
+      result = result.replace('{ON_REQUEST_AMENITIES}', list);
+      result = result.replace('{PROPERTY_AMENITIES}', list);
+    }
+  } else {
+    const fallback = 'No amenities data available for this property.';
+    result = result.replace('{ON_REQUEST_AMENITIES}', fallback);
+    result = result.replace('{PROPERTY_AMENITIES}', fallback);
+  }
+
+  return result;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

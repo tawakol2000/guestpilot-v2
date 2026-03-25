@@ -1578,7 +1578,7 @@ export async function generateAndSendAiReply(
           // Fetch and return SOP content
           if (cats.length === 0) return JSON.stringify({ category: 'none', content: '' });
           const texts = await Promise.all(
-            cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma))
+            cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma, variableDataMap))
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
           return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
