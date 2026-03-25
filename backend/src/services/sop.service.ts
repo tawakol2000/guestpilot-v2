@@ -114,7 +114,7 @@ export async function getSopContent(
   const cacheKey = `sop:${tenantId}:content:${category}:${status}:${propertyId || '_'}`;
   const cached = cacheGet<string>(cacheKey);
   if (cached !== undefined) {
-    return applyTemplates(cached, category, propertyAmenities);
+    return applyTemplates(cached, category, propertyAmenities, variableDataMap);
   }
 
   // We need Prisma for DB lookups
