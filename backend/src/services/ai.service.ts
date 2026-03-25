@@ -1547,15 +1547,11 @@ export async function generateAndSendAiReply(
         (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
       currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
     } else {
-      // Autopilot: debounce window with 2-minute buffer for webhook timing
-      const WEBHOOK_TIMING_BUFFER_MS = 2 * 60 * 1000;
-      const windowStartedAt = context.windowStartedAt;
-      const windowStart = windowStartedAt
-        ? new Date(windowStartedAt.getTime() - WEBHOOK_TIMING_BUFFER_MS)
-        : null;
-      currentMsgs = windowStart
-        ? allMsgs.filter(m => m.role === 'GUEST' && m.sentAt >= windowStart)
-        : allMsgs.slice(-1).filter(m => m.role === 'GUEST');
+      // Autopilot: only UNANSWERED guest messages since the last AI/HOST reply.
+      // This prevents re-answering messages that were already responded to in a previous debounce cycle.
+      const lastReplyIdx = allMsgs.reduce((idx, m, i) =>
+        (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
+      currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
     }
     const currentMsgsText = currentMsgs
       .map(m => `Guest: ${m.content}`)
