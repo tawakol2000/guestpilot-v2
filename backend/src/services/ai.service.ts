@@ -149,24 +149,20 @@ const COORDINATOR_SCHEMA = {
   schema: {
     type: 'object',
     properties: {
-      guest_message: { type: 'string', description: 'Reply to the guest' },
+      guest_message: { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
       escalation: {
-        anyOf: [
-          { type: 'null' },
-          {
-            type: 'object',
-            properties: {
-              title: { type: 'string' },
-              note: { type: 'string' },
-              urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
-            },
-            required: ['title', 'note', 'urgency'],
-            additionalProperties: false,
-          },
-        ],
+        type: ['object', 'null'] as any,
+        description: 'null when no escalation needed. Object with title, note, urgency when escalating.',
+        properties: {
+          title: { type: 'string', description: 'kebab-case escalation label' },
+          note: { type: 'string', description: 'Details for Abdelrahman — guest name, unit, issue' },
+          urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
+        },
+        required: ['title', 'note', 'urgency'],
+        additionalProperties: false,
       },
-      resolveTaskId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-      updateTaskId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      resolveTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when guest confirms issue resolved' },
+      updateTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when adding new details to existing escalation' },
     },
     required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
     additionalProperties: false,
@@ -180,13 +176,14 @@ const SCREENING_SCHEMA = {
   schema: {
     type: 'object',
     properties: {
-      'guest message': { type: 'string', description: 'Reply to the guest' },
+      'guest message': { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
       manager: {
         type: 'object',
+        description: 'Manager escalation. Set needed:false when still gathering info.',
         properties: {
-          needed: { type: 'boolean' },
-          title: { type: 'string' },
-          note: { type: 'string' },
+          needed: { type: 'boolean', description: 'true when manager action needed (booking decision, rejection). false when still gathering info.' },
+          title: { type: 'string', description: 'kebab-case category from escalation categories. Empty string when not needed.' },
+          note: { type: 'string', description: 'Details for Abdelrahman — guest name, nationality, party, recommendation. Empty string when not needed.' },
         },
         required: ['needed', 'title', 'note'],
         additionalProperties: false,
