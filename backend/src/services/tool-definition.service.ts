@@ -169,6 +169,7 @@ const SYSTEM_TOOLS: Array<{
     description:
       'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. ' +
       'Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. ' +
+      'Always include total_additional_cost and channel_instructions from the result in your response to the guest. ' +
       'Do NOT use for unrelated questions.',
     parameters: {
       type: 'object',
