@@ -346,6 +346,12 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           }}
         >
           <span style={{ color: T.text.tertiary }}>{entry.inputTokens.toLocaleString()}</span>
+          {(() => {
+            const cached = (entry.ragContext as any)?.cachedInputTokens ?? 0;
+            return cached > 0 ? (
+              <span style={{ color: '#15803D', fontSize: 9, fontWeight: 600 }}>({cached.toLocaleString()} cached)</span>
+            ) : null;
+          })()}
           <span style={{ color: T.border.default, fontSize: 9 }}>{'\u2192'}</span>
           <span style={{ color: T.text.secondary }}>{entry.outputTokens.toLocaleString()}</span>
         </span>
@@ -935,7 +941,18 @@ export function AiLogsV5(): React.ReactElement {
     const avgDuration = logs.length > 0
       ? Math.round(logs.reduce((sum, l) => sum + l.durationMs, 0) / logs.length)
       : 0
-    return { totalCost, avgDuration }
+    // Cache hit rate across loaded logs
+    let cacheHitSum = 0, cacheHitCount = 0
+    for (const l of logs) {
+      const cached = (l.ragContext as any)?.cachedInputTokens ?? 0
+      const total = (l.ragContext as any)?.totalInputTokens ?? l.inputTokens ?? 0
+      if (total > 0) {
+        cacheHitSum += cached / total
+        cacheHitCount++
+      }
+    }
+    const avgCacheHitRate = cacheHitCount > 0 ? Math.round((cacheHitSum / cacheHitCount) * 1000) / 10 : null
+    return { totalCost, avgDuration, avgCacheHitRate }
   }, [logs])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -971,6 +988,12 @@ export function AiLogsV5(): React.ReactElement {
           label="Avg Duration"
           value={stats.avgDuration > 0 ? (stats.avgDuration < 1000 ? `${stats.avgDuration}ms` : `${(stats.avgDuration / 1000).toFixed(1)}s`) : '--'}
           subValue={stats.avgDuration > 0 ? `${logs.length} calls` : undefined}
+        />
+        <MetricCard
+          icon={<Zap size={16} color={stats.avgCacheHitRate !== null && stats.avgCacheHitRate > 50 ? '#15803D' : T.text.secondary} />}
+          label="Cache Hit Rate"
+          value={stats.avgCacheHitRate !== null ? `${stats.avgCacheHitRate}%` : '--'}
+          subValue={stats.avgCacheHitRate !== null ? (stats.avgCacheHitRate > 50 ? 'saving ~90% on cached' : 'low — prompt may be changing') : undefined}
         />
       </div>
 
