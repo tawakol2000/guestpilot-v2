@@ -1820,10 +1820,13 @@ export async function generateAndSendAiReply(
         ? 'low'
         : tenantReasoning;
 
-      // ─── Image handling: download and attach to last inputTurns entry ───
+      // ─── Image handling: append instructions to system prompt tail + attach image ───
       let imageBase64 = '';
       let imageMimeType = 'image/jpeg';
       if (hasImages) {
+        // Append image handling to END of system prompt (static prefix stays cached)
+        effectiveSystemPrompt += `\n\n${IMAGE_HANDLING_INSTRUCTIONS}`;
+
         const msgWithImage = currentMsgs.find((m: { imageUrls: string[] }) => m.imageUrls && m.imageUrls.length > 0);
         const imageUrl = msgWithImage?.imageUrls?.[0];
         if (imageUrl) {
@@ -1840,19 +1843,19 @@ export async function generateAndSendAiReply(
         }
 
         if (imageBase64) {
-          // Attach image + image handling instructions to the last user turn
+          // Attach image to the last user turn
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
             content: [
-              { type: 'input_text', text: `${IMAGE_HANDLING_INSTRUCTIONS}\n\n${userMessage}` },
+              { type: 'input_text', text: userMessage },
               { type: 'input_image', image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
             ],
           };
         } else {
-          // Download failed — tell the AI an image was sent but couldn't be loaded
+          // Download failed
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
-            content: `${IMAGE_HANDLING_INSTRUCTIONS}\n[Note: Image could not be loaded. Acknowledge and escalate.]\n\n${userMessage}`,
+            content: `[Note: The guest sent an image but it could not be loaded. Acknowledge and escalate.]\n\n${userMessage}`,
           };
         }
       }
