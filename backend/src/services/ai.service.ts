@@ -1699,19 +1699,36 @@ export async function generateAndSendAiReply(
         }
 
         if (imageBase64) {
-          // Attach image to the last user turn
-          inputTurns[inputTurns.length - 1] = {
-            role: 'user' as const,
-            content: [
-              { type: 'input_text', text: userMessage },
-              { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
-            ],
-          };
+          // Insert image right after CURRENT GUEST MESSAGE, before CURRENT LOCAL TIME
+          // Split userMessage at "### CURRENT LOCAL TIME" and insert image between
+          const splitMarker = '### CURRENT LOCAL TIME';
+          const splitIdx = userMessage.indexOf(splitMarker);
+          if (splitIdx > -1) {
+            const beforeTime = userMessage.slice(0, splitIdx).trimEnd();
+            const timeSection = userMessage.slice(splitIdx);
+            inputTurns[inputTurns.length - 1] = {
+              role: 'user' as const,
+              content: [
+                { type: 'input_text', text: beforeTime + '\n\n[Guest sent an image — see below]\n' },
+                { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
+                { type: 'input_text', text: '\n' + timeSection },
+              ],
+            };
+          } else {
+            // Fallback: append image at end with label
+            inputTurns[inputTurns.length - 1] = {
+              role: 'user' as const,
+              content: [
+                { type: 'input_text', text: userMessage + '\n\n[Guest sent an image — see below]\n' },
+                { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
+              ],
+            };
+          }
         } else {
           // Download failed
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
-            content: `[Note: The guest sent an image but it could not be loaded. Acknowledge and escalate.]\n\n${userMessage}`,
+            content: `${userMessage}\n\n[Note: The guest sent an image but it could not be loaded. Acknowledge and escalate.]`,
           };
         }
       }
