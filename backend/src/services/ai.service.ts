@@ -1512,7 +1512,7 @@ export async function generateAndSendAiReply(
     const userMessage = userContent.map(b => b.text).join('\n\n');
 
     // Single user message — no multi-turn splitting
-    type InputTurn = { role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> };
+    type InputTurn = { role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: string }> };
     const inputTurns: InputTurn[] = [
       { role: 'user' as const, content: userMessage },
     ];
