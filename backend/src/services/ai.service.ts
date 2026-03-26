@@ -1735,7 +1735,7 @@ export async function generateAndSendAiReply(
         reasoningEffort,
         agentType: isInquiry ? 'screening' : 'coordinator',
         stream: true,
-        inputTurns,
+        inputTurns: inputTurns as any,
         outputSchema: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA,
       });
 
