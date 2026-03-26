@@ -1704,7 +1704,7 @@ export async function generateAndSendAiReply(
             role: 'user' as const,
             content: [
               { type: 'input_text', text: userMessage },
-              { type: 'input_image', image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+              { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
             ],
           };
         } else {
