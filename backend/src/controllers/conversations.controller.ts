@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { cancelPendingAiReply, getPendingReplyForConversation, markFired } from '../services/debounce.service';
 import { generateAndSendAiReply } from '../services/ai.service';
+import { broadcastToTenant } from '../services/sse.service';
 
 const aiToggleSchema = z.object({
   aiEnabled: z.boolean(),
@@ -251,6 +252,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { aiEnabled, aiMode: aiEnabled ? aiMode : 'autopilot' },
         });
 
+        broadcastToTenant(tenantId, 'property_ai_changed', { propertyId, aiMode: aiEnabled ? aiMode : 'autopilot' });
+
         res.json({ ok: true, propertyId, aiMode, updated: result.count });
       } catch (err) {
         console.error('[Conversations] aiToggleProperty error:', err);
@@ -412,6 +415,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           where: { id: conversation.reservationId },
           data: { aiMode },
         });
+        broadcastToTenant(tenantId, 'ai_mode_changed', { conversationId: id, aiMode });
         res.json({ aiMode });
       } catch (err) {
         console.error('[Conversations] setAiMode error:', err);
@@ -482,7 +486,6 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { lastMessageAt: sentAt },
         });
 
-        const { broadcastToTenant } = await import('../services/sse.service');
         broadcastToTenant(tenantId, 'message', {
           conversationId: id,
           message: { id: msg.id, role: 'AI', content: messageText, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
@@ -522,6 +525,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { starred },
         });
 
+        broadcastToTenant(tenantId, 'conversation_starred', { conversationId: id, starred });
+
         res.json({ starred });
       } catch (err) {
         console.error('[Conversations] toggleStar error:', err);
@@ -553,6 +558,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           where: { id, tenantId },
           data: { status },
         });
+
+        broadcastToTenant(tenantId, 'conversation_resolved', { conversationId: id, status });
 
         res.json({ status });
       } catch (err) {
@@ -586,6 +593,8 @@ export function makeConversationsController(prisma: PrismaClient) {
           where: { id: conversation.reservationId },
           data: { aiEnabled: parsed.data.aiEnabled },
         });
+
+        broadcastToTenant(tenantId, 'ai_toggled', { conversationId: id, aiEnabled: parsed.data.aiEnabled });
 
         res.json({ aiEnabled: parsed.data.aiEnabled });
       } catch (err) {
