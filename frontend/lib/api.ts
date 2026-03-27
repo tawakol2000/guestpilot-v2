@@ -167,6 +167,10 @@ export async function apiUpdateConversationChecklist(conversationId: string, dat
   return apiFetch(`/api/conversations/${conversationId}/checklist`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
+export async function apiGetConversationSuggestion(conversationId: string): Promise<{ suggestion: string | null }> {
+  return apiFetch<{ suggestion: string | null }>(`/api/conversations/${conversationId}/suggestion`)
+}
+
 export async function apiGetConversations(): Promise<ApiConversationSummary[]> {
   return apiFetch<ApiConversationSummary[]>('/api/conversations')
 }

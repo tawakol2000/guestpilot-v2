@@ -500,6 +500,20 @@ export function makeConversationsController(prisma: PrismaClient) {
       }
     },
 
+    async getSuggestion(req: AuthenticatedRequest, res: Response): Promise<void> {
+      const tenantId = req.tenantId;
+      const id = req.params.id;
+      try {
+        const pending = await prisma.pendingAiReply.findFirst({
+          where: { conversationId: id, tenantId, fired: false, suggestion: { not: null } },
+          select: { suggestion: true },
+        });
+        res.json({ suggestion: pending?.suggestion || null });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch suggestion' });
+      }
+    },
+
     async toggleStar(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;

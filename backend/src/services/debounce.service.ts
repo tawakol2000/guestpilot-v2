@@ -132,6 +132,18 @@ export async function scheduleAiReply(
     }
   }
 
+  // Copilot mode: near-instant suggestion (2s batch window only)
+  try {
+    const reservation = await prisma.reservation.findFirst({
+      where: { conversations: { some: { id: conversationId } } },
+      select: { aiMode: true },
+    });
+    if (reservation?.aiMode === 'copilot') {
+      effectiveDelayMs = 2000; // 2s batch window for rapid messages
+      console.log(`[Debounce] Copilot mode — instant suggestion (2s batch)`);
+    }
+  } catch { /* non-fatal */ }
+
   let scheduledAt: Date;
   if (isWithinWorkingHours(cfg, now)) {
     scheduledAt = new Date(now.getTime() + effectiveDelayMs);

@@ -56,6 +56,7 @@ import {
   apiSetAiMode,
   apiSendThroughAI,
   apiApproveSuggestion,
+  apiGetConversationSuggestion,
   apiSendNote,
   apiGetConversationTasks,
   apiUpdateConversationChecklist,
@@ -1543,6 +1544,12 @@ export default function InboxV5() {
         setConversations(prev =>
           prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
         )
+        // Fetch pending copilot suggestion if in copilot mode
+        if (detail?.reservation?.aiMode === 'copilot') {
+          apiGetConversationSuggestion(selectedId)
+            .then(data => { if (data?.suggestion) setAiSuggestion(data.suggestion) })
+            .catch(() => {})
+        }
       })
       .catch(err => console.error(err))
       .finally(() => setLoadingDetail(false))
@@ -1603,6 +1610,11 @@ export default function InboxV5() {
             audio.volume = 0.3
             audio.play().catch(() => {})
           } catch {}
+        }
+
+        // Clear old copilot suggestion when new guest message arrives (will be regenerated)
+        if (data.message?.role === 'GUEST' || data.lastMessageRole === 'GUEST') {
+          setAiSuggestion(null)
         }
 
         const newSseMsgs: Message[] = []

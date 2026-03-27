@@ -17,6 +17,7 @@ export function conversationsRouter(prisma: PrismaClient): Router {
   router.patch('/ai-toggle-property', ((req, res) => convCtrl.aiToggleProperty(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/:id', ((req, res) => convCtrl.get(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/:id/reservation', ((req, res) => convCtrl.getReservation(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.get('/:id/suggestion', ((req, res) => convCtrl.getSuggestion(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/star', ((req, res) => convCtrl.toggleStar(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/resolve', ((req, res) => convCtrl.resolve(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/ai-toggle', ((req, res) => convCtrl.aiToggle(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
