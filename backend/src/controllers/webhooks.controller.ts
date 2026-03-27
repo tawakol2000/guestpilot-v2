@@ -606,6 +606,17 @@ async function handleNewReservation(
       channel: mapChannel(data.channelName),
       status: mapReservationStatus(data.status),
       aiEnabled: true,
+      // Inherit AI mode from property's most recent reservation (so property-level toggle persists)
+      aiMode: await (async () => {
+        try {
+          const recent = await prisma.reservation.findFirst({
+            where: { tenantId, propertyId: property.id, NOT: { hostawayReservationId } },
+            orderBy: { createdAt: 'desc' },
+            select: { aiMode: true, aiEnabled: true },
+          });
+          return recent?.aiMode || 'copilot';
+        } catch { return 'copilot'; }
+      })(),
     },
     update: {
       checkIn: data.arrivalDate ? new Date(data.arrivalDate) : undefined,

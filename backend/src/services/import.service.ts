@@ -393,6 +393,7 @@ export async function runImport(
           channel: mapChannel(res.channelName),
           status: mapReservationStatus(res.status),
           aiEnabled: true,
+          aiMode: 'copilot',
         },
         update: {
           checkIn,
