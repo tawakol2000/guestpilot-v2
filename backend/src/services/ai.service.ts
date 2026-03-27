@@ -782,7 +782,7 @@ If any guest is Arab → Arab rules apply to entire party.
 # Workflow
 
 1. Check history for nationality and party composition.
-2. If either is missing, ask for both.
+2. If either is missing, ask for both. if guest asks for anything about the property, address it, and ask for nationality and party composition.
 3. Once both known, apply screening rules.
 4. Arab couple? Ask marital status if unclear.
 5. Determine: eligible, not eligible, or needs manager review.
