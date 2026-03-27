@@ -1675,56 +1675,60 @@ export async function generateAndSendAiReply(
         ? 'low'
         : tenantReasoning;
 
-      // ─── Image handling: append instructions to system prompt tail + attach image ───
-      let imageBase64 = '';
-      let imageMimeType = 'image/jpeg';
+      // ─── Image handling: append instructions to system prompt tail + attach ALL images ───
       if (hasImages) {
         // Append image handling to END of system prompt (static prefix stays cached)
         const imageInstructions = (tenantConfig as any)?.imageHandlingInstructions || DEFAULT_IMAGE_HANDLING;
         effectiveSystemPrompt += `\n\n${imageInstructions}`;
 
-        const msgWithImage = currentMsgs.find((m: { imageUrls: string[] }) => m.imageUrls && m.imageUrls.length > 0);
-        const imageUrl = msgWithImage?.imageUrls?.[0];
-        if (imageUrl) {
-          try {
-            const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-            imageBase64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
-            const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;
-            if (ct.includes('png')) imageMimeType = 'image/png';
-            else if (ct.includes('gif')) imageMimeType = 'image/gif';
-            else if (ct.includes('webp')) imageMimeType = 'image/webp';
-          } catch (err) {
-            console.warn(`[AI] [${conversationId}] Could not download image:`, err);
+        // Collect ALL image URLs from ALL current messages
+        const allImageUrls: string[] = [];
+        for (const m of currentMsgs as Array<{ imageUrls?: string[] }>) {
+          if (m.imageUrls && m.imageUrls.length > 0) {
+            allImageUrls.push(...m.imageUrls);
           }
         }
 
-        if (imageBase64) {
-          // Insert image right after CURRENT GUEST MESSAGE, before CURRENT LOCAL TIME
-          // Split userMessage at "### CURRENT LOCAL TIME" and insert image between
+        // Download ALL images in parallel (max 5)
+        const downloadedImages: Array<{ base64: string; mimeType: string }> = [];
+        if (allImageUrls.length > 0) {
+          await Promise.all(allImageUrls.slice(0, 5).map(async (url) => {
+            try {
+              const imgRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
+              const b64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
+              const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;
+              let mime = 'image/jpeg';
+              if (ct.includes('png')) mime = 'image/png';
+              else if (ct.includes('gif')) mime = 'image/gif';
+              else if (ct.includes('webp')) mime = 'image/webp';
+              downloadedImages.push({ base64: b64, mimeType: mime });
+            } catch (err) {
+              console.warn(`[AI] [${conversationId}] Could not download image ${url}:`, err);
+            }
+          }));
+        }
+
+        if (downloadedImages.length > 0) {
+          // Insert ALL images after CURRENT GUEST MESSAGE, before CURRENT LOCAL TIME
           const splitMarker = '### CURRENT LOCAL TIME';
           const splitIdx = userMessage.indexOf(splitMarker);
+          const imgLabel = `\n\n[Guest sent ${downloadedImages.length} image(s) — see below]\n`;
+
+          const contentParts: Array<{ type: string; text?: string; image_url?: string }> = [];
           if (splitIdx > -1) {
-            const beforeTime = userMessage.slice(0, splitIdx).trimEnd();
-            const timeSection = userMessage.slice(splitIdx);
-            inputTurns[inputTurns.length - 1] = {
-              role: 'user' as const,
-              content: [
-                { type: 'input_text', text: beforeTime + '\n\n[Guest sent an image — see below]\n' },
-                { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
-                { type: 'input_text', text: '\n' + timeSection },
-              ],
-            };
+            contentParts.push({ type: 'input_text', text: userMessage.slice(0, splitIdx).trimEnd() + imgLabel });
+            for (const img of downloadedImages) {
+              contentParts.push({ type: 'input_image', image_url: `data:${img.mimeType};base64,${img.base64}` });
+            }
+            contentParts.push({ type: 'input_text', text: '\n' + userMessage.slice(splitIdx) });
           } else {
-            // Fallback: append image at end with label
-            inputTurns[inputTurns.length - 1] = {
-              role: 'user' as const,
-              content: [
-                { type: 'input_text', text: userMessage + '\n\n[Guest sent an image — see below]\n' },
-                { type: 'input_image', image_url: `data:${imageMimeType};base64,${imageBase64}` },
-              ],
-            };
+            contentParts.push({ type: 'input_text', text: userMessage + imgLabel });
+            for (const img of downloadedImages) {
+              contentParts.push({ type: 'input_image', image_url: `data:${img.mimeType};base64,${img.base64}` });
+            }
           }
-        } else {
+          inputTurns[inputTurns.length - 1] = { role: 'user' as const, content: contentParts };
+        } else if (allImageUrls.length > 0) {
           // Download failed
           inputTurns[inputTurns.length - 1] = {
             role: 'user' as const,
