@@ -79,13 +79,13 @@ import { TasksV5 } from '@/components/tasks-v5'
 import { SettingsV5 } from '@/components/settings-v5'
 import { ConfigureAiV5 } from '@/components/configure-ai-v5'
 import { AiLogsV5 } from '@/components/ai-logs-v5'
-import AiPipelineV5 from '@/components/ai-pipeline-v5'
+// AiPipelineV5 removed — no longer needed
 import SopEditorV5 from '@/components/sop-editor-v5'
 // ExamplesEditorV5 removed — classifier training data no longer managed (013-sop-tool-routing)
 // OpusV5 removed — daily audit service deleted (014-openai-migration)
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
-import SopMonitorV5 from '@/components/sop-monitor-v5'
+// SopMonitorV5 removed — no longer needed
 import ListingsV5 from '@/components/listings-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
@@ -120,7 +120,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'pipeline' | 'sops' | 'tools' | 'sandbox' | 'sop-monitor' | 'listings'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'sops' | 'tools' | 'sandbox' | 'listings'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1387,7 +1387,7 @@ export default function InboxV5() {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
         'overview','inbox','analytics','tasks','settings','configure',
-        'logs','pipeline','sops','tools','sandbox',
+        'logs','sops','tools','sandbox',
       ].includes(saved)) return saved as NavTab
     }
     return 'inbox'
@@ -2451,14 +2451,14 @@ export default function InboxV5() {
             { id: 'settings', label: 'Settings' },
             { id: 'configure', label: 'Configure AI' },
             { id: 'logs', label: 'AI Logs' },
-            { id: 'pipeline', label: 'Pipeline' },
+            /* Pipeline tab removed */
             { id: 'sops', label: 'SOPs' },
             /* Examples tab removed — 013-sop-tool-routing */
             { id: 'tools', label: 'Tools' },
             { id: 'sandbox', label: 'Sandbox' },
             /* OPUS tab removed — 014-openai-migration */
             { id: 'listings', label: 'Listings' },
-            { id: 'sop-monitor', label: 'SOP Monitor' },
+            /* SOP Monitor tab removed */
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
           <button
@@ -4288,13 +4288,7 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'pipeline' && (
-        <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <AiPipelineV5 />
-        </div>
-        </ErrorBoundary>
-      )}
+      {/* Pipeline tab removed */}
       {navTab === 'sops' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -4325,13 +4319,7 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'sop-monitor' && (
-        <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <SopMonitorV5 />
-        </div>
-        </ErrorBoundary>
-      )}
+      {/* SOP Monitor tab removed */}
 
       {/* Image lightbox modal */}
       {imageModalUrl && (
