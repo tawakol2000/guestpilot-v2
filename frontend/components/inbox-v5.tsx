@@ -1760,36 +1760,44 @@ export default function InboxV5() {
 
       // ── Mobile/Web sync events ──
       es.addEventListener('ai_toggled', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; aiEnabled: boolean }
-        setConversations(prev => prev.map(c =>
-          c.id === data.conversationId ? { ...c, aiEnabled: data.aiEnabled } : c
-        ))
+        try {
+          const data = JSON.parse(e.data) as { conversationId: string; aiEnabled: boolean }
+          setConversations(prev => prev.map(c =>
+            c.id === data.conversationId ? { ...c, aiEnabled: data.aiEnabled } : c
+          ))
+        } catch { /* ignore malformed SSE */ }
       })
 
       es.addEventListener('ai_mode_changed', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; aiMode: string }
-        setConversations(prev => prev.map(c =>
-          c.id === data.conversationId ? { ...c, aiMode: data.aiMode } : c
-        ))
+        try {
+          const data = JSON.parse(e.data) as { conversationId: string; aiMode: string }
+          setConversations(prev => prev.map(c =>
+            c.id === data.conversationId ? { ...c, aiMode: data.aiMode } : c
+          ))
+        } catch { /* ignore */ }
       })
 
       es.addEventListener('conversation_starred', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; starred: boolean }
-        setConversations(prev => prev.map(c =>
-          c.id === data.conversationId ? { ...c, starred: data.starred } : c
-        ))
+        try {
+          const data = JSON.parse(e.data) as { conversationId: string; starred: boolean }
+          setConversations(prev => prev.map(c =>
+            c.id === data.conversationId ? { ...c, starred: data.starred } : c
+          ))
+        } catch { /* ignore */ }
       })
 
       es.addEventListener('conversation_resolved', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; status: string }
-        setConversations(prev => prev.map(c =>
-          c.id === data.conversationId ? { ...c, status: data.status } : c
-        ))
+        try {
+          const data = JSON.parse(e.data) as { conversationId: string; status: string }
+          setConversations(prev => prev.map(c =>
+            c.id === data.conversationId ? { ...c, status: data.status } : c
+          ))
+        } catch { /* ignore */ }
       })
 
       es.addEventListener('property_ai_changed', () => {
         apiGetConversations()
-          .then(data => setConversations(data.conversations))
+          .then(data => { if (data?.conversations) setConversations(data.conversations) })
           .catch(err => console.error('[SSE] property_ai_changed refresh failed:', err))
       })
 
