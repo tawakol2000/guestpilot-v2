@@ -66,6 +66,7 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
       }
 
       // Fetch PendingAiReply to get window start time, then atomically mark fired
+      // For copilot: don't mark fired — suggestion stays in DB until operator approves
       const pending = await prisma.pendingAiReply.findFirst({
         where: { conversationId, fired: false },
       });
@@ -73,13 +74,15 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         console.log(`[Worker] PendingAiReply for ${conversationId} already fired by poll — skipping`);
         return;
       }
-      const claimed = await prisma.pendingAiReply.updateMany({
-        where: { id: pending.id, fired: false },
-        data: { fired: true },
-      });
-      if (claimed.count === 0) {
-        console.log(`[Worker] PendingAiReply for ${conversationId} claimed by poll between find/update — skipping`);
-        return;
+      if (aiMode !== 'copilot') {
+        const claimed = await prisma.pendingAiReply.updateMany({
+          where: { id: pending.id, fired: false },
+          data: { fired: true },
+        });
+        if (claimed.count === 0) {
+          console.log(`[Worker] PendingAiReply for ${conversationId} claimed by poll between find/update — skipping`);
+          return;
+        }
       }
 
       const { property, guest, tenant } = reservation;
