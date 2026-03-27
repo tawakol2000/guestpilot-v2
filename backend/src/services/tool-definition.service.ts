@@ -215,7 +215,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['document_type', 'notes'],
       additionalProperties: false,
     },
-    agentScope: 'CONFIRMED,CHECKED_IN',
+    agentScope: 'PENDING,CONFIRMED,CHECKED_IN',
   },
 ];
 
