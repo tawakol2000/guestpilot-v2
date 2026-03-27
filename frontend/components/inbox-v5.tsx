@@ -1540,10 +1540,15 @@ export default function InboxV5() {
     setLoadingDetail(true)
     apiGetConversation(selectedId)
       .then(detail => {
+        if (!detail) return
         fetchedDetails.current.add(selectedId)
-        setConversations(prev =>
-          prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
-        )
+        try {
+          setConversations(prev =>
+            prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
+          )
+        } catch (mergeErr) {
+          console.error('[Inbox] mergeDetail crashed:', mergeErr, 'detail:', JSON.stringify(detail).slice(0, 500))
+        }
         // Fetch pending copilot suggestion if in copilot mode
         if (detail?.reservation?.aiMode === 'copilot') {
           apiGetConversationSuggestion(selectedId)
@@ -1551,7 +1556,7 @@ export default function InboxV5() {
             .catch(() => {})
         }
       })
-      .catch(err => console.error(err))
+      .catch(err => console.error('[Inbox] apiGetConversation failed:', err))
       .finally(() => setLoadingDetail(false))
   }, [selectedId])
 
