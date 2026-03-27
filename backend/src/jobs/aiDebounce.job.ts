@@ -35,16 +35,12 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
           continue;
         }
 
-        // T025: Atomic claim guard — prevents double-firing across overlapping polls
-        // For copilot: don't mark fired — suggestion stays in DB until operator approves/sends
-        const isCopilot = reservation.aiMode === 'copilot';
-        if (!isCopilot) {
-          const claimed = await prisma.pendingAiReply.updateMany({
-            where: { id: pending.id, fired: false },
-            data: { fired: true },
-          });
-          if (claimed.count === 0) { console.log('[AiDebounceJob] Already claimed, skipping'); continue; }
-        }
+        // T025: Atomic claim guard — prevents double-firing (all modes including copilot)
+        const claimed = await prisma.pendingAiReply.updateMany({
+          where: { id: pending.id, fired: false },
+          data: { fired: true },
+        });
+        if (claimed.count === 0) { console.log('[AiDebounceJob] Already claimed, skipping'); continue; }
 
         const tenant = conversation.tenant;
         if (!tenant) continue;

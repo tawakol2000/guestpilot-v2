@@ -439,7 +439,7 @@ export function makeConversationsController(prisma: PrismaClient) {
         }
 
         const pendingReply = await prisma.pendingAiReply.findFirst({
-          where: { conversationId: id, fired: false },
+          where: { conversationId: id, suggestion: { not: null } },
           orderBy: { createdAt: 'desc' },
         });
         if (!pendingReply?.suggestion && !editedText) {
@@ -449,9 +449,9 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         const messageText = editedText || pendingReply!.suggestion!;
 
-        // Mark pending reply as fired
+        // Mark fired and clear suggestion
         if (pendingReply) {
-          await prisma.pendingAiReply.update({ where: { id: pendingReply.id }, data: { fired: true } });
+          await prisma.pendingAiReply.update({ where: { id: pendingReply.id }, data: { fired: true, suggestion: null } });
         }
 
         const { hostawayAccountId, hostawayApiKey } = conversation.tenant;
@@ -505,7 +505,7 @@ export function makeConversationsController(prisma: PrismaClient) {
       const id = req.params.id;
       try {
         const pending = await prisma.pendingAiReply.findFirst({
-          where: { conversationId: id, tenantId, fired: false, suggestion: { not: null } },
+          where: { conversationId: id, tenantId, suggestion: { not: null } },
           select: { suggestion: true },
         });
         res.json({ suggestion: pending?.suggestion || null });

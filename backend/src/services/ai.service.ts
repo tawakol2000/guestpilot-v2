@@ -1852,16 +1852,10 @@ export async function generateAndSendAiReply(
 
     // Copilot mode: hold suggestion for host approval
     if (context.aiMode === 'copilot') {
-      const pendingReply = await prisma.pendingAiReply.findFirst({
-        where: { conversationId, fired: false },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (pendingReply) {
-        await prisma.pendingAiReply.update({
-          where: { id: pendingReply.id },
-          data: { suggestion: guestMessage },
-        });
-      }
+      await prisma.pendingAiReply.update({
+        where: { conversationId },
+        data: { suggestion: guestMessage },
+      }).catch(() => {}); // record may have been deleted by new guest message — stale, ignore
       broadcastToTenant(tenantId, 'ai_suggestion', { conversationId, suggestion: guestMessage });
       console.log(`[AI] [${conversationId}] Copilot mode — suggestion held for host approval`);
       return;

@@ -180,7 +180,7 @@ export async function scheduleAiReply(
   await prisma.pendingAiReply.upsert({
     where: { conversationId },
     create: { conversationId, tenantId, scheduledAt, fired: false },
-    update: { scheduledAt, fired: false },
+    update: { scheduledAt, fired: false, suggestion: null },
   });
 
   // Broadcast typing indicator to browser
@@ -202,8 +202,8 @@ export async function cancelPendingAiReply(
   });
 
   await prisma.pendingAiReply.updateMany({
-    where: { conversationId, fired: false },
-    data: { fired: true },
+    where: { conversationId },
+    data: { fired: true, suggestion: null },
   });
 
   if (existing) {

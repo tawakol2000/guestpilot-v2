@@ -74,15 +74,14 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
         console.log(`[Worker] PendingAiReply for ${conversationId} already fired by poll — skipping`);
         return;
       }
-      if (aiMode !== 'copilot') {
-        const claimed = await prisma.pendingAiReply.updateMany({
-          where: { id: pending.id, fired: false },
-          data: { fired: true },
-        });
-        if (claimed.count === 0) {
-          console.log(`[Worker] PendingAiReply for ${conversationId} claimed by poll between find/update — skipping`);
-          return;
-        }
+      // Atomic claim — prevents double-firing (all modes including copilot)
+      const claimed = await prisma.pendingAiReply.updateMany({
+        where: { id: pending.id, fired: false },
+        data: { fired: true },
+      });
+      if (claimed.count === 0) {
+        console.log(`[Worker] PendingAiReply for ${conversationId} claimed by poll — skipping`);
+        return;
       }
 
       const { property, guest, tenant } = reservation;
