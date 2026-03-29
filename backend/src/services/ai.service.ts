@@ -459,6 +459,12 @@ async function createMessage(
       });
     }
 
+    // Detect truncation — reasoning tokens can exhaust max_output_tokens before visible output completes
+    if (response.status === 'incomplete') {
+      const reason = response.incomplete_details?.reason || 'unknown';
+      console.warn(`[AI] Response incomplete (reason: ${reason}) — output may be truncated. Reasoning tokens: ${response.usage?.output_tokens_details?.reasoning_tokens ?? '?'}, max_output_tokens: ${maxTokens}`);
+    }
+
     const responseText = response.output_text || '';
 
     // T042/T043: Capture final ops headers into log entry and ragContext
@@ -1445,7 +1451,8 @@ export async function generateAndSendAiReply(
     // Upgrade 6d: Overlay tenant-specific settings onto persona config
     // (isInquiry, agentName, personaCfg, effectiveModel defined above in SOP classification block)
     const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
-    const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
+    // Reasoning tokens count against max_output_tokens — ensure enough headroom
+    const effectiveMaxTokens = Math.max(tenantConfig?.maxTokens || personaCfg.maxTokens, 2048);
     const effectiveAgentName = tenantConfig?.agentName || agentName;
 
     // DB-backed system prompts (editable via Configure AI), fallback to JSON config

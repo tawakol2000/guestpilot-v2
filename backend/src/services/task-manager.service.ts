@@ -114,7 +114,7 @@ export async function evaluateEscalation(input: TaskManagerInput): Promise<TaskM
 
     const response = await (client.responses as any).create({
       model: 'gpt-5.4-mini-2026-03-17',
-      max_output_tokens: 100,
+      max_output_tokens: 256,
       temperature: 0,
       instructions: SYSTEM_PROMPT,
       input: userMessage,
