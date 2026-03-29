@@ -294,7 +294,6 @@ export function propertiesRouter(prisma: PrismaClient): Router {
         sampleCheckOut.toISOString().slice(0, 10),
         2,
         listing,
-        undefined, // retrievedChunks
         'CONFIRMED',
         kb,
         property.listingDescription || undefined,

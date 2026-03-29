@@ -27,12 +27,6 @@ function parseHostawayDate(val: unknown): Date {
   return new Date();
 }
 
-const PLAN_LIMITS: Record<string, number> = {
-  FREE: Infinity,
-  PRO: Infinity,
-  SCALE: Infinity,
-};
-
 function mapChannel(channelName?: string): Channel {
   if (!channelName) return Channel.OTHER;
   const name = channelName.toLowerCase();
@@ -174,8 +168,7 @@ export async function runImport(
   const listingsRes = await hostawayService.listListings(hostawayAccountId, hostawayApiKey);
   const listings = listingsRes.result || [];
 
-  const limit = PLAN_LIMITS[plan] ?? Infinity;
-  const listingsToImport = listings.slice(0, limit === Infinity ? listings.length : limit);
+  const listingsToImport = listings;
 
   for (const listing of listingsToImport) {
     const name = listing.internalListingName || listing.name || `Listing ${listing.id}`;

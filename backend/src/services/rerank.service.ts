@@ -32,11 +32,6 @@ function getClient(): CohereClientV2 | null {
   return _client;
 }
 
-export function setRerankEnabled(enabled: boolean): void {
-  _enabled = enabled;
-  console.log(`[Rerank] ${enabled ? 'Enabled' : 'Disabled'}`);
-}
-
 export function isRerankEnabled(): boolean {
   return _enabled && !!process.env.COHERE_API_KEY;
 }

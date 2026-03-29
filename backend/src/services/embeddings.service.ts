@@ -39,10 +39,6 @@ export function getEmbeddingProvider(): EmbeddingProvider {
   return _activeProvider;
 }
 
-export function getEmbeddingDimensions(): number {
-  return _activeProvider === 'cohere' ? 1024 : 1536;
-}
-
 // ─── Client Initialization ───────────────────────────────────────────────────
 
 function getOpenAIClient(): OpenAI | null {

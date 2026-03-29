@@ -80,13 +80,9 @@ import { TasksV5 } from '@/components/tasks-v5'
 import { SettingsV5 } from '@/components/settings-v5'
 import { ConfigureAiV5 } from '@/components/configure-ai-v5'
 import { AiLogsV5 } from '@/components/ai-logs-v5'
-// AiPipelineV5 removed — no longer needed
 import SopEditorV5 from '@/components/sop-editor-v5'
-// ExamplesEditorV5 removed — classifier training data no longer managed (013-sop-tool-routing)
-// OpusV5 removed — daily audit service deleted (014-openai-migration)
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
-// SopMonitorV5 removed — no longer needed
 import ListingsV5 from '@/components/listings-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 

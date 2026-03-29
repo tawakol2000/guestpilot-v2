@@ -222,7 +222,6 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
   const [hovered, setHovered] = useState(false)
   const [detail, setDetail] = useState<AiApiLogEntry | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [showRaw, setShowRaw] = useState(false)
   const hasError = !!entry.error
   const preview = entry.responseText.slice(0, 80)
 
@@ -838,58 +837,7 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
               </span>
             )}
 
-            {/* Raw JSON toggle button */}
-            <button
-              onClick={e => { e.stopPropagation(); setShowRaw(v => !v) }}
-              style={{
-                marginLeft: 'auto',
-                height: 26,
-                padding: '0 10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                fontSize: 10,
-                fontWeight: 600,
-                border: `1px solid ${showRaw ? T.border.strong : T.border.default}`,
-                borderRadius: T.radius.sm,
-                background: showRaw ? T.border.strong : T.bg.primary,
-                color: showRaw ? '#fff' : T.text.secondary,
-                cursor: 'pointer',
-                fontFamily: T.font.sans,
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {'{ }'} {showRaw ? 'Hide JSON' : 'Raw JSON'}
-            </button>
           </div>
-
-          {/* Inline Raw JSON panel */}
-          {showRaw && (
-            <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: T.text.tertiary, marginBottom: 6 }}>
-                Raw JSON
-              </div>
-              <pre
-                style={{
-                  background: '#0C0A09',
-                  color: '#A8A29E',
-                  padding: 14,
-                  borderRadius: T.radius.sm,
-                  fontSize: 10,
-                  fontFamily: T.font.mono,
-                  lineHeight: 1.6,
-                  overflowY: 'auto',
-                  overflowX: 'auto',
-                  maxHeight: 400,
-                  whiteSpace: 'pre',
-                  margin: 0,
-                  border: `1px solid ${T.border.strong}`,
-                }}
-              >
-                {JSON.stringify(displayEntry, null, 2)}
-              </pre>
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -164,7 +164,6 @@ export function sandboxRouter(prisma: PrismaClient) {
         checkOut,
         guestCount || 2,
         listing,
-        retrievedChunks,
         reservationStatus,
         kb,
         (kb?.summarizedDescription as string) || property.listingDescription || '',

@@ -5,7 +5,7 @@ import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { seedTenantSops, ingestPropertyKnowledge } from '../services/rag.service';
 import { invalidateThresholdCache } from '../services/judge.service';
 import { setEmbeddingProvider, getEmbeddingProvider, type EmbeddingProvider } from '../services/embeddings.service';
-import { getTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
+import { invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { AuthenticatedRequest } from '../types';
 import { SOP_CATEGORIES, buildToolDefinition, getSopContent, invalidateSopCache } from '../services/sop.service';
 
@@ -27,37 +27,6 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
   });
 
   // GET /api/knowledge/classifier-status — classifier health check
-  router.get('/classifier-status', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const config = await getTenantAiConfig(tenantId, prisma);
-      // ClassifierWeights table may not exist yet — handle gracefully
-      let retrainCount = 0;
-      let latestWeights: { createdAt: Date; accuracy: number | null; classes: number; examples: number } | null = null;
-      try {
-        retrainCount = await prisma.classifierWeights.count({ where: { tenantId } });
-        latestWeights = await prisma.classifierWeights.findFirst({
-          where: { tenantId },
-          orderBy: { createdAt: 'desc' },
-          select: { createdAt: true, accuracy: true, classes: true, examples: true },
-        });
-      } catch { /* table doesn't exist yet — that's fine */ }
-      res.json({
-        classifierType: 'lr',
-        lrAccuracy: latestWeights?.accuracy || null,
-        lastTrainedAt: latestWeights?.createdAt?.toISOString() || null,
-        retrainCount,
-        weightsSource: latestWeights ? 'database' : 'none',
-        confidenceTiers: {
-          highThreshold: (config as any).highConfidenceThreshold || 0.85,
-          lowThreshold: (config as any).lowConfidenceThreshold || 0.55,
-        },
-      });
-    } catch (err) {
-      console.error('[Knowledge] classifier-status failed:', err);
-      res.status(500).json({ error: 'Failed to get classifier status' });
-    }
-  });
 
   // GET /api/knowledge/chunk-stats — aggregate retrieval stats per sourceKey from AiApiLog.ragContext
   router.get('/chunk-stats', async (req: any, res) => {
@@ -198,158 +167,6 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Knowledge] evaluations query failed:', err);
       res.status(500).json({ error: 'Failed to fetch evaluations' });
-    }
-  });
-
-  // GET /api/knowledge/evaluation-stats — aggregate metrics (includes SOP tool stats)
-  router.get('/evaluation-stats', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-
-      const sopWhere = {
-        tenantId,
-        ragContext: { path: ['sopToolUsed'], equals: true },
-      };
-
-      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-      const [total, correct, incorrect, autoFixed, costAgg, recentSimRows, prevSimRows, sopLogs, sopTotal, recentAiLogs, costAgg24h] = await Promise.all([
-        prisma.classifierEvaluation.count({ where: { tenantId } }),
-        prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: true } }),
-        prisma.classifierEvaluation.count({ where: { tenantId, retrievalCorrect: false } }),
-        prisma.classifierEvaluation.count({ where: { tenantId, autoFixed: true } }),
-        prisma.classifierEvaluation.aggregate({
-          where: { tenantId },
-          _sum: { judgeCost: true, judgeInputTokens: true, judgeOutputTokens: true },
-          _avg: { judgeCost: true },
-        }),
-        // Last 30 evaluations — for recent avg sim
-        prisma.classifierEvaluation.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: 'desc' },
-          take: 30,
-          select: { classifierTopSim: true },
-        }),
-        // Previous 30 — for trend comparison
-        prisma.classifierEvaluation.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: 'desc' },
-          skip: 30,
-          take: 30,
-          select: { classifierTopSim: true },
-        }),
-        // SOP tool classification logs for confidence/category breakdown
-        prisma.aiApiLog.findMany({
-          where: sopWhere,
-          select: { ragContext: true },
-          take: 1000,
-        }),
-        prisma.aiApiLog.count({ where: sopWhere }),
-        // T035: Recent AI logs for cache/reasoning metrics
-        prisma.aiApiLog.findMany({
-          where: { tenantId, createdAt: { gte: since24h } },
-          select: { ragContext: true, costUsd: true },
-          orderBy: { createdAt: 'desc' },
-          take: 500,
-        }),
-        // T035: Total cost in last 24h
-        prisma.aiApiLog.aggregate({
-          where: { tenantId, createdAt: { gte: since24h } },
-          _sum: { costUsd: true },
-          _avg: { costUsd: true },
-          _count: true,
-        }),
-      ]);
-
-      const accuracy = total > 0 ? Math.round((correct / total) * 100) : 100;
-
-      const avgSimRecent = recentSimRows.length > 0
-        ? Math.round((recentSimRows.reduce((s, r) => s + r.classifierTopSim, 0) / recentSimRows.length) * 1000) / 1000
-        : null;
-      const avgSimPrev = prevSimRows.length > 0
-        ? Math.round((prevSimRows.reduce((s, r) => s + r.classifierTopSim, 0) / prevSimRows.length) * 1000) / 1000
-        : null;
-
-      // T022: SOP tool-based classification stats
-      const sopConfidenceCounts = { high: 0, medium: 0, low: 0 };
-      const categoryDistribution: Record<string, number> = {};
-      for (const log of sopLogs) {
-        const ctx = log.ragContext as any;
-        if (ctx?.sopConfidence && ctx.sopConfidence in sopConfidenceCounts) {
-          sopConfidenceCounts[ctx.sopConfidence as keyof typeof sopConfidenceCounts]++;
-        }
-        if (ctx?.sopCategories && Array.isArray(ctx.sopCategories)) {
-          for (const cat of ctx.sopCategories) {
-            categoryDistribution[cat] = (categoryDistribution[cat] || 0) + 1;
-          }
-        }
-      }
-
-      // T035: Compute cache hit rate and reasoning stats from ragContext
-      let cacheHitSum = 0;
-      let cacheHitCount = 0;
-      let reasoningNoneCount = 0;
-      let reasoningLowCount = 0;
-      for (const log of recentAiLogs) {
-        const ctx = log.ragContext as any;
-        if (ctx?.cachedInputTokens !== undefined && ctx?.totalInputTokens > 0) {
-          cacheHitSum += ctx.cachedInputTokens / ctx.totalInputTokens;
-          cacheHitCount++;
-        }
-        if (ctx?.reasoningEffort === 'none') reasoningNoneCount++;
-        else if (ctx?.reasoningEffort === 'low') reasoningLowCount++;
-      }
-
-      const avgCacheHitRate = cacheHitCount > 0
-        ? Math.round((cacheHitSum / cacheHitCount) * 10000) / 100
-        : null;
-      const reasoningTotal = reasoningNoneCount + reasoningLowCount;
-      const pctNone = reasoningTotal > 0
-        ? Math.round((reasoningNoneCount / reasoningTotal) * 10000) / 100
-        : null;
-
-      res.json({
-        total,
-        correct,
-        incorrect,
-        autoFixed,
-        accuracyPercent: accuracy,
-        totalJudgeCost:    Math.round((costAgg._sum.judgeCost    ?? 0) * 1_000_000) / 1_000_000,
-        avgJudgeCost:      Math.round((costAgg._avg.judgeCost    ?? 0) * 1_000_000) / 1_000_000,
-        totalInputTokens:  costAgg._sum.judgeInputTokens  ?? 0,
-        totalOutputTokens: costAgg._sum.judgeOutputTokens ?? 0,
-        avgSimRecent,
-        avgSimPrev,
-        recentSimCount: recentSimRows.length,
-        // SOP tool classification stats (T022)
-        sopClassifications: {
-          total: sopTotal,
-          highConfidence: sopConfidenceCounts.high,
-          mediumConfidence: sopConfidenceCounts.medium,
-          lowConfidence: sopConfidenceCounts.low,
-          categoryDistribution,
-        },
-        // T035: Cache performance metrics
-        cacheStats: {
-          avgHitRate: avgCacheHitRate,
-          logsWithCacheData: cacheHitCount,
-        },
-        // T035: Cost metrics
-        costStats: {
-          avgCostPerMessage: Math.round((costAgg24h._avg.costUsd ?? 0) * 1_000_000) / 1_000_000,
-          totalCost24h: Math.round((costAgg24h._sum.costUsd ?? 0) * 1_000_000) / 1_000_000,
-          messageCount24h: costAgg24h._count,
-        },
-        // T035: Reasoning usage metrics
-        reasoningStats: {
-          noneCount: reasoningNoneCount,
-          lowCount: reasoningLowCount,
-          pctNone,
-        },
-      });
-    } catch (err) {
-      console.error('[Knowledge] evaluation-stats failed:', err);
-      res.status(500).json({ error: 'Failed to fetch stats' });
     }
   });
 
@@ -535,60 +352,6 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Dedup] dedup-conversations failed:', err);
       res.status(500).json({ error: 'Dedup failed' });
-    }
-  });
-
-  // GET /api/knowledge/sop-classifications — T021: SOP classification monitoring
-  router.get('/sop-classifications', async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
-      const confidenceFilter = req.query.confidence as string | undefined;
-
-      const where: any = {
-        tenantId,
-        ragContext: { path: ['sopToolUsed'], equals: true },
-      };
-
-      const [logs, total] = await Promise.all([
-        prisma.aiApiLog.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          skip: offset,
-          take: limit,
-          select: {
-            id: true,
-            createdAt: true,
-            userContent: true,
-            ragContext: true,
-            conversationId: true,
-          },
-        }),
-        prisma.aiApiLog.count({ where }),
-      ]);
-
-      const classifications = logs
-        .map(log => {
-          const ctx = log.ragContext as any;
-          if (!ctx?.sopCategories) return null;
-          return {
-            id: log.id,
-            timestamp: log.createdAt,
-            guestMessage: log.userContent?.substring(0, 500) || null,
-            categories: ctx.sopCategories as string[],
-            confidence: ctx.sopConfidence as string,
-            reasoning: ctx.sopReasoning as string,
-            conversationId: log.conversationId,
-          };
-        })
-        .filter((c): c is NonNullable<typeof c> => c !== null)
-        .filter(c => !confidenceFilter || c.confidence === confidenceFilter);
-
-      res.json({ classifications, total });
-    } catch (err) {
-      console.error('[Knowledge] sop-classifications failed:', err);
-      res.status(500).json({ error: 'Failed to fetch SOP classifications' });
     }
   });
 

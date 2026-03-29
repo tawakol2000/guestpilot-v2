@@ -75,10 +75,6 @@ export async function removeAiReplyJob(conversationId: string): Promise<void> {
   }
 }
 
-export function getQueueInstance(): Queue | null {
-  return initQueue();
-}
-
 export async function closeQueue(): Promise<void> {
   try {
     if (_queue) await _queue.close();

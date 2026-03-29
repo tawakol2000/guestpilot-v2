@@ -15,13 +15,13 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
 import { retrieveRelevantKnowledge } from './rag.service';
-import { getSopContent, buildToolDefinition, SOP_CATEGORIES } from './sop.service';
+import { getSopContent, buildToolDefinition } from './sop.service';
 import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
 // memory.service imports removed — conversation history built inline
 import { getTenantAiConfig } from './tenant-config.service';
 import { detectEscalationSignals } from './escalation-enrichment.service';
-import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
+import { createChecklist, updateChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
 import { getToolDefinitions } from './tool-definition.service';
 import { resolveVariables, applyPropertyOverrides } from './template-variable.service';
 import { callWebhook } from './webhook-tool.service';
@@ -136,9 +136,6 @@ interface SopClassificationResult {
   outputTokens: number;
   durationMs: number;
 }
-
-// SOP categories that benefit from reasoning (complex multi-step logic)
-const REASONING_CATEGORIES = new Set(['sop-booking-modification', 'sop-booking-cancellation', 'payment-issues', 'escalate']);
 
 // ─── Structured output schemas (enforced by OpenAI, replaces prompt-based JSON instructions) ───
 
@@ -967,7 +964,6 @@ function buildPropertyInfo(
     wifiUsername?: string;
     wifiPassword?: string;
   },
-  retrievedChunks?: Array<{ content: string; category: string }>,
   reservationStatus?: string,
   customKnowledgeBase?: Record<string, unknown>,
   listingDescription?: string,
@@ -1243,30 +1239,11 @@ export async function generateAndSendAiReply(
       m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'
     );
 
-    // Build conversation as proper multi-turn {role, content} array for the Responses API.
-    // The model was trained on this format — it understands speaker turns natively.
-    // truncation: "auto" handles overflow automatically with 400K context window.
-    const conversationTurns: Array<{ role: 'user' | 'assistant'; content: string }> = allMsgs.map(m => ({
-      role: (m.role === 'GUEST' ? 'user' : 'assistant') as 'user' | 'assistant',
-      content: m.content,
-    }));
-
     // Current messages = GUEST messages the AI needs to respond to.
-    // Copilot mode: ALL unanswered guest messages since the last AI/HOST reply.
-    // Autopilot mode: GUEST messages in the debounce window (since webhook trigger).
-    let currentMsgs: typeof allMsgs;
-    if (context.aiMode === 'copilot') {
-      // Find the last AI or HOST message — everything after it is unanswered
-      const lastReplyIdx = allMsgs.reduce((idx, m, i) =>
-        (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
-      currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
-    } else {
-      // Autopilot: only UNANSWERED guest messages since the last AI/HOST reply.
-      // This prevents re-answering messages that were already responded to in a previous debounce cycle.
-      const lastReplyIdx = allMsgs.reduce((idx, m, i) =>
-        (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
-      currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
-    }
+    // Both copilot and autopilot: ALL unanswered guest messages since the last AI/HOST reply.
+    const lastReplyIdx = allMsgs.reduce((idx, m, i) =>
+      (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
+    const currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
     const currentMsgsText = currentMsgs
       .map(m => `Guest: ${m.content}`)
       .join('\n');
@@ -1288,20 +1265,6 @@ export async function generateAndSendAiReply(
           return `[${t.id}] ${t.title} (${t.urgency})${notePreview}`;
         }).join('\n')
       : 'No open tasks.';
-
-    // Fetch approved knowledge base for this property
-    const approvedKnowledge = await prisma.knowledgeSuggestion.findMany({
-      where: {
-        tenantId,
-        status: 'approved',
-        OR: [{ propertyId: context.propertyId || null }, { propertyId: null }],
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 20,
-    });
-    const knowledgeText = approvedKnowledge.length > 0
-      ? approvedKnowledge.map(k => `Q: ${k.question}\nA: ${k.answer}`).join('\n\n')
-      : 'No additional Q&A available.';
 
     const localTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
 
@@ -1351,17 +1314,6 @@ export async function generateAndSendAiReply(
     const rawModel = tenantConfig?.model || personaCfg.model;
     const effectiveModel = rawModel?.startsWith('claude-') ? 'gpt-5.4-mini-2026-03-17' : rawModel;
 
-    // Build input messages for classification (OpenAI Responses API format)
-    // Build classification input — clearly separate history from new messages
-    const classCurrentIds = new Set(currentMsgs.map(m => m.id));
-    const classHistory = allMsgs.slice(-10).filter(m => !classCurrentIds.has(m.id));
-    const classHistoryText = classHistory.map(m => `${m.role === 'GUEST' ? 'GUEST' : 'HOST'}: ${m.content}`).join('\n');
-    const classNewText = currentMsgs.map(m => `GUEST: ${m.content}`).join('\n');
-    const classificationInput = [{
-      role: 'user',
-      content: `CONVERSATION HISTORY:\n${classHistoryText}\n\n--- NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} TO CLASSIFY ---\n${classNewText}\n\nCLASSIFY THE NEW MESSAGE${currentMsgs.length > 1 ? 'S' : ''} ABOVE.`,
-    }];
-
     // Build SOP tool definition (will be included in main tool set — no separate classification call)
     const sopToolDef = await buildToolDefinition(tenantId, prisma);
 
@@ -1410,7 +1362,6 @@ export async function generateAndSendAiReply(
       context.checkOut,
       context.guestCount,
       context.listing,
-      retrievedChunks,
       context.reservationStatus,
       context.customKnowledgeBase,
       context.listingDescription

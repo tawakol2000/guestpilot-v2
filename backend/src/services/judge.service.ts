@@ -3,7 +3,7 @@
  * Runs after every guestCoordinator AI response (fire-and-forget).
  *
  * Simplified in 013-sop-tool-routing: evaluates tool-based classification quality
- * instead of 3-tier classifier accuracy. Full judge adaptation in T027-T028.
+ * instead of 3-tier classifier accuracy.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -71,7 +71,7 @@ export interface JudgeResult {
  *
  * Simplified flow (013-sop-tool-routing):
  * - High confidence + sampling mode → skip
- * - Low confidence → log for review (full judge evaluation deferred to T027-T028)
+ * - Low confidence → log for review
  * - All classifications → save to ClassifierEvaluation for monitoring dashboard
  */
 export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient): Promise<void> {
@@ -85,7 +85,6 @@ export async function evaluateAndImprove(input: JudgeInput, prisma: PrismaClient
 
     if (input.sopConfidence === 'low') {
       console.log(`[Judge] Low confidence SOP classification: [${input.sopCategories.join(', ')}] — ${input.sopReasoning}`);
-      // TODO (T027): Run full judge evaluation for low-confidence classifications
     }
 
     // Log to ClassifierEvaluation for monitoring

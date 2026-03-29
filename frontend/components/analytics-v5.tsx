@@ -51,16 +51,6 @@ function formatResponseTime(ms: number): string {
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
 }
 
-interface TooltipState {
-  visible: boolean
-  x: number
-  y: number
-  date: string
-  received: number
-  sent: number
-  aiSent: number
-}
-
 function ShimmerStyle(): React.ReactElement {
   const styleRef = useRef<HTMLStyleElement | null>(null)
 
@@ -222,16 +212,6 @@ export function AnalyticsV5(): React.ReactElement {
   const [range, setRange] = useState<Range>('30d')
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ApiAnalytics | null>(null)
-  const [tooltip, setTooltip] = useState<TooltipState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    date: '',
-    received: 0,
-    sent: 0,
-    aiSent: 0,
-  })
-  const [hoveredDay, setHoveredDay] = useState<string | null>(null)
   const chartRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -532,8 +512,6 @@ export function AnalyticsV5(): React.ReactElement {
                   const hSent = calcHeight(day.messagesSent)
                   const hAi = calcHeight(day.aiMessagesSent)
                   const dayLabel = formatDayLabel(day.date)
-                  const isGroupHovered = hoveredDay === day.date
-
                   return (
                     <div
                       key={day.date}
@@ -543,8 +521,6 @@ export function AnalyticsV5(): React.ReactElement {
                         alignItems: 'center',
                         gap: 4,
                       }}
-                      onMouseEnter={() => setHoveredDay(day.date)}
-                      onMouseLeave={() => setHoveredDay(null)}
                     >
                       {/* Bars group */}
                       <div
@@ -564,24 +540,7 @@ export function AnalyticsV5(): React.ReactElement {
                             height: hReceived,
                             background: T.border.strong,
                             borderRadius: '3px 3px 0 0',
-                            cursor: 'pointer',
-                            transition: 'opacity 0.1s ease',
-                            opacity: hoveredDay !== null && !isGroupHovered ? 0.3 : 1,
                           }}
-                          onMouseEnter={(e) => {
-                            const rect = (e.target as HTMLElement).getBoundingClientRect()
-                            const containerRect = chartRef.current?.getBoundingClientRect()
-                            setTooltip({
-                              visible: true,
-                              x: rect.left - (containerRect?.left ?? 0) + rect.width / 2,
-                              y: rect.top - (containerRect?.top ?? 0) - 8,
-                              date: day.date,
-                              received: day.messagesReceived,
-                              sent: day.messagesSent,
-                              aiSent: day.aiMessagesSent,
-                            })
-                          }}
-                          onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
                         />
                         {/* Sent bar */}
                         <div
@@ -592,24 +551,7 @@ export function AnalyticsV5(): React.ReactElement {
                             height: hSent,
                             background: T.accent,
                             borderRadius: '3px 3px 0 0',
-                            cursor: 'pointer',
-                            transition: 'opacity 0.1s ease',
-                            opacity: hoveredDay !== null && !isGroupHovered ? 0.3 : 1,
                           }}
-                          onMouseEnter={(e) => {
-                            const rect = (e.target as HTMLElement).getBoundingClientRect()
-                            const containerRect = chartRef.current?.getBoundingClientRect()
-                            setTooltip({
-                              visible: true,
-                              x: rect.left - (containerRect?.left ?? 0) + rect.width / 2,
-                              y: rect.top - (containerRect?.top ?? 0) - 8,
-                              date: day.date,
-                              received: day.messagesReceived,
-                              sent: day.messagesSent,
-                              aiSent: day.aiMessagesSent,
-                            })
-                          }}
-                          onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
                         />
                         {/* AI bar */}
                         <div
@@ -620,24 +562,7 @@ export function AnalyticsV5(): React.ReactElement {
                             height: hAi,
                             background: T.status.green,
                             borderRadius: '3px 3px 0 0',
-                            cursor: 'pointer',
-                            transition: 'opacity 0.1s ease',
-                            opacity: hoveredDay !== null && !isGroupHovered ? 0.3 : 1,
                           }}
-                          onMouseEnter={(e) => {
-                            const rect = (e.target as HTMLElement).getBoundingClientRect()
-                            const containerRect = chartRef.current?.getBoundingClientRect()
-                            setTooltip({
-                              visible: true,
-                              x: rect.left - (containerRect?.left ?? 0) + rect.width / 2,
-                              y: rect.top - (containerRect?.top ?? 0) - 8,
-                              date: day.date,
-                              received: day.messagesReceived,
-                              sent: day.messagesSent,
-                              aiSent: day.aiMessagesSent,
-                            })
-                          }}
-                          onMouseLeave={() => setTooltip((t) => ({ ...t, visible: false }))}
                         />
                       </div>
 
@@ -693,58 +618,6 @@ export function AnalyticsV5(): React.ReactElement {
                 )}
               </div>
 
-              {/* Tooltip */}
-              {tooltip.visible && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: tooltip.x,
-                    top: tooltip.y,
-                    transform: 'translate(-50%, -100%)',
-                    background: T.text.primary,
-                    color: T.bg.primary,
-                    borderRadius: 8,
-                    padding: '8px 10px',
-                    fontSize: 11,
-                    fontFamily: T.font.sans,
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                    zIndex: 10,
-                    boxShadow: T.shadow.lg,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{tooltip.date}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                      <span style={{ color: T.text.tertiary }}>Received</span>
-                      <span style={{ fontWeight: 600 }}>{tooltip.received}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                      <span style={{ color: T.text.tertiary }}>Sent</span>
-                      <span style={{ fontWeight: 600, color: '#93C5FD' }}>{tooltip.sent}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                      <span style={{ color: T.text.tertiary }}>AI</span>
-                      <span style={{ fontWeight: 600, color: '#86EFAC' }}>{tooltip.aiSent}</span>
-                    </div>
-                  </div>
-                  {/* Arrow pointer */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: -5,
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      width: 0,
-                      height: 0,
-                      borderLeft: '5px solid transparent',
-                      borderRight: '5px solid transparent',
-                      borderTop: `5px solid ${T.text.primary}`,
-                    }}
-                  />
-                </div>
-              )}
             </div>
           </div>
         </div>

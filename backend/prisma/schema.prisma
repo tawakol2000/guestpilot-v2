@@ -30,13 +30,10 @@ model Tenant {
   knowledgeSuggestions  KnowledgeSuggestion[]
   aiApiLogs             AiApiLog[]
   aiConfigVersions      AiConfigVersion[]
-  automatedMessages     AutomatedMessage[]
   propertyKnowledgeChunks PropertyKnowledgeChunk[]
   tenantAiConfig          TenantAiConfig?
   classifierExamples      ClassifierExample[]
   classifierEvaluations   ClassifierEvaluation[]
-  opusReports             OpusReport[]
-  classifierWeights       ClassifierWeights[]
   sopDefinitions          SopDefinition[]
   toolDefinitions         ToolDefinition[]
   pushSubscriptions       PushSubscription[]
@@ -286,26 +283,6 @@ enum MessageRole {
 
 // ─── Automated Messages ──────────────────────────────────────────────────────
 
-model AutomatedMessage {
-  id            String   @id @default(cuid())
-  tenantId      String
-  hostawayId    String?
-  name          String
-  trigger       String   @default("manual")
-  content       String   @db.Text
-  enabled       Boolean  @default(true)
-  timing        String?
-  channel       String?
-  syncedAt      DateTime?
-  lastEditedAt  DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, hostawayId])
-  @@index([tenantId])
-}
 
 // ─── AI API Logs (persistent) ────────────────────────────────────────────────
 
@@ -451,23 +428,6 @@ model ClassifierEvaluation {
 
 // ─── OPUS Audit Reports ─────────────────────────────────────────────────────
 
-model OpusReport {
-  id              String   @id @default(cuid())
-  tenantId        String
-  reportDate      DateTime
-  status          String   @default("pending")
-  rawData         Json     @default("{}")
-  reportMarkdown  String   @db.Text @default("")
-  inputTokens     Int      @default(0)
-  outputTokens    Int      @default(0)
-  costUsd         Float    @default(0)
-  durationMs      Int      @default(0)
-  createdAt       DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, reportDate(sort: Desc)])
-}
 
 // ─── AI Config Version History ───────────────────────────────────────────────
 
@@ -484,21 +444,6 @@ model AiConfigVersion {
   @@index([tenantId, version(sort: Desc)])
 }
 
-// ─── Classifier Weights (persisted across deploys) ───────────────────────────
-
-model ClassifierWeights {
-  id         String   @id @default(cuid())
-  tenantId   String
-  weights    Json     // Full classifier-weights.json content
-  accuracy   Float?   // LOO-CV accuracy
-  classes    Int      @default(0)  // Number of classes
-  examples   Int      @default(0)  // Number of training examples
-  createdAt  DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, createdAt(sort: Desc)])
-}
 
 // ─── Tool Definitions (per-tenant, system + custom) ─────────────────────────
 

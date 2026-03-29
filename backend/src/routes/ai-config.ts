@@ -15,6 +15,5 @@ export function aiConfigRouter(prisma: PrismaClient): Router {
   router.get('/prompt-history', ((req, res) => ctrl.getPromptHistory(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/versions', ((req, res) => ctrl.listVersions(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/versions/:id/revert', ((req, res) => ctrl.revertVersion(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/sandbox-chat', ((req, res) => ctrl.sandboxChat(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   return router;
 }

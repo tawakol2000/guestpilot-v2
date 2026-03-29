@@ -159,10 +159,6 @@ export interface ApiConversationDetail {
   } | null
 }
 
-export async function apiGetConversationChecklist(conversationId: string): Promise<{ checklist: ApiConversationDetail['documentChecklist'] }> {
-  return apiFetch(`/api/conversations/${conversationId}/checklist`)
-}
-
 export async function apiUpdateConversationChecklist(conversationId: string, data: { passportsReceived?: number; marriageCertReceived?: boolean }): Promise<{ checklist: ApiConversationDetail['documentChecklist'] }> {
   return apiFetch(`/api/conversations/${conversationId}/checklist`, { method: 'PUT', body: JSON.stringify(data) })
 }
@@ -264,10 +260,6 @@ export async function apiGetProperties(): Promise<ApiProperty[]> {
   return apiFetch<ApiProperty[]>('/api/properties')
 }
 
-export async function apiGetProperty(id: string): Promise<ApiProperty> {
-  return apiFetch<ApiProperty>(`/api/properties/${id}`)
-}
-
 export async function apiUpdateKnowledgeBase(
   id: string,
   customKnowledgeBase: Record<string, unknown>
@@ -325,25 +317,6 @@ export async function apiGetImportProgress(): Promise<ImportProgress> {
 
 export async function apiDeleteAllData(): Promise<void> {
   await apiFetch<{ deleted: boolean }>('/api/import', { method: 'DELETE' })
-}
-
-// ─── Knowledge / SOP ─────────────────────────────────────────────────────────
-export async function apiGetSopData() {
-  return apiFetch<{
-    sops: Array<{ category: string; toolDescription: string; content: string; isGlobal: boolean }>;
-    properties: Array<{ id: string; name: string; address: string }>;
-    propertyChunks: Array<{ id: string; propertyId: string; content: string; category: string; sourceKey: string }>;
-  }>('/api/knowledge/sop-data');
-}
-
-export async function apiInquiryAction(
-  conversationId: string,
-  action: 'accept' | 'reject'
-): Promise<{ ok: boolean; status: string }> {
-  return apiFetch(`/api/conversations/${conversationId}/inquiry-action`, {
-    method: 'POST',
-    body: JSON.stringify({ action }),
-  })
 }
 
 export interface AiPersonaConfig {
@@ -461,34 +434,10 @@ export async function apiResetSystemPrompts(): Promise<TenantAiConfig> {
   return apiFetch<TenantAiConfig>('/api/tenant-config/reset-prompts', { method: 'POST' })
 }
 
-export async function apiReindexPropertyKnowledge(propertyId: string): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/properties/${propertyId}/reindex-knowledge`, {
-    method: 'POST',
-  })
-}
-
 export async function apiResyncProperty(propertyId: string): Promise<{ ok: boolean; chunks: number; property: ApiProperty }> {
   return apiFetch<{ ok: boolean; chunks: number; property: ApiProperty }>(`/api/properties/${propertyId}/resync`, {
     method: 'POST',
   })
-}
-
-export async function apiTranslateMessage(
-  conversationId: string,
-  content: string
-): Promise<{ translated: string }> {
-  return apiFetch<{ translated: string }>(`/api/conversations/${conversationId}/translate-message`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  })
-}
-
-export async function apiCancelPendingAi(conversationId: string): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/conversations/${conversationId}/cancel-ai`, { method: 'POST' })
-}
-
-export async function apiSendAiNow(conversationId: string): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(`/api/conversations/${conversationId}/send-ai-now`, { method: 'POST' })
 }
 
 export async function apiSendThroughAI(
@@ -623,13 +572,6 @@ export async function apiGetConversationTasks(convId: string): Promise<ApiTask[]
   return apiFetch<ApiTask[]>(`/api/conversations/${convId}/tasks`)
 }
 
-export async function apiCreateConversationTask(convId: string, data: Partial<ApiTask>): Promise<ApiTask> {
-  return apiFetch<ApiTask>(`/api/conversations/${convId}/tasks`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
 export async function apiUpdateTask(id: string, data: { status: string }): Promise<ApiTask> {
   return apiFetch<ApiTask>(`/api/tasks/${id}`, {
     method: 'PATCH',
@@ -650,21 +592,6 @@ export function mapChannel(ch: string): string {
   if (ch === 'DIRECT') return 'Direct'
   if (ch === 'WHATSAPP') return 'WhatsApp'
   return ''
-}
-
-export function mapReservationStatus(s: string): 'confirmed' | 'hosting' | 'inquiry' {
-  if (s === 'INQUIRY') return 'inquiry'
-  if (s === 'CHECKED_IN') return 'hosting'
-  return 'confirmed'
-}
-
-export function mapCheckInStatus(s: string): 'confirmed' | 'cancelled' | 'checked-in' | 'checking-in-today' | 'checked-out' | 'inquiry' {
-  if (s === 'INQUIRY') return 'inquiry'
-  if (s === 'CANCELLED') return 'cancelled'
-  if (s === 'CHECKED_IN') return 'checked-in'
-  if (s === 'CHECKED_OUT') return 'checked-out'
-  // Check if checking in today
-  return 'confirmed'
 }
 
 export function mapMessageSender(role: string): 'guest' | 'autopilot' | 'host' | 'private' {
@@ -847,41 +774,6 @@ export async function apiApproveSuggestion(id: string, editedText?: string): Pro
   })
 }
 
-// ─── Automated Messages ──────────────────────────────────────────────────────
-export interface ApiAutomatedMessage {
-  id: string
-  name: string
-  trigger: string
-  content: string
-  enabled: boolean
-  timing?: string
-  channel?: string
-  hostawayId?: string
-  syncedAt?: string
-  lastEditedAt?: string
-  createdAt: string
-}
-
-export async function apiGetAutomatedMessages(): Promise<ApiAutomatedMessage[]> {
-  return apiFetch<ApiAutomatedMessage[]>('/api/automated-messages')
-}
-
-export async function apiCreateAutomatedMessage(data: { name: string; trigger?: string; content: string; timing?: string; channel?: string }): Promise<ApiAutomatedMessage> {
-  return apiFetch<ApiAutomatedMessage>('/api/automated-messages', { method: 'POST', body: JSON.stringify(data) })
-}
-
-export async function apiUpdateAutomatedMessage(id: string, data: Partial<{ name: string; trigger: string; content: string; timing: string; channel: string; enabled: boolean }>): Promise<ApiAutomatedMessage> {
-  return apiFetch<ApiAutomatedMessage>(`/api/automated-messages/${id}`, { method: 'PUT', body: JSON.stringify(data) })
-}
-
-export async function apiToggleAutomatedMessage(id: string): Promise<ApiAutomatedMessage> {
-  return apiFetch<ApiAutomatedMessage>(`/api/automated-messages/${id}/toggle`, { method: 'POST' })
-}
-
-export async function apiDeleteAutomatedMessage(id: string): Promise<void> {
-  await apiFetch<{ ok: boolean }>(`/api/automated-messages/${id}`, { method: 'DELETE' })
-}
-
 export async function apiUpdateKnowledgeChunk(
   id: string,
   data: { content?: string; category?: string }
@@ -898,71 +790,6 @@ export async function apiDeleteKnowledgeChunk(id: string): Promise<void> {
 
 export async function apiSeedSops(): Promise<{ ok: boolean; inserted: number }> {
   return apiFetch<{ ok: boolean; inserted: number }>('/api/knowledge/seed-sops', { method: 'POST' })
-}
-
-// ─── OPUS Audit Reports ─────────────────────────────────────────────────────
-
-export interface OpusReportSummary {
-  id: string
-  reportDate: string
-  status: string
-  inputTokens: number
-  outputTokens: number
-  costUsd: number
-  durationMs: number
-  createdAt: string
-}
-
-export interface OpusReportDetail extends OpusReportSummary {
-  reportMarkdown: string
-}
-
-export async function apiGenerateOpusReport(): Promise<{ id: string; status: string }> {
-  return apiFetch('/api/opus/generate', { method: 'POST' })
-}
-
-export async function apiGetOpusReports(): Promise<OpusReportSummary[]> {
-  return apiFetch('/api/opus/reports')
-}
-
-export async function apiGetOpusReport(id: string): Promise<OpusReportDetail> {
-  return apiFetch(`/api/opus/reports/${id}`)
-}
-
-export async function apiGetOpusReportRaw(id: string): Promise<Record<string, unknown>> {
-  return apiFetch(`/api/opus/reports/${id}/raw`)
-}
-
-// ─── Pipeline Accuracy & Snapshot ─────────────────────────────────────────────
-
-export interface AccuracyMetrics {
-  overall: { correct: number; total: number; accuracy: number }
-  emptyLabelRate: number
-  overrideRate?: number
-  perCategory: Array<{ category: string; correct: number; total: number; accuracy: number }>
-  selfImprovement: {
-    totalActive: number
-    bySource: Record<string, number>
-    addedThisPeriod: number
-  }
-  judgeMode: string
-  period: string
-}
-
-export async function apiFetchAccuracy(period: '7d' | '30d' = '30d'): Promise<AccuracyMetrics> {
-  return apiFetch(`/api/ai-pipeline/accuracy?period=${period}`)
-}
-
-export async function apiGenerateSnapshot(): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/ai-pipeline/snapshot`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-  })
-  if (!res.ok) throw new Error(`Snapshot failed: ${res.status}`)
-  return res.text()
 }
 
 // ─── Tool Invocations ────────────────────────────────────────────────────────
@@ -1097,63 +924,6 @@ export async function apiSandboxChatStream(
 
   // Fallback: if stream ended without a final payload, throw
   throw new Error('Stream ended without final response')
-}
-
-// ── SOP Classification Monitoring ──
-
-export interface SopClassification {
-  id: string
-  createdAt: string
-  conversationId: string | null
-  categories: string[]
-  confidence: 'high' | 'medium' | 'low'
-  reasoning: string | null
-}
-
-export interface SopClassificationsResponse {
-  classifications: SopClassification[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export interface CacheStats {
-  avgHitRate: number | null
-  logsWithCacheData: number
-}
-
-export interface CostStats {
-  avgCostPerMessage: number
-  totalCost24h: number
-  messageCount24h: number
-}
-
-export interface ReasoningStats {
-  noneCount: number
-  lowCount: number
-  pctNone: number | null
-}
-
-export interface SopStatsResponse {
-  totalClassifications: number
-  byConfidence: { high: number; medium: number; low: number }
-  byCategory: Array<{ category: string; count: number; percentage: number }>
-  cacheStats?: CacheStats
-  costStats?: CostStats
-  reasoningStats?: ReasoningStats
-}
-
-export async function apiGetSopClassifications(params?: { limit?: number; offset?: number; confidence?: string }): Promise<SopClassificationsResponse> {
-  const query = new URLSearchParams()
-  if (params?.limit) query.set('limit', String(params.limit))
-  if (params?.offset) query.set('offset', String(params.offset))
-  if (params?.confidence) query.set('confidence', params.confidence)
-  const url = `/api/knowledge/sop-classifications${query.toString() ? '?' + query.toString() : ''}`
-  return apiFetch<SopClassificationsResponse>(url)
-}
-
-export async function apiGetSopStats(): Promise<SopStatsResponse> {
-  return apiFetch<SopStatsResponse>('/api/knowledge/evaluation-stats')
 }
 
 // ── SOP Definition Management (015-sop-variants) ──
