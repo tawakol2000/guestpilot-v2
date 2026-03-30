@@ -1,0 +1,68 @@
+[
+  {
+    "guestName": "Amro Zeima",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar,\nMe and my partner will be spending a week in Cairo. I’m excited to spend my time in Cairo in your apartment. It looks amazing. Thank you.",
+      "Hi Omar, \nI have now rebooked the apartment. My previous payment method was linked to my company’s bank account, while now I have linked it to my private bank account as I need to pay this expense privately.\n\nMy apologies for the confusion, and see you soon in Cairo inshAllah!",
+      "You should have received my new booking request"
+    ]
+  },
+  {
+    "guestName": "Mohammed Alkhaldi",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar,\n\nI’m Mohammed and this is my pleasure to book the apartment. \n\nThank you.",
+      "Hi Omar,\n\nThanks for the confirmation. Could you please clarify who the passport or ID should be sent to, what the expected approval timeframe is, and whether there are any of rejection may encounter?",
+      "After checking in no guests are allowed?",
+      "Ok thank you for the clarification",
+      "I will cancel my reservation. Thanks"
+    ]
+  },
+  {
+    "guestName": "عادل اباالخيل",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "مرحبا تمر سوف احضر انا وعائلتي باذن الله للمجمع",
+      "شكرا لكم سوف اكون باذن الله في السكن قرابة الساعة ٥ مساء باذن الله",
+      "تفضل استاذ عمر وشاكر تعاونكم",
+      "مرحبا هل يوجد نظام تدفئة بالشقة",
+      "التكيف لايوجد بها",
+      "كيف تتم تدفئة الشقة",
+      "الشقة باردة",
+      "وابغى راس محول من ثلاثي الى ثنائي للكهرباء",
+      "اشرح طريقة كيف اشغل التدفئة \nوابغى محولين",
+      "مرحبا لايوجد تدفئة لدي الجهاز",
+      "طيب انا ابطلع حاليا خليه الفني يدخل يشالها على الحار كل الغرف",
+      "والله برد ومعي اطفال",
+      "الف شكر\nخليه يصلحها \nانا طلعت والشقة مافيها احد \nخليه يدخل",
+      "كل الغرف خليها يبرمجها",
+      "شكراً لك",
+      "لا ، حط لي اثنين",
+      "جيب لي الله يسعدك",
+      "Give me 2 please",
+      "يعطيك الف عافية",
+      "شكرا استاذ عمر على طيب تعاملك",
+      "Message unsent",
+      "واذا اردت التاخير زيادة سوف اخبر هذا اليوم",
+      "حبيبي عمر سوف اغادر غداً الساعة ٦ مساء باذن الله",
+      "استاذ عمر مساء الخسر اولا اشكر لك تعاملك الطيب وياحبيبينا تراني خارج من الشقة وشاكرا لتعاملك الراقي والكريم"
+    ]
+  },
+  {
+    "guestName": "عبدالله",
+    "status": "inquiryNotPossible",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم",
+      "اخوي الله يسعدك بغيت شقة في كمباوند سيلفر بالم من غرفه وحده ويتوفر فيها سرير اطفال",
+      "وهل فيه مسبح خاص للعمارة الوحدة ؟",
+      "وعطيني تفاصيلها كاملة ي اخ عمر",
+      "مو متوفر في تاريخ ٥ اكتوبر",
+      "انا ابغاه من ٥ اكتوبر الى ١٠ اكتوبر او ١١"
+    ]
+  }
+]

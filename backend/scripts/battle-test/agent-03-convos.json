@@ -1,0 +1,71 @@
+[
+  {
+    "guestName": "عبدالهادي",
+    "status": "declined",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "سوف اتي فيها أنا وزوجتي",
+      "هلا عمر ، طيب متى يعود المبلغ",
+      "عاده متى يعود"
+    ]
+  },
+  {
+    "guestName": "Gérard Dedieu",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Bonjour Omar, je rejoins des collègues pour la semaine",
+      "Voilà la photo de mon passeport",
+      "Pour votre information j’arriverai très tard dans la nuit de dimanche",
+      "Bonsoir, un petit message pour vous indiquer que j’ai libéré l’appartement.\nBonne soirée"
+    ]
+  },
+  {
+    "guestName": "Ahmed",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi",
+      "Yes",
+      "I was checking this flat actually im planning to visit cairo date 25 to 29 march. \nSo any policy for your company we have to know. \nAnd also i want check exactly location \n\nMy question is \nIf some people visit us its allowed or no ?"
+    ]
+  },
+  {
+    "guestName": "Hanin Sagga",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "اهلا عمر ان شاءالله انا جاية على القاهرة تاريخ ٥ يناير الى ١٠ الساعة ٩ مساء تقريبا في طويقة اقدر اتواصل معاك ؟",
+      "اهلين",
+      "احنا ٤ بنات",
+      "بس اكيد الا الان ٢",
+      "تمام يعطيك العافية",
+      "صباح الخير",
+      "سؤال الشقة فيها مكوة ملابس و مناشف و واي فاي؟",
+      "اوك اتواصلت معاك ع الواتس",
+      "وعندي استفسار",
+      "انا ان شاءالله اوصل يوم الاثنين تقريبا على ١٠ في الليل",
+      "ينفع يوم السبت اخرج شوية متاخر لانو رحلتي ٩ الليل",
+      "5 ونص",
+      "تمام؟",
+      "شكرررا",
+      "اتاخرت رحلتي اليوم ممكن الوصول للشقة ١ في الليل",
+      "وصولي للقاهرة ١٢:١٥ دقيقة",
+      "احنا رايحين ع الموقع يحتاج باركود ؟",
+      "انا وصلت وبنتظر برا",
+      "والسكيورتي مو راضي يدخلنا",
+      "والرحلة طويلة من هولندا ومااعرف ايش الحل",
+      "يقول مافي حجز باسمكم",
+      "دخلت خلاص بالقوة وقال بكرا نشوف الوضع",
+      "واحتاج سلبر ومناشف",
+      "ومناديل",
+      "الاسلبر الي يتلبس في الرجل زي الفنادق",
+      "ولو ممكن مية ٢ كمان",
+      "الساعة ٣ مناسب",
+      "تمام؟",
+      "Ok",
+      "انفقنا الخروج ٥ العصر بدون رسوم",
+      "خلاص احنا مشينا شكرا وكان كل شي تمام 👍🏼"
+    ]
+  }
+]
