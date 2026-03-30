@@ -12,9 +12,11 @@
  *   6. Return full pipeline data (AI response + AI log with system prompt, tool calls, etc.)
  *
  * Subcommands:
- *   turn    — send a guest message and get AI response
- *   status  — update reservation status (simulate manager approval)
- *   ailog   — fetch the latest AI log for a conversation
+ *   turn         — send a guest message and get AI response
+ *   status       — update reservation status (simulate manager approval)
+ *   resolve-task — resolve an open task (simulate manager completing it)
+ *   list-tasks   — list open tasks for a conversation
+ *   ailog        — fetch the latest AI log for a conversation
  *
  * Usage:
  *   npx ts-node scripts/battle-test/turn.ts turn \
@@ -93,17 +95,20 @@ async function sleep(ms: number) {
 
 // ─── TURN: Send guest message and get AI response via real pipeline ──────────
 async function handleTurn(args: Record<string, string>) {
-  const { conversationId, message, jwt, channel } = args;
+  const { conversationId, message, jwt, channel, imageUrls: imageUrlsRaw } = args;
 
   if (!conversationId || !message || !jwt) {
     console.error(JSON.stringify({ error: 'Required: --conversationId, --message, --jwt' }));
     process.exit(1);
   }
 
+  // Parse optional image URLs (comma-separated)
+  const imageUrls = imageUrlsRaw ? imageUrlsRaw.split(',').map(u => u.trim()) : [];
+
   // Count existing messages to determine turn number
   const existingCount = await prisma.message.count({ where: { conversationId } });
 
-  // 1. Insert GUEST message
+  // 1. Insert GUEST message (with optional image attachments)
   const guestMsg = await prisma.message.create({
     data: {
       conversationId,
@@ -114,6 +119,7 @@ async function handleTurn(args: Record<string, string>) {
       communicationType: channel === 'AIRBNB' ? 'channel' : 'whatsapp',
       sentAt: new Date(),
       hostawayMessageId: `battle-test-${Date.now()}`,
+      ...(imageUrls.length > 0 ? { imageUrls } : {}),
     },
   });
 
@@ -254,6 +260,52 @@ async function handleStatusChange(args: Record<string, string>) {
   console.log(JSON.stringify({ ok: true, reservationId, newStatus }));
 }
 
+// ─── RESOLVE-TASK: Simulate manager completing a task ─────────────────────────
+async function handleResolveTask(args: Record<string, string>) {
+  const { taskId, conversationId } = args;
+
+  if (taskId) {
+    // Resolve specific task
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { status: 'resolved', completedAt: new Date() },
+    });
+    console.log(JSON.stringify({ ok: true, resolved: taskId }));
+    return;
+  }
+
+  if (conversationId) {
+    // Resolve ALL open tasks for this conversation
+    const result = await prisma.task.updateMany({
+      where: { conversationId, status: 'open' },
+      data: { status: 'resolved', completedAt: new Date() },
+    });
+    console.log(JSON.stringify({ ok: true, resolvedCount: result.count }));
+    return;
+  }
+
+  console.error(JSON.stringify({ error: 'Required: --taskId or --conversationId' }));
+  process.exit(1);
+}
+
+// ─── LIST-TASKS: Show open tasks for a conversation ──────────────────────────
+async function handleListTasks(args: Record<string, string>) {
+  const { conversationId } = args;
+
+  if (!conversationId) {
+    console.error(JSON.stringify({ error: 'Required: --conversationId' }));
+    process.exit(1);
+  }
+
+  const tasks = await prisma.task.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, title: true, note: true, urgency: true, status: true, createdAt: true },
+  });
+
+  console.log(JSON.stringify(tasks, null, 2));
+}
+
 // ─── AILOG: Fetch full AI log for review ─────────────────────────────────────
 async function handleAiLog(args: Record<string, string>) {
   const { conversationId, logId, jwt } = args;
@@ -306,11 +358,17 @@ async function main() {
     case 'status':
       await handleStatusChange(args);
       break;
+    case 'resolve-task':
+      await handleResolveTask(args);
+      break;
+    case 'list-tasks':
+      await handleListTasks(args);
+      break;
     case 'ailog':
       await handleAiLog(args);
       break;
     default:
-      console.error(JSON.stringify({ error: `Unknown subcommand: ${subcommand}. Use: turn, status, ailog` }));
+      console.error(JSON.stringify({ error: `Unknown subcommand: ${subcommand}. Use: turn, status, resolve-task, list-tasks, ailog` }));
       process.exit(1);
   }
 
