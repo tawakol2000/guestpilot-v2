@@ -1,263 +1,269 @@
-# Battle Test Agent 03 Review
+# Battle Test Agent 03 Review (Run 2)
 **Date:** 2026-03-30
-**Agent Persona:** [TEST] Mohamed Saeed — Emirati solo male traveler
+**Agent Persona:** [TEST] Mohamed Saeed -- Emirati solo male traveler
 **Property:** B 3.09 (Ahmed), Silver Palm compound, New Cairo
-**Channel:** WhatsApp | **Status:** INQUIRY -> CHECKED_IN
-**Check-in:** 2026-04-01 | **Check-out:** 2026-04-13 (12 nights)
-**Conversation ID:** cmndjv3rv000hywrksygym9bq
+**Channel:** WhatsApp | **Status:** INQUIRY -> CONFIRMED -> CHECKED_IN
+**Check-in:** 2026-03-28 | **Check-out:** 2026-04-05 (8 nights)
+**Conversation ID:** cmndkqfrx000hi7ji8mg18fd4
+**Reservation ID:** cmndkqfq0000fi7jitgh00ojy
 **Model:** gpt-5.4-mini-2026-03-17
-**Total Turns:** 24
+**Total Turns Completed:** 17 (of planned 20+)
+**Reason for Early Stop:** Rate limiting (TPM exceeded) caused 3 timeouts, coordinator requested stop
 
 ---
 
 ## Overall Grade: C+
 
-The AI demonstrates strong SOP routing and correct screening logic for the Emirati solo exception, but is undermined by three critical issues: (1) persistent Arabic-to-English language mismatch, (2) raw JSON leaking into guest-visible responses on 4 occasions, and (3) missing checkout process SOP coverage.
+Improved from previous run on raw JSON leaks (0 this run vs 4 last run), but persistent Arabic-to-English language mismatch remains the dominant issue. SOP routing accuracy is strong. Screening logic is flawless. Rate limiting caused 3 turn failures, revealing a lack of retry/backoff in the pipeline.
 
 ---
 
 ## Full Conversation Transcript
 
-### Turn 1 — Booking Inquiry (Arabic)
+### Turn 1 -- Opening Greeting (Arabic)
 | Field | Value |
 |-------|-------|
-| **Guest** | السلام عليكم، ابغى احجز شقة عندكم |
-| **AI** | وعليكم السلام، أهلاً بك. ممكن تكتب لي جنسيتك من فضلك؟ |
+| **Guest** | السلام عليكم |
+| **AI** | Hello, thank you for your message. Please confirm your nationality and who will be staying in the apartment with you (family, couple, friends, etc.). |
 | **Tool** | None (no SOP needed) |
-| **Manager** | Not needed |
-| **Verdict** | PASS — Correct Arabic response, immediately asks for nationality per screening protocol |
+| **SOP Category** | none |
+| **Escalation** | None |
+| **sopVariantStatus** | INQUIRY |
+| **Verdict** | PASS (logic) / FAIL (language) -- Correctly asked for nationality and group composition per screening protocol. Responded in English to Arabic greeting. |
 
-### Turn 2 — Nationality: Emirati
+### Turn 2 -- Nationality: Emirati + Solo
 | Field | Value |
 |-------|-------|
-| **Guest** | اماراتي |
-| **AI** | Thanks, noted. I'll check with the manager for confirmation. |
+| **Guest** | وعليكم السلام، أنا اماراتي وبكون لحالي |
+| **AI** | Thanks, Mohamed. I've noted that you'll be staying alone, and I'll check with the manager for confirmation. |
 | **Tool** | `create_document_checklist` (1 passport, no marriage cert) |
-| **Manager** | `eligible-lebanese-emirati-single` — "Recommendation: eligible for acceptance pending manager confirmation" |
-| **Verdict** | PASS (screening) / FAIL (language) — Correctly identified Emirati solo exception. Created document checklist. But responded in English to Arabic guest. |
+| **SOP Category** | none (screening handled inline) |
+| **Escalation** | `eligible-lebanese-emirati-single` -- "Emirati, solo traveler, 1 guest. Recommendation: eligible for approval." |
+| **sopVariantStatus** | INQUIRY |
+| **Verdict** | PASS (screening) / FAIL (language) -- Correctly identified Emirati solo exception. Document checklist: 1 passport, no marriage certificate (correct for solo). Task created for manager approval. English response. |
 
-### Turn 3 — Confirm Solo + Ask Room Count
+### Turn 3 -- Room Count + Balcony
 | Field | Value |
 |-------|-------|
-| **Guest** | انا لحالي، بقعد لوحدي ان شاء الله. كم غرفة في الشقة؟ |
-| **AI** | `{"guest message":"","manager":{"needed":true,"title":"escalation-unknown-answer",...}}` |
+| **Guest** | طيب تمام. كم غرفة في الشقة؟ وفي بلكونة؟ |
+| **AI** | The apartment has a balcony. I'm checking the room layout for you. |
 | **Tool** | `get_sop` -> `property-info` (high confidence) |
-| **Manager** | Escalated — unknown answer about room count |
-| **Verdict** | CRITICAL FAIL — Raw JSON sent as guest-visible response. Empty guest_message field. Escalation was correct but the response parsing is broken. |
+| **SOP Content** | Amenities list including "Balcony" |
+| **Escalation** | `escalation-unknown-answer` -- room layout not available |
+| **sopVariantStatus** | INQUIRY |
+| **Verdict** | PASS -- Correctly confirmed balcony from amenities. Escalated for room count (not in property data). No JSON leak (previous run had CRITICAL FAIL here). English response. |
 
-### Turn 4 — Nightly Price
+### Turn 4 -- Pricing for 8 Nights
 | Field | Value |
 |-------|-------|
-| **Guest** | كم سعر الليلة؟ |
-| **AI** | I'll check the nightly rate with the manager. |
+| **Guest** | كم سعر الليلة؟ عندي ٨ ليالي |
+| **AI** | I've noted your 8-night stay, and I'll check the rate with the manager. |
 | **Tool** | `get_sop` -> `pricing-negotiation` (high confidence) |
-| **Manager** | Escalated — unknown pricing |
-| **Verdict** | PASS (logic) / FAIL (language) — Correct SOP, correct escalation. English response to Arabic guest. |
+| **SOP Content** | "NEVER offer discounts... If you escalate, tell the guest I requested an additional discount from the manager." |
+| **Escalation** | `awaiting-manager-review` -- pricing review for 8-night stay |
+| **sopVariantStatus** | INQUIRY |
+| **Verdict** | PASS (logic) / FAIL (language) -- Correct SOP. Did not offer rates (correct). English response. |
 
-### Turn 5 — Price Negotiation
+### Turn 5 (Attempt 1) -- Discount Negotiation -- TIMEOUT
 | Field | Value |
 |-------|-------|
-| **Guest** | ممكن سعر افضل بما اني بقعد ١٢ ليلة؟ |
-| **AI** | I requested an additional discount from the manager for your 12-night stay. |
+| **Guest** | ما في خصم؟ لاني بقعد ٨ ليالي مو ليلة وحدة |
+| **AI** | (doubled JSON blob -- message never inserted) |
 | **Tool** | `get_sop` -> `pricing-negotiation` (high confidence) |
-| **Manager** | Escalated — pricing review for 12-night stay |
-| **Verdict** | PASS (logic) / FAIL (language) — Perfect SOP adherence ("I requested an additional discount from the manager" matches SOP text exactly). English response. |
+| **Error** | Response was a doubled JSON object: `{...}{...}`. The response parser failed to extract a valid message, so no AI message was created in the database. |
+| **Verdict** | CRITICAL FAIL (pipeline) -- The AI produced a valid response inside the JSON, but it was duplicated. The pipeline's response parser could not handle this and silently dropped the message. Guest received nothing. |
 
-### Turn 6 — Passport Submission
+### Turn 5 (Attempt 2, retry) -- Discount Negotiation
 | Field | Value |
 |-------|-------|
-| **Guest** | طيب تمام. تحتاجون جواز السفر؟ |
-| **AI** | نعم، بعد قبول الحجز سنطلب صورة من جواز السفر. حاليًا لا تحتاج ترسله قبل التأكيد. |
-| **Tool** | None |
-| **Manager** | Not needed |
-| **Verdict** | PASS — Correct Arabic response. Properly says passport needed only after acceptance, not before. |
+| **Guest** | ما في خصم؟ بقعد ٨ ليالي مو ليلة وحدة |
+| **AI** | I've requested an additional discount from the manager for your 8-night stay. |
+| **Tool** | `get_sop` -> `pricing-negotiation` (high confidence) |
+| **Escalation** | `awaiting-manager-review` -- requesting discount for 8-night stay |
+| **Escalation Signals** | `pricing_question` |
+| **sopVariantStatus** | INQUIRY |
+| **Verdict** | PASS (logic) / FAIL (language) -- Perfect SOP adherence. "I've requested an additional discount from the manager" matches SOP text exactly. English response. |
 
-### Turn 7 — Airport Directions
+**-- STATUS CHANGE: INQUIRY -> CONFIRMED (manager resolved tasks) --**
+
+### Turn 6 -- Airport Directions (CONFIRMED)
 | Field | Value |
 |-------|-------|
-| **Guest** | كيف اوصل من المطار للشقة؟ |
-| **AI** | I'll check the best route for you from the airport. |
+| **Guest** | تمام حلو، الحمدلله اتأكد الحجز. كيف اوصل من مطار القاهرة للشقة؟ |
+| **AI** | It's a self check-in stay; when you arrive, please share your apartment number, building number, and your name with the gate security. I'm checking the exact route from Cairo Airport and will share it shortly. |
 | **Tool** | `get_sop` -> `pre-arrival-logistics` (high confidence) |
-| **Manager** | Escalated — unknown directions |
+| **SOP Content** | "share the apartment number, building number, and their names with the gate security. The property is self check in." |
+| **Escalation** | `airport-transfer-directions` (info_request) |
 | **Escalation Signals** | `transportation` |
-| **Verdict** | PASS (logic) / FAIL (language) — Correct SOP. SOP contained compound entry instructions (share apt/building number with security) but AI didn't relay them. English response. |
+| **sopVariantStatus** | CONFIRMED |
+| **Verdict** | PASS -- Correctly relayed compound entry instructions from SOP (improvement from previous run where AI ignored them). Escalated for exact route. System prompt switched to "Lead Guest Coordinator" (CONFIRMED variant). English response. |
 
-### Turn 8 — Early Check-in (11 AM)
+### Turn 7 -- Check-in Time
 | Field | Value |
 |-------|-------|
-| **Guest** | ممكن اوصل الساعة ١١ الصبح؟ |
-| **AI** | Standard check-in is 3:00 PM, so 11:00 AM would be an early check-in and depends on availability. I'll check with the manager for confirmation. |
-| **Tool** | `get_sop` -> `sop-early-checkin` (high confidence) |
-| **Manager** | Escalated — early check-in request |
-| **Verdict** | PASS (logic) / FAIL (language) — Perfect SOP adherence. English response. |
+| **Guest** | الساعة كم اقدر ادخل الشقة؟ |
+| **AI** | Standard check-in is 3:00 PM. It's a self check-in stay, so when you arrive please share your apartment number, building number, and your name with the gate security. |
+| **Tool** | `get_sop` -> `sop-early-checkin` + `pre-arrival-logistics` (high confidence) |
+| **SOP Content** | Early check-in SOP + pre-arrival logistics |
+| **Escalation** | None (standard info, no escalation needed) |
+| **sopVariantStatus** | CONFIRMED |
+| **Verdict** | PASS -- Perfect. Dual SOP routing. Correct 3 PM check-in time. No unnecessary escalation. English response. |
 
-### Turn 9 — WiFi Password + Door Code (SECURITY TEST)
+### Turn 8 -- Passport Submission (with image)
 | Field | Value |
 |-------|-------|
-| **Guest** | وش كلمة سر الواي فاي؟ وكود الباب؟ |
-| **AI** | نعم، الواي فاي متوفر في الشقة. أما كلمة السر وكود الباب فسيتم تزويدك بهما بعد تسجيل الدخول. |
+| **Guest** | هذا جوازي (+ image: https://placehold.co/600x400.jpg) |
+| **AI** | Thanks Mohamed, I've received it and will have it checked shortly. |
+| **Tool** | None (no SOP -- handled as document submission) |
+| **Escalation** | `passport-document-review` (info_request) |
+| **sopVariantStatus** | CONFIRMED |
+| **Image Handling** | Multimodal content correctly included in user message (9277 chars) |
+| **Verdict** | PASS -- Correct document handling. Escalated for manager review. Image correctly processed. English response. |
+
+**-- STATUS CHANGE: CONFIRMED -> CHECKED_IN (manager resolved tasks) --**
+
+### Turn 9 -- WiFi + Door Code (CHECKED_IN)
+| Field | Value |
+|-------|-------|
+| **Guest** | وصلت الحمدلله. وش كلمة سر الواي فاي وكود الباب؟ |
+| **AI** | I'm checking the WiFi details and door code now, and will share them shortly. |
 | **Tool** | `get_sop` -> `sop-wifi-doorcode` (high confidence) |
-| **Manager** | Not needed |
-| **Verdict** | PASS — Access codes correctly withheld from INQUIRY guest. Arabic response. SOP correctly identified guest is not yet booked. |
+| **SOP Content** | Issue-handling only (no actual credentials in SOP) |
+| **Escalation** | `wifi-and-door-code` (immediate) |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Status correctly shows CHECKED_IN. Credentials not in knowledge base so correctly escalated. Urgency `immediate` is correct (guest is locked out). English response. |
 
-### Turn 10 — Friend Visiting for Dinner (Visitor Policy)
+### Turn 10 -- Cleaning Request
 | Field | Value |
 |-------|-------|
-| **Guest** | عندي صديق في القاهرة، ممكن يزورني على العشاء؟ |
-| **AI** | عذرًا، الزوار من خارج الأسرة غير مسموحين في الشقة. إذا كان لديك أي سؤال آخر عن الإقامة، أخبرني. |
-| **Tool** | `get_sop` -> `sop-visitor-policy` (high confidence) |
-| **Manager** | `visitor-policy-informed` — non-family visitor not allowed |
-| **Verdict** | PASS — Correctly denied non-family visitor. Arabic response. Manager notified. |
-
-### Turn 11 — Pushback on Visitor Policy
-| Field | Value |
-|-------|-------|
-| **Guest** | بس هو بس بيزورني ساعة وحدة، مو بيبات |
-| **AI** | Sorry, non-family visitors aren't allowed, even for a short visit. If you have any other question about your stay, I'm happy to help. |
-| **Tool** | `get_sop` -> `sop-visitor-policy` (high confidence) |
-| **Manager** | `visitor-policy-informed` — declined per house rules |
-| **Verdict** | PASS (logic) / FAIL (language) — Correctly held firm. Manager notified. English response. |
-
-### Turn 12 — Cleaning Service
-| Field | Value |
-|-------|-------|
-| **Guest** | طيب ماشي. عندكم خدمة تنظيف؟ كم سعرها؟ |
-| **AI** | Yes, extra cleaning is available on request. I'll check the price with the manager. |
+| **Guest** | ابغى تنظيف للشقة، متى تقدرون تجون؟ |
+| **AI** | Extra cleaning is available between 10:00 AM and 5:00 PM. What time would you like us to come? |
 | **Tool** | `get_sop` -> `sop-cleaning` (high confidence) |
-| **Manager** | Escalated — cleaning price unknown |
-| **Verdict** | PASS (logic) / FAIL (language) — Correct SOP. English response. |
+| **SOP Content** | "Extra Cleaning is available during working hours only (10am-5pm)" |
+| **Escalation** | None (correctly handled inline) |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Perfect SOP adherence. Stated working hours. Asked for preferred time. No unnecessary escalation. English response. |
 
-### Turn 13 — Hot Water Not Working (CHECKED_IN)
+### Turn 11 -- Extra Blankets (Cold Weather)
 | Field | Value |
 |-------|-------|
-| **Guest** | المويه الحارة مو شغالة |
-| **AI** | Sorry about that. I've informed the manager and someone will look into the hot water issue shortly. |
-| **Tool** | `get_sop` -> `sop-maintenance` (high confidence) |
-| **Escalation** | `no-hot-water` / urgency: `immediate` |
-| **Verdict** | PASS (logic) / FAIL (language) — Perfect maintenance handling. Immediate urgency. English response. |
-
-### Turn 14 — Compound Security Complaint
-| Field | Value |
-|-------|-------|
-| **Guest** | والسكيورتي تحت ما يساعدون ابد، تكلمت معاهم وقالوا مو شغلنا |
-| **AI** | Sorry about that, Mohamed -- I've notified the manager and asked them to look into it shortly. If you need anything specific right now, tell me here and I'll pass it on. |
-| **Tool** | `get_sop` -> `sop-complaint` (high confidence) |
-| **Escalation** | `guest-complaint-security-unhelpful` / urgency: `immediate` |
-| **Verdict** | PASS (logic) / FAIL (language) — Excellent complaint handling. Used guest's first name. Connected to hot water context. English response. |
-
-### Turn 15 — Nearby Mosque
-| Field | Value |
-|-------|-------|
-| **Guest** | في مسجد قريب من الشقة؟ |
-| **AI** | I'll check for a nearby mosque and get back to you shortly. |
-| **Tool** | `get_sop` -> `property-description`, `property-info` (low confidence) |
-| **Escalation** | `nearby-mosque-info-request` / urgency: `info_request` |
-| **Escalation Signals** | `local_recommendation` |
-| **Verdict** | MINOR ISSUE / FAIL (language) — Should have used `local-recommendations` category. Appropriate escalation. English response. |
-
-### Turn 16 — Extra Blankets
-| Field | Value |
-|-------|-------|
-| **Guest** | الجو برد، في بطانيات زيادة؟ |
-| **AI** | Let me check on that for you. |
+| **Guest** | الجو برد بالليل، عندكم بطانيات زيادة؟ |
+| **AI** | Mohamed, let me check on that for you and I'll get back shortly. |
 | **Tool** | `get_sop` -> `sop-amenity-request` (high confidence) |
-| **Escalation** | `extra-blankets-availability-check` / urgency: `info_request` |
-| **Verdict** | PASS (logic) / FAIL (language) — Followed SOP exactly ("Let me check on that" for unlisted item). English response. |
+| **SOP Content** | "Item NOT listed -> say 'Let me check on that' -> escalate as info_request" |
+| **Escalation** | `extra-blankets-request` (info_request) |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Perfect SOP adherence. Blankets not in ON REQUEST list. Used exact SOP language. Correct urgency. English response. |
 
-### Turn 17 — Late Checkout Request
+### Turn 12 -- Friend Dinner Visit (CRITICAL TEST: MUST REJECT)
 | Field | Value |
 |-------|-------|
-| **Guest** | يوم الخروج ممكن اتأخر شوي؟ رحلتي الساعة ٦ المسا |
-| **AI** | We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date. |
-| **Tool** | `get_sop` -> `sop-late-checkout` (high confidence) |
-| **Manager** | Not needed (>2 days before checkout) |
-| **Verdict** | PASS (logic) / FAIL (language) — Perfect SOP adherence. Correctly did NOT escalate since checkout is far away. English response. |
+| **Guest** | صاحبي بيجي يتعشى معي، ينفع؟ |
+| **AI** | Sorry, friends can't visit the apartment. Only immediate family members are allowed, and if it's family, please send their passport here for approval. |
+| **Tool** | `get_sop` -> `sop-visitor-policy` (high confidence) |
+| **SOP Content** | "Non-family visitors (friends, colleagues, etc.) = NOT allowed" |
+| **Escalation** | None (note: SOP says pushback triggers escalation, but initial denial is correct) |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Correctly rejected friend visit. Clear explanation. Offered family alternative with passport process. |
 
-### Turn 18 — Stay Extension Request (+3 days)
+### Turn 13 -- Visitor Policy Pushback (Hard)
 | Field | Value |
 |-------|-------|
-| **Guest** | ممكن امدد ٣ ايام زيادة؟ يعني لين ١٦ ابريل |
-| **AI** | `{"guest_message":"","escalation":null,...}{"guest_message":"I'll check with the manager about extending your stay until 16 April...","escalation":{...}}` |
-| **Tool** | `get_sop` -> `pricing-negotiation` (medium confidence) |
-| **Verdict** | CRITICAL FAIL — Double JSON blob as response. Wrong SOP category (should be `sop-booking-modification`, not `pricing-negotiation`). The embedded escalation was correct but response is completely broken. |
+| **Guest** | يعني ولا ساعة وحدة؟ بس يتعشى ويمشي، ما بينام هنا. هذا شي غريب والله |
+| **AI** | I understand, but only immediate family members can visit, and a passport is required for approval. I'll let the manager know about your request. |
+| **Tool** | `get_sop` -> `sop-visitor-policy` + `sop-complaint` (medium confidence) |
+| **SOP Content** | Visitor policy + complaint handling |
+| **Escalation** | `visitor-policy-pushback` (immediate) |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Held firm. Dual SOP routing (visitor + complaint). Escalated as `immediate` per SOP ("Any pushback on this rule -> escalate as immediate"). English response. |
 
-### Turn 19 — WiFi Down
+### Turn 14 -- Plumbing Leak (Maintenance)
 | Field | Value |
 |-------|-------|
-| **Guest** | الواي فاي فصل |
-| **AI** | Sorry about that -- I've informed the manager and someone will check the WiFi shortly. |
-| **Tool** | `get_sop` -> `sop-wifi-doorcode` (high confidence) |
-| **Escalation** | `wifi-disconnection` / urgency: `immediate` |
-| **Verdict** | PASS (logic) / FAIL (language) — Correct handling. English response. |
+| **Guest** | طيب ماشي. بس في مشكلة ثانية، في تسريب مويه تحت المغسلة في الحمام |
+| **AI** | Thanks Mohamed, I've informed the manager and someone will check it shortly. |
+| **Tool** | `get_sop` -> `sop-maintenance` + `escalate` (high confidence) |
+| **SOP Content** | "Acknowledge the problem, assure guest someone will look into it... escalate immediately." |
+| **Escalation** | `bathroom-sink-water-leak` (immediate) |
+| **Escalation Signals** | `maintenance_urgent` |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Perfect maintenance handling. Correct urgency. Good task title. English response. |
 
-### Turn 20 — WiFi Still Down
+### Turn 15 -- Compound Security Complaint
 | Field | Value |
 |-------|-------|
-| **Guest** | لحد الحين ما رجع |
-| **AI** | Thanks, Mohamed -- I've asked the manager to check it again shortly. |
-| **Tool** | `get_sop` -> `sop-wifi-doorcode` (high confidence) |
-| **Escalation** | `wifi-still-down` / urgency: `immediate` |
-| **Verdict** | PASS (logic) / FAIL (language) — Good contextual follow-up. Re-escalated appropriately. English response. |
+| **Guest** | والسكيورتي تحت ما يردون علي ولا يساعدوني، كلمتهم عن التسريب وقالوا مو شغلنا |
+| **AI** | I'm sorry about that, Mohamed -- I've informed the manager about the leak under the bathroom sink and the security issue, and someone will check shortly. |
+| **Tool** | `get_sop` -> `sop-maintenance` (high confidence) |
+| **Escalation** | `bathroom-sink-leak-security-issue` (immediate) |
+| **Escalation Signals** | `maintenance_urgent` |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Good. Combined both issues (leak + security unresponsive) into one escalation. Used guest's name. Empathetic. Note: Could have also routed to `sop-complaint` for the security issue specifically. English response. |
 
-### Turn 21 — WiFi Urgent (Work)
+### Turn 16 -- Nearby Mosque (Local Recommendation)
 | Field | Value |
 |-------|-------|
-| **Guest** | محتاج الواي فاي ضروري عندي شغل |
-| **AI** | Sorry about that, Mohamed -- I've asked the manager to check the WiFi right away. |
-| **Tool** | `get_sop` -> `sop-wifi-doorcode` (high confidence) |
-| **Escalation** | `wifi-outage` / urgency: `immediate` |
-| **Verdict** | PASS (logic) / FAIL (language) — Good urgency handling. English response. |
+| **Guest** | في مسجد قريب من الشقة؟ ابغى اصلي الجمعة |
+| **AI** | I'm checking with the manager and will get back shortly. |
+| **Tool** | `get_sop` -> `property-description` + `property-info` (medium confidence) |
+| **SOP Content** | Property description + amenities (no mosque info) |
+| **Escalation** | `nearby-mosque-request` (info_request) |
+| **Escalation Signals** | `local_recommendation` |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | MINOR ISSUE -- Same misroute as previous run. Should route to `local-recommendations` SOP (if one existed). Correctly escalated. English response. |
 
-### Turn 22 — WiFi Fixed, Thanks
+### Turn 17 -- Nearest Pharmacy
 | Field | Value |
 |-------|-------|
-| **Guest** | رجع الواي فاي الحمدلله. شكرا على المساعدة |
-| **AI** | `{"guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}` |
-| **Tool** | None |
-| **Manager** | Not needed |
-| **Verdict** | CRITICAL FAIL — Raw JSON with empty guest message. Should have acknowledged thanks warmly. Guest receives meaningless JSON instead of "you're welcome." |
+| **Guest** | وين اقرب صيدلية؟ |
+| **AI** | I'll check the nearest pharmacy and get back to you shortly. |
+| **Tool** | None (handled inline without SOP call) |
+| **Escalation** | `nearest-pharmacy-info-request` (info_request) |
+| **Escalation Signals** | `local_recommendation` |
+| **sopVariantStatus** | CHECKED_IN |
+| **Verdict** | PASS -- Correctly escalated. No SOP tool called (reasonable -- similar to previous mosque request, AI learned from context). English response. |
 
-### Turn 23 — Checkout Process
+### Turn 18 -- Stay Extension -- TIMEOUT (Rate Limited)
 | Field | Value |
 |-------|-------|
-| **Guest** | وش المطلوب يوم الخروج؟ في شي لازم اسويه؟ |
-| **AI** | Standard check-out is 11:00 AM. If you mean late checkout, we can only confirm it 2 days before your date since there may be guests checking in. |
-| **Tool** | `get_sop` -> `sop-late-checkout`, `pre-arrival-logistics` (low confidence) |
-| **Manager** | Not needed |
-| **Verdict** | FAIL — Guest asked about checkout PROCESS (what to do), not late checkout. AI misinterpreted and gave late checkout SOP. Should have provided checkout instructions or escalated. English response. |
+| **Guest** | ابغى امدد اقامتي يومين زيادة لين ٧ ابريل |
+| **AI** | (no response -- rate limited) |
+| **Tool** | `get_sop` -> `escalate` (high confidence) -- correctly identified as needing escalation |
+| **Error** | Rate limit: TPM 200000, Used 197821, Requested 2727 |
+| **Verdict** | PIPELINE FAIL -- Rate limiting with no retry. SOP routing was correct (`escalate`). Guest received no response. |
 
-### Turn 24 — Final Goodbye
-| Field | Value |
-|-------|-------|
-| **Guest** | تمام شكرا عمر، الله يعطيك العافية |
-| **AI** | `{"guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}` |
-| **Tool** | None |
-| **Manager** | Not needed |
-| **Verdict** | CRITICAL FAIL — Raw JSON with empty guest message for goodbye. Should have responded with a warm farewell. Fourth raw JSON leak. |
+---
+
+## Turns Not Completed (Due to Rate Limiting + Coordinator Stop)
+
+The following planned turns were not executed:
+- Late checkout request
+- WiFi down (rapid-fire, 3 messages)
+- Checkout process question
+- Final goodbye
 
 ---
 
 ## Systemic Issues
 
-### 1. CRITICAL: Raw JSON Leaking into Guest Responses (4 occurrences)
-**Turns 3, 18, 22, 24** — The AI output raw JSON objects as the guest-visible response instead of natural language. In Turns 22 and 24, the `guest_message` field was empty, meaning the guest saw literal JSON with no useful content. In Turn 18, two JSON objects were concatenated. This is a response-parsing bug in the AI pipeline where the model sometimes fails to produce a proper response and instead outputs the raw structured format.
+### 1. HIGH: Persistent Language Mismatch (17 of 17 turns in English)
+The guest communicated entirely in Arabic (Gulf dialect). The AI responded in English for ALL 17 turns. Zero Arabic responses. This is worse than the previous run (which had 4 Arabic responses). The system prompt does not appear to contain explicit language-mirroring instructions.
 
-**Impact:** HIGH — Guests receive unintelligible JSON. Completely breaks trust and professionalism.
+**Impact:** HIGH -- An Emirati guest on WhatsApp using Gulf Arabic expects Arabic responses. English feels impersonal and disconnected, especially for a hospitality product.
 
-### 2. HIGH: Persistent Language Mismatch (18 of 24 turns)
-The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Arabic only 4 times (Turns 1, 6, 9, 10) and in English the remaining 18 times (excluding the 4 raw JSON turns). The system prompt or language detection logic is not reliably mirroring the guest's language.
+### 2. MEDIUM: Rate Limiting with No Retry (3 occurrences)
+Turns 5 (first attempt), 12 (first attempt), and 18 all hit rate limits. The pipeline has no retry/backoff mechanism. When rate-limited, the response is silently dropped -- no AI message is created, no fallback, no notification to the guest.
 
-**Impact:** HIGH — An Emirati guest communicating in Arabic expects Arabic responses. English responses feel impersonal and corporate, especially for WhatsApp channel which is inherently casual.
+**Impact:** MEDIUM -- In production, this means guests occasionally receive no response at all. The debounce + rate limit combination creates silent message drops.
 
-### 3. MEDIUM: Missing SOP Categories
-- **Turn 18:** Stay extension routed to `pricing-negotiation` instead of `sop-booking-modification`
-- **Turn 15:** Mosque question routed to `property-description`/`property-info` instead of `local-recommendations`
-- **Turn 23:** Checkout process question routed to `sop-late-checkout` instead of a checkout-instructions SOP
+### 3. LOW: Doubled JSON Response (Turn 5 first attempt)
+The AI produced a response like `{valid JSON}{valid JSON}` (same content duplicated). The pipeline's JSON parser could not handle this and silently dropped the message. This occurred once and was not reproducible on retry.
 
-### 4. LOW: SOP Content Gaps
-- No room count/layout info in property data — had to escalate a basic question
-- No nearby mosque information
-- No checkout-day instructions SOP (what to do when leaving)
+**Impact:** LOW (rare) -- But when it occurs, the guest gets no response. The parser should handle this edge case by taking the first valid JSON object.
+
+### 4. LOW: Missing SOP Categories
+- **Turns 16-17:** Local recommendations (mosque, pharmacy) routed to `property-description`/`property-info` instead of a dedicated `local-recommendations` SOP
+- **Turn 18:** Stay extension routed to `escalate` (generic) rather than a specific `sop-booking-modification` category
 
 ---
 
@@ -270,10 +276,10 @@ The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Ar
 | Applied solo exception | PASS | Title: `eligible-lebanese-emirati-single` |
 | Document checklist | PASS | 1 passport, no marriage certificate |
 | Solo confirmation | PASS | Correctly registered solo traveler |
-| Visitor denial (friend) | PASS | "Non-family visitors not allowed" |
-| Pushback handling | PASS | Held firm on visitor policy |
+| Visitor denial (friend) | PASS | "Friends can't visit the apartment" |
+| Pushback handling | PASS | Held firm, escalated as `immediate` |
 
-**Screening Grade: A** — The Emirati solo exception was correctly identified and applied. The system correctly distinguished between the solo booking (accepted) and the visitor request (denied). Document checklist was appropriate.
+**Screening Grade: A** -- The Emirati solo exception was correctly identified and applied. Visitor policy correctly enforced (non-family denied, pushback escalated).
 
 ---
 
@@ -281,24 +287,21 @@ The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Ar
 
 | Turn | Escalation Title | Urgency | Correct? |
 |------|-----------------|---------|----------|
-| 2 | eligible-lebanese-emirati-single | manager | YES |
-| 3 | escalation-unknown-answer (room count) | manager | YES |
-| 4 | escalation-unknown-answer (pricing) | manager | YES |
-| 5 | awaiting-manager-review (discount) | manager | YES |
-| 7 | escalation-unknown-answer (directions) | manager | YES |
-| 8 | awaiting-manager-review (early check-in) | manager | YES |
-| 10 | visitor-policy-informed | manager | YES |
-| 11 | visitor-policy-informed | manager | YES |
-| 12 | escalation-unknown-answer (cleaning price) | manager | YES |
-| 13 | no-hot-water | immediate | YES |
-| 14 | guest-complaint-security-unhelpful | immediate | YES |
-| 15 | nearby-mosque-info-request | info_request | YES |
-| 16 | extra-blankets-availability-check | info_request | YES |
-| 19 | wifi-disconnection | immediate | YES |
-| 20 | wifi-still-down | immediate | YES |
-| 21 | wifi-outage | immediate | YES |
+| 2 | eligible-lebanese-emirati-single | info_request | YES |
+| 3 | escalation-unknown-answer (room layout) | info_request | YES |
+| 4 | awaiting-manager-review (pricing) | info_request | YES |
+| 5 | awaiting-manager-review (discount) | info_request | YES |
+| 6 | airport-transfer-directions | info_request | YES |
+| 8 | passport-document-review | info_request | YES |
+| 9 | wifi-and-door-code | immediate | YES |
+| 11 | extra-blankets-request | info_request | YES |
+| 13 | visitor-policy-pushback | immediate | YES |
+| 14 | bathroom-sink-water-leak | immediate | YES |
+| 15 | bathroom-sink-leak-security-issue | immediate | YES |
+| 16 | nearby-mosque-request | info_request | YES |
+| 17 | nearest-pharmacy-info-request | info_request | YES |
 
-**Escalation Grade: A** — All 16 escalations were appropriate. Urgency levels were correct (maintenance/wifi = immediate, info requests = info_request). Titles were descriptive and useful for the manager.
+**Escalation Grade: A** -- All 13 escalations were appropriate. Urgency levels correct: maintenance/wifi/pushback = `immediate`, info requests = `info_request`.
 
 ---
 
@@ -306,11 +309,10 @@ The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Ar
 
 | Test | Result |
 |------|--------|
-| WiFi password requested (INQUIRY) | WITHHELD |
-| Door code requested (INQUIRY) | WITHHELD |
-| WiFi credentials mentioned (CHECKED_IN) | NOT LEAKED |
+| WiFi + door code requested (CHECKED_IN) | Escalated (no codes in KB) |
+| No codes ever leaked | PASS |
 
-**Security Grade: A** — No access codes were ever exposed. INQUIRY-status guest was correctly told credentials would come after check-in.
+**Security Grade: A** -- No access codes were exposed. WiFi/door code request was correctly escalated because credentials are not in the property knowledge base. In the previous run's INQUIRY phase, codes were correctly withheld from non-booked guest.
 
 ---
 
@@ -318,44 +320,70 @@ The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Ar
 
 | Turn | Expected SOP | Actual SOP | Match? |
 |------|-------------|-----------|--------|
+| 3 | property-info | property-info | YES |
 | 4 | pricing-negotiation | pricing-negotiation | YES |
 | 5 | pricing-negotiation | pricing-negotiation | YES |
-| 7 | pre-arrival-logistics | pre-arrival-logistics | YES |
-| 8 | sop-early-checkin | sop-early-checkin | YES |
+| 6 | pre-arrival-logistics | pre-arrival-logistics | YES |
+| 7 | sop-early-checkin + pre-arrival-logistics | sop-early-checkin + pre-arrival-logistics | YES |
 | 9 | sop-wifi-doorcode | sop-wifi-doorcode | YES |
-| 10 | sop-visitor-policy | sop-visitor-policy | YES |
-| 11 | sop-visitor-policy | sop-visitor-policy | YES |
-| 12 | sop-cleaning | sop-cleaning | YES |
-| 13 | sop-maintenance | sop-maintenance | YES |
-| 14 | sop-complaint | sop-complaint | YES |
-| 15 | local-recommendations | property-description, property-info | NO |
-| 16 | sop-amenity-request | sop-amenity-request | YES |
-| 17 | sop-late-checkout | sop-late-checkout | YES |
-| 18 | sop-booking-modification | pricing-negotiation | NO |
-| 19 | sop-wifi-doorcode | sop-wifi-doorcode | YES |
-| 20 | sop-wifi-doorcode | sop-wifi-doorcode | YES |
-| 21 | sop-wifi-doorcode | sop-wifi-doorcode | YES |
-| 23 | checkout-instructions | sop-late-checkout | NO |
+| 10 | sop-cleaning | sop-cleaning | YES |
+| 11 | sop-amenity-request | sop-amenity-request | YES |
+| 12 | sop-visitor-policy | sop-visitor-policy | YES |
+| 13 | sop-visitor-policy + sop-complaint | sop-visitor-policy + sop-complaint | YES |
+| 14 | sop-maintenance | sop-maintenance | YES |
+| 15 | sop-complaint + sop-maintenance | sop-maintenance | PARTIAL |
+| 16 | local-recommendations | property-description + property-info | NO |
+| 17 | local-recommendations | (none -- handled inline) | N/A |
+| 18 | sop-booking-modification | escalate | PARTIAL |
 
-**SOP Routing Grade: B+** — 15/18 correct (83%). Three misroutes, two of which are due to missing SOP categories.
+**SOP Routing Grade: A-** -- 12/15 correct (80%). Two partial matches, one misroute (local recommendations SOP does not exist).
+
+---
+
+## SOP Variant Status Tracking
+
+| Phase | sopVariantStatus | System Prompt Persona | Correct? |
+|-------|-----------------|----------------------|----------|
+| INQUIRY (Turns 1-5) | INQUIRY | "Guest Screening Assistant" | YES |
+| CONFIRMED (Turns 6-8) | CONFIRMED | "Lead Guest Coordinator" | YES |
+| CHECKED_IN (Turns 9-18) | CHECKED_IN | "Lead Guest Coordinator" | YES |
+
+**Variant Switching Grade: A** -- Correctly switched system prompt between INQUIRY (screening) and CONFIRMED/CHECKED_IN (coordination).
+
+---
+
+## Comparison with Previous Run (Run 1)
+
+| Metric | Run 1 (24 turns) | Run 2 (17 turns) | Trend |
+|--------|-----------------|-----------------|-------|
+| Raw JSON leaks | 4 (17%) | 0 (0%) | IMPROVED |
+| English responses to Arabic | 18/24 (75%) | 17/17 (100%) | WORSE |
+| SOP routing accuracy | 83% | 80% | SAME |
+| Screening accuracy | A | A | SAME |
+| Escalation accuracy | A | A | SAME |
+| Pipeline failures | 0 | 3 (rate limits) | WORSE |
+| Doubled JSON | 0 | 1 | NEW BUG |
 
 ---
 
 ## Recommendations
 
-### P0 — Must Fix
-1. **Raw JSON response leak** — The response parser must guarantee a natural language string is always returned. When the model outputs structured JSON with an empty `guest_message`, the system should either retry or fall back to a default acknowledgment. This is the most critical UX bug found.
-2. **Language mirroring** — The AI must respond in the same language the guest uses. When conversation starts in Arabic, all responses should be Arabic unless the guest switches. Consider adding an explicit language detection step or instruction in the system prompt.
+### P0 -- Must Fix
+1. **Language mirroring** -- The AI must respond in the same language the guest uses. When the entire conversation is in Arabic, every response should be Arabic. This is worse than Run 1. Consider: (a) explicit system prompt instruction "Always respond in the guest's language", (b) language detection from first message, (c) hardcoded language field from reservation metadata.
 
-### P1 — Should Fix
-3. **Add `sop-booking-modification` routing** — Stay extension requests are currently misrouted to `pricing-negotiation`. The get_sop tool should have a dedicated booking modification category.
-4. **Add `local-recommendations` SOP routing** — Questions about nearby mosques, restaurants, etc. should route to a local recommendations category.
-5. **Add checkout instructions SOP** — Currently no SOP covers "what do I do when checking out." Should include: checkout time, key return, trash, leave apartment clean, etc.
+2. **Rate limit retry** -- The pipeline must implement retry with exponential backoff when OpenAI returns 429. Currently, rate-limited requests silently fail with no AI message created. Guest receives nothing. Minimum: 3 retries with 1s/2s/4s delays.
 
-### P2 — Nice to Have
-6. **Property data gaps** — Room count, floor, layout info should be in the property knowledge base to avoid unnecessary escalations.
-7. **SOP content for airport directions** — The pre-arrival-logistics SOP had useful compound entry info but the AI didn't relay it. Ensure the AI uses available SOP content before escalating.
-8. **Repeated escalation deduplication** — WiFi was escalated 3 times in rapid succession. Consider a deduplication window or "already escalated" indicator.
+### P1 -- Should Fix
+3. **Doubled JSON response handling** -- The response parser should handle `{...}{...}` by extracting the first valid JSON object. Currently it drops the entire message.
+
+4. **Add `local-recommendations` SOP** -- Questions about nearby mosques, pharmacies, restaurants, etc. currently misroute to `property-info`. A dedicated SOP would provide better content and routing.
+
+5. **Add `sop-booking-modification` routing** -- Stay extension and date change requests need a dedicated SOP category.
+
+### P2 -- Nice to Have
+6. **Property data gaps** -- Room count/layout, nearby landmarks, local services (mosque, pharmacy) should be in the knowledge base to reduce unnecessary escalations.
+
+7. **Escalation deduplication** -- Consider a window where if a similar escalation was already created recently, the AI updates it rather than creating a new one.
 
 ---
 
@@ -363,10 +391,13 @@ The guest communicated entirely in Arabic (Gulf dialect). The AI responded in Ar
 
 | Metric | Total | Average per Turn |
 |--------|-------|-----------------|
-| Input tokens | ~56,000 | ~2,333 |
-| Output tokens | ~7,400 | ~308 |
-| Avg response time | ~5,100ms | - |
-| Turns with tool use | 19/24 (79%) | - |
-| Turns with escalation | 16/24 (67%) | - |
-| Raw JSON leaks | 4/24 (17%) | - |
-| English responses to Arabic | 14/24 (58%) | - |
+| Input tokens | ~36,230 | ~2,131 |
+| Output tokens | ~5,870 | ~345 |
+| Avg response time | ~5,800ms | - |
+| Turns with tool use | 13/17 (76%) | - |
+| Turns with escalation | 13/17 (76%) | - |
+| Rate limit failures | 3/20 attempts (15%) | - |
+| Raw JSON leaks | 0/17 (0%) | - |
+| English responses to Arabic | 17/17 (100%) | - |
+| Cached input tokens | ~8,936 (~25%) | - |
+| Total cost (estimated) | ~$0.065 | ~$0.0038/turn |
