@@ -98,6 +98,7 @@ export async function deleteAllData(tenantId: string, prisma: PrismaClient): Pro
 
 export interface ImportOptions {
   listingsOnly?: boolean;
+  conversationsOnly?: boolean;
   preserveLearnedAnswers?: boolean;
   preservePropertyChunks?: boolean;
 }
@@ -116,6 +117,7 @@ export async function runImport(
     ? { listingsOnly: listingsOnlyOrOpts }
     : listingsOnlyOrOpts;
   const listingsOnly = opts.listingsOnly ?? false;
+  const conversationsOnly = opts.conversationsOnly ?? false;
   const report = (update: Parameters<ProgressFn>[0]) => {
     setProgress(tenantId, update as Parameters<typeof setProgress>[1]);
     onProgress?.(update);
@@ -158,17 +160,40 @@ export async function runImport(
     }
   }
 
-  // ── 0b. Delete existing data for clean slate ──────────────────────────────
-  report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
-  await deleteAllData(tenantId, prisma);
+  // ── 0b. Delete existing data for clean slate (skip for conversationsOnly) ──
+  if (!conversationsOnly) {
+    report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
+    await deleteAllData(tenantId, prisma);
+  } else {
+    // For conversations-only: delete conversations/messages but preserve properties, reservations, guests, and RAG
+    report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing conversations…' });
+    await prisma.pendingAiReply.deleteMany({ where: { tenantId } });
+    const msgIds = await prisma.message.findMany({ where: { tenantId }, select: { id: true } });
+    if (msgIds.length > 0) {
+      await prisma.messageRating.deleteMany({ where: { messageId: { in: msgIds.map(m => m.id) } } });
+    }
+    await prisma.message.deleteMany({ where: { tenantId } });
+    await prisma.task.deleteMany({ where: { tenantId } });
+    await prisma.conversation.deleteMany({ where: { tenantId } });
+  }
 
-  // ── 1. Import listings → properties ───────────────────────────────────────
+  // ── 1. Import listings → properties (skip for conversationsOnly) ──────────
+  let listingsToImport: any[];
+
+  if (conversationsOnly) {
+    console.log(`[Import] [${tenantId}] Conversations-only mode — skipping property sync.`);
+    const existingProperties = await prisma.property.findMany({
+      where: { tenantId },
+      select: { hostawayListingId: true },
+    });
+    listingsToImport = existingProperties.map(p => ({ id: Number(p.hostawayListingId) }));
+  } else {
   report({ phase: 'listings', message: 'Fetching properties from Hostaway…' });
   console.log(`[Import] [${tenantId}] Fetching listings...`);
   const listingsRes = await hostawayService.listListings(hostawayAccountId, hostawayApiKey);
   const listings = listingsRes.result || [];
 
-  const listingsToImport = listings;
+  listingsToImport = listings;
 
   for (const listing of listingsToImport) {
     const name = listing.internalListingName || listing.name || `Listing ${listing.id}`;
@@ -292,6 +317,8 @@ export async function runImport(
     }
     console.log(`[Import] [${tenantId}] Restored ${restored}/${savedChunks.length} preserved RAG chunks`);
   }
+
+  } // end of conversationsOnly else block (property sync)
 
   if (listingsOnly) {
     const now = new Date();

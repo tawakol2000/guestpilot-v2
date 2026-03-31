@@ -228,6 +228,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const syncBtnHover = useHover()
   const propBtnHover = useHover()
+  const convBtnHover = useHover()
 
   const isSyncing =
     !!progress &&
@@ -271,7 +272,7 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function runSync(listingsOnly: boolean, opts?: { preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean }): Promise<void> {
+  async function runSync(listingsOnly: boolean, opts?: { conversationsOnly?: boolean; preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean }): Promise<void> {
     setShowSyncModal(false)
     setProgress((prev) => ({
       phase: 'deleting',
@@ -373,6 +374,19 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
             {...propBtnHover.handlers}
           >
             Sync Properties Only
+          </button>
+          <button
+            style={{
+              ...btnGhost,
+              opacity: isSyncing ? 0.5 : 1,
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              background: !isSyncing && convBtnHover.hovered ? T.bg.secondary : 'transparent',
+            }}
+            disabled={isSyncing}
+            onClick={() => runSync(false, { conversationsOnly: true })}
+            {...convBtnHover.handlers}
+          >
+            Sync Conversations Only
           </button>
         </div>
       </div>

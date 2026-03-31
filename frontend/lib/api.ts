@@ -301,10 +301,11 @@ export interface ImportProgress {
   lastSyncedAt: string | null
 }
 
-export async function apiRunImport(opts: { listingsOnly?: boolean; preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean } | boolean = false): Promise<{ started: boolean }> {
+export async function apiRunImport(opts: { listingsOnly?: boolean; conversationsOnly?: boolean; preserveLearnedAnswers?: boolean; preservePropertyChunks?: boolean } | boolean = false): Promise<{ started: boolean }> {
   const o = typeof opts === 'boolean' ? { listingsOnly: opts } : opts
   const qs = new URLSearchParams()
   if (o.listingsOnly) qs.set('listingsOnly', 'true')
+  if (o.conversationsOnly) qs.set('conversationsOnly', 'true')
   if (o.preserveLearnedAnswers) qs.set('preserveLearnedAnswers', 'true')
   if (o.preservePropertyChunks) qs.set('preservePropertyChunks', 'true')
   const qsStr = qs.toString()
