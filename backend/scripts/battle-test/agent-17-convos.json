@@ -1,0 +1,65 @@
+[
+  {
+    "guestName": "Raham",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "مرحبا \nبدي استغسر هي شقه مناسبه لي لكن تاريخ من ٢٦/١٢ \nالى ١/١/٢٠٢٦ هل عندك هذي تواريخ لهذي الشقه",
+      "مساء الخير اجينا نحجز نكمل الحجز طلع ليه من تاريخ ٢٦/١٢ ل٣٠",
+      "انا عايزه من ٢٦/ ١٢ الى ١/١/٢٠٢٦",
+      "ممكن تعدل التاريخ لو سمحت",
+      "وعايزه استاذنك لو سمحت تشيك ان بدر لو على ساعه ١٢",
+      "وتشك اوت يكون متاخر على ٨ مساء",
+      "الو"
+    ]
+  },
+  {
+    "guestName": "Chandra Shekhar",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar, Coming back from sharm el shiekh visit around 8 pm today , 4 people indian , Me and my wife , my friend and his wife.",
+      "Please accept i will reach in 3 hrs",
+      "Yes",
+      "Just coming to sleep today",
+      "6 am i will checkout",
+      "Okay"
+    ]
+  },
+  {
+    "guestName": "Rawan Bakri",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar,\nMy name is Rawan Bakri and I’m from Saudi Arabia. I’m booking this apartment for my mother, Mona, and her sister, Sanaa. They visit Cairo often and truly love the city.\nWe chose your apartment because it’s in a safe area and close to many restaurants and malls, which makes it a perfect fit for them.\nThank you, and we look forward to staying at your place.",
+      "Okay no worries. \nNo need for early checkin they will be there at 3:00",
+      "Do you need their passports?",
+      "عمر انت حتستقبلهم؟ عشان ماما بتسال كيف حتدخل البيت هل الباب عليه قفل بالرقم و لا تقابلهم و تعطيهم المفاتيح",
+      "للاحتياط لو تبغا جوازاتهم",
+      "Hello Omar, \nMy mom texted you through WhatsApp and sent the passports.",
+      "Hello Omar, \nYes, please I want to do late check out after 11:00",
+      "How can I pay for it?",
+      "12:30",
+      "Oh, thanks a lot Omar I really appreciate it 🙏"
+    ]
+  },
+  {
+    "guestName": "Ridwan Alaoudi",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Alsalam alikom Mr Omar, I will be landing tomorrow early . Please let me know if I could do an early check in. It will be me alone this time and my cousin will follow in a few days . Thank you !!!",
+      "USA",
+      "I am on the plane and about to loose connection",
+      "He also has a USA passport",
+      "Please let me know if I could do early check in as I will land early tomorrow in Cairo",
+      "Message unsent",
+      "Message unsent",
+      "I am already in Cairo , just let me know when I can check in . I will be running some earrings until then. Thank you !",
+      "Hello Mr Omar , thank you",
+      "Please don’t let anyone enter the apartment when we are not there.",
+      "Great thank you . Though someone entered and left some towels the other day",
+      "Thank you"
+    ]
+  }
+]

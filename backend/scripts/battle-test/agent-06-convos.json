@@ -1,0 +1,48 @@
+[
+  {
+    "guestName": "Solaiman",
+    "status": "declined",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "I'll arrive at Cairo airport around",
+      "Nope",
+      "Send me your policy before confirming the stay please",
+      "A couple",
+      "Cancel please",
+      "😂😂 how funny"
+    ]
+  },
+  {
+    "guestName": "Omar",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم",
+      "السلام عليكم\nانا عايز احجز الشقه وانا أصلا موجود في نفس المكان في عمارة ١١ \n\nبس أنا حاخد تقريبا أسبوع من ٦ إلى ١٢",
+      "إذا ممكن خصم للحجز"
+    ]
+  },
+  {
+    "guestName": "فهد",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "مرحبا هل الاثاث جديد",
+      "الموقع عمر",
+      "اي دور"
+    ]
+  },
+  {
+    "guestName": "Jan Henen",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Thank you very much for your prompt reply. Looking forward to our stay.",
+      "Hi Omar, \nThank you for your message. Will be checking in after 10.30pm. \nWhere or how would you like me to send you the passport details?\nIn here through messages?",
+      "Hi Omar, hope all is well. \nCan I please check if this apartment has a balcony or not? Also, is there a safe deposit box? \n\nThank you.",
+      "Thank you for your prompt reply. \n\nThe balcony is not an issue at all. We just wanted to check. \n\nThe safe box, we're normally used to it, to leave our passports & electronic devices. Any of your other available apartments has one? I would be happy to check it out if possible. Thank you",
+      "https://www.airbnb.com.au/rooms/1581273976899961963?viralityEntryPoint=1&s=76\n\nDoes this one?",
+      "Changing to the other apartment. It looks like it is in a higher level. Still booking with you though. Thank you"
+    ]
+  }
+]

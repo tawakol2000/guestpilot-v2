@@ -1,0 +1,59 @@
+[
+  {
+    "guestName": "Yarub K",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "We are not single, we are a family of two.",
+      "My uncle lives in building 15. If you have something closer to building 15, we'd be better off going there.",
+      "Message unsent"
+    ]
+  },
+  {
+    "guestName": "Zeyad",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello , i am visiting for 2 days , new cairo",
+      "Hello , Egyptian\nMy Cousin",
+      "I should arrive around 3",
+      "Male",
+      "Both are males",
+      "Male yes",
+      "Sure np"
+    ]
+  },
+  {
+    "guestName": "Abdullah",
+    "status": "inquiryPreapproved",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم",
+      "مساء الخير",
+      "ماشاء الله شفت الشقه جميله بجد اذا فيه امكانية خصم عليها بكون شاكر لك حبيبي",
+      "اول مره احجز عندكم",
+      "صاحبي",
+      "عجيب والله",
+      "حنا لسى مسوين تشيك اوت ونبغى سكن وجايينك من السعوديه ياحبيبي",
+      "ايه والله مره وضعنا صعب",
+      "حبيبي الله يسعدك",
+      "اطلب حجز ؟",
+      "طيب حبيبي ممكن نسوي التشيك ان الأن ؟",
+      "لأنه والله لسى مسوين تشيك اوت ومش عارفين نعمل اي",
+      "بس اهم شي تكون غرفتين نوم وحمامين",
+      "ولو يكون فيه بلكونه اتز اوكي",
+      "حبيبي وش صار معاك",
+      "استاذ عمر"
+    ]
+  },
+  {
+    "guestName": "Sarra",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi \nI am just wondering if you provide us with 4 face and 4 bath towels",
+      "Also could you sent a clear photos for bedrooms",
+      "In the listing, it states that there is no heating? Can you elaborate?"
+    ]
+  }
+]

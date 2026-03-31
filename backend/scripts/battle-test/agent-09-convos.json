@@ -1,0 +1,90 @@
+[
+  {
+    "guestName": "Maram",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar, \nI hope you are doing well.\n\nI am interested in booking this apartment, as I will be staying with my husband for four nights. Could you please confirm whether the apartment is in the exact listed location, and whether cleaning service is included or available upon request? \n\nThank you!",
+      "Hi Omar",
+      "I guess twice for the full stay is okay with me (every two days)",
+      "Perfect",
+      "Okay let me double check on that with my partner I will confirm that upon arrival is that olay?"
+    ]
+  },
+  {
+    "guestName": "Reman Madhi",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Maybe y can refresh the availability from ur side",
+      "Still nothing",
+      "Still no",
+      "From 18th till 24th !",
+      "So can I book this one now ?",
+      "And gives me unavailability!!",
+      "Was it booked.?",
+      "I tried to finalize the booking but it didn’t work",
+      "Do u want me to make the reservation here via the app or directly in cash ?",
+      "The important is for the apartment to be here at the silver palm",
+      "My mom can’t use the elevator",
+      "But it’s okay I think we can manage",
+      "Done",
+      "Thank u very much",
+      "I would really appreciate if you can arrange an early check in for us",
+      "As said I hv a baby and we can’t stay waiting this much",
+      "We will check out around 11-12 from the current one and would like to go directly",
+      "Very well",
+      "Appreciated",
+      "Plz don’t forget the baby crib",
+      "Just put it in the biggest room that has an integrated bathroom",
+      "One question, check in instructions says that apartment is in the first floor, is it correct ! I remember u said it was at the third.. just double checking",
+      "Even better"
+    ]
+  },
+  {
+    "guestName": "Salah Iraqi",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "ممكن ادخل قبل الوقت بعد اذنك"
+    ]
+  },
+  {
+    "guestName": "Unknown",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello Omar, how are you? \nMe and my family are coming to wedding in Cairo and we want to rent the apartment?",
+      "السلام عليكم",
+      "Thank you Omar",
+      "هل هذا ممكن؟",
+      "بس الوالدة راح توصل القاهرة يوم ٥ هيا الي راح تستلم الشقة",
+      "أنا طلبت استاجر الشقة من يوم ٥ نوفمبر يعني تمديد يومين",
+      "كيفك اخوي عمر",
+      "؟؟",
+      "كنت باستفسر عندك شقة اكبر من الشقة هذي",
+      "ازيك يا عمر",
+      "السلام عليكم",
+      "بس كنت ابغا اشوف وحدة لعائلة ثانية",
+      "٦ كبار وطفلين",
+      "لو سمحت الشقة بتعتك في نفس الكمبوند بتاع سيلفر بالم",
+      "!",
+      "ابغا شقة غرفة وحدة او غرفتين في نفس الكامبوند",
+      "احتاجها شقة تانية من ٧-١١",
+      "تعبتك معايا",
+      "تسلم",
+      "تسلن",
+      "في شقة ٣ غرف",
+      "مافي شي ثاني ٣ غرف",
+      "شكرا ياعمر خلاص حجزتها",
+      "حجزتها بس لازم صاحبها يوافق",
+      "طيب ممكن أحجز أنا الغرفتين",
+      "شكرا",
+      "في رقم موبايل عشان اعطي والدتي تتواصل معاك يوم وصولها للقاهرة",
+      "اعتذر تعبتك معايا",
+      "Thank you so much Omar",
+      "Thank my sister will send it to you on her WhatsApp. She will check in with my mom",
+      "We did check out at 11"
+    ]
+  }
+]

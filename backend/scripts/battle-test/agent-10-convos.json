@@ -1,0 +1,77 @@
+[
+  {
+    "guestName": "Hauwa",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar, can i view this apartment before payment please? If we can arrange today if possible. I want to rent for a month or so",
+      "No, you can give me time to come?",
+      "11 pm right?",
+      "Can we make it earlier please?",
+      "Can we go now?",
+      "Nigerian",
+      "No",
+      "Okay",
+      "If i take uber now it will take 20 minutes",
+      "I will be on my way now",
+      "Almost there, i am 5mins away",
+      "I have seen her"
+    ]
+  },
+  {
+    "guestName": "Saif Bdeir",
+    "status": "modified",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "I made the reservation but i hope you can give me feedback on construction before the free cancellation date, march 25. Thank you.",
+      "No problem for certificate. We do not have American passports",
+      "Hi Omar. Is it possible to extend the free cancellation date. As you know travel plans these days are hard to confirm due to whats going on in the region. I would greatly appreciate it.",
+      "Can you give me an extra week please. By Monday 23rd.",
+      "Thank you",
+      "Sorry i miscalculated the dates its already set for march 25th. Can you make its march 28th please.",
+      "Thanks",
+      "Hi Omar",
+      "Will send you the passports today",
+      "Thanks Omar\nI want to just make sure that there will be enough clean towels for the showers and for hands. \nWe will need bedding that is suitable for the cold nights please. \nWell equipped clean kitchen \nNo construction happening in the building",
+      "Hi Omar actually im arriving at 6am",
+      "If at all possible to accomodate me early that would be great",
+      "No worries",
+      "Alteration request received",
+      "Do you have an iron and ironnign board?",
+      "?",
+      "Hi trying to get into the apt. Gate says they dont have my info yet",
+      "Also i dont see the entry code"
+    ]
+  },
+  {
+    "guestName": "Waleed",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "كيفك استاذ عمر \nهل يوجد خصم اضافي",
+      "نعم",
+      "كم غرفه",
+      "سويلي خصم طيب",
+      "غرفة المربية مكيف ولا مروحة",
+      "هل يوجد شقة 4 غرف",
+      "السرير الاضافي بيكون مريح ؟"
+    ]
+  },
+  {
+    "guestName": "Weham Alsalamah",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omer,\nWe’re visiting Egypt for the first time 🥰 and we’d love to stay at your place.",
+      "Just to let you know, there are four of us.\nThree girls will arrive earlier, and the last one will join us around January 5 or 6.",
+      "Hi omar \nYes thank you everything is good",
+      "Please my hairstylist is coming I need your permission to let him in only for one hour",
+      "As all salons are already closed early due the Christmas as they said",
+      "He already outside waiting for your permission",
+      "Hello Omar\nPlease I need late check out from 11 to 1 pm",
+      "How do I pay the extra cost",
+      "Where i can find the request",
+      "Already Done ✔️"
+    ]
+  }
+]

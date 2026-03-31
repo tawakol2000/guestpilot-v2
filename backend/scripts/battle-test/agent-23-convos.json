@@ -1,0 +1,48 @@
+[
+  {
+    "guestName": "Mahmod",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "can I have earlycheck-in",
+      "11 am",
+      "Alone, Canadian Libyan",
+      "Both"
+    ]
+  },
+  {
+    "guestName": "Ahmed",
+    "status": "expired",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "This flat in Sodic?",
+      "Good evening \nThis flat where exactly?",
+      "Good afternoon",
+      "Family 2 adult and my daughter",
+      "Am Egyptian"
+    ]
+  },
+  {
+    "guestName": "Abdullrhman",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم .. حاب احجز من تاريخ ٥ يناير لين ١٧ يناير ، \nاحنا ٣ بنات و ٣ شباب ، هل فيه امكانيه للخصم ؟",
+      "اي اصدقاء",
+      "ايوا ٣ بنات و٣ عيال بس امورنا تمام",
+      "ماعندنا ازعاج ولا شي مجرد سكن ننام فيه و نكون متواجدين",
+      "و احنا من اهل السعودية جدة",
+      "ممكن جواب عشان احجز"
+    ]
+  },
+  {
+    "guestName": "Mohammed Jasser",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi omar vacation trip",
+      "شكرا لك",
+      "شكرا لكم \nتجربة اكررها تم تسجيل الخروج"
+    ]
+  }
+]

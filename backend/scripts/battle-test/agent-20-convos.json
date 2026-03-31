@@ -1,0 +1,58 @@
+[
+  {
+    "guestName": "Mazen",
+    "status": "declined",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar, I hope you’re doing well. \nI wanted to let you know that my flight arrives at Cairo Airport at 8:05 AM. \n\nBy the time I collect my luggage and exit the airport, I expect to be out around 9:00 AM. \n\nWould it be possible to arrange an early check-in around 9:30 or 10:00 AM? I would really appreciate it. \n\nThank you in advance for your kind support.",
+      "Hi Omar, I hope you’re doing well. I wanted to let you know that my flight arrives at Cairo Airport at 8:05 AM. By the time I collect my luggage and exit the airport, I expect to be out around 9:00 AM. \n\nWould it be possible to arrange an early check-in around 9:30 or 10:00 AM? I would really appreciate it. \n\nThank you in advance for your kind support.",
+      "Hallo Mr.Omar",
+      "The other guest is my little brother",
+      "Im from Saudi Arabia",
+      "Is only me and my little brother hatem",
+      "We are family",
+      "Same last name",
+      "And I was studying my bachelor degree in USA as well as I study my master in UK all my life been outward Saudi Arabia",
+      "I do not have another nationality because the Saudi citizenship does not allow dual nationality or holding another citizenship.”",
+      "Please check the compound and let me know if they allow us to come, because the flight is in two days, and we barely have time to make it. \nSo, please get back to me as soon as possible.",
+      "When I tried to book through Airbnb, I didn’t realize the booking wasn’t direct and that the host had to accept it. \n\nSo now, you’re telling me to check if my younger brother and I can stay, by verifying the compound rules.\n\n I really need to confirm my booking as soon as possible because good accommodations might get fully booked quickly. \nPlease let me know right away. \n\nASAP Plz"
+    ]
+  },
+  {
+    "guestName": "Lily",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "你好，请问介意混合团体入住吗？",
+      "Message unsent",
+      "好的，那我需要取消预订了，打扰了"
+    ]
+  },
+  {
+    "guestName": "Ali",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "صباح الفل استاذ عمر\nكيف حالكم\nالشقة في اي دور؟\nواي عمارة",
+      "وهل هي مطلة عالحديقة؟",
+      "انتظرردكم وشكر لكم"
+    ]
+  },
+  {
+    "guestName": "Rima Begum",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello, looking forward to our trip to Cairo with my family!",
+      "Hello, looking forward to our stay next. Do you know or recommend any tour guides and drivers?",
+      "Thank you, what about any apps to book taxis which are safe and reliable?",
+      "Thank you!",
+      "Hello just to let you know we will landing at 9pm so should get to the Airbnb for 10pm",
+      "Is there anything that we need to do?",
+      "Thank you, I will send passport copies",
+      "Hello thank you for accommodating it was a great stay. I wanted to ask if by any chance a digital camera was left at the apartment?",
+      "I’m not but we can’t find it so I thought I’ll check if we left it at the apartment",
+      "Thank you for checking we have maybe left it somewhere else"
+    ]
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "guestName": "Faisal Alotaibi",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar\nMy friend and I will travel to Cairo searching for a two-bedrooms apartment for rent in a luxury residential complex.",
+      "Is the compound named Silver Palm?",
+      "👍",
+      "Hello Omar, \nWe expect to arrive at the apartment between 1:00 PM and 2:00 PM. We would appreciate an early check-in. \nThank you",
+      "Hello Omar\nEverything is fine, and I appreciate your kind words and nice service.",
+      "Hello Omar, \nWe will be leaving the apartment at 10 AM. I will turn off the lights and the air conditioning. Thank you for your hospitality and service."
+    ]
+  },
+  {
+    "guestName": "Salah",
+    "status": "inquiryPreapproved",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "سلام عليكم \nصباح الخير استاذ عمر انا حاخذ الشقة دي من اليوم الى الخميس \nبعدين في شقة حتفضى عندكم من يوم الخميس عاوزه اخذها الى السبت عاوز احجزها عل ادفع الاتنين او ممكن تقفلي هيا واعطيك هيا كاش بحيث ينقص السعر بدال ما ياخذو 5 في٪؜",
+      "https://www.airbnb.com/l/ZpUsTuz4",
+      "طيب ولا يهمك",
+      "طيب هل في امكانية للتخفيض",
+      "اوكي انا اعتذر ممكن عشان نفس الديزاين قلت ممكن تبعك",
+      "طيب عادي ولا يهمك الشقة تبع حضرتك ممكن اخذها من اليوم الى السبت بس لو تخفضلي فيها لو قدرت 🙏🏻"
+    ]
+  },
+  {
+    "guestName": "Mohamed Bin Ismaeil",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم .. اريد حجز الشقة للعائله نرجو منك قبول الطلب وشكرا",
+      "استفسار بخصوص الغرفة الفرديه موجود بيه تكيف ؟غير واضح في الصور",
+      "تمام بارك الله فيك \nهدا رقمي ع الوتساب +218913532882"
+    ]
+  },
+  {
+    "guestName": "Mashael",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم",
+      "احتاج شقة 5 اشخاص من تاريخ 20 الى 28 نوفمبر 3 غرف",
+      "متوفره شقق لديك",
+      "احتاج 3 غرف من تاريخ 20 الى 28 نوفمبر",
+      "?",
+      "من 20 الى 28",
+      "بكم",
+      "مو متوفر حاطين",
+      "غير متاح بالتواريخ",
+      "عمارة كم",
+      "تعملي خصم",
+      "كيف اعمل طلب"
+    ]
+  }
+]

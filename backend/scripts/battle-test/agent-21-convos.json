@@ -1,0 +1,60 @@
+[
+  {
+    "guestName": "Abdulrahman",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "استاذ كيف الحال كرما احتاج السعر ينزل شوي حاب اجرب معاكم",
+      "محتاج ردك استاذ عمر عشان اقرر",
+      "صعب يعني",
+      "صديق 😂",
+      "نعم كنت في البزنس باي",
+      "وادرس بمكتبة سنقلتون",
+      "متخرج Human Resources Management Master Degree",
+      "ماشاءالله",
+      "انا 2019",
+      "دام كذا بينا جامعة وسوانزي رتب لي شي وضروري اشوفك",
+      "اتشرف والله 😂"
+    ]
+  },
+  {
+    "guestName": "Tam Chaison",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello there. I’m traveling to Cairo for my birthday and I loved the reviews of your property. Very modern, clean and safe. It appears that there is quite a bit to do in the area and not too far from the airport and attractions.",
+      "Good Morning Omar!!! Here are copies of our passports",
+      "Also, is it possible to get an early check in?",
+      "Ohhh ok. Thank you",
+      "Is it possible to do a late check out for 1:00 pm?"
+    ]
+  },
+  {
+    "guestName": "Özcan Turan",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello, I am on a business trip. Will drive to Cairo from Alexandria tomorrow. I used Airbnb in my trips to Europe, but always stayed in hotels in Egypt. I would like to experience Airbnb in Egypt.",
+      "Thank you very much, so far all is fine and comfortable. I may only need and request late check out on Feb 12th. My flight is after midnigth and if possible I may request to leave flat around 10:00-11:00 PM instead of 11:00 AM.",
+      "What is the latest time for free late check out time?",
+      "How can I pay half night price (as your proposal) for checkout around 10:00 PM? As per my calculation half night price is 48 USD, kindly confirm.",
+      "Dear Omar, I will check out at 11:30, FYI.",
+      "I already checked out at normal time",
+      "No need for late check out",
+      "Hello Omar, overall it was nice staying for me and 4 star out of 5 is quite high ranking at my end. I would prefer to watch tv by laying down on sofa but your design was not so comfortable for that. I wish to have dish washer and if Washing machine would have drying cabability my ranking would be 5 star. \nThese are small details that will ensure perfection, but as I said, overall I'm satisfied."
+    ]
+  },
+  {
+    "guestName": "Unknown",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "مرحبا عمر ، هل العقار في السيلفر بلم ؟",
+      "خلاص حجزت عندك بمشيئة الله 🌹",
+      "اي والله واتشرف بس بشوف كذا خيار عزيزي عمر وبرجع اتواصل معك بمشيئة الله",
+      "يا مرحبا ، الوصول للقاهرة بيكون تقريباً الساعه ١ والنصف ظهراً تعرف على بال ما نخلص اجراءات المطار فممكن من 2-3 مساءً بمشيئة الله",
+      "التقيك يوم السبت",
+      "عمر كيفك؟ \nللاسف الشقه ماكانت نظيفه حتى بعد ما خلصوا التنظيف \nوقمنا بتنظيفها \nطلبت المدام من الصانعه الي كانت موجوده فُرش + تغيير المكنسة لان الفلتر ماهو فيه"
+    ]
+  }
+]

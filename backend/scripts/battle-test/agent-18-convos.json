@@ -1,0 +1,73 @@
+[
+  {
+    "guestName": "Jamal Al-Barghuthi",
+    "status": "modified",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar, I am coming for an engagement with my wife and my mom. Read some great reviews. Hoping for the same. See you soon.",
+      "Hi Omar, we will be arriving a bit late on the 11th of Dec. I will be sharing the passports of all the guests a few days before travel",
+      "I tried sending you a msg",
+      "On WhatsApp did you get it ?",
+      "The flight lands at 11:00 pm Egypt time",
+      "We will be a total of 5 people",
+      "My wife, mom, sister, brother and myself",
+      "Will send you my brother and sisters passports tomorrow",
+      "Omar",
+      "I am at the apartment and it is not working",
+      "Both",
+      "The message you sent me says 303",
+      "Please let me know which one should I go to",
+      "I am waiting for the past 40 min",
+      "I need help please",
+      "I tried the same on 303 as well as 203",
+      "It doesn’t work",
+      "Hi Omar, good morning",
+      "Call me when you can please",
+      "Sorry we went out can they leave them on the door",
+      "We had an appointment to meet",
+      "We checked out an hour ago",
+      "Around an hour ago",
+      "Hi Omar do you have the security number for the compound",
+      "The driver forgot his license",
+      "We just want to confirm that’s it’s with them"
+    ]
+  },
+  {
+    "guestName": "Unknown",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Tomorrow around 3-4 pm",
+      "Hi omar , \nI will come with my family for a holiday .\nThanks",
+      "Ok thanks"
+    ]
+  },
+  {
+    "guestName": "Ali",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم \nاحتاج احجز من يوم ١٧الى ٢٠ /٩\nشخصين عندنا عمل في القاهره لايوجد لدينا ضيوف او امور خارجه عن القانون او شراب او غيره",
+      "شايف عندك اكثر من شقه في نفس الكمبواند",
+      "هل يوجد اي رسوم اخرى هل يتم تغير الملايات والمناشف بشكل يومي ام هناك رسوم إضافية",
+      "وايش افضل شقه عندك في نفس الكمباوند",
+      "تكون نظيفه مافيها اي ريحه كريهه في الاثاث",
+      "مايكون فيه أعمال في العماره او قريبه منها",
+      "كم مبلغ التنظيف ويكون شامل تغير الملايات والمناشف ونظافه الحمامات \n\nReply to: هل يوجد اي رسوم اخرى هل يتم تغير الملايات والمن...",
+      "رابطها إذا تكرمت \n\nReply to: وايش افضل شقه عندك في نفس الكمباوند",
+      "شامل التنظيف والتغير \n\nReply to: هل يوجد اي رسوم اخرى هل يتم تغير الملايات والمن...",
+      "لايوجد امكانيه من يوم ١٧",
+      "فيها امكانيه وله محجوزه"
+    ]
+  },
+  {
+    "guestName": "Hamod Aldban",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi",
+      "We are just 2 friends",
+      "حنا اثنين شباب أصحاب عادي"
+    ]
+  }
+]

@@ -1,0 +1,69 @@
+[
+  {
+    "guestName": "Abdulaziz Al-Sayyahi",
+    "status": "cancelled",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi OMAR, we would love to stay in your place",
+      "Hi",
+      "Good morning Omar",
+      "I want to ask you about the reservation",
+      "Is it refundable?"
+    ]
+  },
+  {
+    "guestName": "معاذ سعد",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "مرحبا.. سنصل للموقع عند الساعة 1 ظهراً تقريباً",
+      "مرحبا",
+      "نحتاج تنظيف للمكان",
+      "مرحبا عمر.. ايش المبلغ المطلوب دفعه؟",
+      "ما بلغتني ان الخدمة برسوم..",
+      "تسلم..",
+      "مرحبا عمر..",
+      "مطلوب دفع رسوم ايش؟",
+      "ماالغيت.. جاتني ايملات جديدة"
+    ]
+  },
+  {
+    "guestName": "Mohammad Albaghli",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Done! :) I hope you are having a wonderful night.",
+      "Will send them on Sunday when we have access to a scanner.",
+      "I completely forgot I'm so sorry. But here they are\n Looking forward to the trip!",
+      "Hi! The passports should be in the chat above your message.",
+      "We checked in and everything is well. Thank you!",
+      "Good morning! The apartment is fantastic and we had a great rest last night!\n\nMy sister was wondering if there's a hairdryer in the apartment? We were not able to locate one. If there's none that's fine too.",
+      "Awesome thank you.",
+      "Received it thank you!",
+      "We had a great time staying here, it was very convenient.\n\nThe apartment is so spacious and cozy. If you'd allow us to have some comment, there is a water leakage across the bathroom especially with the the showerhead and the tub, which leads to slippery puddles inside the bathroom. It didn't take away a lot from the experience though.\n\nWe left the apartment around 530pm today! My uncle and his wife are visiting Egypt this month. Does the Bouqitue happen to have a one bedroom apartment? If so would you kindly send us a link. \n\nThank you for your hospitality and cooperation. We had a great time here!",
+      "I'll show my family this! Have a good night. Thank you again and will definitely revisit/tell our family members about this.",
+      "Hey Omar! \n\nHave we left a leather jacket at the place? My dad just unpacked and we are missing it.\n\nIf you would kindly have a look and let us know!"
+    ]
+  },
+  {
+    "guestName": "Unknown",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Sure",
+      "Hi Omar",
+      "What’s the password for the door",
+      "hi",
+      "Is there hot water for shower",
+      "Thank you",
+      "Hi",
+      "Emmm",
+      "I tried the shower in the main bedroom. It’s cold",
+      "How to turn it on?",
+      "Is there hot shower in all rooms or only one room?",
+      "I waited",
+      "Really",
+      "Sure. Done"
+    ]
+  }
+]

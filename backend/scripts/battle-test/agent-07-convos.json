@@ -1,0 +1,75 @@
+[
+  {
+    "guestName": "Asel Naili",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi Omar,\nThanks for everything. I really liked the apartment and had a great stay.",
+      "Thank u sir"
+    ]
+  },
+  {
+    "guestName": "Mohamed Sahed",
+    "status": "modified",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hello Omar, \nI hope you’re doing well.\nMy colleague and I have already booked your place for our business trip to Cairo and it was perfect. \nwe want to do another reservation for the next 2 weeks \n\nCan you please confirm that the appartment is available \nRegards,",
+      "Hello\nMy passport",
+      "Tissue and napkins please",
+      "Keep them with decurity",
+      "Hi omar, where is the tumber dryer?",
+      "Pkease put it beside the door or inside",
+      "I checked no it is not available",
+      "I checked it no place on the wall",
+      "Please",
+      "Man open and put it beside the door",
+      "U have the code",
+      "😄",
+      "Or put it outside beside the door",
+      "Thanks Omar !",
+      "Hello \nCan we have cleaning service tomorrow morning please? After 10am ?",
+      "Yes after 10am",
+      "Ok perfect thanks !",
+      "Yes please",
+      "Hello Omar you didn't do cleaning",
+      "Can you please do it tomorrow morning \nThanks",
+      "Hello Omar I think there is an issue with payment of cleaning \nAirbnb are asking for payment and I am sure I did it last time \nCan you please check ?",
+      "I ordered only 1 but it wasn't done then you did it the next day",
+      "So only 1",
+      "hi Omar, do you have 3 bedrooms apartment for 01/02/2026 till 06/02/2026 ?",
+      "i asked the team to reserve this one https://www.airbnb.com/rooms/1455828160010498804?adults=3&check_in=2026-02-01&check_out=2026-02-06&search_mode=regular_search&source_impression_id=p3_1769687396_P3Q1h-1c0RqGRMGh&previous_page_section_name=1000&federated_search_id=59ce8ec8-a8ab-4285-ba17-8326ec5cb51c",
+      "do you have 1 bedroom from 2 to 4 feb?"
+    ]
+  },
+  {
+    "guestName": "Mohammed",
+    "status": "inquiry",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "السلام عليكم .. هل متواجد لديك شقه في سلفر بلم من تاريخ 21/11-28/11",
+      "اهلا عمر",
+      "https://www.airbnb.com/l/TaPMpSvk",
+      "عندك نفس هذي",
+      "اللي انت ارسلتها بالارضي و هل فيها اطلاله على الحديقةمع جلستها\n\nReply to: https://www.airbnb.com/l/YTPK7K2h",
+      "اهلا عمر",
+      "هذي بنفس مبنى سلفر بالم داخل الكمباوند",
+      "انا ارسلت لك حاجه عندك نفسها",
+      "ايوه عايز نفس هذي بنفس التاريخ",
+      "21-28",
+      "7ليالي",
+      "تقدر تشوف لي بالدور الارضي",
+      "ايوه اعتقد اخوي زيد هو اللي حاجزها\n\nReply to: https://www.airbnb.com/rooms/145582811907609663...",
+      "اللي ارسلتها بكم"
+    ]
+  },
+  {
+    "guestName": "Nada Wagih",
+    "status": "new",
+    "channel": "airbnbOfficial",
+    "messages": [
+      "Hi",
+      "This also the request is pending",
+      "Hi Omar \nWe are checking out on the 29th inshaallah, But I will need late check out until 4pm pls as our flight at 7"
+    ]
+  }
+]
