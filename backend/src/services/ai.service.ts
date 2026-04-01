@@ -621,7 +621,22 @@ function stripCodeFences(text: string): string {
     if (firstNewline !== -1) s = s.substring(firstNewline + 1);
   }
   if (s.endsWith('```')) s = s.substring(0, s.length - 3);
-  return s.trim();
+  s = s.trim();
+  // Fix concatenated JSON objects: {}{}{real} → extract the last complete object
+  if (s.includes('}{')) {
+    const parts = s.split(/\}\s*\{/).map((p, i, arr) =>
+      (i === 0 ? p + '}' : i === arr.length - 1 ? '{' + p : '{' + p + '}')
+    );
+    // Use the last non-empty-response object, or the last one overall
+    for (let i = parts.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(parts[i]);
+        const msg = parsed.guest_message || parsed['guest message'] || '';
+        if (msg || i === 0) return parts[i];
+      } catch { continue; }
+    }
+  }
+  return s;
 }
 
 // ─── System Prompts ────────────────────────────────────────
@@ -791,8 +806,8 @@ If any guest is Arab → Arab rules apply to entire party.
 7. Otherwise, answer the guest's basic question briefly.
 8. When escalating with an acceptance recommendation, also call create_document_checklist:
    - All guests need passports/IDs (one per person in the party — use guest count)
-   - For Arab married couples, you MUST ALWAYS set marriage_certificate_needed to true — this is a mandatory compliance requirement, no exceptions
-   - For all other guests (non-Arab, or Arab but unmarried), set marriage_certificate_needed to false
+   - For Arab married couples AND Arab families (couples with children), you MUST ALWAYS set marriage_certificate_needed to true — this is a mandatory compliance requirement, no exceptions. A family with children IS a married couple.
+   - For all other guests (non-Arab, or Arab but unmarried/solo), set marriage_certificate_needed to false
    - Do NOT call this tool when recommending rejection
 
 # Tools
@@ -1517,16 +1532,8 @@ export async function generateAndSendAiReply(
 
           const cats = typedInput.categories.filter(c => c !== 'none' && c !== 'escalate');
 
-          // Handle escalation category
-          if (typedInput.categories.includes('escalate')) {
-            try {
-              await handleEscalation(prisma, tenantId, conversationId, context.propertyId,
-                'sop-tool-escalation', `AI classified as escalate: ${typedInput.reasoning}`,
-                'immediate');
-            } catch (err) {
-              console.warn(`[AI] Escalation task creation failed (non-fatal):`, err);
-            }
-          }
+          // Escalation is handled by the AI's own response JSON (escalation field) — no auto-task here.
+          // The AI already creates escalations with proper titles, notes, and urgency levels.
 
           // Fetch and return SOP content
           if (cats.length === 0) return JSON.stringify({ category: 'none', content: '' });

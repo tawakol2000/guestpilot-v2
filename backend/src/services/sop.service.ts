@@ -474,6 +474,8 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'property-info': `PROPERTY INFO: Guest is asking about the property — bedrooms, bathrooms, floor level, parking, pool, security, neighborhood, compound, or general property details. Answer from the property description below and the available amenities. If the information is not in your knowledge, say you'll check and escalate as info_request.
 
+If the guest asks for an amenity or feature this property does NOT have (e.g. sea view, jacuzzi, sauna), call search_available_properties to check if another property matches their request. Present any results to the guest as alternatives.
+
 {PROPERTY_DESCRIPTION}
 
 ## AVAILABLE AMENITIES
