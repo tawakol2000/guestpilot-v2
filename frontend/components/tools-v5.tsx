@@ -422,7 +422,7 @@ function ToolCard({ tool, index, onUpdate, onDelete }: {
                     if (cleaned.length === 0) return // can't have zero statuses
                     const newScope = cleaned.join(',')
                     setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: newScope } : t))
-                    try { await apiUpdateTool(tool.id, { agentScope: newScope } as any) } catch { setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: tool.agentScope } : t)) }
+                    try { await apiUpdateTool(tool.id, { agentScope: newScope }) } catch { setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: tool.agentScope } : t)) }
                   }}
                   style={{
                     fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,

@@ -1035,7 +1035,7 @@ export async function apiGetTools(): Promise<ApiToolDefinition[]> {
   return apiFetch<ApiToolDefinition[]>('/api/tools')
 }
 
-export async function apiUpdateTool(id: string, data: Partial<Pick<ApiToolDefinition, 'description' | 'enabled' | 'webhookUrl' | 'displayName'>>): Promise<ApiToolDefinition> {
+export async function apiUpdateTool(id: string, data: Partial<Pick<ApiToolDefinition, 'description' | 'enabled' | 'webhookUrl' | 'displayName' | 'agentScope'>>): Promise<ApiToolDefinition> {
   return apiFetch<ApiToolDefinition>(`/api/tools/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 

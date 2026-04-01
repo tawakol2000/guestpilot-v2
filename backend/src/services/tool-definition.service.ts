@@ -133,7 +133,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['amenities', 'reason', 'min_capacity'],
       additionalProperties: false,
     },
-    agentScope: 'INQUIRY,PENDING',
+    agentScope: 'INQUIRY,PENDING,CONFIRMED,CHECKED_IN',
   },
   {
     name: 'create_document_checklist',
