@@ -98,9 +98,16 @@ export function makeConversationsController(prisma: PrismaClient) {
           if (bestLog && bestDiff < 60000) { // within 60 seconds
             const rc = bestLog.ragContext as any;
             if (rc) {
+              // Collect all tool names from the AI call
+              const toolNames: string[] = [];
+              if (rc.allToolCalls && Array.isArray(rc.allToolCalls)) {
+                for (const tc of rc.allToolCalls) if (tc.name) toolNames.push(tc.name);
+              } else if (rc.toolName) {
+                toolNames.push(rc.toolName);
+              }
               aiMetaMap.set(aiMsg.id, {
                 sopCategories: rc.sopCategories || rc.classifierLabels || undefined,
-                toolName: rc.toolName || undefined,
+                toolName: toolNames.length > 0 ? toolNames.join(', ') : undefined,
               });
             }
           }

@@ -1021,9 +1021,28 @@ function buildPropertyInfo(
     accessConnectivity = parts.join('\n');
   }
 
+  // Build property details from structured fields (customKnowledgeBase has the data)
+  const propDetails: string[] = [];
+  if (listing.address) propDetails.push(`Address: ${listing.address}`);
+  const kb = customKnowledgeBase || {};
+  const capacity = (kb.personCapacity as number) || listing.personCapacity;
+  const bedrooms = (kb.bedroomsNumber as number) || listing.bedroomsNumber;
+  const bathrooms = (kb.bathroomsNumber as number) || listing.bathroomsNumber;
+  const roomType = (kb.roomType as string) || listing.roomType;
+  if (capacity) propDetails.push(`Capacity: ${capacity} guests`);
+  if (bedrooms) propDetails.push(`Bedrooms: ${bedrooms}`);
+  if (bathrooms) propDetails.push(`Bathrooms: ${bathrooms}`);
+  if (roomType) propDetails.push(`Type: ${roomType.replace(/_/g, ' ')}`);
+  if (kb.bedTypes) propDetails.push(`Beds: ${kb.bedTypes}`);
+  if (kb.squareMeters) propDetails.push(`Size: ${kb.squareMeters} sqm`);
+  if (kb.cleaningFee) propDetails.push(`Cleaning fee: $${kb.cleaningFee}`);
+  if (kb.checkInTime) propDetails.push(`Check-in: ${kb.checkInTime}`);
+  if (kb.checkOutTime) propDetails.push(`Check-out: ${kb.checkOutTime}`);
+
   // Use summarized description if available, fall back to listingDescription
-  const propertyDescription = (customKnowledgeBase?.summarizedDescription as string)
+  const descriptionText = (customKnowledgeBase?.summarizedDescription as string)
     || listingDescription || '';
+  const propertyDescription = (propDetails.length > 0 ? propDetails.join('\n') + '\n\n' : '') + descriptionText;
 
   return { reservationDetails, accessConnectivity, propertyDescription };
 }
