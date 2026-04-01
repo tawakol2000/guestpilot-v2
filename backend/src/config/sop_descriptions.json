@@ -6,9 +6,6 @@
       "descriptions": {
         "en": [
           "Financial transaction failures and billing disputes where the credit card was declined, the online payment link timed out, or the bank transfer never arrived. Guests report being double-charged, seeing unauthorized holds on their statement, or waiting for a pending refund that has not cleared. Typical triggers: \"my card got declined\", \"you charged me twice\", \"the payment link is broken\", \"where is my refund\", \"I need an invoice for tax purposes\"."
-        ],
-        "ar": [
-          "إخفاقات المعاملات المالية ونزاعات الفواتير حيث رُفضت البطاقة الائتمانية أو انتهت مهلة رابط الدفع الإلكتروني أو لم يصل التحويل البنكي. يبلّغ النزلاء عن خصم مزدوج أو حجوزات مالية غير مصرّح بها في كشف حسابهم أو انتظار استرداد معلّق لم يُنجز بعد. محفّزات نموذجية: \"بطاقتي انرفضت\"، \"خصمتوا عليّ مرتين\"، \"رابط الدفع ما يشتغل\"، \"وين المبلغ المسترد\"، \"أحتاج فاتورة ضريبية\"."
         ]
       }
     },
@@ -19,11 +16,6 @@
           "After departure, a former occupant realizes they left personal belongings behind — a phone charger plugged into the bedroom wall, a laptop on the desk, clothing in the wardrobe, or groceries still in the refrigerator. They urgently ask someone to check the unit and arrange courier shipping or a pickup time. Typical triggers: \"I forgot my charger\", \"we left a suitcase behind\", \"can someone look for my passport\", \"there's food in the fridge we need back\".",
           "Once the stay has ended, a former occupant disputes the security deposit deduction or questions a surprise charge that appeared on their credit card statement days after departure. They challenge a damage claim, demand proof of the alleged damage, or ask when the held deposit funds will be released. Typical triggers: \"when do I get my deposit back\", \"why was I charged extra after leaving\", \"I dispute the damage fee\", \"show me photos of the supposed damage\".",
           "A former occupant contacts the host after their trip to share retrospective feedback, express lingering dissatisfaction about their overall experience, or discuss the review they intend to publish. They reflect on accumulated issues from their stay and seek acknowledgment or a goodwill gesture now that they have departed. Typical triggers: \"I want to give formal feedback about my stay\", \"the experience was disappointing overall\", \"I am writing a review and wanted to discuss\", \"I expected better and want this documented\"."
-        ],
-        "ar": [
-          "بعد المغادرة يكتشف النزيل السابق أنه ترك أغراضاً شخصية في الوحدة — شاحن هاتف موصول بجدار الغرفة أو لابتوب على المكتب أو ملابس في الخزانة أو مشتريات في الثلاجة. يطلب بإلحاح أن يتفقد أحد المكان ويرتّب الشحن بالبريد السريع أو يحدد موعداً للاستلام. محفّزات نموذجية: \"نسيت الشاحن\"، \"تركنا شنطة سفر\"، \"ممكن حد يدوّر على جوازي\"، \"في أغراض بالثلاجة نحتاجها\".",
-          "بعد انتهاء الإقامة يعترض النزيل السابق على خصم مبلغ التأمين أو يستفسر عن رسم مفاجئ ظهر في كشف بطاقته الائتمانية بعد رحيله بأيام. يطعن في مطالبة بالأضرار ويطلب إثباتاً مصوّراً أو يسأل متى ستُفرج الأموال المحتجزة. محفّزات نموذجية: \"متى يرجع مبلغ التأمين\"، \"ليش في رسوم إضافية بعد ما طلعت\"، \"أعترض على رسوم الأضرار\"، \"ورّوني صور الضرر المزعوم\".",
-          "يتواصل النزيل السابق بعد رحلته لمشاركة ملاحظات استرجاعية أو التعبير عن عدم رضا متراكم عن تجربته الكلّية أو مناقشة التقييم الذي ينوي نشره. يستعرض المشكلات التي واجهها ويطلب اعترافاً أو بادرة حسن نية بعد مغادرته. محفّزات نموذجية: \"أبي أقدّم ملاحظات رسمية عن إقامتي\"، \"التجربة كانت مخيّبة\"، \"بكتب تقييم وحبيت أناقشكم أولاً\"، \"توقعت أفضل وأبي يتسجّل هالشي\"."
         ]
       }
     },
@@ -32,9 +24,6 @@
       "descriptions": {
         "en": [
           "Coordinating the physical journey to reach the building before moving in. Guests request the Google Maps pin, driving directions from the highway, or the nearest metro station. They ask about airport shuttle services, Uber pickup zones, taxi fare estimates, or whether on-site vehicle parking is available in the garage. They may also share their flight number and estimated landing time so the host knows when to expect them. Typical triggers: \"send me the location pin\", \"how do I get there from the airport\", \"is there parking in the building\", \"what's the nearest landmark\", \"our flight lands at 10pm\"."
-        ],
-        "ar": [
-          "تنسيق رحلة الوصول الفعلية إلى المبنى قبل الانتقال. يطلب النزلاء موقع خرائط جوجل أو اتجاهات القيادة من الطريق السريع أو أقرب محطة مترو. يسألون عن خدمة النقل من المطار أو مناطق ركوب أوبر أو تقدير أجرة التاكسي أو توفّر مواقف سيارات في المرآب. قد يشاركون رقم رحلتهم ووقت الهبوط المتوقع ليعرف المضيف متى ينتظرهم. محفّزات نموذجية: \"ابعثلي اللوكيشن\"، \"كيف أوصل من المطار\"، \"في موقف سيارات بالعمارة\"، \"وش أقرب معلم\"، \"رحلتنا توصل الساعة 10 بالليل\"."
         ]
       }
     },
@@ -45,11 +34,6 @@
           "Haggling over the nightly tariff because the traveler finds it steep and wants a markdown. They explicitly ask for a discount, a coupon code, or a reduced rate because their budget is tight. Typical triggers: \"can you lower the price\", \"that's too expensive for us\", \"any discount available\", \"what's the cheapest you can do\", \"we're on a tight budget\".",
           "Benchmarking the listed tariff against competitor platforms or rival listings and questioning whether the rate is fair. The traveler mentions spotting a lower figure on Airbnb, Booking.com, or a nearby competing property and wants the host to match or beat it. Typical triggers: \"I saw it cheaper on Airbnb\", \"Booking.com shows a lower rate\", \"can you price-match\", \"the place next door charges less\", \"is that the final price or negotiable\".",
           "Requesting volume-based or corporate rate reductions for multi-week stays, group reservations, or business travel arrangements. The traveler asks about weekly bundles, loyalty rebates, or whether an employer-negotiated corporate tariff applies. Typical triggers: \"what's the weekly rate\", \"do you offer a corporate rate\", \"we're booking for a team of six\", \"any bulk discount for 10 nights\", \"my company will pay — do you do business rates\"."
-        ],
-        "ar": [
-          "مساومة على سعر الليلة لأن المسافر يراه مرتفعاً ويريد تخفيضاً. يطلب صراحةً خصماً أو كود ترويجي أو سعراً مخفّضاً لأن ميزانيته محدودة. محفّزات نموذجية: \"ممكن تنزّلون السعر\"، \"غالي علينا\"، \"في خصم\"، \"وش أرخص سعر عندكم\"، \"ميزانيتنا ضيّقة\".",
-          "مقارنة السعر المعروض بمنصات منافسة أو إعلانات مشابهة والتساؤل عن عدالة التسعيرة. يذكر المسافر أنه رأى رقماً أقل على إير بي إن بي أو بوكينغ أو عقار قريب منافس ويطلب مطابقة السعر أو التغلّب عليه. محفّزات نموذجية: \"شفته أرخص على إير بي إن بي\"، \"بوكينغ يعرضه بسعر أقل\"، \"ممكن تطابقون السعر\"، \"الشقة المجاورة أرخص\"، \"هل هذا السعر النهائي ولا قابل للتفاوض\".",
-          "طلب تخفيضات كمّية أو أسعار شركات للإقامات متعددة الأسابيع أو حجوزات المجموعات أو ترتيبات سفر العمل. يسأل المسافر عن باقات أسبوعية أو حسومات ولاء أو ما إذا كان تعرفة الشركة المتفاوَض عليها تنطبق. محفّزات نموذجية: \"كم السعر الأسبوعي\"، \"عندكم سعر خاص للشركات\"، \"نحجز لفريق من ستة\"، \"في خصم كمّية لعشر ليالي\"، \"شركتي تدفع — عندكم أسعار أعمال\"."
         ]
       }
     },
@@ -59,10 +43,6 @@
         "en": [
           "Factual reference data about the building and its surroundings — the exact street address, which floor number the unit occupies, whether the building has a lift, proximity to the nearest supermarket or pharmacy, and neighborhood safety. Guests also ask about house rules such as the quiet hours policy, smoking restrictions, maximum occupancy, and pet regulations. Typical triggers: \"what's the exact address\", \"which floor is it on\", \"is there an elevator\", \"how far is the nearest grocery store\", \"are pets allowed\", \"what are the house rules\", \"is the neighborhood safe\".",
           "Visual and spatial overview of how the living space looks and feels — bedroom count, floor plan layout, square meters, decor style, view from windows, balcony or terrace, pool access, security details. Typical triggers: \"how many bedrooms\", \"describe the place\", \"what does the apartment look like\", \"is there a pool\", \"is there a balcony\", \"how big is the apartment\", \"is there parking\"."
-        ],
-        "ar": [
-          "بيانات مرجعية واقعية عن المبنى ومحيطه — العنوان الدقيق بالشارع ورقم الطابق الذي تقع فيه الوحدة ووجود مصعد والقرب من أقرب سوبرماركت أو صيدلية وأمان الحي. يسأل النزلاء أيضاً عن قوانين السكن مثل سياسة ساعات الهدوء وقيود التدخين والحد الأقصى للإشغال وأنظمة الحيوانات الأليفة. محفّزات نموذجية: \"وش العنوان بالضبط\"، \"في أي طابق\"، \"في مصعد\"، \"كم يبعد أقرب بقالة\"، \"مسموح بالحيوانات\"، \"وش قوانين السكن\"، \"الحي آمن\".",
-          "نظرة بصرية ومكانية عن شكل وأجواء مساحة السكن — عدد غرف النوم ومخطط التوزيع والمساحة والديكور والإطلالة ووجود شرفة أو مسبح أو موقف سيارات والأمن. محفّزات نموذجية: \"كم غرفة نوم\"، \"وصفلي المكان\"، \"كيف شكل الشقة\"، \"في مسبح\"، \"في بلكونة\"، \"كم مساحة الشقة\"، \"في باركنغ\"."
         ]
       }
     },
@@ -73,11 +53,6 @@
           "Requesting soft furnishing items related to bedding and linens. The occupant needs extra pillows, a thicker duvet, additional bath towels, fresh fitted sheets, or a portable baby cot. Typical triggers: \"we need more towels\", \"can we get an extra pillow\", \"the blanket is too thin\", \"do you have a crib for an infant\", \"please bring clean bed linens\".",
           "Asking about household appliances, gadgets, and electronic devices available inside the unit. The occupant wants to know if there is an iron and ironing board, a hairdryer, a blender, an espresso machine, a microwave, a dishwasher, or a front-load washer. They also request hangers, a phone charger, or a specific kitchen gadget they expected to find. Typical triggers: \"is there an iron\", \"where is the hairdryer\", \"does the kitchen have a blender\", \"do you have a phone charger I can borrow\", \"how do I use the washing machine\".",
           "Requesting consumable supplies, toiletries, and kitchenware provisions. The occupant asks for dish soap, sponges, coffee capsules, cooking oil, children's plates and sippy cups, bathroom toiletries like shampoo and conditioner, or trash bags. Typical triggers: \"we ran out of dish soap\", \"can you send coffee pods\", \"do you have kids' plates\", \"there's no shampoo\", \"we need more garbage bags\"."
-        ],
-        "ar": [
-          "طلب مفروشات ناعمة تتعلق بالأسرّة والبياضات. يحتاج الساكن وسائد إضافية أو لحاف أسمك أو مناشف حمام إضافية أو شراشف نظيفة أو سرير أطفال متنقل. محفّزات نموذجية: \"نحتاج مناشف أكثر\"، \"ممكن وسادة زيادة\"، \"البطانية رقيقة\"، \"عندكم سرير لرضيع\"، \"رجاءً وفّروا بياضات نظيفة\".",
-          "الاستفسار عن الأجهزة المنزلية والأدوات الإلكترونية المتوفرة داخل الوحدة. يريد الساكن معرفة إذا يوجد مكواة وطاولة كي أو مجفف شعر أو خلاط أو ماكينة إسبريسو أو ميكرويف أو غسالة صحون أو غسالة ملابس. يطلب أيضاً علّاقات أو شاحن هاتف أو أداة مطبخ معيّنة توقّع وجودها. محفّزات نموذجية: \"في مكواة\"، \"وين السشوار\"، \"المطبخ فيه خلاط\"، \"عندكم شاحن أقدر أستعيره\"، \"كيف أشغّل الغسالة\".",
-          "طلب مواد استهلاكية ومستلزمات نظافة وتجهيزات مطبخ. يطلب الساكن سائل جلي وإسفنج وكبسولات قهوة وزيت طبخ وأطباق أطفال وأكواب مانعة للانسكاب ومستلزمات حمام كالشامبو والبلسم أو أكياس نفايات. محفّزات نموذجية: \"خلص سائل الجلي\"، \"ممكن تبعثون كبسولات قهوة\"، \"عندكم أطباق أطفال\"، \"ما في شامبو\"، \"نحتاج أكياس زبالة\"."
         ]
       }
     },
@@ -86,9 +61,6 @@
       "descriptions": {
         "en": [
           "Withdrawing an existing reservation because plans fell through. The traveler's trip was called off due to a medical emergency, visa denial, family situation, or schedule conflict, and they want to know how to cancel, what the cancellation penalty is, the deadline for a full refund, and whether partial credit is available if they are past the free-cancellation window. Typical triggers: \"I need to cancel my reservation\", \"something came up and we can't make it\", \"what's your cancellation policy\", \"can I still get a full refund if I cancel now\", \"our trip fell through\"."
-        ],
-        "ar": [
-          "سحب حجز قائم لأن الخطط انهارت. أُلغيت رحلة المسافر بسبب طارئ صحي أو رفض تأشيرة أو ظرف عائلي أو تعارض بالجدول ويريد معرفة كيفية الإلغاء وغرامة الإلغاء والموعد النهائي لاسترداد كامل وإمكانية رصيد جزئي إذا تجاوز نافذة الإلغاء المجاني. محفّزات نموذجية: \"أبي ألغي الحجز\"، \"طرأ علينا ظرف وما نقدر نجي\"، \"وش سياسة الإلغاء عندكم\"، \"لو ألغي الحين أقدر أسترد المبلغ كامل\"، \"رحلتنا انلغت\"."
         ]
       }
     },
@@ -97,9 +69,6 @@
       "descriptions": {
         "en": [
           "Verifying that a completed reservation was received, recorded, and processed in the system. The traveler already submitted a booking and now wants reassurance it went through — they share their confirmation code, ask whether the host can see the reservation on their end, or request a summary of the reserved dates and unit assignment. Typical triggers: \"is my booking confirmed\", \"I booked last week but haven't heard back\", \"can you verify my reservation number\", \"did my reservation go through\", \"please confirm the dates I reserved\"."
-        ],
-        "ar": [
-          "التحقق من أن حجزاً مكتملاً قد استُلم وسُجّل وعُولج في النظام. أرسل المسافر حجزه بالفعل ويريد الآن تأكيداً بأنه تمّ — يشارك رمز التأكيد أو يسأل إذا المضيف يرى الحجز من طرفه أو يطلب ملخصاً بالتواريخ المحجوزة والوحدة المخصصة. محفّزات نموذجية: \"حجزي مؤكد\"، \"حجزت الأسبوع الماضي وما وصلني رد\"، \"ممكن تتحققون من رقم حجزي\"، \"هل تمّ حجزي\"، \"أكّدوا لي التواريخ اللي حجزتها\"."
         ]
       }
     },
@@ -110,11 +79,6 @@
           "Checking date availability before making any reservation. The prospective traveler has no existing booking and wants to know which units are free for their desired travel window. They specify arrival and departure dates and ask whether anything is open tonight, next weekend, or over a holiday period. Typical triggers: \"is anything available from June 5 to June 10\", \"do you have a unit free tonight\", \"are you fully booked next weekend\", \"checking availability for four nights in July\".",
           "Pre-booking cost inquiry to understand the total expense before committing. The prospective traveler asks for a rate quote for specific dates, wants to know what the nightly tariff includes (cleaning fee, taxes), or requests a total-cost breakdown for their desired stay duration. Typical triggers: \"how much would it cost for 5 nights in August\", \"what does the nightly rate include\", \"can you send me a price quote\", \"what's the total for those dates including fees\".",
           "Pre-booking suitability questions to decide if the listing matches their needs. The prospective traveler asks about the number of sleeping areas, whether it can accommodate a family of five, if there is a pool or fitness center on-site, or how close the building is to the convention center or beach. Typical triggers: \"is this suitable for a family with kids\", \"how many people can it sleep\", \"is there a pool on the premises\", \"how close is it to the expo center\", \"does it have two separate sleeping areas\"."
-        ],
-        "ar": [
-          "التحقق من توفّر التواريخ قبل إجراء أي حجز. المسافر المحتمل ليس لديه حجز حالي ويريد معرفة أي الوحدات شاغرة لفترة سفره المطلوبة. يحدد تواريخ الوصول والمغادرة ويسأل هل في شيء متاح الليلة أو نهاية الأسبوع القادم أو خلال الإجازة. محفّزات نموذجية: \"في شي فاضي من 5 يونيو إلى 10 يونيو\"، \"عندكم وحدة فاضية الليلة\"، \"كلكم فل نهاية الأسبوع الجاي\"، \"أتحقق من التوفر لأربع ليالي في يوليو\".",
-          "استفسار عن التكلفة قبل الالتزام بالحجز لفهم إجمالي المصاريف. يطلب المسافر المحتمل عرض سعر لتواريخ محددة أو يريد معرفة ما يشمله سعر الليلة (رسوم تنظيف، ضرائب) أو يطلب تفصيلاً للتكلفة الإجمالية لمدة إقامته. محفّزات نموذجية: \"كم تكلفة خمس ليالي في أغسطس\"، \"وش يشمل سعر الليلة\"، \"ممكن تبعثولي عرض سعر\"، \"كم الإجمالي لهالتواريخ شامل الرسوم\".",
-          "أسئلة ملاءمة قبل الحجز لتقرير ما إذا كان الإعلان يناسب احتياجاتهم. يسأل المسافر المحتمل عن عدد أماكن النوم وإمكانية استيعاب عائلة من خمسة ووجود مسبح أو نادي رياضي في الموقع أو قرب المبنى من مركز المؤتمرات أو الشاطئ. محفّزات نموذجية: \"تناسب عائلة مع أطفال\"، \"كم شخص تستوعب\"، \"في مسبح بالموقع\"، \"كم تبعد عن مركز المعارض\"، \"فيها مكانين نوم منفصلين\"."
         ]
       }
     },
@@ -123,9 +87,6 @@
       "descriptions": {
         "en": [
           "Altering the details of an already-confirmed reservation. The occupant wants to extend by adding extra nights at the end, shorten by removing nights from their itinerary, shift the entire date range forward or backward, upgrade to a larger unit, or update the headcount on the reservation after their travel party changed. Typical triggers: \"can I add two more nights\", \"I want to shorten my stay\", \"can we switch the dates to next week instead\", \"is it possible to move to a bigger unit\", \"we now have an extra person joining\"."
-        ],
-        "ar": [
-          "تعديل تفاصيل حجز مؤكد مسبقاً. يريد الساكن التمديد بإضافة ليالٍ في النهاية أو التقصير بحذف ليالٍ من جدوله أو تحريك النطاق الزمني كاملاً للأمام أو الخلف أو الترقية لوحدة أكبر أو تحديث عدد الأشخاص بعد تغيّر مجموعة السفر. محفّزات نموذجية: \"ممكن أزيد ليلتين\"، \"أبي أقصّر إقامتي\"، \"نقدر نحوّل التواريخ للأسبوع الجاي\"، \"ممكن ننتقل لوحدة أكبر\"، \"انضاف شخص معنا\"."
         ]
       }
     },
@@ -134,9 +95,6 @@
       "descriptions": {
         "en": [
           "Requesting housekeeping, maid service, or a deep-clean session for the unit during the stay. The occupant wants someone to mop the tile floors, vacuum the carpets, scrub the bathroom, change the bed linens, or wipe down kitchen surfaces. They may ask about scheduling recurring tidy-up visits every few days or demand an urgent cleanup because the space feels dusty or grimy. Typical triggers: \"can you send a cleaner\", \"how much does housekeeping cost\", \"the place needs mopping\", \"we want cleaning every three days\", \"it's getting dusty in here\"."
-        ],
-        "ar": [
-          "طلب خدمة تدبير منزلي أو عاملة نظافة أو تنظيف عميق للوحدة أثناء الإقامة. يريد الساكن شخصاً يمسح البلاط ويكنس السجاد وينظف الحمام ويغيّر بياضات السرير ويمسح أسطح المطبخ. قد يسأل عن جدولة زيارات ترتيب دورية كل بضعة أيام أو يطلب تنظيفاً عاجلاً لأن المكان يبدو مغبرّاً أو متّسخاً. محفّزات نموذجية: \"ممكن ترسلون عاملة نظافة\"، \"كم تكلفة التنظيف\"، \"المكان يحتاج مسح\"، \"نبي تنظيف كل ثلاث أيام\"، \"صار فيه غبار\"."
         ]
       }
     },
@@ -147,11 +105,6 @@
           "Expressing shock and disgust at the physical state of the unit upon arrival or during the stay. The occupant finds stained mattresses, hair in the bathtub, grease on kitchen counters, or discovers the space looks nothing like the listing photos. Their tone is angry and accusatory. Typical triggers: \"this place is filthy\", \"the photos are completely misleading\", \"there are stains on the sheets\", \"I'm disgusted by the condition\", \"this is false advertising\".",
           "Voicing outrage over noise disturbances, disruptive neighbors, or unbearable environmental conditions inside the building. The occupant reports neighbors partying until dawn, jackhammer construction at 7am, hallway odors seeping under the door, or temperatures that make the unit unlivable despite the HVAC running. Their language conveys sleep deprivation and mounting frustration. Typical triggers: \"the neighbors are partying every night\", \"construction wakes us up at dawn\", \"there is a terrible smell in the corridor\", \"we can't sleep because of the noise\", \"the heat is unbearable\".",
           "Demanding to speak with a manager, threatening a negative public review, or declaring the entire experience unacceptable. The occupant feels ignored by the host, believes they were misled about what they paid for, or insists that the level of service is far below expectations. Their language is emotionally charged with words like unacceptable, terrible, worst, furious, and rip-off. Typical triggers: \"I want to talk to a manager right now\", \"I'm leaving a one-star review\", \"this is the worst experience I've ever had\", \"nobody is helping us\", \"I feel completely ripped off\"."
-        ],
-        "ar": [
-          "التعبير عن صدمة واشمئزاز من الحالة المادية للوحدة عند الوصول أو أثناء الإقامة. يجد الساكن فراشاً ملطّخاً أو شعراً في البانيو أو دهوناً على أسطح المطبخ أو يكتشف أن المكان لا يشبه صور الإعلان إطلاقاً. لهجته غاضبة واتهامية. محفّزات نموذجية: \"المكان قذر\"، \"الصور مضلّلة تماماً\"، \"في بقع على الشراشف\"، \"متقزّز من الحالة\"، \"هذا إعلان كاذب\".",
-          "التعبير عن سخط بسبب إزعاج الضوضاء أو جيران مشاغبين أو ظروف بيئية لا تُطاق في المبنى. يبلّغ الساكن عن جيران يسهرون حتى الفجر أو حفر بناء الساعة السابعة صباحاً أو روائح من الممر تتسلل تحت الباب أو حرارة تجعل الوحدة غير صالحة للسكن رغم تشغيل التكييف. لغته تنقل الحرمان من النوم والإحباط المتصاعد. محفّزات نموذجية: \"الجيران يسهرون كل ليلة\"، \"البناء يصحّينا الفجر\"، \"ريحة فظيعة في الممر\"، \"ما نقدر ننام من الإزعاج\"، \"الحر ما ينطاق\".",
-          "المطالبة بالتحدث مع المدير أو التهديد بتقييم سلبي علني أو الإعلان أن التجربة كلها غير مقبولة. يشعر الساكن بتجاهل المضيف ويعتقد أنه خُدع فيما دفعه أو يصرّ أن مستوى الخدمة أدنى بكثير من التوقعات. لغته مشحونة عاطفياً بكلمات مثل غير مقبول وفظيع وأسوأ وغاضب ونصب. محفّزات نموذجية: \"أبي أكلّم المدير حالاً\"، \"بحط تقييم نجمة وحدة\"، \"أسوأ تجربة مرّت عليّ\"، \"محد يساعدنا\"، \"حاسين إننا انسرقنا\"."
         ]
       }
     },
@@ -160,9 +113,6 @@
       "descriptions": {
         "en": [
           "Requesting access to the unit before the standard 3 PM move-in hour because the traveler's inbound flight lands at dawn or midmorning. They want to drop off suitcases, shower after a red-eye, or settle in early so young children can nap. The conversation centers on morning arrival logistics — 6 AM, 8 AM, 10 AM — and whether the unit will be ready ahead of schedule. Typical triggers: \"our flight lands at 6 AM, can we come straight there\", \"is early access possible\", \"we need to drop bags before noon\", \"can we get in at 10 instead of 3\", \"the kids need to nap after the flight\"."
-        ],
-        "ar": [
-          "طلب الدخول للوحدة قبل موعد الانتقال الرسمي الثالثة ظهراً لأن رحلة المسافر القادمة تهبط عند الفجر أو منتصف الصباح. يريدون ترك الحقائب والاستحمام بعد رحلة ليلية أو الاستقرار مبكراً لينام الأطفال الصغار. المحادثة تتمحور حول الوصول الصباحي — السادسة أو الثامنة أو العاشرة — وهل ستكون الوحدة جاهزة قبل الموعد. محفّزات نموذجية: \"رحلتنا توصل الساعة 6 الصبح، نقدر نجي على طول\"، \"ممكن دخول مبكر\"، \"نحتاج نترك الشنط قبل الظهر\"، \"نقدر ندخل الساعة 10 بدل 3\"، \"العيال يحتاجون ينامون بعد الرحلة\"."
         ]
       }
     },
@@ -171,9 +121,6 @@
       "descriptions": {
         "en": [
           "Requesting permission to remain in the unit past the standard 11 AM vacate hour on the final day because the traveler's outbound flight departs in the afternoon or evening. They want to extend their last morning by a few hours — leaving at 2 PM, 3 PM, or even 6 PM — to avoid waiting at the airport with luggage. The conversation centers on departure-day timing and how long they can stay beyond the vacate deadline. Typical triggers: \"our flight is at 9 PM, can we stay until 6\", \"can we leave at 3 instead of 11\", \"we don't want to sit at the airport all day\", \"is late departure possible\", \"what time do we have to be out\"."
-        ],
-        "ar": [
-          "طلب الإذن للبقاء في الوحدة بعد موعد الإخلاء الرسمي الحادية عشرة صباحاً في اليوم الأخير لأن رحلة المسافر المغادرة تُقلع بعد الظهر أو في المساء. يريدون تمديد صباحهم الأخير ببضع ساعات — المغادرة الثانية أو الثالثة أو حتى السادسة — لتجنّب الانتظار بالمطار مع الأمتعة. المحادثة تتمحور حول توقيت يوم الرحيل وكم يمكنهم البقاء بعد الموعد النهائي. محفّزات نموذجية: \"رحلتنا الساعة 9 بالليل، نقدر نبقى لين 6\"، \"نقدر نطلع الساعة 3 بدل 11\"، \"ما نبي نقعد بالمطار طول اليوم\"، \"ممكن تأخير المغادرة\"، \"متى آخر موعد نطلع فيه\"."
         ]
       }
     },
@@ -182,9 +129,6 @@
       "descriptions": {
         "en": [
           "Inquiring about multi-month tenancy arrangements for stays measured in weeks or months rather than nights. The prospective tenant is relocating for a work assignment, undergoing medical treatment in the city, or needs transitional housing between permanent leases. They ask about the monthly rental rate, whether utilities are bundled, lease terms for 60- or 90-day stays, and corporate housing contracts. Typical triggers: \"what's the monthly rate\", \"I'm relocating for work and need a place for three months\", \"do you offer long-term leases\", \"I need housing for a 60-day assignment\", \"are utilities included in the monthly price\"."
-        ],
-        "ar": [
-          "الاستفسار عن ترتيبات إيجار متعددة الأشهر لإقامات تُقاس بالأسابيع أو الأشهر وليس الليالي. المستأجر المحتمل ينتقل لمهمة عمل أو يتلقى علاجاً طبياً في المدينة أو يحتاج سكناً انتقالياً بين عقدَي إيجار دائمين. يسأل عن الإيجار الشهري وهل الخدمات مشمولة وشروط عقد إقامة 60 أو 90 يوماً وعقود السكن المؤسسي. محفّزات نموذجية: \"كم الإيجار الشهري\"، \"أنتقل للعمل وأحتاج مكان لثلاث شهور\"، \"عندكم عقود إيجار طويلة\"، \"أحتاج سكن لمهمة 60 يوم\"، \"الخدمات داخلة بالسعر الشهري\"."
         ]
       }
     },
@@ -193,9 +137,6 @@
       "descriptions": {
         "en": [
           "Reporting something broken, malfunctioning, or in need of urgent repair inside the unit. The occupant describes an air-conditioning compressor that stopped cooling, a washing machine drum that won't spin, a refrigerator that's warm inside, a toilet that overflows when flushed, water dripping from the ceiling, no hot water from the taps, flickering or dead light fixtures, tripped circuit breakers, or pest sightings such as cockroaches and ants. Mold growth, foul drain odors, and jammed window locks also fall here. Typical triggers: \"the AC isn't working\", \"the toilet is clogged\", \"there's a water leak under the sink\", \"we have no hot water\", \"I saw cockroaches in the kitchen\", \"the lights keep flickering\"."
-        ],
-        "ar": [
-          "الإبلاغ عن عطل أو خلل أو حاجة لإصلاح عاجل داخل الوحدة. يصف الساكن ضاغط تكييف توقف عن التبريد أو حلّة غسالة لا تدور أو ثلاجة دافئة من الداخل أو مرحاض يفيض عند السحب أو ماء يقطر من السقف أو انقطاع الماء الساخن من الحنفيات أو إضاءة ترمش أو قاطع كهرباء يفصل أو مشاهدة حشرات كصراصير ونمل. العفن وروائح المجاري الكريهة وأقفال النوافذ المعلّقة تدخل هنا أيضاً. محفّزات نموذجية: \"التكييف ما يشتغل\"، \"المرحاض مسدود\"، \"في تسريب ماء تحت الحوض\"، \"ما في ماء حار\"، \"شفت صراصير بالمطبخ\"، \"الأنوار ترمش\"."
         ]
       }
     },
@@ -204,9 +145,6 @@
       "descriptions": {
         "en": [
           "Requesting an in-person site visit, walkthrough, or inspection of the unit before committing to a reservation. The prospective tenant wants to physically tour the space, schedule a viewing appointment at a convenient time, or ask if they can bring a friend or partner along to see the unit together. They may also ask for a live video call tour, request additional photographs of specific rooms, or inquire about permission to film content or conduct a professional photoshoot on the premises. Typical triggers: \"can I come see the place first\", \"I'd like to schedule a viewing\", \"can we do a video tour\", \"I want to visit before deciding\", \"can I bring someone along to see it\", \"is filming allowed inside\"."
-        ],
-        "ar": [
-          "طلب زيارة ميدانية أو جولة تفقدية أو معاينة للوحدة شخصياً قبل الالتزام بالحجز. يريد المستأجر المحتمل التجوّل فعلياً في المكان أو تحديد موعد معاينة في وقت مناسب أو السؤال إذا يقدر يصطحب صديقاً أو شريكاً لرؤية الوحدة معاً. قد يطلب أيضاً جولة فيديو مباشرة أو صوراً إضافية لغرف محددة أو يستفسر عن إذن التصوير أو إجراء جلسة تصوير احترافية في المبنى. محفّزات نموذجية: \"أقدر أجي أشوف المكان أولاً\"، \"أبي أحدد موعد معاينة\"، \"نقدر نسوي جولة فيديو\"، \"أبي أزور قبل ما أقرر\"، \"أقدر أجيب أحد معي يشوفه\"، \"التصوير مسموح داخل الوحدة\"."
         ]
       }
     },
@@ -215,9 +153,6 @@
       "descriptions": {
         "en": [
           "Asking whether external visitors, friends, relatives, or colleagues are permitted to enter the unit. The occupant wants a friend to come over for dinner, a sibling to stay overnight, a work colleague to drop off documents, or family members to visit during the weekend. They may push back on restrictions, arguing the visit will be brief or the person is a close relative. Typical triggers: \"can my friend come over for dinner\", \"is it okay if my sister stays the night\", \"a colleague needs to drop something off\", \"my parents want to visit on Saturday\", \"what's your visitor policy\", \"are overnight visitors allowed\"."
-        ],
-        "ar": [
-          "السؤال عن إمكانية دخول زوار خارجيين أو أصدقاء أو أقارب أو زملاء عمل إلى الوحدة. يريد الساكن أن يأتي صديق لتناول العشاء أو أخ يبيت ليلة أو زميل عمل يسلّم مستندات أو أفراد عائلة يزورون نهاية الأسبوع. قد يعترض على القيود محتجّاً بأن الزيارة قصيرة أو الشخص قريب من الدرجة الأولى. محفّزات نموذجية: \"صديقي يقدر يمر يتعشى\"، \"أختي ممكن تبات ليلة\"، \"زميلي يحتاج يوصّل أوراق\"، \"أهلي يبون يزوروني السبت\"، \"وش سياسة الزوار عندكم\"، \"مسموح ينامون زوار\"."
         ]
       }
     },
@@ -226,9 +161,6 @@
       "descriptions": {
         "en": [
           "Requesting WiFi network credentials, digital lock PIN codes, or building entry instructions. The occupant needs the wireless network name and password to get online, the numeric keypad code for the front door or unit door, or step-by-step instructions for the smart lock. They also report connectivity failures — the internet is slow, the WiFi keeps dropping, or the password is rejected — and lockout emergencies where the keypad code fails and they are stranded outside. Typical triggers: \"what's the WiFi password\", \"the door code isn't working\", \"I'm locked out\", \"how do I connect to the internet\", \"the WiFi keeps disconnecting\", \"which network do I join\"."
-        ],
-        "ar": [
-          "طلب بيانات دخول شبكة الواي فاي أو رمز القفل الرقمي أو تعليمات دخول المبنى. يحتاج الساكن اسم الشبكة اللاسلكية وكلمة السر للاتصال بالإنترنت أو الرقم السري للوحة المفاتيح على باب المدخل أو باب الوحدة أو شرح خطوة بخطوة للقفل الذكي. يبلّغ أيضاً عن أعطال الاتصال — الإنترنت بطيء أو الواي فاي يفصل باستمرار أو كلمة السر مرفوضة — وحالات الإغلاق الطارئة حيث يفشل الرمز ويبقون عالقين بالخارج. محفّزات نموذجية: \"وش كلمة سر الواي فاي\"، \"رمز الباب ما يشتغل\"، \"أنا مقفّل برا\"، \"كيف أتصل بالإنترنت\"، \"الواي فاي يفصل\"، \"أي شبكة أدخل عليها\"."
         ]
       }
     }
