@@ -1423,13 +1423,8 @@ export async function generateAndSendAiReply(
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
     };
-    // Inline-replace {DOCUMENT_CHECKLIST} directly in the system prompt so the AI sees the actual data
-    // (Mode 2 variable resolution puts it in a content block, but the AI needs it inline next to the instructions)
-    if (variableDataMap.DOCUMENT_CHECKLIST) {
-      effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', variableDataMap.DOCUMENT_CHECKLIST);
-    } else {
-      effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', 'No pending documents.');
-    }
+    // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
+    effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', '');
 
     // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
     const { cleanedPrompt, contentBlocks: userContent } = resolveVariables(
@@ -1439,6 +1434,14 @@ export async function generateAndSendAiReply(
     );
     // Use cleanedPrompt (without content blocks) for instructions — blocks go in input
     effectiveSystemPrompt = cleanedPrompt;
+
+    // Append document checklist as a content block at the end (keeps system prompt cacheable)
+    if (variableDataMap.DOCUMENT_CHECKLIST) {
+      userContent.push({
+        type: 'text',
+        text: `### PENDING DOCUMENTS ###\n${variableDataMap.DOCUMENT_CHECKLIST}`,
+      });
+    }
 
     // For backward compat: build userMessage string for AiApiLog (full text of what AI received)
     const userMessage = userContent.map(b => b.text).join('\n\n');
