@@ -1533,50 +1533,70 @@ export default function InboxV5() {
     return () => clearInterval(interval)
   }, [])
 
-  // ── Effect 2: Load detail on selection (deduplicated) ──
+  // ── Effect 2: Load detail on selection + poll every 15s ──
   useEffect(() => {
     // Clear copilot suggestion and typing state when switching conversations
     setAiSuggestion(null)
     setAiTyping(false)
     // Reset sync timestamp when switching conversations
     setLastSyncedAt(null)
-    if (!selectedId || fetchedDetails.current.has(selectedId)) return
-    setLoadingDetail(true)
-    apiGetConversation(selectedId)
-      .then(detail => {
-        if (!detail) return
-        fetchedDetails.current.add(selectedId)
-        try {
-          setConversations(prev =>
-            prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
-          )
-        } catch (mergeErr) {
-          console.error('[Inbox] mergeDetail crashed:', mergeErr, 'detail:', JSON.stringify(detail).slice(0, 500))
-        }
-        // Fetch pending copilot suggestion if in copilot mode
-        if (detail?.reservation?.aiMode === 'copilot') {
-          apiGetConversationSuggestion(selectedId)
-            .then(data => { if (data?.suggestion) setAiSuggestion(data.suggestion) })
-            .catch(() => {})
-        }
-      })
-      .catch(err => console.error('[Inbox] apiGetConversation failed:', err))
-      .finally(() => setLoadingDetail(false))
+    if (!selectedId) return
 
-    // On-open sync: fetch latest messages when conversation is selected (fire-and-forget)
+    let cancelled = false
+    const prevMessageCount = { current: 0 }
+
+    function refreshDetail(isInitial: boolean) {
+      if (cancelled) return
+      const fetchPromise = isInitial && !fetchedDetails.current.has(selectedId)
+        ? (setLoadingDetail(true), apiGetConversation(selectedId))
+        : apiGetConversation(selectedId)
+
+      fetchPromise
+        .then(detail => {
+          if (cancelled || !detail) return
+          fetchedDetails.current.add(selectedId)
+          try {
+            const newMsgCount = (detail.messages || []).length
+            setConversations(prev =>
+              prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
+            )
+            // Auto-scroll if new messages arrived (not on initial load)
+            if (!isInitial && newMsgCount > prevMessageCount.current) {
+              setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+            }
+            prevMessageCount.current = newMsgCount
+          } catch (mergeErr) {
+            console.error('[Inbox] mergeDetail crashed:', mergeErr, 'detail:', JSON.stringify(detail).slice(0, 500))
+          }
+          // Fetch pending copilot suggestion if in copilot mode
+          if (isInitial && detail?.reservation?.aiMode === 'copilot') {
+            apiGetConversationSuggestion(selectedId)
+              .then(data => { if (data?.suggestion) setAiSuggestion(data.suggestion) })
+              .catch(() => {})
+          }
+        })
+        .catch(err => { if (isInitial) console.error('[Inbox] apiGetConversation failed:', err) })
+        .finally(() => { if (isInitial) setLoadingDetail(false) })
+    }
+
+    // Initial load
+    refreshDetail(true)
+
+    // Poll every 15s to keep messages fresh (SSE backup)
+    const pollTimer = setInterval(() => refreshDetail(false), 15000)
+
+    // On-open sync: also trigger Hostaway sync (fire-and-forget)
     apiSyncConversation(selectedId).then(res => {
       if (res.syncedAt) setLastSyncedAt(res.syncedAt)
       else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
-      // If new messages were found, re-fetch conversation to refresh chat
-      if (res.newMessages && res.newMessages > 0) {
-        apiGetConversation(selectedId).then(detail => {
-          if (detail) {
-            setConversations(prev => prev.map(c => c.id === selectedId ? mergeDetail(c, detail) : c))
-            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-          }
-        }).catch(() => {})
-      }
+      // If sync found new messages, refresh immediately
+      if (res.newMessages && res.newMessages > 0) refreshDetail(false)
     }).catch(() => {})
+
+    return () => {
+      cancelled = true
+      clearInterval(pollTimer)
+    }
   }, [selectedId])
 
   // ── Effect: lamp indicator position ──
@@ -1931,7 +1951,7 @@ export default function InboxV5() {
       const res = await apiSyncConversation(selectedConv.id, true)
       if (res.syncedAt) setLastSyncedAt(res.syncedAt)
       else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
-      // If new messages were found, re-fetch conversation detail to refresh the chat
+      // If new messages were found, re-fetch conversation to refresh chat immediately
       if (res.newMessages && res.newMessages > 0) {
         const detail = await apiGetConversation(selectedConv.id)
         if (detail) {
