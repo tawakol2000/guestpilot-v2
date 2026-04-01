@@ -1374,10 +1374,10 @@ export async function generateAndSendAiReply(
     const effectiveMaxTokens = Math.max(tenantConfig?.maxTokens || personaCfg.maxTokens, 2048);
     const effectiveAgentName = tenantConfig?.agentName || agentName;
 
-    // DB-backed system prompts (editable via Configure AI), fallback to JSON config
+    // DB-backed system prompts (editable via Configure AI), fallback to SEED constants
     let effectiveSystemPrompt = isInquiry
-      ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
-      : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
+      ? (tenantConfig?.systemPromptScreening || SEED_SCREENING_PROMPT)
+      : (tenantConfig?.systemPromptCoordinator || SEED_COORDINATOR_PROMPT);
     // Replace agent name in system prompt if customized
     if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
       effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
