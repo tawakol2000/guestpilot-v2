@@ -167,10 +167,10 @@ const SYSTEM_TOOLS: Array<{
     name: 'check_extend_availability',
     displayName: 'Extend Stay',
     description:
-      'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. ' +
-      'Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. ' +
-      'Always include total_additional_cost and channel_instructions from the result in your response to the guest. ' +
-      'Do NOT use for unrelated questions.',
+      'Check availability and pricing for date changes on the guest\'s current booking. ' +
+      'Use ONLY after clarifying with the guest whether they want to check in earlier or check out later. ' +
+      'Set new_checkout for later checkout, new_checkin for earlier arrival. ' +
+      'Present the price and channel_instructions from the result. Do NOT use for unrelated questions.',
     parameters: {
       type: 'object',
       properties: {

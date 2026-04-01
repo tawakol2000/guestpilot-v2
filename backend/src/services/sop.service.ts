@@ -460,7 +460,7 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, tell them unfortunately we don't provide airport transfer. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them only if needed. Check-in starts at 3pm. It's self check-in and the door code is provided.`,
 
-  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
+  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. First clarify: do they want to check in earlier, check out later, or both? Once clear, use the check_extend_availability tool to check availability and pricing. If available, share the price and ask the guest to modify the booking through their platform (Airbnb/Booking.com). The manager will accept the modification. If unavailable or tool fails, escalate as info_request. For guest count changes, escalate as info_request. NEVER confirm modifications yourself.`,
 
   'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll look into it. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
 
@@ -585,11 +585,11 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-booking-modification'],
+      content: `Guest wants to change their booking dates. First, clarify what they need: do they want to check in earlier, check out later, or both? Once clear, **use the check_extend_availability tool** with the correct dates. If available, tell the guest the price for additional nights and ask them to modify the booking through their booking platform (Airbnb/Booking.com/direct). The manager will then accept the modification. If not available, let the guest know and escalate as info_request. Never confirm modifications yourself.`,
     },
     {
       status: 'CHECKED_IN',
-      content: `Guest wants to extend their current stay or change dates. **Use the check_extend_availability tool first** to get real availability and pricing data. Present the price and channel instructions from the tool result. If the tool is unavailable or fails, then escalate as info_request. Never confirm modifications yourself.`,
+      content: `Guest wants to extend their stay or change dates. First, clarify what they need: do they want to check out later (add nights) or did they want to arrive earlier? Once clear, **use the check_extend_availability tool** with the correct dates. If available, tell the guest the price for additional nights and ask them to modify the booking through their booking platform (Airbnb/Booking.com/direct). The manager will then accept the modification. If not available, let the guest know and escalate as info_request. Never confirm modifications yourself.`,
     },
   ],
 
