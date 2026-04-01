@@ -18,8 +18,8 @@
 
 **Purpose**: Branch verification and baseline
 
-- [ ] T001 Verify on branch `024-smart-context-summary` and compile clean with `npx tsc --noEmit` in `backend/`
-- [ ] T002 Verify existing schema fields `conversationSummary`, `summaryUpdatedAt`, `summaryMessageCount` on Conversation model in `backend/prisma/schema.prisma`
+- [x] T001 Verify on branch `024-smart-context-summary` and compile clean with `npx tsc --noEmit` in `backend/`
+- [x] T002 Verify existing schema fields `conversationSummary`, `summaryUpdatedAt`, `summaryMessageCount` on Conversation model in `backend/prisma/schema.prisma`
 
 ---
 
@@ -31,7 +31,7 @@
 
 ### Step 1: Create Summary Service
 
-- [ ] T003 [US1] Create `backend/src/services/summary.service.ts` with `generateOrExtendSummary(conversationId, prisma)` function:
+- [x] T003 [US1] Create `backend/src/services/summary.service.ts` with `generateOrExtendSummary(conversationId, prisma)` function:
   - Query Conversation for existing `conversationSummary`, `summaryMessageCount`
   - Fetch all GUEST + AI messages (exclude AI_PRIVATE, MANAGER_PRIVATE)
   - If `summaryMessageCount` already covers all messages outside the 10-message window → skip
@@ -44,10 +44,10 @@
 
 ### Step 2: Modify AI Service History Logic
 
-- [ ] T004 [US1] In `backend/src/services/ai.service.ts`, change `.slice(-20)` to `.slice(-10)` for `historyMsgs` (line ~1397)
-- [ ] T005 [US1] In `backend/src/services/ai.service.ts`, after building `historyText`, query `conversationSummary` from the Conversation record and if present, add it as a `### CONTEXT SUMMARY ###` content block (appended to `userContent` array before the conversation history block)
-- [ ] T006 [US1] In `backend/src/services/ai.service.ts`, after the AI response is sent (in the fire-and-forget section at the end), call `generateOrExtendSummary(conversationId, prisma)` — only if total GUEST+AI message count > 10. Catch errors silently.
-- [ ] T007 [US1] Update `messageHistoryCount` from 20 to 10 in `backend/src/config/ai-config.json`
+- [x] T004 [US1] In `backend/src/services/ai.service.ts`, change `.slice(-20)` to `.slice(-10)` for `historyMsgs` (line ~1397)
+- [x] T005 [US1] In `backend/src/services/ai.service.ts`, after building `historyText`, query `conversationSummary` from the Conversation record and if present, add it as a `### CONTEXT SUMMARY ###` content block (appended to `userContent` array before the conversation history block)
+- [x] T006 [US1] In `backend/src/services/ai.service.ts`, after the AI response is sent (in the fire-and-forget section at the end), call `generateOrExtendSummary(conversationId, prisma)` — only if total GUEST+AI message count > 10. Catch errors silently.
+- [x] T007 [US1] Update `messageHistoryCount` from 20 to 10 in `backend/src/config/ai-config.json`
 
 **Checkpoint**: Conversations with 15+ messages show summary in AI context. AI demonstrates awareness of early messages. Zero added latency.
 
@@ -59,9 +59,9 @@
 
 **Independent Test**: A 20-message conversation triggers summary generation no more than 2-3 times total.
 
-- [ ] T008 [US2] In `backend/src/services/summary.service.ts`, add a check at the top of `generateOrExtendSummary`: count GUEST+AI messages, if count <= 10 return immediately (no summary needed)
-- [ ] T009 [US2] In `backend/src/services/summary.service.ts`, add stale-check: if `summaryMessageCount >= (totalMessages - 10)` return immediately (existing summary is current, no new messages scrolled out)
-- [ ] T010 [US2] Add console.log in summary service: `[Summary] [conversationId] Generated/extended summary (covered N messages, X words)` or `[Summary] [conversationId] Skipped — summary is current`
+- [x] T008 [US2] In `backend/src/services/summary.service.ts`, add a check at the top of `generateOrExtendSummary`: count GUEST+AI messages, if count <= 10 return immediately (no summary needed)
+- [x] T009 [US2] In `backend/src/services/summary.service.ts`, add stale-check: if `summaryMessageCount >= (totalMessages - 10)` return immediately (existing summary is current, no new messages scrolled out)
+- [x] T010 [US2] Add console.log in summary service: `[Summary] [conversationId] Generated/extended summary (covered N messages, X words)` or `[Summary] [conversationId] Skipped — summary is current`
 
 **Checkpoint**: Summary generation logs show efficient triggering — skips when current, generates only when messages scroll out.
 
@@ -73,11 +73,11 @@
 
 **Independent Test**: Generate summaries for 5 conversation types. Review for inclusion of identity/preferences and exclusion of routine exchanges.
 
-- [ ] T011 [US3] In `backend/src/services/summary.service.ts`, refine the summarization prompt to explicitly list inclusion and exclusion rules:
+- [x] T011 [US3] In `backend/src/services/summary.service.ts`, refine the summarization prompt to explicitly list inclusion and exclusion rules:
   - INCLUDE: guest identity (who they are, who they're booking for), nationality nuances, special arrangements, guest preferences (quiet room, pregnant wife, etc.), expressed dissatisfaction, key decisions
   - EXCLUDE: cleaning requests, WiFi issues, amenity deliveries, check-in/checkout logistics, resolved escalations, routine acknowledgments
   - Cap at 150 words
-- [ ] T012 [US3] In `backend/src/services/summary.service.ts`, add word count enforcement: if summary exceeds 150 words, truncate to 150 words at the nearest sentence boundary
+- [x] T012 [US3] In `backend/src/services/summary.service.ts`, add word count enforcement: if summary exceeds 150 words, truncate to 150 words at the nearest sentence boundary
 
 **Checkpoint**: Summaries are concise (<150 words), include identity/preference context, exclude routine exchanges.
 
@@ -87,8 +87,8 @@
 
 **Purpose**: Mirror history changes in the sandbox route for consistency.
 
-- [ ] T013 [P] In `backend/src/routes/sandbox.ts`, change message history slice from 20 to 10
-- [ ] T014 In `backend/src/routes/sandbox.ts`, inject `conversationSummary` as context block if available (sandbox may not have a real conversation — handle gracefully)
+- [x] T013 [P] In `backend/src/routes/sandbox.ts`, change message history slice from 20 to 10
+- [x] T014 In `backend/src/routes/sandbox.ts`, inject `conversationSummary` as context block if available (sandbox may not have a real conversation — handle gracefully)
 
 ---
 
@@ -96,10 +96,10 @@
 
 **Purpose**: Compile check, deploy, test end-to-end.
 
-- [ ] T015 Run `npx tsc --noEmit` in `backend/` — must compile clean
-- [ ] T016 Run `npx prisma generate` in `backend/` — Prisma client regenerated (no schema changes needed)
-- [ ] T017 Grep `backend/src/` for any remaining `.slice(-20)` on message history — confirm zero occurrences
-- [ ] T018 Review `backend/src/services/ai.service.ts` to confirm summary block is injected BEFORE conversation history in the content blocks (so the AI reads summary first, then recent messages)
+- [x] T015 Run `npx tsc --noEmit` in `backend/` — must compile clean
+- [x] T016 Run `npx prisma generate` in `backend/` — Prisma client regenerated (no schema changes needed)
+- [x] T017 Grep `backend/src/` for any remaining `.slice(-20)` on message history — confirm zero occurrences
+- [x] T018 Review `backend/src/services/ai.service.ts` to confirm summary block is injected BEFORE conversation history in the content blocks (so the AI reads summary first, then recent messages)
 
 ---
 

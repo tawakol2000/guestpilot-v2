@@ -1,0 +1,149 @@
+/**
+ * Conversation Summary Service
+ * Generates and extends compact summaries of conversation history.
+ * Runs asynchronously (fire-and-forget) after AI responses — never blocks the pipeline.
+ * Uses the cheapest model (gpt-5.4-nano) to minimize cost.
+ */
+
+import OpenAI from 'openai';
+import { PrismaClient } from '@prisma/client';
+
+const SUMMARY_MODEL = 'gpt-5.4-nano';
+const MAX_SUMMARY_WORDS = 150;
+const WINDOW_SIZE = 10;
+
+const SUMMARIZE_PROMPT = `You are summarizing a guest conversation for a hotel AI assistant named Omar.
+
+Extract ONLY the following critical context:
+- Guest identity: who they are, who they're booking for (e.g. "booking for brother Ahmed"), nationality nuances (e.g. "Egyptian with British passport")
+- Special arrangements: preferences that affect service (e.g. "pregnant wife, needs quiet room")
+- Expressed dissatisfaction: complaints or negative experiences (e.g. "apartment wasn't clean on arrival")
+- Key decisions: important commitments or agreements made
+
+EXCLUDE all of the following (these are tracked separately in open tasks):
+- Cleaning requests and scheduling
+- WiFi password or door code exchanges
+- Amenity deliveries and requests
+- Check-in/checkout logistics and instructions
+- Routine acknowledgments ("thanks", "ok", "got it")
+- Resolved escalations and manager responses
+
+Output a plain text summary in third person. Maximum ${MAX_SUMMARY_WORDS} words. No bullet points, no headers, no formatting. If there is nothing critical to summarize, output "No critical context."`;
+
+const EXTEND_PROMPT = `You are updating a conversation summary for a hotel AI assistant. You have the existing summary and new messages that were not previously covered.
+
+Merge the new information into the existing summary. Keep only critical context:
+- Guest identity, special arrangements, preferences, dissatisfaction, key decisions
+- Drop routine service exchanges (cleaning, WiFi, amenities, check-in logistics)
+
+Output the updated summary as plain text. Maximum ${MAX_SUMMARY_WORDS} words. No bullet points, no headers, no formatting.`;
+
+/**
+ * Generate or extend a conversation summary. Fire-and-forget — never throws.
+ * Call this after the AI response is sent, not before.
+ */
+export async function generateOrExtendSummary(
+  conversationId: string,
+  prisma: PrismaClient,
+): Promise<void> {
+  try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    // Fetch conversation with existing summary state
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { conversationSummary: true, summaryMessageCount: true },
+    });
+    if (!conversation) return;
+
+    // Fetch all GUEST + AI messages (exclude AI_PRIVATE, MANAGER_PRIVATE, [MANAGER])
+    const allMessages = await prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { sentAt: 'asc' },
+      select: { role: true, content: true },
+    });
+    const contextMessages = allMessages.filter(
+      m => m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE' && !m.content.startsWith('[MANAGER]')
+    );
+
+    const totalCount = contextMessages.length;
+
+    // No summary needed if conversation fits in the window
+    if (totalCount <= WINDOW_SIZE) {
+      console.log(`[Summary] [${conversationId}] Skipped — ${totalCount} messages fit in window`);
+      return;
+    }
+
+    // Check if existing summary already covers all messages outside the window
+    const messagesOutsideWindow = totalCount - WINDOW_SIZE;
+    if (conversation.summaryMessageCount >= messagesOutsideWindow) {
+      console.log(`[Summary] [${conversationId}] Skipped — summary is current (covers ${conversation.summaryMessageCount}/${messagesOutsideWindow})`);
+      return;
+    }
+
+    // Messages that need to be summarized (everything before the window)
+    const messagesToSummarize = contextMessages.slice(0, messagesOutsideWindow);
+
+    let summaryText: string;
+
+    if (!conversation.conversationSummary) {
+      // Generate from scratch — summarize all messages before the window
+      const transcript = messagesToSummarize
+        .map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`)
+        .join('\n');
+
+      const response = await (openai.responses as any).create({
+        model: SUMMARY_MODEL,
+        instructions: SUMMARIZE_PROMPT,
+        input: transcript,
+        max_output_tokens: 300,
+        reasoning: { effort: 'none' },
+        store: false,
+      });
+
+      summaryText = (response.output_text || '').trim();
+      console.log(`[Summary] [${conversationId}] Generated new summary (${messagesOutsideWindow} messages → ${summaryText.split(/\s+/).length} words)`);
+    } else {
+      // Extend existing summary with newly scrolled-out messages
+      const newMessages = contextMessages.slice(conversation.summaryMessageCount, messagesOutsideWindow);
+      if (newMessages.length === 0) return;
+
+      const newTranscript = newMessages
+        .map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`)
+        .join('\n');
+
+      const response = await (openai.responses as any).create({
+        model: SUMMARY_MODEL,
+        instructions: EXTEND_PROMPT,
+        input: `EXISTING SUMMARY:\n${conversation.conversationSummary}\n\nNEW MESSAGES:\n${newTranscript}`,
+        max_output_tokens: 300,
+        reasoning: { effort: 'none' },
+        store: false,
+      });
+
+      summaryText = (response.output_text || '').trim();
+      console.log(`[Summary] [${conversationId}] Extended summary (+${newMessages.length} messages → ${summaryText.split(/\s+/).length} words)`);
+    }
+
+    // Enforce word limit
+    const words = summaryText.split(/\s+/);
+    if (words.length > MAX_SUMMARY_WORDS) {
+      // Truncate at nearest sentence boundary within limit
+      const truncated = words.slice(0, MAX_SUMMARY_WORDS).join(' ');
+      const lastPeriod = truncated.lastIndexOf('.');
+      summaryText = lastPeriod > 0 ? truncated.substring(0, lastPeriod + 1) : truncated;
+    }
+
+    // Store summary
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        conversationSummary: summaryText,
+        summaryUpdatedAt: new Date(),
+        summaryMessageCount: messagesOutsideWindow,
+      },
+    });
+  } catch (err) {
+    console.warn(`[Summary] [${conversationId}] Failed (non-fatal):`, err);
+  }
+}

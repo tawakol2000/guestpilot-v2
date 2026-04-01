@@ -24,6 +24,7 @@ import { getToolDefinitions } from './tool-definition.service';
 import { resolveVariables, applyPropertyOverrides } from './template-variable.service';
 import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenant } from './push.service';
+import { generateOrExtendSummary } from './summary.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1392,9 +1393,9 @@ export async function generateAndSendAiReply(
 
     let guestMessage = '';
 
-    // Build conversation history text — last 20 messages as labeled lines
+    // Build conversation history text — last 10 messages as labeled lines
     const currentMsgIds = new Set(currentMsgs.map(m => m.id));
-    const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-20);
+    const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-10);
     const historyText = historyMsgs.length > 0
       ? historyMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n')
       : '';
@@ -1435,6 +1436,21 @@ export async function generateAndSendAiReply(
     );
     // Use cleanedPrompt (without content blocks) for instructions — blocks go in input
     effectiveSystemPrompt = cleanedPrompt;
+
+    // Inject conversation summary as a content block (before checklist, after history)
+    try {
+      const convRecord = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { conversationSummary: true },
+      });
+      if (convRecord?.conversationSummary && convRecord.conversationSummary !== 'No critical context.') {
+        // Insert at position 0 so the AI reads the summary first
+        userContent.unshift({
+          type: 'text',
+          text: `### CONTEXT SUMMARY (earlier messages) ###\n${convRecord.conversationSummary}`,
+        });
+      }
+    } catch { /* summary lookup failure is non-fatal */ }
 
     // Append document checklist as a content block at the end (keeps system prompt cacheable)
     if (variableDataMap.DOCUMENT_CHECKLIST) {
@@ -1856,6 +1872,11 @@ export async function generateAndSendAiReply(
       );
     }
 
+
+    // Fire-and-forget: generate/extend conversation summary for next AI call
+    if (allMsgs.length > 10) {
+      generateOrExtendSummary(conversationId, prisma).catch(() => {});
+    }
 
     console.log(`[AI] [${conversationId}] Done`);
   } catch (err) {
