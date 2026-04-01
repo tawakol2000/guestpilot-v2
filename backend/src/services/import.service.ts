@@ -99,8 +99,6 @@ export async function deleteAllData(tenantId: string, prisma: PrismaClient): Pro
 export interface ImportOptions {
   listingsOnly?: boolean;
   conversationsOnly?: boolean;
-  preserveLearnedAnswers?: boolean;
-  preservePropertyChunks?: boolean;
 }
 
 export async function runImport(
@@ -132,35 +130,7 @@ export async function runImport(
     return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`;
   }
 
-  // ── 0. Preserve selected RAG chunks before delete ──────────────────────────
-  let savedChunks: Array<{ content: string; category: string; sourceKey: string; propertyHostawayId: string | null }> = [];
-  if (opts.preserveLearnedAnswers || opts.preservePropertyChunks) {
-    const categories: string[] = [];
-    if (opts.preserveLearnedAnswers) categories.push('learned-answers');
-    if (opts.preservePropertyChunks) categories.push('property-info');
-    if (categories.length > 0) {
-      // Fetch chunks with their property's hostawayListingId so we can re-link after import
-      const chunks = await prisma.$queryRaw<Array<{
-        content: string; category: string; sourceKey: string; hostawayListingId: string | null;
-      }>>`
-        SELECT c.content, c.category, c."sourceKey", p."hostawayListingId"
-        FROM "PropertyKnowledgeChunk" c
-        LEFT JOIN "Property" p ON c."propertyId" = p.id
-        WHERE c."tenantId" = ${tenantId}
-          AND c."propertyId" IS NOT NULL
-          AND c.category IN (${Prisma.join(categories)})
-      `;
-      savedChunks = chunks.map(c => ({
-        content: c.content,
-        category: c.category,
-        sourceKey: c.sourceKey,
-        propertyHostawayId: c.hostawayListingId,
-      }));
-      console.log(`[Import] Preserved ${savedChunks.length} RAG chunks (${categories.join(', ')})`);
-    }
-  }
-
-  // ── 0b. Delete existing data for clean slate (skip for conversationsOnly) ──
+  // ── 0. Delete existing data for clean slate (skip for conversationsOnly) ──
   if (!conversationsOnly) {
     report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
     await deleteAllData(tenantId, prisma);
@@ -271,12 +241,6 @@ export async function runImport(
       },
     });
     result.properties++;
-
-    // RAG: ingest property knowledge chunks — failure never breaks import
-    import('../services/rag.service').then(({ ingestPropertyKnowledge }) => {
-      ingestPropertyKnowledge(tenantId, property.id, property, prisma)
-        .catch((err: Error) => console.error('[Import] RAG ingestion failed (non-fatal):', err));
-    }).catch(() => {/* RAG module not available */});
   }
 
   // ── 1b. Sync automated message templates from Hostaway ─────────────────────
@@ -292,30 +256,6 @@ export async function runImport(
     console.log(`[Import] [${tenantId}] Synced ${automatedMsgs.length} automated message templates`);
   } catch (err) {
     console.warn(`[Import] [${tenantId}] Could not sync automated messages:`, err);
-  }
-
-  // ── 1c. Restore preserved RAG chunks ────────────────────────────────────────
-  if (savedChunks.length > 0) {
-    let restored = 0;
-    for (const chunk of savedChunks) {
-      if (!chunk.propertyHostawayId) continue;
-      const prop = await prisma.property.findUnique({
-        where: { tenantId_hostawayListingId: { tenantId, hostawayListingId: chunk.propertyHostawayId } },
-      });
-      if (!prop) continue;
-      try {
-        const id = `ck${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
-        await prisma.$executeRaw`
-          INSERT INTO "PropertyKnowledgeChunk"
-            (id, "tenantId", "propertyId", content, category, "sourceKey", "createdAt", "updatedAt")
-          VALUES (${id}, ${tenantId}, ${prop.id}, ${chunk.content}, ${chunk.category}, ${chunk.sourceKey}, now(), now())
-        `;
-        restored++;
-      } catch (err) {
-        console.warn(`[Import] Failed to restore chunk ${chunk.category} for listing ${chunk.propertyHostawayId}:`, err);
-      }
-    }
-    console.log(`[Import] [${tenantId}] Restored ${restored}/${savedChunks.length} preserved RAG chunks`);
   }
 
   } // end of conversationsOnly else block (property sync)

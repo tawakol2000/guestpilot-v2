@@ -151,7 +151,7 @@ const SYSTEM_TOOLS: Array<{
         },
         marriage_certificate_needed: {
           type: 'boolean',
-          description: 'Whether a marriage certificate is required (true for Arab married couples)',
+          description: 'Whether a marriage certificate is required. MUST be true for Arab married couples (mandatory compliance requirement, no exceptions). Set to false for non-Arab guests or unmarried guests.',
         },
         reason: {
           type: 'string',

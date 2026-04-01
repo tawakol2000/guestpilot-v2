@@ -2,8 +2,6 @@ import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import OpenAI from 'openai';
 import { AuthenticatedRequest } from '../types';
-import { appendLearnedAnswer } from '../services/rag.service';
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export function makeKnowledgeController(prisma: PrismaClient) {
@@ -70,15 +68,6 @@ export function makeKnowledgeController(prisma: PrismaClient) {
             ...(category !== undefined ? { category } : {}),
           },
         });
-
-        // When a suggestion is approved and has a propertyId, append to learned-answers chunk
-        if (status === 'approved' && (suggestion.propertyId || propertyId)) {
-          const targetPropertyId = suggestion.propertyId || propertyId;
-          if (targetPropertyId && suggestion.question && suggestion.answer) {
-            appendLearnedAnswer(tenantId, targetPropertyId, suggestion.question, suggestion.answer, prisma)
-              .catch(err => console.error('[Knowledge] Failed to append learned answer:', err));
-          }
-        }
 
         res.json(suggestion);
       } catch (err) {
@@ -195,69 +184,12 @@ export function makeKnowledgeController(prisma: PrismaClient) {
       }
     },
 
-    async gapAnalysis(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const { tenantId } = req;
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        // Step 1: Query ClassifierEvaluation for entries with empty classifierLabels in last 30 days
-        const emptyLabelEvals = await prisma.classifierEvaluation.findMany({
-          where: {
-            tenantId,
-            classifierLabels: { isEmpty: true },
-            createdAt: { gte: thirtyDaysAgo },
-          },
-          select: { guestMessage: true },
-        });
-
-        // Step 2: Detect language per message
-        const arabicRegex = /[\u0600-\u06FF]/;
-        const langDist: Record<string, number> = { ar: 0, en: 0, other: 0 };
-        for (const eval_ of emptyLabelEvals) {
-          if (arabicRegex.test(eval_.guestMessage)) {
-            langDist.ar++;
-          } else if (/[a-zA-Z]/.test(eval_.guestMessage)) {
-            langDist.en++;
-          } else {
-            langDist.other++;
-          }
-        }
-
-        // Step 3: Count existing ClassifierExample records grouped by label to find underrepresented
-        const allExamples = await prisma.classifierExample.findMany({
-          where: { tenantId, active: true },
-          select: { labels: true },
-        });
-        const labelCounts: Record<string, number> = {};
-        for (const ex of allExamples) {
-          for (const label of ex.labels) {
-            labelCounts[label] = (labelCounts[label] || 0) + 1;
-          }
-        }
-        const underrepresentedCategories = Object.entries(labelCounts)
-          .filter(([, count]) => count < 10)
-          .map(([category, count]) => ({ category, count }))
-          .sort((a, b) => a.count - b.count);
-
-        res.json({
-          emptyLabelMessages: emptyLabelEvals.length,
-          underrepresentedCategories,
-          languageDistribution: langDist,
-        });
-      } catch (err) {
-        console.error('[Knowledge] gapAnalysis error:', err);
-        res.status(500).json({ error: 'Failed to run gap analysis' });
-      }
-    },
-
     async rateMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;
         const { id: messageId } = req.params;
-        const { rating, correction } = req.body as {
+        const { rating } = req.body as {
           rating: 'positive' | 'negative';
-          correction?: string[];  // labels array for thumbs-down corrections
         };
         if (!['positive', 'negative'].includes(rating)) {
           res.status(400).json({ error: 'rating must be positive or negative' });
@@ -266,115 +198,13 @@ export function makeKnowledgeController(prisma: PrismaClient) {
         const msg = await prisma.message.findFirst({ where: { id: messageId, tenantId } });
         if (!msg) { res.status(404).json({ error: 'Message not found' }); return; }
 
-        // Save or update the rating
         await prisma.messageRating.upsert({
           where: { messageId },
           create: { messageId, rating },
           update: { rating },
         });
 
-        // ─── Self-improvement: connect rating to classifier training ─────────
-
-        // Find the preceding guest message in this conversation (the message the AI was responding to)
-        const precedingGuestMsg = await prisma.message.findFirst({
-          where: {
-            conversationId: msg.conversationId,
-            tenantId,
-            role: 'GUEST',
-            sentAt: { lt: msg.sentAt },
-          },
-          orderBy: { sentAt: 'desc' },
-        });
-
-        let exampleCreated = false;
-
-        if (rating === 'negative' && correction && Array.isArray(correction) && correction.length > 0 && precedingGuestMsg) {
-          // ── Thumbs-down with correction labels ──────────────────────────────
-          // Create an operator-correction ClassifierExample (immediately active)
-          const guestText = precedingGuestMsg.content.trim();
-          if (guestText) {
-            try {
-              // Deactivate any judge-generated example for the same message text
-              await prisma.classifierExample.updateMany({
-                where: {
-                  tenantId,
-                  text: guestText,
-                  source: { in: ['judge-auto-fix', 'judge-correct'] },
-                  active: true,
-                },
-                data: { active: false },
-              });
-
-              // Create or update the operator correction example
-              await prisma.classifierExample.upsert({
-                where: { tenantId_text: { tenantId, text: guestText } },
-                create: {
-                  tenantId,
-                  text: guestText,
-                  labels: correction,
-                  source: 'operator-correction',
-                  active: true,
-                },
-                update: {
-                  labels: correction,
-                  source: 'operator-correction',
-                  active: true,
-                },
-              });
-              exampleCreated = true;
-              console.log(`[Rating] Operator correction: "${guestText.substring(0, 60)}..." -> [${correction.join(', ')}]`);
-            } catch (err: any) {
-              console.error('[Rating] Failed to create operator-correction example:', err);
-            }
-          }
-        } else if (rating === 'positive' && precedingGuestMsg) {
-          // ── Thumbs-up reinforcement for low-confidence classifications ──────
-          // Look up the AiApiLog for this conversation to get classifier topSimilarity
-          try {
-            const aiLog = await prisma.aiApiLog.findFirst({
-              where: { tenantId, conversationId: msg.conversationId },
-              orderBy: { createdAt: 'desc' },
-              select: { ragContext: true },
-            });
-
-            const ragCtx = aiLog?.ragContext as any;
-            const classifierConfidence = ragCtx?.classifierConfidence ?? ragCtx?.classifierTopSim ?? null;
-            const classifierLabels = ragCtx?.classifierLabels as string[] | undefined;
-
-            if (
-              classifierConfidence !== null &&
-              classifierConfidence < 0.40 &&
-              classifierLabels &&
-              classifierLabels.length > 0
-            ) {
-              const guestText = precedingGuestMsg.content.trim();
-              if (guestText) {
-                // Create a reinforcement example (immediately active)
-                await prisma.classifierExample.upsert({
-                  where: { tenantId_text: { tenantId, text: guestText } },
-                  create: {
-                    tenantId,
-                    text: guestText,
-                    labels: classifierLabels,
-                    source: 'operator-reinforcement',
-                    active: true,
-                  },
-                  update: {
-                    labels: classifierLabels,
-                    source: 'operator-reinforcement',
-                    active: true,
-                  },
-                });
-                exampleCreated = true;
-                console.log(`[Rating] Operator reinforcement (LR confidence=${classifierConfidence.toFixed(3)}): "${guestText.substring(0, 60)}..." -> [${classifierLabels.join(', ')}]`);
-              }
-            }
-          } catch (err) {
-            console.error('[Rating] Failed to process thumbs-up reinforcement:', err);
-          }
-        }
-
-        res.json({ ok: true, exampleCreated });
+        res.json({ ok: true });
       } catch (err) {
         console.error('[Knowledge] rateMessage error:', err);
         res.status(500).json({ error: 'Internal server error' });

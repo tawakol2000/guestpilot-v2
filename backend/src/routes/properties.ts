@@ -5,7 +5,6 @@ import { authMiddleware } from '../middleware/auth';
 import { makePropertiesController } from '../controllers/properties.controller';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
-import { ingestPropertyKnowledge } from '../services/rag.service';
 import { buildPropertyInfo, classifyAmenities } from '../services/ai.service';
 import { applyPropertyOverrides } from '../services/template-variable.service';
 
@@ -230,12 +229,8 @@ export function propertiesRouter(prisma: PrismaClient): Router {
         },
       });
 
-      // Rebuild RAG chunks (property-info, preserves learned-answers)
-      const chunks = await ingestPropertyKnowledge(tenantId, propertyId, updated, prisma);
-
       res.json({
         ok: true,
-        chunks,
         property: {
           id: updated.id,
           name: updated.name,

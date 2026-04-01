@@ -73,22 +73,6 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/tools', toolDefinitionsRouter(prisma));
   app.use('/api/push', pushRouter(prisma));
 
-  // Property knowledge reindex endpoint
-  app.post('/api/properties/:id/reindex-knowledge', authMiddleware as any, async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const propertyId = req.params.id as string;
-      const property = await prisma.property.findFirst({ where: { id: propertyId, tenantId } });
-      if (!property) { res.status(404).json({ error: 'Property not found' }); return; }
-      const { ingestPropertyKnowledge } = await import('./services/rag.service');
-      const chunks = await ingestPropertyKnowledge(tenantId, propertyId, property, prisma);
-      res.json({ ok: true, chunks });
-    } catch (err) {
-      console.error('[Properties] Reindex knowledge failed:', err);
-      res.status(500).json({ error: 'Reindex failed' });
-    }
-  });
-
   // Message rating endpoint
   const knowledgeCtrl = makeKnowledgeController(prisma);
   app.post('/api/messages/:id/rate', authMiddleware as any, (req: any, res: any) => {

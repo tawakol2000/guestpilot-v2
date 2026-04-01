@@ -30,10 +30,7 @@ model Tenant {
   knowledgeSuggestions  KnowledgeSuggestion[]
   aiApiLogs             AiApiLog[]
   aiConfigVersions      AiConfigVersion[]
-  propertyKnowledgeChunks PropertyKnowledgeChunk[]
   tenantAiConfig          TenantAiConfig?
-  classifierExamples      ClassifierExample[]
-  classifierEvaluations   ClassifierEvaluation[]
   sopDefinitions          SopDefinition[]
   toolDefinitions         ToolDefinition[]
   pushSubscriptions       PushSubscription[]
@@ -54,7 +51,6 @@ model Property {
   reservations         Reservation[]
   tasks                Task[]
   knowledgeSuggestions    KnowledgeSuggestion[]
-  propertyKnowledgeChunks PropertyKnowledgeChunk[]
   sopPropertyOverrides    SopPropertyOverride[]
 
   @@unique([tenantId, hostawayListingId])
@@ -312,27 +308,6 @@ model AiApiLog {
   @@index([tenantId, conversationId])
 }
 
-// ─── Property Knowledge Chunks (pgvector RAG) ────────────────────────────────
-
-model PropertyKnowledgeChunk {
-  id               String                    @id @default(cuid())
-  tenantId         String
-  propertyId       String?
-  content          String                    @db.Text
-  category         String                    @default("general")
-  sourceKey        String                    @default("")
-  embedding_cohere Unsupported("vector(1024)")?
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, propertyId])
-  @@index([tenantId, category])
-  @@index([propertyId, category])
-}
-
 // ─── Per-Tenant AI Configuration ─────────────────────────────────────────────
 
 model TenantAiConfig {
@@ -348,19 +323,15 @@ model TenantAiConfig {
   adaptiveDebounce     Boolean  @default(true)
   aiEnabled            Boolean  @default(true)
   screeningEnabled     Boolean  @default(true)
-  ragEnabled           Boolean  @default(true)
   memorySummaryEnabled Boolean  @default(true)
   judgeThreshold       Float    @default(0.75)
   autoFixThreshold     Float    @default(0.70)
-  classifierVoteThreshold     Float @default(0.30)
-  classifierContextualGate    Float @default(0.85)
   tier2Threshold              Float @default(0.75)
   highConfidenceThreshold     Float @default(0.85)
   lowConfidenceThreshold      Float @default(0.55)
   tier1Mode                   String @default("active")  // "active" | "ghost" | "off"
   tier2Mode                   String @default("active")  // "active" | "ghost" | "off"
   tier3Mode                   String @default("active")  // "active" | "ghost" | "off"
-  embeddingProvider           String @default("openai")
   workingHoursEnabled  Boolean  @default(false)
   workingHoursStart    String   @default("08:00")
   workingHoursEnd      String   @default("01:00")
@@ -378,52 +349,6 @@ model TenantAiConfig {
   updatedAt            DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
-
-// ─── KNN Classifier Examples (DB-backed, grows via llm-judge) ────────────────
-
-model ClassifierExample {
-  id        String   @id @default(cuid())
-  tenantId  String
-  text      String   @db.Text
-  labels    String[] @default([])
-  active    Boolean  @default(true)
-  source    String   @default("manual")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, text])
-  @@index([tenantId, active])
-}
-
-// ─── LLM-as-Judge Classifier Evaluations ─────────────────────────────────────
-
-model ClassifierEvaluation {
-  id                  String   @id @default(cuid())
-  tenantId            String
-  conversationId      String?
-  guestMessage        String   @db.Text
-  classifierLabels    String[] @default([])
-  classifierMethod    String   @default("")
-  classifierTopSim    Float    @default(0)
-  judgeCorrectLabels  String[] @default([])
-  retrievalCorrect    Boolean  @default(true)
-  judgeConfidence     String   @default("high")
-  judgeReasoning      String   @db.Text @default("")
-  autoFixed           Boolean  @default(false)
-  judgeInputTokens    Int      @default(0)
-  judgeOutputTokens   Int      @default(0)
-  judgeCost           Float    @default(0)
-  skipReason          String?
-  createdAt           DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, retrievalCorrect])
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, autoFixed])
 }
 
 // ─── OPUS Audit Reports ─────────────────────────────────────────────────────

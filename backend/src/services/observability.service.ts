@@ -27,7 +27,6 @@ export interface TraceParams {
   totalMessages?: number;
   memorySummarized?: boolean;
   hasImage?: boolean;
-  ragEnabled?: boolean;
   // Prompt content for Langfuse input/output display
   systemPrompt?: string;
   userContentPreview?: string;
@@ -85,7 +84,6 @@ export function traceAiCall(params: TraceParams): void {
         totalMessages: params.totalMessages ?? 0,
         memorySummarized: params.memorySummarized ?? false,
         hasImage: params.hasImage ?? false,
-        ragEnabled: params.ragEnabled ?? true,
       },
     });
     if (params.ragChunks && params.ragChunks.length > 0) {

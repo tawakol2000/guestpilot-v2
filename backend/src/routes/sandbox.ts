@@ -4,7 +4,6 @@ import OpenAI from 'openai';
 import { authMiddleware } from '../middleware/auth';
 import { getAiConfig } from '../services/ai-config.service';
 import { getTenantAiConfig } from '../services/tenant-config.service';
-import { retrieveRelevantKnowledge } from '../services/rag.service';
 import { getSopContent, buildToolDefinition } from '../services/sop.service';
 import { detectEscalationSignals } from '../services/escalation-enrichment.service';
 import { resolveVariables, applyPropertyOverrides } from '../services/template-variable.service';
@@ -115,7 +114,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         ? historyMsgs.map(m => `${m.role === 'guest' ? 'Guest' : (tenantConfig?.agentName || 'Omar')}: ${m.content}`).join('\n')
         : '';
 
-      // ── RAG retrieval ──────────────────────────────────────────────────
+      // ── Amenity classification ──────────────────────────────────────────
       const rawAmenitiesStr = kb?.amenities ? String(kb.amenities) : undefined;
       const amenityClasses = kb?.amenityClassifications as Record<string, string> | undefined;
       const { available: availableAmenityList, onRequest: onRequestAmenityList } =
@@ -125,27 +124,6 @@ export function sandboxRouter(prisma: PrismaClient) {
       const propertyAmenities = (amenityClasses && Object.keys(amenityClasses).length > 0 && sopOnRequestItems.length > 0)
         ? sopOnRequestItems.join(', ')
         : rawAmenitiesStr;
-
-      const recentForRag = messages.slice(-10).map(m => ({
-        role: m.role === 'guest' ? 'guest' : 'host',
-        content: m.content,
-      }));
-
-      const ragResult = tenantConfig?.ragEnabled !== false
-        ? await retrieveRelevantKnowledge(
-            tenantId, propertyId, ragQuery, prisma, 8,
-            isInquiry ? 'screeningAI' : 'guestCoordinator',
-            undefined, recentForRag, propertyAmenities
-          ).catch(() => ({
-            chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>,
-            topSimilarity: 0,
-          }))
-        : {
-            chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>,
-            topSimilarity: 0,
-          };
-
-      const retrievedChunks = ragResult.chunks;
 
       // ── SOP Classification — handled inline via tool loop (matches production) ──
       // No separate classification call. The AI calls get_sop when it needs SOP guidance.
@@ -478,7 +456,6 @@ export function sandboxRouter(prisma: PrismaClient) {
         durationMs,
         model: effectiveModel,
         ragContext: {
-          chunks: retrievedChunks.map(c => ({ category: c.category, similarity: c.similarity, sourceKey: c.sourceKey })),
           sopToolUsed: true,
           sopCategories: sopClassification.categories,
           sopConfidence: sopClassification.confidence,

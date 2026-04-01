@@ -14,9 +14,7 @@ import { broadcastToTenant } from './sse.service';
 import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
-import { retrieveRelevantKnowledge } from './rag.service';
 import { getSopContent, buildToolDefinition } from './sop.service';
-import { evaluateAndImprove } from './judge.service';
 import { evaluateEscalation } from './task-manager.service';
 // memory.service imports removed — conversation history built inline
 import { getTenantAiConfig } from './tenant-config.service';
@@ -110,7 +108,6 @@ export interface AiApiLogEntry {
     chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>;
     totalRetrieved: number;
     durationMs: number;
-    classifierUsed?: boolean;
     openaiRequestId?: string;
     rateLimitRemaining?: { requests: number; tokens: number };
   } | null;
@@ -240,7 +237,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; ragEnabled?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -550,7 +547,6 @@ async function createMessage(
         totalMessages: options.totalMessages,
         memorySummarized: options.memorySummarized,
         hasImage: options.hasImage,
-        ragEnabled: options.ragEnabled,
         systemPrompt,
         userContentPreview,
       });
@@ -793,7 +789,8 @@ If any guest is Arab → Arab rules apply to entire party.
 7. Otherwise, answer the guest's basic question briefly.
 8. When escalating with an acceptance recommendation, also call create_document_checklist:
    - All guests need passports/IDs (one per person in the party — use guest count)
-   - Arab married couples additionally need a marriage certificate
+   - For Arab married couples, you MUST ALWAYS set marriage_certificate_needed to true — this is a mandatory compliance requirement, no exceptions
+   - For all other guests (non-Arab, or Arab but unmarried), set marriage_certificate_needed to false
    - Do NOT call this tool when recommending rejection
 
 # Tools
@@ -1279,30 +1276,10 @@ export async function generateAndSendAiReply(
       ? sopOnRequestItems.join(', ')
       : rawAmenitiesStr;
 
-    // Upgrade 5c: RAG — retrieve relevant property knowledge for this query.
-    // When multiple messages are batched (guest sent several in debounce window),
-    // concatenate ALL of them for classification. The old approach (last message only)
-    // missed context: "Can I get cleaning?" + "at 10am please" → only classified "at 10am please".
+    // Build the combined query from batched messages for SOP classification + escalation detection.
     const ragQuery = currentMsgs.length > 0
       ? currentMsgs.map((m: { content: string }) => m.content).join(' ')
       : '';
-    const ragStart = Date.now();
-    // Pass conversationId + recent messages for low-tier intent extraction fallback (T013)
-    const recentForRag = allMsgs.slice(-10).map(m => ({
-      role: m.role === 'GUEST' ? 'guest' : 'host',
-      content: m.content,
-    }));
-    // ─── Property knowledge retrieval (embeddings + reranking only, no SOP routing) ───
-    const ragResult = tenantConfig?.ragEnabled !== false && context.propertyId
-      ? await retrieveRelevantKnowledge(
-          tenantId, context.propertyId, ragQuery, prisma, 8,
-          context.reservationStatus === 'INQUIRY' ? 'screeningAI' : 'guestCoordinator',
-          conversationId, recentForRag,
-          propertyAmenities
-        ).catch(() => ({ chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'property' as const }))
-      : { chunks: [] as Array<{ content: string; category: string; similarity: number; sourceKey: string; propertyId: string | null }>, topSimilarity: 0, tier: 'property' as const };
-    const retrievedChunks = ragResult.chunks;
-    const ragDurationMs = Date.now() - ragStart;
 
     // ─── SOP Classification via Tool Use ────────────────────────────────────
     // Single forced get_sop tool call replaces the 3-tier pipeline.
@@ -1334,16 +1311,6 @@ export async function generateAndSendAiReply(
 
     const ragContext: any = {
       query: ragQuery,
-      chunks: retrievedChunks.map((c: any) => ({
-        content: c.content,
-        category: c.category,
-        similarity: c.similarity,
-        sourceKey: c.sourceKey || '',
-        isGlobal: !c.propertyId,
-      })),
-      totalRetrieved: retrievedChunks.length,
-      durationMs: ragDurationMs,
-      topSimilarity: ragResult.topSimilarity,
       // SOP Tool Classification
       sopToolUsed: true,
       sopCategories: sopClassification.categories,
@@ -1707,7 +1674,6 @@ export async function generateAndSendAiReply(
         totalMessages: allMsgs.length,
         memorySummarized: false,
         hasImage: hasImages,
-        ragEnabled: tenantConfig?.ragEnabled !== false,
         tools: toolsForCall,
         toolChoice: 'auto',
         toolHandlers: toolHandlersForCall,
@@ -1879,21 +1845,6 @@ export async function generateAndSendAiReply(
       );
     }
 
-    // Fire-and-forget: LLM-as-judge evaluation
-    // NEVER awaited — runs in background after response is already sent
-    if (!isInquiry) {
-      evaluateAndImprove({
-        tenantId,
-        conversationId,
-        guestMessage: ragQuery,
-        sopCategories: sopClassification.categories,
-        sopConfidence: sopClassification.confidence,
-        sopReasoning: sopClassification.reasoning,
-        aiResponse: guestMessage,
-      }, prisma).catch(err =>
-        console.warn('[AI] Judge evaluation failed (non-fatal):', err)
-      );
-    }
 
     console.log(`[AI] [${conversationId}] Done`);
   } catch (err) {
