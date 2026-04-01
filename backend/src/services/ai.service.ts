@@ -1630,7 +1630,7 @@ export async function generateAndSendAiReply(
         if (allImageUrls.length > 0) {
           await Promise.all(allImageUrls.slice(0, 5).map(async (url) => {
             try {
-              const imgRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
+              const imgRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000, headers: { 'User-Agent': 'GuestPilot/2.0' } });
               const b64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
               const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;
               let mime = 'image/jpeg';
