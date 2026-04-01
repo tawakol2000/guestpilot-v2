@@ -25,8 +25,9 @@ RUN npm install
 # Generate Prisma client
 RUN npx prisma generate
 
-# Build TypeScript
-RUN npm run build
+# Build TypeScript (increase heap for tsc on constrained containers)
+RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 EXPOSE 3000
-CMD ["sh", "-c", "echo '[Deploy] Starting server...' && node dist/server.js"]
+# Cap runtime heap at 512MB to prevent OOM from unbounded buffers
+CMD ["sh", "-c", "echo '[Deploy] Starting server...' && NODE_OPTIONS=--max-old-space-size=512 node dist/server.js"]
