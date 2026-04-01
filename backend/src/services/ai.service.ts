@@ -76,9 +76,10 @@ type ContentBlock = { type: 'text'; text: string };
 // Used as default when tenant hasn't customized via Configure AI
 const DEFAULT_IMAGE_HANDLING = `[System: The guest sent an image. Follow these rules:]
 1. Respond naturally based on what you see — don't describe the image back to the guest.
-2. Always escalate to manager. In the escalation note, describe what the image shows.
-3. If unclear: tell the guest you're looking into it and escalate.
-Common types: broken items → maintenance escalation, leaks/damage → urgent repair, passport/ID → call mark_document_received if document checklist has pending items (otherwise visitor verification escalation), marriage certificate → same, appliance issues → troubleshooting escalation.
+2. If the image is a passport, national ID, or marriage certificate AND pending documents exist in the PENDING DOCUMENTS section → call mark_document_received with the correct document_type and a brief note (e.g. "passport for Ahmed"). Do NOT escalate — just mark it received and confirm to the guest.
+3. If the image looks like a document but is too blurry, cut off, or unreadable → tell the guest to resend a clearer photo. Do NOT mark it as received.
+4. For all other images (broken items, damage, appliances, etc.) → escalate to manager with a description of what the image shows.
+5. If unclear what the image is → tell the guest you're looking into it and escalate.
 Never ignore images.`;
 
 // ─── API call log (in-memory ring buffer) ────────────────────────────────────
