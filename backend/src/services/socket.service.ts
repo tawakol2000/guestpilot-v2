@@ -81,7 +81,7 @@ export function initSocketIO(httpServer: HttpServer): void {
   }
 
   // ── JWT Authentication middleware ────────────────────────────────────────
-  io.use((socket: Socket, next) => {
+  io.use((socket: Socket, next: (err?: Error) => void) => {
     const token = socket.handshake.auth?.token;
     if (!token) {
       return next(new Error('Authentication required'));
@@ -115,7 +115,7 @@ export function initSocketIO(httpServer: HttpServer): void {
       console.log(`[Socket.IO] Client connected tenantId=${tenantId} userId=${userId} connections=${_currentConnections}`);
     }
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', (reason: string) => {
       _currentConnections--;
       const tenantCount = (_tenantConnections.get(tenantId) || 1) - 1;
       if (tenantCount <= 0) {
