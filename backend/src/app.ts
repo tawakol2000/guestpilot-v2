@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { authRouter } from './routes/auth';
 import { conversationsRouter } from './routes/conversations';
@@ -20,10 +19,8 @@ import { toolDefinitionsRouter } from './routes/tool-definitions';
 import { pushRouter } from './routes/push';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
-import { registerSSEClient } from './services/sse.service';
 import { getAiApiLog } from './services/ai.service';
-import { authMiddleware, JWT_SECRET } from './middleware/auth';
-import { JwtPayload } from './types';
+import { authMiddleware } from './middleware/auth';
 import { getMessageSyncStats } from './services/message-sync.service';
 
 export function createApp(prisma: PrismaClient) {
@@ -187,41 +184,6 @@ export function createApp(prisma: PrismaClient) {
       console.error('[AI-Logs] DB query failed:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
-  });
-
-  // ── SSE — real-time push to browser ───────────────────────────────────────
-  // EventSource can't send Authorization headers, so token comes as query param
-  app.get('/api/events', (req, res) => {
-    const token = req.query.token as string | undefined;
-    if (!token) { res.status(401).end(); return; }
-    let tenantId: string;
-    try {
-      const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
-      tenantId = payload.tenantId;
-    } catch {
-      res.status(401).end();
-      return;
-    }
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering (Railway proxy)
-    // Disable TCP Nagle algorithm so each write() flushes immediately
-    if (res.socket) res.socket.setNoDelay(true);
-    res.flushHeaders();
-    res.write(`event: connected\ndata: {}\n\n`);
-    registerSSEClient(tenantId, res);
-    // Keep-alive ping every 25 s — sends a named event so browser DevTools shows it
-    const heartbeat = setInterval(() => {
-      const ok = res.write('event: ping\ndata: {}\n\n');
-      if (!ok) {
-        console.log(`[SSE] Write returned false for tenantId=${tenantId} — clearing heartbeat`);
-        clearInterval(heartbeat);
-      }
-    }, 25000);
-    res.on('close', () => {
-      clearInterval(heartbeat);
-    });
   });
 
   // ── 404 catch-all (log unknown routes to help debug webhook config) ──────

@@ -16,7 +16,7 @@
 
 import { PrismaClient, MessageRole, Channel } from '@prisma/client';
 import * as hostawayService from './hostaway.service';
-import { broadcastToTenant } from './sse.service';
+import { broadcastCritical } from './socket.service';
 
 // ── Stats tracking ───────────────────────────────────────────────────────────
 
@@ -225,8 +225,8 @@ export async function syncConversationMessages(
           latestSyncedSentAt = sentAt;
         }
 
-        // SSE broadcast the new message
-        broadcastToTenant(tenantId, 'message', {
+        // Broadcast the new message
+        broadcastCritical(tenantId, 'message', {
           conversationId,
           message: {
             id: created.id,

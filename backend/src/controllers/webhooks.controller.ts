@@ -9,7 +9,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, MessageRole, Channel, ReservationStatus } from '@prisma/client';
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
-import { broadcastToTenant } from '../services/sse.service';
+import { broadcastToTenant, broadcastCritical } from '../services/socket.service';
 import { getReservation } from '../services/hostaway.service';
 import { sendPushToTenant } from '../services/push.service';
 
@@ -463,7 +463,7 @@ async function handleNewMessage(
   const msgContent = data.body || '';
   const msgSentAt = data.date ? parseHostawayDate(data.date).toISOString() : new Date().toISOString();
   const roleStr = isGuest ? 'GUEST' : 'HOST';
-  broadcastToTenant(tenantId, 'message', {
+  broadcastCritical(tenantId, 'message', {
     conversationId: conversation.id,
     message: {
       role: roleStr,

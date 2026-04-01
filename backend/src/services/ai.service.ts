@@ -10,7 +10,7 @@ import { PrismaClient, MessageRole, Channel } from '@prisma/client';
 import * as hostawayService from './hostaway.service';
 import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
-import { broadcastToTenant } from './sse.service';
+import { broadcastToTenant, broadcastCritical } from './socket.service';
 import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
@@ -1227,7 +1227,7 @@ async function handleEscalation(
           communicationType: 'internal',
         },
       });
-      broadcastToTenant(tenantId, 'message', {
+      broadcastCritical(tenantId, 'message', {
         conversationId,
         message: { role: 'AI_PRIVATE', content: note, sentAt: privateMsg.sentAt.toISOString(), channel: 'OTHER', imageUrls: [] },
         lastMessageRole: 'AI_PRIVATE',
@@ -1922,7 +1922,7 @@ export async function generateAndSendAiReply(
         where: { conversationId },
         data: { suggestion: guestMessage },
       }).catch(() => {}); // record may have been deleted by new guest message — stale, ignore
-      broadcastToTenant(tenantId, 'ai_suggestion', { conversationId, suggestion: guestMessage });
+      broadcastCritical(tenantId, 'ai_suggestion', { conversationId, suggestion: guestMessage });
       console.log(`[AI] [${conversationId}] Copilot mode — suggestion held for host approval`);
       return;
     }
@@ -1954,7 +1954,7 @@ export async function generateAndSendAiReply(
     });
 
     // Push AI message to browser in real-time
-    broadcastToTenant(tenantId, 'message', {
+    broadcastCritical(tenantId, 'message', {
       conversationId,
       message: { role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
       lastMessageRole: 'AI',

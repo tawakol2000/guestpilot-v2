@@ -84,7 +84,7 @@ export function makeMessagesController(prisma: PrismaClient) {
               where: { id: pendingSuggestion.id },
               data: { answer: content, source: 'manager_approved' },
             });
-            const { broadcastToTenant } = await import('../services/sse.service');
+            const { broadcastToTenant } = await import('../services/socket.service');
             broadcastToTenant(tenantId, 'knowledge_suggestion_updated', { id: pendingSuggestion.id });
           }
         }).catch(err => console.warn('[Messages] Could not pre-fill knowledge suggestion:', err));
