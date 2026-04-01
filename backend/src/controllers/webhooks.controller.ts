@@ -412,17 +412,31 @@ async function handleNewMessage(
       },
     });
   } catch (err: any) {
-    // P2002 = Prisma unique constraint violation — message already exists (sync or duplicate webhook)
+    // P2002 = unique constraint violation — message already exists (inserted by sync or duplicate webhook)
     if (err?.code === 'P2002') {
-      console.log(`[Webhook] Duplicate message ${hostawayMsgId} — message exists, still processing AI trigger`);
-      // Don't return — fall through to schedule AI reply (sync inserts messages but doesn't trigger AI)
-    } else {
-      throw err;
+      console.log(`[Webhook] Duplicate message ${hostawayMsgId} — checking if AI still needs to be triggered`);
+      // Message exists, but AI may not have been triggered yet (sync doesn't trigger AI).
+      // Only schedule AI if no PendingAiReply exists or was recently fired for this conversation.
+      if (isGuest && conversation.reservation.aiEnabled && conversation.reservation.aiMode !== 'off') {
+        const existingReply = await prisma.pendingAiReply.findFirst({
+          where: { conversationId: conversation.id },
+          orderBy: { createdAt: 'desc' },
+        });
+        // Schedule AI only if there's no pending/recent reply (avoid duplicate AI responses)
+        if (!existingReply || (existingReply.fired && Date.now() - existingReply.createdAt.getTime() > 60_000)) {
+          await scheduleAiReply(conversation.id, tenantId, prisma);
+          console.log(`[Webhook] [${tenantId}] AI reply scheduled for duplicate message in conv ${conversation.id}`);
+        } else {
+          console.log(`[Webhook] [${tenantId}] AI reply already pending/recent for conv ${conversation.id} — skipping`);
+        }
+      }
+      return;
     }
+    throw err;
   }
 
   if (isGuest) {
-    // Update conversation: increment unread, update timestamp (safe to re-run on duplicate)
+    // Update conversation: increment unread, update timestamp
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
