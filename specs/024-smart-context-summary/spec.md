@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: Reduce conversation history from 20 messages to 10 recent messages + an intelligent summary of older messages. Summary captures only critical context (guest identity, special arrangements, key decisions) while excluding routine operational details already tracked in open tasks. Must be efficient — not regenerated on every message.
 
+## Clarifications
+
+### Session 2026-04-01
+
+- Q: Should summary generation happen synchronously (during AI call) or asynchronously (background, ready for next message)? → A: Asynchronous — fire-and-forget after AI response is sent. Zero latency impact. Use the cheapest available model for summarization.
+- Q: What message roles count toward the 10-message window? → A: GUEST + AI only. AI_PRIVATE messages (internal notes, delivery failures) are excluded from both the window count and the history provided to the AI.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Intelligent Context Window with Summary (Priority: P1)
@@ -77,10 +84,11 @@ The summary must capture the right information and exclude the wrong information
 
 ### Functional Requirements
 
-- **FR-001**: System MUST include the last 10 messages (verbatim) as the conversation history provided to the AI, reduced from the current 20.
+- **FR-001**: System MUST include the last 10 GUEST + AI messages (verbatim) as the conversation history provided to the AI, reduced from the current 20. AI_PRIVATE messages (internal notes, delivery failures) are excluded from both the count and the history.
 - **FR-002**: System MUST generate a compact summary of all messages before the 10-message window when the conversation exceeds 10 messages.
 - **FR-003**: System MUST store the summary persistently so it is available for subsequent AI calls without regeneration.
-- **FR-004**: System MUST NOT regenerate the summary on every guest message. Summaries are generated or extended only when new messages scroll out of the 10-message window AND no current summary covers them.
+- **FR-004**: System MUST NOT regenerate the summary on every guest message. Summaries are generated or extended only when new messages scroll out of the 10-message window AND no current summary covers them. Summary generation runs asynchronously (fire-and-forget after the AI response is sent) so it adds zero latency to guest responses. The summary is ready for the next AI call.
+- **FR-004a**: Summary generation MUST use the cheapest available model to minimize cost, since it runs frequently across all conversations.
 - **FR-005**: Summary MUST include critical context: guest identity details (who they are, who they're booking for, nationality nuances), special arrangements, guest preferences that affect service, expressed dissatisfaction, and key decisions made.
 - **FR-006**: Summary MUST exclude routine operational exchanges that are already tracked in open tasks (cleaning requests, WiFi issues, amenity deliveries, resolved escalations).
 - **FR-007**: Summary MUST be no longer than 150 words regardless of conversation length.
@@ -110,3 +118,4 @@ The summary must capture the right information and exclude the wrong information
 - 10 raw messages provide sufficient immediate context for most guest interactions (cleaning, WiFi, check-in/out, amenities).
 - Open tasks already capture all actionable items, so the summary does not need to duplicate task tracking.
 - The summary is text-only — image descriptions from earlier messages are not included.
+- AI_PRIVATE messages (delivery failures, internal escalation notes) are not useful conversational context and are excluded from both the message window and summarization input.
