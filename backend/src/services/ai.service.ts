@@ -1839,10 +1839,10 @@ export async function generateAndSendAiReply(
           guestMessage = parsed['guest message'] || '';
           // Handle screening escalation
           if (parsed.manager?.needed) {
-            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'info_request');
+            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'inquiry_decision');
             traceEscalation({
               tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.manager.title, escalationUrgency: 'info_request',
+              escalationType: parsed.manager.title, escalationUrgency: 'inquiry_decision',
               escalationNote: parsed.manager.note,
             });
           }
