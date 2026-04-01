@@ -224,7 +224,7 @@ function ConversationRow({
   onSelect: () => void
 }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
-  const { label: statusLabel, color: statusColor } = statusConfig[conversation.checkInStatus]
+  const { label: statusLabel, color: statusColor } = statusConfig[conversation.checkInStatus] || { label: conversation.checkInStatus || 'Unknown', color: T.text.secondary }
   const hasUnread = conversation.unreadCount > 0
 
   return (
