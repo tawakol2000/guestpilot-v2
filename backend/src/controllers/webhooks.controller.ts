@@ -388,6 +388,59 @@ async function handleNewMessage(
   // Generate a unique hostawayMessageId even when Hostaway sends empty/missing id
   const hostawayMsgId = data.id ? String(data.id) : `empty-${Date.now()}`;
 
+  // Detect Airbnb system notifications (alteration requests, etc.) — not real guest messages
+  const messageBody = (data.body || '').toLowerCase();
+  const isAlterationRequest = isGuest && (
+    messageBody.includes('alteration request') ||
+    messageBody.includes('reservation alteration') ||
+    messageBody.includes('modification request') ||
+    messageBody.includes('wants to change') ||
+    messageBody.includes('alteration has been')
+  );
+
+  if (isAlterationRequest) {
+    // Save the message but DON'T trigger AI — create an immediate task instead
+    console.log(`[Webhook] [${tenantId}] Alteration request detected in conv ${conversation.id} — creating task, skipping AI`);
+    try {
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id, tenantId,
+          role: MessageRole.GUEST, content: data.body || '',
+          channel: conversation.channel,
+          communicationType: data.communicationType?.toLowerCase() || 'channel',
+          sentAt: data.date ? parseHostawayDate(data.date) : new Date(),
+          hostawayMessageId: hostawayMsgId,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code !== 'P2002') throw err;
+    }
+    // Create task for manager
+    const guestName = conversation.guest?.name || 'Guest';
+    const propertyName = conversation.property?.name || 'Property';
+    const task = await prisma.task.create({
+      data: {
+        tenantId, conversationId: conversation.id, propertyId: conversation.propertyId,
+        title: 'alteration-request',
+        note: `${guestName} (${propertyName}) submitted a booking alteration request. Review and accept/reject on the Airbnb/Booking.com dashboard. Message: "${(data.body || '').substring(0, 200)}"`,
+        urgency: 'modification_request',
+        source: 'system',
+      },
+    });
+    broadcastToTenant(tenantId, 'new_task', { conversationId: conversation.id, task });
+    broadcastCritical(tenantId, 'message', {
+      conversationId: conversation.id,
+      message: { role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: conversation.channel, imageUrls: [] },
+      lastMessageRole: 'GUEST', lastMessageAt: new Date().toISOString(),
+    });
+    sendPushToTenant(tenantId, {
+      title: 'Alteration Request',
+      body: `${guestName} (${propertyName}) submitted a booking modification. Review on Airbnb.`,
+      data: { conversationId: conversation.id, taskId: task.id, type: 'task' },
+    }, prisma).catch(err => console.warn('[Push] Alteration notification failed:', err));
+    return;
+  }
+
   // Determine the channel for this specific message (WhatsApp overrides conversation channel)
   const msgChannel = data.communicationType?.toLowerCase() === 'whatsapp'
     ? Channel.WHATSAPP

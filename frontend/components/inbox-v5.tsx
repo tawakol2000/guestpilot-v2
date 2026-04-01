@@ -665,8 +665,10 @@ function TasksBox({ conversationId, dragHandle }: { conversationId: string; drag
 
   function urgencyDotColor(urgency: string): string {
     if (urgency === 'immediate') return T.status.red
+    if (urgency === 'modification_request') return T.status.red
     if (urgency === 'scheduled') return T.status.amber
     if (urgency === 'inquiry_decision') return T.accent
+    if (urgency === 'info_request') return T.accent
     return T.text.tertiary
   }
 

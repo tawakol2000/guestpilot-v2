@@ -541,7 +541,7 @@ export default function SandboxChatV5() {
                   {msg.meta.escalation && (
                     <Badge
                       icon={<AlertTriangle size={10} />}
-                      color={msg.meta.escalation.urgency === 'immediate' ? T.status.red : T.status.amber}
+                      color={msg.meta.escalation.urgency === 'immediate' || msg.meta.escalation.urgency === 'modification_request' ? T.status.red : msg.meta.escalation.urgency === 'inquiry_decision' ? T.accent : T.status.amber}
                       text={`Escalation: ${msg.meta.escalation.title}`}
                       tooltip={msg.meta.escalation.note}
                     />

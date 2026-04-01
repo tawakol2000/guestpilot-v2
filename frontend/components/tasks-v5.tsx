@@ -68,7 +68,9 @@ function ensureStyles(): void {
 function urgencyColor(urgency: string): string {
   const u = urgency.toLowerCase()
   if (u.includes('immediate')) return T.status.red
+  if (u.includes('modification')) return T.status.red
   if (u.includes('scheduled')) return T.status.amber
+  if (u.includes('inquiry')) return T.accent
   if (u.includes('info')) return T.accent
   return T.text.tertiary
 }
@@ -76,7 +78,9 @@ function urgencyColor(urgency: string): string {
 function urgencyBg(urgency: string): string {
   const u = urgency.toLowerCase()
   if (u.includes('immediate')) return 'rgba(220,38,38,0.1)'
+  if (u.includes('modification')) return 'rgba(220,38,38,0.1)'
   if (u.includes('scheduled')) return 'rgba(217,119,6,0.12)'
+  if (u.includes('inquiry')) return 'rgba(29,78,216,0.1)'
   if (u.includes('info')) return 'rgba(29,78,216,0.1)'
   return 'rgba(168,162,158,0.1)'
 }
@@ -84,7 +88,9 @@ function urgencyBg(urgency: string): string {
 function urgencyLabel(urgency: string): string {
   const u = urgency.toLowerCase()
   if (u.includes('immediate')) return 'Immediate'
+  if (u.includes('modification')) return 'Modification Request'
   if (u.includes('scheduled')) return 'Scheduled'
+  if (u.includes('inquiry')) return 'Inquiry Decision'
   if (u.includes('info')) return 'Info Request'
   return urgency
 }
