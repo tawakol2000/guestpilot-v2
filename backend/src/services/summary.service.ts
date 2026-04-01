@@ -56,12 +56,14 @@ export async function generateOrExtendSummary(
     });
     if (!conversation) return;
 
-    // Fetch all GUEST + AI messages (exclude AI_PRIVATE, MANAGER_PRIVATE, [MANAGER])
-    const allMessages = await prisma.message.findMany({
+    // Fetch recent messages for summary (last 200 is more than enough for context)
+    const allMessagesDesc = await prisma.message.findMany({
       where: { conversationId },
-      orderBy: { sentAt: 'asc' },
+      orderBy: { sentAt: 'desc' },
+      take: 200,
       select: { role: true, content: true },
     });
+    const allMessages = allMessagesDesc.reverse();
     const contextMessages = allMessages.filter(
       m => m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE' && !m.content.startsWith('[MANAGER]')
     );

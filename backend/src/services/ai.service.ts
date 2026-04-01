@@ -1311,12 +1311,14 @@ export async function generateAndSendAiReply(
       }
     }
 
-    // Fetch ALL message history from local DB (not Hostaway API)
+    // Fetch recent message history (last 100 — only last 10 used for context + current batch)
     const aiCfg = getAiConfig();
-    const dbMessages = await prisma.message.findMany({
+    const dbMessagesDesc = await prisma.message.findMany({
       where: { conversationId },
-      orderBy: { sentAt: 'asc' },
+      orderBy: { sentAt: 'desc' },
+      take: 100,
     });
+    const dbMessages = dbMessagesDesc.reverse();
     // Exclude manager private messages from AI context
     const allMsgs = dbMessages.filter(
       m => !m.content.startsWith('[MANAGER]') && m.role !== 'AI_PRIVATE' && m.role !== 'MANAGER_PRIVATE'

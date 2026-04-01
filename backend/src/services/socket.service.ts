@@ -39,25 +39,13 @@ export function initSocketIO(httpServer: HttpServer): void {
     ? process.env.CORS_ORIGINS.split(',').map(s => s.trim())
     : ['http://localhost:3000', 'http://127.0.0.1:3000'];
 
-  io = new Server(httpServer, {
-    cors: {
-      origin: corsOrigins,
-      credentials: true,
-    },
-    transports: ['websocket'],
-    pingInterval: 25000,
-    pingTimeout: 20000,
-    connectionStateRecovery: {
-      maxDisconnectionDuration: 60 * 60 * 1000, // 1 hour
-      skipMiddlewares: true,
-    },
-  });
-
-  // ── Redis Streams adapter (optional — graceful degradation) ──────────────
+  // ── Check Redis availability for adapter + Connection State Recovery ─────
   const redisUrl = process.env.REDIS_URL;
+  let redisAdapter: any = null;
+  let redisAvailable = false;
+
   if (redisUrl) {
     try {
-      // Dynamic import to avoid crash if redis-streams-adapter not installed
       const Redis = require('ioredis');
       const { createAdapter } = require('@socket.io/redis-streams-adapter');
       const redisClient = new Redis(redisUrl, {
@@ -72,12 +60,33 @@ export function initSocketIO(httpServer: HttpServer): void {
       redisClient.on('connect', () => {
         console.log('[Socket.IO] Redis Streams adapter connected — multi-instance broadcasting enabled');
       });
-      io.adapter(createAdapter(redisClient));
+      redisAdapter = createAdapter(redisClient);
+      redisAvailable = true;
     } catch (err: any) {
-      console.warn('[Socket.IO] Redis Streams adapter failed — falling back to single-instance:', err.message);
+      console.warn('[Socket.IO] Redis Streams adapter failed — single-instance, no CSR:', err.message);
     }
   } else {
-    console.warn('[Socket.IO] REDIS_URL not set — single-instance mode (no cross-instance broadcasting)');
+    console.warn('[Socket.IO] REDIS_URL not set — single-instance mode, no CSR');
+  }
+
+  // CSR only with Redis (in-memory buffer causes OOM at scale)
+  const serverOpts: any = {
+    cors: { origin: corsOrigins, credentials: true },
+    transports: ['websocket'] as const,
+    pingInterval: 25000,
+    pingTimeout: 20000,
+  };
+  if (redisAvailable) {
+    serverOpts.connectionStateRecovery = {
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+      skipMiddlewares: true,
+    };
+  }
+
+  io = new Server(httpServer, serverOpts);
+
+  if (redisAdapter) {
+    io.adapter(redisAdapter);
   }
 
   // ── JWT Authentication middleware ────────────────────────────────────────
@@ -127,7 +136,7 @@ export function initSocketIO(httpServer: HttpServer): void {
     });
   });
 
-  console.log('[Socket.IO] Server initialized — WebSocket transport, 1-hour recovery window');
+  console.log(`[Socket.IO] Server initialized — WebSocket transport, CSR=${redisAvailable ? '2min (Redis)' : 'disabled'}`);
 }
 
 // ── Broadcasting ────────────────────────────────────────────────────────────
