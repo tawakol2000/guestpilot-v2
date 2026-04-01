@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import { createServer } from 'http';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { startAiDebounceJob } from './jobs/aiDebounce.job';
 import { startMessageSyncJob } from './jobs/messageSync.job';
 import { setAiServicePrisma } from './services/ai.service';
+import { initSocketIO } from './services/socket.service';
 import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
@@ -39,6 +41,10 @@ async function main() {
   setPropertySearchPrisma(prisma);
 
   const app = createApp(prisma);
+  const httpServer = createServer(app);
+
+  // Attach Socket.IO to the HTTP server
+  initSocketIO(httpServer);
 
   // Start background jobs
   const jobTimer = startAiDebounceJob(prisma);
@@ -47,7 +53,7 @@ async function main() {
   // Start BullMQ worker (graceful no-op if REDIS_URL missing)
   const aiReplyWorker = startAiReplyWorker(prisma);
 
-  const server = app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`[Server] GuestPilot backend running on port ${PORT}`);
     console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
   });
@@ -60,7 +66,7 @@ async function main() {
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();
-    server.close(async () => {
+    httpServer.close(async () => {
       await prisma.$disconnect();
       console.log('[Server] Shutdown complete');
       process.exit(0);

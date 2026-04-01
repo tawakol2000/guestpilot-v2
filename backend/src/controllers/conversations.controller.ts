@@ -5,7 +5,7 @@ import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { cancelPendingAiReply, getPendingReplyForConversation, markFired } from '../services/debounce.service';
 import { generateAndSendAiReply } from '../services/ai.service';
-import { broadcastToTenant } from '../services/sse.service';
+import { broadcastToTenant, broadcastCritical } from '../services/socket.service';
 import { syncConversationMessages } from '../services/message-sync.service';
 
 const aiToggleSchema = z.object({
@@ -504,7 +504,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { lastMessageAt: sentAt },
         });
 
-        broadcastToTenant(tenantId, 'message', {
+        broadcastCritical(tenantId, 'message', {
           conversationId: id,
           message: { id: msg.id, role: 'AI', content: messageText, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
           lastMessageRole: 'AI',

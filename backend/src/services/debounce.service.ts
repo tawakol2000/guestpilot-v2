@@ -7,10 +7,8 @@
 
 import { PrismaClient, TenantAiConfig } from '@prisma/client';
 import { getTenantAiConfig } from './tenant-config.service';
-import { broadcastToTenant } from './sse.service';
+import { broadcastToTenant } from './socket.service';
 import { addAiReplyJob, removeAiReplyJob } from './queue.service';
-
-const POLL_INTERVAL_MS = 30 * 1000; // job polls every 30s — added to expectedAt for accurate countdown
 
 // ── Working hours helpers ─────────────────────────────────────────────────────
 
@@ -153,9 +151,6 @@ export async function scheduleAiReply(
     console.log(`[Debounce] Outside working hours tenantId=${tenantId} — deferring to ${scheduledAt.toISOString()}`);
   }
 
-  // expectedAt = when the AI will actually fire (scheduledAt + up to one poll cycle)
-  const expectedAt = new Date(scheduledAt.getTime() + POLL_INTERVAL_MS);
-
   // Cleanup old completed (fired) records — but only if they were scheduled more than 60s ago
   // to avoid deleting a record that a worker is currently processing
   const oldFiredCutoff = new Date(now.getTime() - 60000);
@@ -182,9 +177,6 @@ export async function scheduleAiReply(
     create: { conversationId, tenantId, scheduledAt, fired: false },
     update: { scheduledAt, fired: false, suggestion: null },
   });
-
-  // Broadcast typing indicator to browser
-  broadcastToTenant(tenantId, 'ai_typing', { conversationId, expectedAt: expectedAt.toISOString() });
 
   // Also enqueue in BullMQ (if Redis available) — fire-and-forget, never breaks DB debounce
   addAiReplyJob(conversationId, tenantId, effectiveDelayMs).catch(err =>

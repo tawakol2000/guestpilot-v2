@@ -75,7 +75,8 @@ import {
   type ApiMessage,
   type ApiTask,
 } from '@/lib/api'
-import { SyncIndicator } from '@/components/ui/sync-indicator'
+import { socket, connectSocket, disconnectSocket } from '../lib/socket'
+import { ConnectionStatus } from './ui/connection-status'
 import { OverviewV5 } from '@/components/overview-v5'
 import { AnalyticsV5 } from '@/components/analytics-v5'
 import { TasksV5 } from '@/components/tasks-v5'
@@ -1374,8 +1375,6 @@ const PANEL_WIGGLE_DELAYS: Record<PanelSectionId, string> = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
-
 export default function InboxV5() {
   const router = useRouter()
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -1423,9 +1422,13 @@ export default function InboxV5() {
   const [correctionSubmitted, setCorrectionSubmitted] = useState<Record<string, boolean>>({})
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null)
 
-  // Sync indicator state
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+  // Socket.IO connection state
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'delayed' | 'reconnecting' | 'disconnected'>('reconnecting')
+  const [showReconnectedBanner, setShowReconnectedBanner] = useState(false)
+  const seenMessageIds = useRef<Set<string>>(new Set())
+  const wsFailCount = useRef(0)
+  const degradedPollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prevStatusRef = useRef<string>('reconnecting')
 
   // Panel reorder state
   const [panelOrder, setPanelOrder] = useState<PanelSectionId[]>(() => {
@@ -1496,6 +1499,11 @@ export default function InboxV5() {
     localStorage.setItem('gp-panel-order', JSON.stringify(panelOrder))
   }, [panelOrder])
 
+  // ── Track previous connection status for reconnection banner ──
+  useEffect(() => {
+    prevStatusRef.current = connectionStatus
+  }, [connectionStatus])
+
   // ── Effect 1: Load conversations + poll 30s ──
   useEffect(() => {
     async function load() {
@@ -1533,21 +1541,19 @@ export default function InboxV5() {
     return () => clearInterval(interval)
   }, [])
 
-  // ── Effect 2: Load detail on selection + poll every 15s ──
+  // ── Effect 2: Load detail on selection ──
   useEffect(() => {
     // Clear copilot suggestion and typing state when switching conversations
     setAiSuggestion(null)
     setAiTyping(false)
-    // Reset sync timestamp when switching conversations
-    setLastSyncedAt(null)
+    seenMessageIds.current.clear()
     if (!selectedId) return
 
     let cancelled = false
-    const prevMessageCount = { current: 0 }
 
-    function refreshDetail(isInitial: boolean) {
+    function loadDetail() {
       if (cancelled) return
-      const fetchPromise = isInitial && !fetchedDetails.current.has(selectedId)
+      const fetchPromise = !fetchedDetails.current.has(selectedId)
         ? (setLoadingDetail(true), apiGetConversation(selectedId))
         : apiGetConversation(selectedId)
 
@@ -1556,46 +1562,34 @@ export default function InboxV5() {
           if (cancelled || !detail) return
           fetchedDetails.current.add(selectedId)
           try {
-            const newMsgCount = (detail.messages || []).length
             setConversations(prev =>
               prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
             )
-            // Auto-scroll if new messages arrived (not on initial load)
-            if (!isInitial && newMsgCount > prevMessageCount.current) {
-              setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-            }
-            prevMessageCount.current = newMsgCount
           } catch (mergeErr) {
             console.error('[Inbox] mergeDetail crashed:', mergeErr, 'detail:', JSON.stringify(detail).slice(0, 500))
           }
           // Fetch pending copilot suggestion if in copilot mode
-          if (isInitial && detail?.reservation?.aiMode === 'copilot') {
+          if (detail?.reservation?.aiMode === 'copilot') {
             apiGetConversationSuggestion(selectedId)
               .then(data => { if (data?.suggestion) setAiSuggestion(data.suggestion) })
               .catch(() => {})
           }
         })
-        .catch(err => { if (isInitial) console.error('[Inbox] apiGetConversation failed:', err) })
-        .finally(() => { if (isInitial) setLoadingDetail(false) })
+        .catch(err => console.error('[Inbox] apiGetConversation failed:', err))
+        .finally(() => setLoadingDetail(false))
     }
 
     // Initial load
-    refreshDetail(true)
-
-    // Poll every 15s to keep messages fresh (SSE backup)
-    const pollTimer = setInterval(() => refreshDetail(false), 15000)
+    loadDetail()
 
     // On-open sync: also trigger Hostaway sync (fire-and-forget)
     apiSyncConversation(selectedId).then(res => {
-      if (res.syncedAt) setLastSyncedAt(res.syncedAt)
-      else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
       // If sync found new messages, refresh immediately
-      if (res.newMessages && res.newMessages > 0) refreshDetail(false)
+      if (res.newMessages && res.newMessages > 0) loadDetail()
     }).catch(() => {})
 
     return () => {
       cancelled = true
-      clearInterval(pollTimer)
     }
   }, [selectedId])
 
@@ -1610,268 +1604,299 @@ export default function InboxV5() {
     setLampStyle({ left: btnRect.left - navRect.left, width: btnRect.width, ready: true })
   }, [navTab])
 
-  // ── Effect 3: SSE real-time ──
+  // ── Effect 3: Socket.IO real-time ──
   useEffect(() => {
     const token =
       typeof window !== 'undefined' ? localStorage.getItem('gp_token') : null
     if (!token) return
-    let es: EventSource | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let destroyed = false
 
-    function connect() {
-      if (destroyed) return
-      es = new EventSource(
-        `${API_URL}/api/events?token=${encodeURIComponent(token!)}`
-      )
-      es.addEventListener('message', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as {
-          conversationId?: string
-          message?: { role: string; content: string; sentAt: string; channel?: string }
-          lastMessageRole?: string
-          lastMessageAt?: string
-        }
-        const convId = data.conversationId
-        if (!convId || !data.message) return
-        const msg = data.message
-        const sender = senderFromRole(data.lastMessageRole || msg.role)
+    connectSocket(token)
 
-        // If AI message arrived, stop typing indicator, clear suggestion, and clear streaming text
-        if (sender === 'ai' && selectedIdRef.current === convId) {
-          setAiTyping(false)
-          setAiSuggestion(null)
-          setStreamingText(prev => {
-            const next = { ...prev }
-            delete next[convId]
-            return next
-          })
-        }
+    // Connection events
+    socket.on('connect', () => {
+      wsFailCount.current = 0
+      if (degradedPollTimer.current) {
+        clearInterval(degradedPollTimer.current)
+        degradedPollTimer.current = null
+      }
+      // Show "back online" banner if recovering
+      if (prevStatusRef.current === 'reconnecting' || prevStatusRef.current === 'delayed') {
+        setShowReconnectedBanner(true)
+        setTimeout(() => setShowReconnectedBanner(false), 3000)
+      }
+      setConnectionStatus('connected')
 
-        // Play notification sound for new guest messages
-        if (sender === 'guest') {
-          try {
-            const audio = new Audio('/notification.wav')
-            audio.volume = 0.3
-            audio.play().catch(() => {})
-          } catch {}
-        }
-
-        // Clear old copilot suggestion when new guest message arrives (will be regenerated)
-        if (data.message?.role === 'GUEST' || data.lastMessageRole === 'GUEST') {
-          setAiSuggestion(null)
-        }
-
-        const newSseMsgs: Message[] = []
-        if (sender === 'private') {
-          const fromSelf = msg.role === 'AI_PRIVATE' || msg.role === 'MANAGER_PRIVATE'
-          newSseMsgs.push({ id: `sse-${Date.now()}`, sender: 'private', text: msg.content, time: formatTimestamp(msg.sentAt), fromSelf })
-        } else {
-          const resolved = msg.channel ? channelFromApi(msg.channel) : undefined
-          // 'direct' is the catch-all fallback — treat as no channel so conversation channel is used
-          const sseChannel = (resolved && resolved !== 'direct') ? resolved : undefined
-          newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel })
-        }
-        // Extract visible text for lastMessage preview
-        const previewText = newSseMsgs[0]?.text || msg.content
-
-        setConversations(prev =>
-          prev.map(c => {
-            if (c.id !== convId) return c
-            const isSelected = selectedIdRef.current === convId
-
-            // Guest message on autopilot → show typing indicator
-            if (sender === 'guest' && isSelected && c.aiOn && c.aiMode === 'autopilot') {
-              setAiTyping(true)
-            }
-
-            const msgsWithChannel = newSseMsgs.map(m => m.channel === undefined ? { ...m, channel: c.channel } : m)
-            const updatedMsgs = [...c.messages, ...msgsWithChannel]
-            return {
-              ...c,
-              messages: updatedMsgs,
-              lastMessage: previewText,
-              lastMessageSender: sender,
-              timestamp: formatTimestamp(data.lastMessageAt || msg.sentAt),
-              unreadCount: isSelected ? 0 : c.unreadCount + 1,
-            }
-          })
-        )
-        if (selectedIdRef.current === convId) {
-          setTimeout(
-            () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
-            50
-          )
-        }
-      })
-      // Copilot: AI generated a suggestion for host approval
-      es.addEventListener('ai_suggestion', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; suggestion: string }
-        if (data.conversationId === selectedIdRef.current) {
-          setAiTyping(false)
-          setAiSuggestion(data.suggestion)
-        }
-      })
-
-      // AI decided not to send (empty message) — clear typing
-      es.addEventListener('ai_typing_clear', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string }
-        if (data.conversationId === selectedIdRef.current) {
-          setAiTyping(false)
-        }
-      })
-
-      // Streaming AI response text — show progressive text instead of "Generating response…"
-      es.addEventListener('ai_typing_text', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { conversationId: string; delta: string; done: boolean }
-        const convId = data.conversationId
-        if (data.done) {
-          // Stream finished — clear streaming text (full message arrives via normal SSE 'message' event)
-          setStreamingText(prev => {
-            const next = { ...prev }
-            delete next[convId]
-            return next
-          })
-          if (convId === selectedIdRef.current) {
-            setAiTyping(false)
+      if (!socket.recovered && selectedIdRef.current) {
+        apiGetConversation(selectedIdRef.current).then(detail => {
+          if (detail) {
+            setConversations(prev => prev.map(c => c.id === selectedIdRef.current ? mergeDetail(c, detail) : c))
           }
-        } else {
-          // Accumulate delta text
-          setStreamingText(prev => ({
-            ...prev,
-            [convId]: (prev[convId] || '') + data.delta,
-          }))
-          // Ensure typing indicator is on while streaming
-          if (convId === selectedIdRef.current) {
+        }).catch(() => {})
+      }
+    })
+
+    socket.on('disconnect', () => {
+      setConnectionStatus('reconnecting')
+    })
+
+    socket.on('connect_error', () => {
+      wsFailCount.current++
+      if (wsFailCount.current >= 3 && !degradedPollTimer.current) {
+        setConnectionStatus('delayed')
+        degradedPollTimer.current = setInterval(() => {
+          if (selectedIdRef.current) {
+            apiGetConversation(selectedIdRef.current).then(detail => {
+              if (detail) {
+                setConversations(prev => prev.map(c => c.id === selectedIdRef.current ? mergeDetail(c, detail) : c))
+              }
+            }).catch(() => {})
+          }
+        }, 5000)
+      }
+    })
+
+    // Message events
+    socket.on('message', (data: any, ack?: () => void) => {
+      const convId = data.conversationId
+      if (!convId || !data.message) { if (typeof ack === 'function') ack(); return }
+
+      // Dedup check
+      const msgId = data.message?.id || `sse-${Date.now()}`
+      if (seenMessageIds.current.has(msgId)) { if (typeof ack === 'function') ack(); return }
+      seenMessageIds.current.add(msgId)
+
+      const msg = data.message
+      const sender = senderFromRole(data.lastMessageRole || msg.role)
+
+      // If AI message arrived, stop typing indicator, clear suggestion, and clear streaming text
+      if (sender === 'ai' && selectedIdRef.current === convId) {
+        setAiTyping(false)
+        setAiSuggestion(null)
+        setStreamingText(prev => {
+          const next = { ...prev }
+          delete next[convId]
+          return next
+        })
+      }
+
+      // Play notification sound for new guest messages
+      if (sender === 'guest') {
+        try {
+          const audio = new Audio('/notification.wav')
+          audio.volume = 0.3
+          audio.play().catch(() => {})
+        } catch {}
+      }
+
+      // Clear old copilot suggestion when new guest message arrives (will be regenerated)
+      if (data.message?.role === 'GUEST' || data.lastMessageRole === 'GUEST') {
+        setAiSuggestion(null)
+      }
+
+      const newSseMsgs: Message[] = []
+      if (sender === 'private') {
+        const fromSelf = msg.role === 'AI_PRIVATE' || msg.role === 'MANAGER_PRIVATE'
+        newSseMsgs.push({ id: `sse-${Date.now()}`, sender: 'private', text: msg.content, time: formatTimestamp(msg.sentAt), fromSelf })
+      } else {
+        const resolved = msg.channel ? channelFromApi(msg.channel) : undefined
+        // 'direct' is the catch-all fallback — treat as no channel so conversation channel is used
+        const sseChannel = (resolved && resolved !== 'direct') ? resolved : undefined
+        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel })
+      }
+      // Extract visible text for lastMessage preview
+      const previewText = newSseMsgs[0]?.text || msg.content
+
+      setConversations(prev =>
+        prev.map(c => {
+          if (c.id !== convId) return c
+          const isSelected = selectedIdRef.current === convId
+
+          // Guest message on autopilot → show typing indicator
+          if (sender === 'guest' && isSelected && c.aiOn && c.aiMode === 'autopilot') {
             setAiTyping(true)
           }
-          // Auto-scroll as text streams in
-          if (convId === selectedIdRef.current) {
-            setTimeout(
-              () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
-              30
-            )
+
+          const msgsWithChannel = newSseMsgs.map(m => m.channel === undefined ? { ...m, channel: c.channel } : m)
+          const updatedMsgs = [...c.messages, ...msgsWithChannel]
+          return {
+            ...c,
+            messages: updatedMsgs,
+            lastMessage: previewText,
+            lastMessageSender: sender,
+            timestamp: formatTimestamp(data.lastMessageAt || msg.sentAt),
+            unreadCount: isSelected ? 0 : c.unreadCount + 1,
           }
+        })
+      )
+      if (selectedIdRef.current === convId) {
+        setTimeout(
+          () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
+          50
+        )
+      }
+      if (typeof ack === 'function') ack()
+    })
+
+    // Copilot: AI generated a suggestion for host approval
+    socket.on('ai_suggestion', (data: any, ack?: () => void) => {
+      if (data.conversationId === selectedIdRef.current) {
+        setAiTyping(false)
+        setAiSuggestion(data.suggestion)
+      }
+      if (typeof ack === 'function') ack()
+    })
+
+    // AI decided not to send (empty message) — clear typing
+    socket.on('ai_typing_clear', (data: any) => {
+      if (data.conversationId === selectedIdRef.current) {
+        setAiTyping(false)
+      }
+    })
+
+    // Streaming AI response text — show progressive text instead of "Generating response..."
+    socket.on('ai_typing_text', (data: any) => {
+      const convId = data.conversationId
+      if (data.done) {
+        // Stream finished — clear streaming text (full message arrives via normal 'message' event)
+        setStreamingText(prev => {
+          const next = { ...prev }
+          delete next[convId]
+          return next
+        })
+        if (convId === selectedIdRef.current) {
+          setAiTyping(false)
         }
-      })
-
-      es.addEventListener('reservation_created', () => {
-        // New reservation arrived — refresh the conversation list so it appears immediately
-        apiGetConversations()
-          .then(data => {
-            const mapped = data.map(summaryToConversation)
-            setConversations(prev =>
-              mapped.map(newConv => {
-                const existing = prev.find(p => p.id === newConv.id)
-                if (existing) {
-                  return {
-                    ...existing,
-                    aiOn: newConv.aiOn,
-                    aiMode: newConv.aiMode,
-                    lastMessage: newConv.lastMessage,
-                    lastMessageSender: newConv.lastMessageSender,
-                    timestamp: newConv.timestamp,
-                    unreadCount: newConv.unreadCount,
-                  }
-                }
-                return newConv
-              })
-            )
-          })
-          .catch(err => console.error('[SSE] reservation_created list refresh failed:', err))
-      })
-
-      es.addEventListener('reservation_updated', (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as {
-          reservationId: string
-          conversationIds?: string[]
-          status?: string
+      } else {
+        // Accumulate delta text
+        setStreamingText(prev => ({
+          ...prev,
+          [convId]: (prev[convId] || '') + data.delta,
+        }))
+        // Ensure typing indicator is on while streaming
+        if (convId === selectedIdRef.current) {
+          setAiTyping(true)
         }
-        const ids = data.conversationIds ?? []
-
-        // Invalidate the detail cache so next selection triggers a fresh fetch
-        ids.forEach(id => fetchedDetails.current.delete(id))
-
-        // Update reservationStatus in the sidebar list immediately from SSE payload
-        if (data.status) {
-          setConversations(prev =>
-            prev.map(c => ids.includes(c.id) ? { ...c, reservationStatus: data.status! } : c)
+        // Auto-scroll as text streams in
+        if (convId === selectedIdRef.current) {
+          setTimeout(
+            () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
+            30
           )
         }
-
-        // Re-fetch full detail for the currently selected conversation if it's affected
-        const currentId = selectedIdRef.current
-        if (currentId && ids.includes(currentId)) {
-          setLoadingDetail(true)
-          apiGetConversation(currentId)
-            .then(detail => {
-              fetchedDetails.current.add(currentId)
-              setConversations(prev =>
-                prev.map(c => (c.id === currentId ? mergeDetail(c, detail) : c))
-              )
-            })
-            .catch(err => console.error('[SSE] reservation_updated re-fetch failed:', err))
-            .finally(() => setLoadingDetail(false))
-        }
-      })
-
-      // ── Mobile/Web sync events ──
-      es.addEventListener('ai_toggled', (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as { conversationId: string; aiEnabled: boolean }
-          setConversations(prev => prev.map(c =>
-            c.id === data.conversationId ? { ...c, aiEnabled: data.aiEnabled } : c
-          ))
-        } catch { /* ignore malformed SSE */ }
-      })
-
-      es.addEventListener('ai_mode_changed', (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as { conversationId: string; aiMode: string }
-          setConversations(prev => prev.map(c =>
-            c.id === data.conversationId ? { ...c, aiMode: data.aiMode } : c
-          ))
-        } catch { /* ignore */ }
-      })
-
-      es.addEventListener('conversation_starred', (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as { conversationId: string; starred: boolean }
-          setConversations(prev => prev.map(c =>
-            c.id === data.conversationId ? { ...c, starred: data.starred } : c
-          ))
-        } catch { /* ignore */ }
-      })
-
-      es.addEventListener('conversation_resolved', (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as { conversationId: string; status: string }
-          setConversations(prev => prev.map(c =>
-            c.id === data.conversationId ? { ...c, status: data.status } : c
-          ))
-        } catch { /* ignore */ }
-      })
-
-      es.addEventListener('property_ai_changed', () => {
-        apiGetConversations()
-          .then(data => { if (data?.conversations) setConversations(data.conversations) })
-          .catch(err => console.error('[SSE] property_ai_changed refresh failed:', err))
-      })
-
-      es.onerror = () => {
-        if (destroyed) return
-        es?.close()
-        es = null
-        // Clear any existing reconnect timer to prevent duplicate connections
-        if (reconnectTimer) clearTimeout(reconnectTimer)
-        reconnectTimer = setTimeout(connect, 3000)
       }
-    }
+    })
 
-    connect()
+    socket.on('reservation_created', () => {
+      // New reservation arrived — refresh the conversation list so it appears immediately
+      apiGetConversations()
+        .then(data => {
+          const mapped = data.map(summaryToConversation)
+          setConversations(prev =>
+            mapped.map(newConv => {
+              const existing = prev.find(p => p.id === newConv.id)
+              if (existing) {
+                return {
+                  ...existing,
+                  aiOn: newConv.aiOn,
+                  aiMode: newConv.aiMode,
+                  lastMessage: newConv.lastMessage,
+                  lastMessageSender: newConv.lastMessageSender,
+                  timestamp: newConv.timestamp,
+                  unreadCount: newConv.unreadCount,
+                }
+              }
+              return newConv
+            })
+          )
+        })
+        .catch(err => console.error('[Socket] reservation_created list refresh failed:', err))
+    })
+
+    socket.on('reservation_updated', (data: any) => {
+      const ids = data.conversationIds ?? []
+
+      // Invalidate the detail cache so next selection triggers a fresh fetch
+      ids.forEach((id: string) => fetchedDetails.current.delete(id))
+
+      // Update reservationStatus in the sidebar list immediately from payload
+      if (data.status) {
+        setConversations(prev =>
+          prev.map(c => ids.includes(c.id) ? { ...c, reservationStatus: data.status! } : c)
+        )
+      }
+
+      // Re-fetch full detail for the currently selected conversation if it's affected
+      const currentId = selectedIdRef.current
+      if (currentId && ids.includes(currentId)) {
+        setLoadingDetail(true)
+        apiGetConversation(currentId)
+          .then(detail => {
+            fetchedDetails.current.add(currentId)
+            setConversations(prev =>
+              prev.map(c => (c.id === currentId ? mergeDetail(c, detail) : c))
+            )
+          })
+          .catch(err => console.error('[Socket] reservation_updated re-fetch failed:', err))
+          .finally(() => setLoadingDetail(false))
+      }
+    })
+
+    // ── Mobile/Web sync events ──
+    socket.on('ai_toggled', (data: any) => {
+      try {
+        setConversations(prev => prev.map(c =>
+          c.id === data.conversationId ? { ...c, aiEnabled: data.aiEnabled } : c
+        ))
+      } catch { /* ignore */ }
+    })
+
+    socket.on('ai_mode_changed', (data: any) => {
+      try {
+        setConversations(prev => prev.map(c =>
+          c.id === data.conversationId ? { ...c, aiMode: data.aiMode } : c
+        ))
+      } catch { /* ignore */ }
+    })
+
+    socket.on('conversation_starred', (data: any) => {
+      try {
+        setConversations(prev => prev.map(c =>
+          c.id === data.conversationId ? { ...c, starred: data.starred } : c
+        ))
+      } catch { /* ignore */ }
+    })
+
+    socket.on('conversation_resolved', (data: any) => {
+      try {
+        setConversations(prev => prev.map(c =>
+          c.id === data.conversationId ? { ...c, status: data.status } : c
+        ))
+      } catch { /* ignore */ }
+    })
+
+    socket.on('property_ai_changed', () => {
+      apiGetConversations()
+        .then(data => { if ((data as any)?.conversations) setConversations((data as any).conversations) })
+        .catch(err => console.error('[Socket] property_ai_changed refresh failed:', err))
+    })
+
     return () => {
-      destroyed = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      es?.close()
+      socket.off('connect')
+      socket.off('disconnect')
+      socket.off('connect_error')
+      socket.off('message')
+      socket.off('ai_suggestion')
+      socket.off('ai_typing_clear')
+      socket.off('ai_typing_text')
+      socket.off('reservation_created')
+      socket.off('reservation_updated')
+      socket.off('ai_toggled')
+      socket.off('ai_mode_changed')
+      socket.off('conversation_starred')
+      socket.off('conversation_resolved')
+      socket.off('property_ai_changed')
+      if (degradedPollTimer.current) clearInterval(degradedPollTimer.current)
+      disconnectSocket()
     }
   }, [])
 
@@ -1943,28 +1968,6 @@ export default function InboxV5() {
       prev.map(c => (c.id === id ? { ...c, unreadCount: 0 } : c))
     )
   }, [])
-
-  const handleSync = async () => {
-    if (!selectedConv || isSyncing) return
-    setIsSyncing(true)
-    try {
-      const res = await apiSyncConversation(selectedConv.id, true)
-      if (res.syncedAt) setLastSyncedAt(res.syncedAt)
-      else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
-      // If new messages were found, re-fetch conversation to refresh chat immediately
-      if (res.newMessages && res.newMessages > 0) {
-        const detail = await apiGetConversation(selectedConv.id)
-        if (detail) {
-          setConversations(prev => prev.map(c => c.id === selectedConv.id ? mergeDetail(c, detail) : c))
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-        }
-      }
-    } catch (err) {
-      console.warn('Sync failed:', err)
-    } finally {
-      setIsSyncing(false)
-    }
-  }
 
   function resetTextarea() {
     setReplyText('')
@@ -3267,10 +3270,10 @@ export default function InboxV5() {
                     {statusConfig[selectedConv.checkInStatus].label}
                   </span>
                 </div>
-                {/* Right: Sync + Star + Archive + Translate + AI ON */}
+                {/* Right: Connection + Star + Archive + Translate + AI ON */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {/* Sync indicator */}
-                  <SyncIndicator lastSyncedAt={lastSyncedAt} onSync={handleSync} isSyncing={isSyncing} />
+                  {/* Connection status */}
+                  <ConnectionStatus status={connectionStatus} />
                   {/* Star */}
                   <button
                     onClick={() => toggleStar(selectedConv.id)}
@@ -3402,6 +3405,16 @@ export default function InboxV5() {
                   )
                 }}
               />
+
+              {/* Reconnected banner */}
+              {showReconnectedBanner && (
+                <div style={{
+                  background: '#22c55e', color: 'white', padding: '6px 16px',
+                  fontSize: 13, fontWeight: 500, textAlign: 'center' as const,
+                }}>
+                  Back online — messages synced
+                </div>
+              )}
 
               {/* Messages */}
               <div
