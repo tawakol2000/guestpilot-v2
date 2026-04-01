@@ -1563,6 +1563,45 @@ export async function generateAndSendAiReply(
             cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma, variableDataMap))
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
+
+          // Auto-enrich: for early check-in or late checkout within 2 days, check availability
+          // (The AI can't call a second tool after get_sop due to json_schema output constraint)
+          if ((cats.includes('sop-early-checkin') || cats.includes('sop-late-checkout')) && hostawayListingId) {
+            try {
+              const checkInDate = new Date(context.checkIn + 'T00:00:00Z');
+              const checkOutDate = new Date(context.checkOut + 'T00:00:00Z');
+              const now = new Date(); now.setHours(0, 0, 0, 0);
+              const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+              const isCheckinSoon = checkInDate.getTime() - now.getTime() <= twoDaysMs;
+              const isCheckoutSoon = checkOutDate.getTime() - now.getTime() <= twoDaysMs;
+
+              if ((cats.includes('sop-early-checkin') && isCheckinSoon) || (cats.includes('sop-late-checkout') && isCheckoutSoon)) {
+                const availResult = await checkExtendAvailability(
+                  {
+                    new_checkout: context.checkOut,
+                    new_checkin: cats.includes('sop-early-checkin') ? context.checkIn : null,
+                    reason: 'Auto-check for back-to-back bookings',
+                  },
+                  {
+                    listingId: hostawayListingId,
+                    currentCheckIn: context.checkIn,
+                    currentCheckOut: context.checkOut,
+                    channel: context.channel || 'DIRECT',
+                    numberOfGuests: context.guestCount,
+                    hostawayAccountId: context.hostawayAccountId,
+                    hostawayApiKey: context.hostawayApiKey,
+                  },
+                );
+                const availData = JSON.parse(availResult);
+                const hasBackToBack = availData.available === false || availData.blocked;
+                sopContent += `\n\n## AVAILABILITY CHECK RESULT\n${hasBackToBack ? 'Back-to-back booking detected — another guest is checking out on that day. Early check-in/late checkout is NOT available.' : 'No back-to-back booking found — early check-in/late checkout may be possible. Escalate to manager for confirmation.'}`;
+                console.log(`[AI] [${conversationId}] Auto-enriched SOP: backToBack=${hasBackToBack}`);
+              }
+            } catch (err) {
+              console.warn(`[AI] [${conversationId}] Auto availability check failed (non-fatal):`, err);
+            }
+          }
+
           return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
         }],
         ['search_available_properties', async (input: unknown) => {
