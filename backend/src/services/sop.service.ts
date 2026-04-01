@@ -368,7 +368,7 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'sop-booking-cancellation': 'Cancel requests, cancellation policy questions.',
   'payment-issues': 'Payment failures, refund requests, receipts, billing disputes.',
   'sop-long-term-rental': 'Monthly rental inquiries, corporate stays, stays over 3 weeks.',
-  'property-info': 'Property details: bedrooms, bathrooms, floor, parking, address, check-in/out times, pool, security, neighborhood, compound description, general property overview.',
+  'property-info': 'Property details: bedrooms, bathrooms, floor, parking, pool, gym, address, neighborhood, compound description, area vibe, security, and all standard amenities/features. Use for ANY property question — what the place looks like, what it has, where it is. NOT for on-request items like towels/pillows (use sop-amenity-request).',
   'pre-arrival-logistics': 'Arrival coordination, ETA sharing, airport transfer, directions.',
   'sop-property-viewing': 'Property tours, photo/video requests, filming permission.',
   'post-stay-issues': 'Lost items after checkout, post-stay complaints, damage deposit.',
