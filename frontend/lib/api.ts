@@ -338,7 +338,6 @@ export interface AiConfig {
   guestCoordinator: AiPersonaConfig
   screeningAI: AiPersonaConfig
   managerTranslator: AiPersonaConfig
-  guardrails?: string[]
   escalation?: {
     confidenceThreshold: number
     triggerKeywords: string[]
@@ -496,15 +495,6 @@ export interface AiApiLogEntry {
   } | null
 }
 
-export interface KnowledgeChunk {
-  id: string
-  propertyId: string | null
-  content: string
-  category: string
-  sourceKey: string
-  createdAt: string
-}
-
 export interface AiLogsResponse {
   logs: AiApiLogEntry[]
   total: number
@@ -527,11 +517,6 @@ export async function apiGetAiLogDetail(id: string): Promise<AiApiLogEntry> {
   return apiFetch<AiApiLogEntry>(`/api/ai-logs/${id}`)
 }
 
-export async function apiGetKnowledgeChunks(propertyId?: string): Promise<KnowledgeChunk[]> {
-  const qs = propertyId ? `?propertyId=${encodeURIComponent(propertyId)}` : ''
-  return apiFetch<KnowledgeChunk[]>(`/api/knowledge/chunks${qs}`)
-}
-
 export interface ChunkStat {
   sourceKey: string
   hitCount: number
@@ -541,13 +526,6 @@ export interface ChunkStat {
 
 export async function apiGetChunkStats(): Promise<{ stats: ChunkStat[]; logsAnalyzed: number }> {
   return apiFetch('/api/knowledge/chunk-stats')
-}
-
-export async function apiTestAiConfig(data: { systemPrompt: string; userMessage: string; model?: string; temperature?: number; maxTokens?: number }): Promise<{ response: string; inputTokens: number; outputTokens: number; durationMs: number; model: string }> {
-  return apiFetch('/api/ai-config/test', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
 }
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
@@ -657,96 +635,6 @@ export async function apiGetAllTasks(filters?: { status?: string; urgency?: stri
   if (filters?.propertyId) params.set('propertyId', filters.propertyId)
   const qs = params.toString()
   return apiFetch<ApiTask[]>(`/api/tasks${qs ? '?' + qs : ''}`)
-}
-
-// ─── Templates ─────────────────────────────────────────────────────────────────
-export interface ApiMessageTemplate {
-  id: string
-  hostawayId?: string
-  name: string
-  body: string
-  enhancedBody?: string
-  triggerType?: string
-  triggerOffset?: number
-  isEnabled: boolean
-  updatedAt: string
-}
-
-export async function apiGetTemplates(): Promise<ApiMessageTemplate[]> {
-  return apiFetch<ApiMessageTemplate[]>('/api/templates')
-}
-
-export async function apiUpdateTemplate(id: string, data: { body?: string; enhancedBody?: string }): Promise<ApiMessageTemplate> {
-  return apiFetch<ApiMessageTemplate>(`/api/templates/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function apiEnhanceTemplate(id: string): Promise<ApiMessageTemplate> {
-  return apiFetch<ApiMessageTemplate>(`/api/templates/${id}/enhance`, { method: 'POST' })
-}
-
-// ─── Knowledge Base ─────────────────────────────────────────────────────────────
-export interface ApiKnowledgeSuggestion {
-  id: string
-  question: string
-  answer: string
-  status: string
-  source: string
-  propertyId?: string
-  conversationId?: string
-  category?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export async function apiGetKnowledgeSuggestions(
-  status?: string,
-  opts?: { category?: string; search?: string }
-): Promise<ApiKnowledgeSuggestion[]> {
-  const params = new URLSearchParams()
-  if (status) params.set('status', status)
-  if (opts?.category) params.set('category', opts.category)
-  if (opts?.search) params.set('search', opts.search)
-  const qs = params.toString() ? `?${params.toString()}` : ''
-  return apiFetch<ApiKnowledgeSuggestion[]>(`/api/knowledge${qs}`)
-}
-
-export async function apiUpdateKnowledgeSuggestion(
-  id: string,
-  data: { answer?: string; status?: string; propertyId?: string | null }
-): Promise<ApiKnowledgeSuggestion> {
-  return apiFetch<ApiKnowledgeSuggestion>(`/api/knowledge/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function apiCreateKnowledgeSuggestion(
-  data: { question: string; answer: string; propertyId?: string; category?: string }
-): Promise<ApiKnowledgeSuggestion> {
-  return apiFetch<ApiKnowledgeSuggestion>('/api/knowledge', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  })
-}
-
-export async function apiDeleteKnowledgeSuggestion(id: string): Promise<void> {
-  await apiFetch<{ ok: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' })
-}
-
-export async function apiBulkImportKnowledge(text: string): Promise<ApiKnowledgeSuggestion[]> {
-  return apiFetch<ApiKnowledgeSuggestion[]>('/api/knowledge/bulk-import', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  })
-}
-
-export async function apiDetectKnowledgeGaps(): Promise<Array<{ question: string; suggestedAnswer: string }>> {
-  return apiFetch<Array<{ question: string; suggestedAnswer: string }>>('/api/knowledge/detect-gaps', {
-    method: 'POST',
-  })
 }
 
 export async function apiRateMessage(

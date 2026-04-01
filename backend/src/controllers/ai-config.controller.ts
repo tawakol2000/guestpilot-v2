@@ -1,6 +1,5 @@
 import { Response } from 'express';
 import crypto from 'crypto';
-import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { getAiConfig, updateAiConfig } from '../services/ai-config.service';
@@ -18,8 +17,6 @@ import { getTenantAiConfig } from '../services/tenant-config.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { getAvailableVariables, resolveVariables } from '../services/template-variable.service';
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Config cache for GET endpoint ──────────────────────────────────────────
 // Pre-serialize and compute ETag once; invalidated on update.
@@ -90,37 +87,6 @@ export function makeAiConfigController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[AiConfig] update error:', err);
         res.status(500).json({ error: 'Internal server error' });
-      }
-    },
-
-    async test(req: AuthenticatedRequest, res: Response): Promise<void> {
-      try {
-        const { systemPrompt, userMessage, model, temperature, maxTokens } = req.body;
-        if (!systemPrompt || !userMessage) {
-          res.status(400).json({ error: 'systemPrompt and userMessage are required' });
-          return;
-        }
-        const startMs = Date.now();
-        const response = await (openai.responses as any).create({
-          model: model || 'gpt-5.4-mini-2026-03-17',
-          max_output_tokens: maxTokens || 2048,
-          ...(temperature !== undefined ? { temperature } : {}),
-          instructions: systemPrompt,
-          input: userMessage,
-          reasoning: { effort: 'none' },
-          store: true,
-        });
-        const responseText = response.output_text || '';
-        res.json({
-          response: responseText,
-          inputTokens: response.usage?.input_tokens ?? 0,
-          outputTokens: response.usage?.output_tokens ?? 0,
-          durationMs: Date.now() - startMs,
-          model: model || 'gpt-5.4-mini-2026-03-17',
-        });
-      } catch (err) {
-        console.error('[AiConfig] test error:', err);
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Test failed' });
       }
     },
 
