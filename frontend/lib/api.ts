@@ -1051,3 +1051,19 @@ export async function apiResetToolDescription(id: string): Promise<ApiToolDefini
   return apiFetch<ApiToolDefinition>(`/api/tools/${id}/reset`, { method: 'POST' })
 }
 
+// ── Conversation Sync ────────────────────────────────────────────────────────
+
+export async function apiSyncConversation(conversationId: string, force = false): Promise<{
+  ok: boolean;
+  newMessages?: number;
+  backfilled?: number;
+  syncedAt?: string;
+  skipped?: boolean;
+  reason?: string;
+  lastSyncedAt?: string;
+}> {
+  return apiFetch(`/api/conversations/${conversationId}/sync${force ? '?force=true' : ''}`, {
+    method: 'POST',
+  })
+}
+

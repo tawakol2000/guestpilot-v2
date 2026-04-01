@@ -156,6 +156,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (no schema changes — uses existing `customKnowledgeBase` JSON field + `TenantAiConfig`) (021-prompt-template-variables)
 - TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, OpenAI SDK (for summarization calls) (024-smart-context-summary)
 - PostgreSQL + Prisma ORM (existing `conversationSummary` fields on Conversation model) (024-smart-context-summary)
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM 5.22, ioredis, BullMQ, axios (Hostaway API client) (025-message-sync)
+- PostgreSQL + Prisma ORM (schema changes: `lastSyncedAt` field, partial unique index) (025-message-sync)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

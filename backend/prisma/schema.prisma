@@ -115,6 +115,7 @@ model Conversation {
   conversationSummary    String?               @db.Text
   summaryUpdatedAt       DateTime?
   summaryMessageCount    Int                   @default(0)
+  lastSyncedAt           DateTime?
   createdAt              DateTime              @default(now())
   guest                  Guest                 @relation(fields: [guestId], references: [id])
   property               Property              @relation(fields: [propertyId], references: [id])
@@ -146,7 +147,8 @@ model Message {
   tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
 
-  // TODO: Add @@unique([conversationId, hostawayMessageId]) AFTER cleaning up existing empty/duplicate hostawayMessageIds
+  // Partial unique index exists in DB: CREATE UNIQUE INDEX "Message_conv_hostaway_msg_unique" ON "Message" ("conversationId", "hostawayMessageId") WHERE "hostawayMessageId" != ''
+  // Applied via prisma/migrations/add_audit_constraints.sql — Prisma 5.x does not support partial indexes in schema
   @@index([conversationId])
   @@index([tenantId])
 }

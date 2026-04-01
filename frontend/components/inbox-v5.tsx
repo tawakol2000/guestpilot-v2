@@ -64,6 +64,7 @@ import {
   apiRateMessage,
   apiToggleStar,
   apiResolveConversation,
+  apiSyncConversation,
   mapChannel,
   mapMessageSender,
   formatTimestamp,
@@ -74,6 +75,7 @@ import {
   type ApiMessage,
   type ApiTask,
 } from '@/lib/api'
+import { SyncIndicator } from '@/components/ui/sync-indicator'
 import { OverviewV5 } from '@/components/overview-v5'
 import { AnalyticsV5 } from '@/components/analytics-v5'
 import { TasksV5 } from '@/components/tasks-v5'
@@ -1421,6 +1423,10 @@ export default function InboxV5() {
   const [correctionSubmitted, setCorrectionSubmitted] = useState<Record<string, boolean>>({})
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null)
 
+  // Sync indicator state
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+
   // Panel reorder state
   const [panelOrder, setPanelOrder] = useState<PanelSectionId[]>(() => {
     if (typeof window !== 'undefined') {
@@ -1532,6 +1538,8 @@ export default function InboxV5() {
     // Clear copilot suggestion and typing state when switching conversations
     setAiSuggestion(null)
     setAiTyping(false)
+    // Reset sync timestamp when switching conversations
+    setLastSyncedAt(null)
     if (!selectedId || fetchedDetails.current.has(selectedId)) return
     setLoadingDetail(true)
     apiGetConversation(selectedId)
@@ -1554,6 +1562,12 @@ export default function InboxV5() {
       })
       .catch(err => console.error('[Inbox] apiGetConversation failed:', err))
       .finally(() => setLoadingDetail(false))
+
+    // On-open sync: fetch latest messages when conversation is selected (fire-and-forget)
+    apiSyncConversation(selectedId).then(res => {
+      if (res.syncedAt) setLastSyncedAt(res.syncedAt)
+      else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
+    }).catch(() => {})
   }, [selectedId])
 
   // ── Effect: lamp indicator position ──
@@ -1900,6 +1914,20 @@ export default function InboxV5() {
       prev.map(c => (c.id === id ? { ...c, unreadCount: 0 } : c))
     )
   }, [])
+
+  const handleSync = async () => {
+    if (!selectedConv || isSyncing) return
+    setIsSyncing(true)
+    try {
+      const res = await apiSyncConversation(selectedConv.id, true)
+      if (res.syncedAt) setLastSyncedAt(res.syncedAt)
+      else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
+    } catch (err) {
+      console.warn('Sync failed:', err)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   function resetTextarea() {
     setReplyText('')
@@ -3202,8 +3230,10 @@ export default function InboxV5() {
                     {statusConfig[selectedConv.checkInStatus].label}
                   </span>
                 </div>
-                {/* Right: Star + Archive + Translate + AI ON */}
+                {/* Right: Sync + Star + Archive + Translate + AI ON */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {/* Sync indicator */}
+                  <SyncIndicator lastSyncedAt={lastSyncedAt} onSync={handleSync} isSyncing={isSyncing} />
                   {/* Star */}
                   <button
                     onClick={() => toggleStar(selectedConv.id)}

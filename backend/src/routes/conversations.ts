@@ -30,6 +30,7 @@ export function conversationsRouter(prisma: PrismaClient): Router {
   router.post('/:id/send-ai-now', ((req, res) => convCtrl.sendAiNow(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/ai-mode', ((req, res) => convCtrl.setAiMode(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/approve-suggestion', ((req, res) => convCtrl.approveSuggestion(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/:id/sync', ((req, res) => convCtrl.syncConversation(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   return router;
 }

@@ -221,12 +221,15 @@ export async function listConversationMessages(
   includeScheduledMessages = false
 ): Promise<{ result: HostawayMessage[] }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get(`/v1/conversations/${conversationId}/messages`, {
-    params: {
-      limit,
-      includeScheduledMessages: includeScheduledMessages ? 1 : 0,
-    },
-  });
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/conversations/${conversationId}/messages`, {
+      params: {
+        limit,
+        includeScheduledMessages: includeScheduledMessages ? 1 : 0,
+      },
+      timeout: 2000,
+    })
+  );
   return res.data;
 }
 

@@ -6,6 +6,7 @@ import * as hostawayService from '../services/hostaway.service';
 import { cancelPendingAiReply, getPendingReplyForConversation, markFired } from '../services/debounce.service';
 import { generateAndSendAiReply } from '../services/ai.service';
 import { broadcastToTenant } from '../services/sse.service';
+import { syncConversationMessages } from '../services/message-sync.service';
 
 const aiToggleSchema = z.object({
   aiEnabled: z.boolean(),
@@ -631,6 +632,53 @@ export function makeConversationsController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[Conversations] aiToggle error:', err);
         res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    async syncConversation(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const conversationId = req.params.id;
+
+        const conv = await prisma.conversation.findFirst({
+          where: { id: conversationId, tenantId },
+          include: {
+            reservation: {
+              include: {
+                tenant: {
+                  select: { hostawayAccountId: true, hostawayApiKey: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!conv) {
+          res.status(404).json({ error: 'Conversation not found' });
+          return;
+        }
+
+        const force = req.query.force === 'true';
+        const { hostawayAccountId, hostawayApiKey } = conv.reservation.tenant;
+
+        const result = await syncConversationMessages(
+          prisma,
+          conversationId,
+          conv.hostawayConversationId,
+          tenantId,
+          hostawayAccountId,
+          hostawayApiKey,
+          { force },
+        );
+
+        if (result.skipped) {
+          res.json({ ok: true, skipped: true, reason: result.reason, lastSyncedAt: result.lastSyncedAt });
+        } else {
+          res.json({ ok: true, newMessages: result.newMessages, backfilled: result.backfilled, syncedAt: result.syncedAt });
+        }
+      } catch (err) {
+        console.error('[Conversations] syncConversation error:', err);
+        res.status(500).json({ error: 'Sync failed' });
       }
     },
   };

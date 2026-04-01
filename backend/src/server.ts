@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';
 import { startAiDebounceJob } from './jobs/aiDebounce.job';
+import { startMessageSyncJob } from './jobs/messageSync.job';
 import { setAiServicePrisma } from './services/ai.service';
 import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
@@ -41,6 +42,7 @@ async function main() {
 
   // Start background jobs
   const jobTimer = startAiDebounceJob(prisma);
+  const syncJobTimer = startMessageSyncJob(prisma);
 
   // Start BullMQ worker (graceful no-op if REDIS_URL missing)
   const aiReplyWorker = startAiReplyWorker(prisma);
@@ -54,6 +56,7 @@ async function main() {
   const shutdown = async () => {
     console.log('[Server] Shutting down...');
     clearInterval(jobTimer);
+    clearInterval(syncJobTimer);
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();

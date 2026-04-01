@@ -25,6 +25,7 @@ import { resolveVariables, applyPropertyOverrides } from './template-variable.se
 import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenant } from './push.service';
 import { generateOrExtendSummary } from './summary.service';
+import { syncConversationMessages } from './message-sync.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1287,6 +1288,28 @@ export async function generateAndSendAiReply(
   try {
     // Upgrade 6d: Fetch per-tenant AI configuration (cached, 5min TTL)
     const tenantConfig = await getTenantAiConfig(tenantId, prisma).catch(() => null);
+
+    // Pre-response sync: fetch latest messages from Hostaway before loading history
+    if (hostawayConversationId && hostawayAccountId && hostawayApiKey) {
+      try {
+        const syncResult = await syncConversationMessages(
+          prisma, conversationId, hostawayConversationId,
+          tenantId, hostawayAccountId, hostawayApiKey,
+        );
+        if (syncResult.hostRespondedAfterGuest) {
+          // Manager already responded directly — cancel AI reply
+          await prisma.pendingAiReply.updateMany({
+            where: { conversationId, fired: false },
+            data: { fired: true, suggestion: null },
+          });
+          broadcastToTenant(tenantId, 'ai_typing_clear', { conversationId });
+          console.log(`[AI] Manager responded directly — skipping AI reply for conv=${conversationId}`);
+          return;
+        }
+      } catch (err: any) {
+        console.warn(`[AI] Pre-response sync failed (non-fatal): ${err.message}`);
+      }
+    }
 
     // Fetch ALL message history from local DB (not Hostaway API)
     const aiCfg = getAiConfig();

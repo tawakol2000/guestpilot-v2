@@ -24,6 +24,7 @@ import { registerSSEClient } from './services/sse.service';
 import { getAiApiLog } from './services/ai.service';
 import { authMiddleware, JWT_SECRET } from './middleware/auth';
 import { JwtPayload } from './types';
+import { getMessageSyncStats } from './services/message-sync.service';
 
 export function createApp(prisma: PrismaClient) {
   const app = express();
@@ -53,7 +54,7 @@ export function createApp(prisma: PrismaClient) {
 
   // ── Health check ──────────────────────────────────────────────────────────
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), messageSync: getMessageSyncStats() });
   });
 
   // ── Routes ────────────────────────────────────────────────────────────────
