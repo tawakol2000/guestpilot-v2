@@ -269,14 +269,14 @@ export async function syncConversationMessages(
       data: updateData as any,
     });
 
-    // Check if host responded after guest (for AI cancellation)
+    // Check if host responded after the LATEST guest message (fresh DB query, not stale localMessages)
     if (latestHostSentAt) {
-      // Check if there are pending guest messages that came before the host response
-      const latestGuestMsg = localMessages
-        .filter(m => m.role === MessageRole.GUEST)
-        .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())[0];
-
-      if (latestGuestMsg && latestHostSentAt > latestGuestMsg.sentAt) {
+      const freshLatestGuest = await prisma.message.findFirst({
+        where: { conversationId, role: MessageRole.GUEST },
+        orderBy: { sentAt: 'desc' },
+        select: { sentAt: true },
+      });
+      if (freshLatestGuest && latestHostSentAt.getTime() > freshLatestGuest.sentAt.getTime()) {
         hostRespondedAfterGuest = true;
       }
     }
@@ -299,6 +299,12 @@ export async function syncConversationMessages(
     _errorCount++;
     const durationMs = Date.now() - startMs;
     _totalDurationMs += durationMs;
+    // On 404 (invalid Hostaway conversation), update lastSyncedAt so we don't retry every cycle
+    if (err.message?.includes('404') || err.response?.status === 404) {
+      try {
+        await prisma.conversation.update({ where: { id: conversationId }, data: { lastSyncedAt: new Date() } });
+      } catch {}
+    }
     console.warn(`[MessageSync] Failed (non-fatal) conv=${conversationId}: ${err.message}`);
     return { newMessages: 0, backfilled: 0, skipped: true, reason: 'sync-error', hostRespondedAfterGuest: false };
   }
