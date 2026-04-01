@@ -48,11 +48,13 @@ export function initSocketIO(httpServer: HttpServer): void {
     try {
       const Redis = require('ioredis');
       const { createAdapter } = require('@socket.io/redis-adapter');
+      // enableOfflineQueue must be true for the subscriber (needs to queue SUBSCRIBE before connected)
       const pubClient = new Redis(redisUrl, {
-        lazyConnect: false, maxRetriesPerRequest: 1, enableOfflineQueue: false,
         retryStrategy: (times: number) => Math.min(times * 200, 5000),
       });
-      const subClient = pubClient.duplicate();
+      const subClient = new Redis(redisUrl, {
+        retryStrategy: (times: number) => Math.min(times * 200, 5000),
+      });
       pubClient.on('error', (err: Error) => console.warn('[Socket.IO] Redis pub error:', err.message));
       subClient.on('error', (err: Error) => console.warn('[Socket.IO] Redis sub error:', err.message));
       redisAdapter = createAdapter(pubClient, subClient);
