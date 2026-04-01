@@ -29,5 +29,5 @@ RUN npx prisma generate
 RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 EXPOSE 3000
-# Cap runtime heap at 512MB to prevent OOM from unbounded buffers
-CMD ["sh", "-c", "echo '[Deploy] Starting server...' && NODE_OPTIONS=--max-old-space-size=512 node dist/server.js"]
+# Runtime heap: 1GB (Prisma + Socket.IO + BullMQ + Redis need ~500MB baseline)
+CMD ["sh", "-c", "echo '[Deploy] Starting server...' && NODE_OPTIONS=--max-old-space-size=1024 node dist/server.js"]

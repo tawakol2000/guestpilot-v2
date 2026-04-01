@@ -47,41 +47,31 @@ export function initSocketIO(httpServer: HttpServer): void {
   if (redisUrl) {
     try {
       const Redis = require('ioredis');
-      const { createAdapter } = require('@socket.io/redis-streams-adapter');
-      const redisClient = new Redis(redisUrl, {
-        lazyConnect: false,
-        maxRetriesPerRequest: 1,
-        enableOfflineQueue: false,
+      const { createAdapter } = require('@socket.io/redis-adapter');
+      const pubClient = new Redis(redisUrl, {
+        lazyConnect: false, maxRetriesPerRequest: 1, enableOfflineQueue: false,
         retryStrategy: (times: number) => Math.min(times * 200, 5000),
       });
-      redisClient.on('error', (err: Error) => {
-        console.warn('[Socket.IO] Redis adapter error:', err.message);
-      });
-      redisClient.on('connect', () => {
-        console.log('[Socket.IO] Redis Streams adapter connected — multi-instance broadcasting enabled');
-      });
-      redisAdapter = createAdapter(redisClient);
+      const subClient = pubClient.duplicate();
+      pubClient.on('error', (err: Error) => console.warn('[Socket.IO] Redis pub error:', err.message));
+      subClient.on('error', (err: Error) => console.warn('[Socket.IO] Redis sub error:', err.message));
+      redisAdapter = createAdapter(pubClient, subClient);
       redisAvailable = true;
     } catch (err: any) {
-      console.warn('[Socket.IO] Redis Streams adapter failed — single-instance, no CSR:', err.message);
+      console.warn('[Socket.IO] Redis adapter failed — single-instance mode:', err.message);
     }
   } else {
-    console.warn('[Socket.IO] REDIS_URL not set — single-instance mode, no CSR');
+    console.warn('[Socket.IO] REDIS_URL not set — single-instance mode');
   }
 
-  // CSR only with Redis (in-memory buffer causes OOM at scale)
+  // No CSR — it requires Redis Streams adapter which is too memory-heavy.
+  // Missed events are handled by REST API fallback on reconnect (client-side).
   const serverOpts: any = {
     cors: { origin: corsOrigins, credentials: true },
     transports: ['websocket'] as const,
     pingInterval: 25000,
     pingTimeout: 20000,
   };
-  if (redisAvailable) {
-    serverOpts.connectionStateRecovery = {
-      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
-      skipMiddlewares: true,
-    };
-  }
 
   io = new Server(httpServer, serverOpts);
 
@@ -136,7 +126,7 @@ export function initSocketIO(httpServer: HttpServer): void {
     });
   });
 
-  console.log(`[Socket.IO] Server initialized — WebSocket transport, CSR=${redisAvailable ? '2min (Redis)' : 'disabled'}`);
+  console.log(`[Socket.IO] Server initialized — WebSocket transport, Redis=${redisAvailable ? 'yes' : 'no'}`);
 }
 
 // ── Broadcasting ────────────────────────────────────────────────────────────
