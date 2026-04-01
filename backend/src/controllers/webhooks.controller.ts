@@ -412,16 +412,17 @@ async function handleNewMessage(
       },
     });
   } catch (err: any) {
-    // P2002 = Prisma unique constraint violation — duplicate webhook delivery
+    // P2002 = Prisma unique constraint violation — message already exists (sync or duplicate webhook)
     if (err?.code === 'P2002') {
-      console.log(`[Webhook] Duplicate message ${hostawayMsgId} skipped`);
-      return;
+      console.log(`[Webhook] Duplicate message ${hostawayMsgId} — message exists, still processing AI trigger`);
+      // Don't return — fall through to schedule AI reply (sync inserts messages but doesn't trigger AI)
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   if (isGuest) {
-    // Update conversation: increment unread, update timestamp
+    // Update conversation: increment unread, update timestamp (safe to re-run on duplicate)
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
