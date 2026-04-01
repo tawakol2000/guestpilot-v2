@@ -1,6 +1,6 @@
 /**
  * Message Sync Job — Polls for active conversations and syncs messages from Hostaway.
- * Runs every 2 minutes. Processes max 5 conversations per cycle.
+ * Runs every 2 minutes. Processes max 10 conversations per cycle.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -38,7 +38,7 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
           },
         },
         orderBy: { lastSyncedAt: { sort: 'asc', nulls: 'first' } },
-        take: 5,
+        take: 10,
       });
 
       if (conversations.length === 0) return;
