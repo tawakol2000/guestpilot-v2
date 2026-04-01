@@ -1348,7 +1348,6 @@ export async function generateAndSendAiReply(
 
     // Build document checklist text as a separate variable (no longer inline in propertyInfo)
     let documentChecklistText = '';
-    console.log(`[AI] [${conversationId}] Checklist debug: isInquiry=${isInquiry}, checklistData=${!!checklistData}, checklistPending=${checklistPending}`);
     if (!isInquiry && checklistData && checklistPending) {
       documentChecklistText = `Passports/IDs: ${checklistData.passportsReceived}/${checklistData.passportsNeeded} received`;
       if (checklistData.marriageCertNeeded) {
@@ -1424,8 +1423,13 @@ export async function generateAndSendAiReply(
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
     };
-    console.log(`[AI] [${conversationId}] DOCUMENT_CHECKLIST value: "${variableDataMap.DOCUMENT_CHECKLIST}"`);
-    console.log(`[AI] [${conversationId}] mark_document_received tool included: ${checklistPending}`);
+    // Inline-replace {DOCUMENT_CHECKLIST} directly in the system prompt so the AI sees the actual data
+    // (Mode 2 variable resolution puts it in a content block, but the AI needs it inline next to the instructions)
+    if (variableDataMap.DOCUMENT_CHECKLIST) {
+      effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', variableDataMap.DOCUMENT_CHECKLIST);
+    } else {
+      effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', 'No pending documents.');
+    }
 
     // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
     const { cleanedPrompt, contentBlocks: userContent } = resolveVariables(
