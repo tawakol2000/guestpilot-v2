@@ -26,10 +26,15 @@ export function SyncIndicator({
   useEffect(() => {
     setRemainingMs(calcRemaining())
     const timer = setInterval(() => {
-      setRemainingMs(calcRemaining())
+      const remaining = calcRemaining()
+      setRemainingMs(remaining)
+      // Auto-trigger sync when timer hits zero
+      if (remaining <= 0 && !isSyncing) {
+        onSync()
+      }
     }, 1000)
     return () => clearInterval(timer)
-  }, [calcRemaining])
+  }, [calcRemaining, isSyncing, onSync])
 
   const progress = lastSyncedAt
     ? Math.min(1, 1 - remainingMs / syncIntervalMs)
