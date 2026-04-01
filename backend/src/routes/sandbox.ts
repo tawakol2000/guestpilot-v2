@@ -10,7 +10,7 @@ import { resolveVariables, applyPropertyOverrides } from '../services/template-v
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 
@@ -109,7 +109,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       // ── Build conversation history text ─────────────────────────────────
       // Exclude current window messages from history (they go into CURRENT_MESSAGES block)
       const currentContents = new Set(lastGuestMessages.map(m => m.content));
-      const historyMsgs = messages.filter(m => !(m.role === 'guest' && currentContents.has(m.content)));
+      const historyMsgs = messages.filter(m => !(m.role === 'guest' && currentContents.has(m.content))).slice(-10);
       const historyText = historyMsgs.length > 0
         ? historyMsgs.map(m => `${m.role === 'guest' ? 'Guest' : (tenantConfig?.agentName || 'Omar')}: ${m.content}`).join('\n')
         : '';
@@ -164,10 +164,10 @@ export function sandboxRouter(prisma: PrismaClient) {
       const effectiveMaxTokens = tenantConfig?.maxTokens || personaCfg.maxTokens;
       const effectiveAgentName = tenantConfig?.agentName || agentName;
 
-      // DB-backed system prompts (editable via Configure AI), fallback to JSON config
+      // DB-backed system prompts (editable via Configure AI), fallback to SEED constants
       let effectiveSystemPrompt = isInquiry
-        ? (tenantConfig?.systemPromptScreening || personaCfg.systemPrompt)
-        : (tenantConfig?.systemPromptCoordinator || personaCfg.systemPrompt);
+        ? (tenantConfig?.systemPromptScreening || SEED_SCREENING_PROMPT)
+        : (tenantConfig?.systemPromptCoordinator || SEED_COORDINATOR_PROMPT);
       if (tenantConfig?.agentName && tenantConfig.agentName !== 'Omar') {
         effectiveSystemPrompt = effectiveSystemPrompt.replace(/\bOmar\b/g, tenantConfig.agentName);
       }
@@ -252,6 +252,9 @@ export function sandboxRouter(prisma: PrismaClient) {
           ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
       };
 
+      // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
+      effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', '');
+
       // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
       const { cleanedPrompt, contentBlocks: userContent } = resolveVariables(
         effectiveSystemPrompt,
@@ -260,6 +263,14 @@ export function sandboxRouter(prisma: PrismaClient) {
       );
       // Use cleanedPrompt (without content blocks) for instructions — blocks go in input
       effectiveSystemPrompt = cleanedPrompt;
+
+      // Append document checklist as content block (matches production)
+      if (variableDataMap.DOCUMENT_CHECKLIST) {
+        userContent.push({
+          type: 'text',
+          text: `### PENDING DOCUMENTS ###\n${variableDataMap.DOCUMENT_CHECKLIST}`,
+        });
+      }
 
       // Single user message — matches production (no multi-turn splitting)
       const userMessage = userContent.map(b => b.text).join('\n\n');
