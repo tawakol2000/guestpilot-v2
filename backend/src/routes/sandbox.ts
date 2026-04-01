@@ -421,12 +421,36 @@ export function sandboxRouter(prisma: PrismaClient) {
             previous_response_id: response.id,
             max_output_tokens: effectiveMaxTokens,
             reasoning: { effort: reasoningEffort },
-            text: { format: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA },
+            // Don't enforce json_schema during tool rounds — it blocks further tool calls.
+            // Schema is applied in a final call below if needed.
+            tools: toolsForCall,
+            tool_choice: 'auto',
             store: true,
           })
         ) as any;
 
         sbFnCalls = (response.output || []).filter((i: any) => i.type === 'function_call');
+      }
+
+      // If tools were used and response isn't valid JSON, do a final schema-enforced call
+      if (toolUsed && response.output_text) {
+        try {
+          JSON.parse(stripCodeFences(response.output_text));
+        } catch {
+          // Response isn't valid JSON — re-run with schema enforcement and no tools
+          response = await withRetry(() =>
+            (openai.responses as any).create({
+              model: effectiveModel,
+              instructions: effectiveSystemPrompt,
+              input: [{ type: 'function_call_output', call_id: 'schema-enforce', output: 'Now generate your final JSON response based on all the information gathered.' }],
+              previous_response_id: response.id,
+              max_output_tokens: effectiveMaxTokens,
+              reasoning: { effort: reasoningEffort },
+              text: { format: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA },
+              store: true,
+            })
+          ) as any;
+        }
       }
 
       // ── Extract response text ──────────────────────────────────────────

@@ -367,8 +367,8 @@ async function createMessage(
         toolOutputs.push({ type: 'function_call_output', call_id: fnCall.call_id, output: toolResultContent });
       }
 
-      // Send ALL tool results back in one follow-up call
-      const toolFollowUpTextFormat = options?.outputSchema ? { format: options.outputSchema } : { format: { type: 'text' as const } };
+      // Send ALL tool results back — don't enforce json_schema yet (blocks further tool calls).
+      // Schema is enforced on the final response after the tool loop exits.
       if (options?.stream && options?.tenantId && options?.conversationId) {
         const toolFollowUpStream = await withRetry(() =>
           (openai.responses as any).create({
@@ -378,7 +378,8 @@ async function createMessage(
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
-            text: toolFollowUpTextFormat,
+            tools: options?.tools,
+            tool_choice: 'auto',
             store: true,
             stream: true,
             ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
@@ -419,7 +420,8 @@ async function createMessage(
             previous_response_id: response.id,
             max_output_tokens: maxTokens,
             reasoning: { effort: reasoningEffort },
-            text: toolFollowUpTextFormat,
+            tools: options?.tools,
+            tool_choice: 'auto',
             store: true,
             ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
             prompt_cache_retention: '24h',
@@ -453,6 +455,28 @@ async function createMessage(
         delta: '',
         done: true,
       });
+    }
+
+    // If tools were used, ensure response is valid JSON (schema wasn't enforced during tool rounds)
+    if (toolRound > 0 && options?.outputSchema && response.output_text) {
+      try {
+        JSON.parse(stripCodeFences(response.output_text));
+      } catch {
+        // Response isn't valid JSON — re-run with schema enforcement
+        console.log(`[AI] Post-tool response not valid JSON — enforcing schema`);
+        response = await withRetry(() =>
+          (openai.responses as any).create({
+            model,
+            instructions: systemPrompt,
+            input: `Based on all the tool results and context, generate your final response now.`,
+            previous_response_id: response.id,
+            max_output_tokens: maxTokens,
+            reasoning: { effort: reasoningEffort },
+            text: { format: options.outputSchema },
+            store: true,
+          })
+        );
+      }
     }
 
     // Detect truncation — reasoning tokens can exhaust max_output_tokens before visible output completes
