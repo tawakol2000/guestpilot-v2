@@ -1567,6 +1567,15 @@ export default function InboxV5() {
     apiSyncConversation(selectedId).then(res => {
       if (res.syncedAt) setLastSyncedAt(res.syncedAt)
       else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
+      // If new messages were found, re-fetch conversation to refresh chat
+      if (res.newMessages && res.newMessages > 0) {
+        apiGetConversation(selectedId).then(detail => {
+          if (detail) {
+            setConversations(prev => prev.map(c => c.id === selectedId ? mergeDetail(c, detail) : c))
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+          }
+        }).catch(() => {})
+      }
     }).catch(() => {})
   }, [selectedId])
 
@@ -1922,6 +1931,14 @@ export default function InboxV5() {
       const res = await apiSyncConversation(selectedConv.id, true)
       if (res.syncedAt) setLastSyncedAt(res.syncedAt)
       else if (res.lastSyncedAt) setLastSyncedAt(res.lastSyncedAt)
+      // If new messages were found, re-fetch conversation detail to refresh the chat
+      if (res.newMessages && res.newMessages > 0) {
+        const detail = await apiGetConversation(selectedConv.id)
+        if (detail) {
+          setConversations(prev => prev.map(c => c.id === selectedConv.id ? mergeDetail(c, detail) : c))
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+        }
+      }
     } catch (err) {
       console.warn('Sync failed:', err)
     } finally {
