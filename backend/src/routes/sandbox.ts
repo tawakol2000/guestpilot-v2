@@ -10,7 +10,7 @@ import { resolveVariables, applyPropertyOverrides } from '../services/template-v
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, buildPropertyInfo, classifyAmenities } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 
@@ -428,12 +428,13 @@ export function sandboxRouter(prisma: PrismaClient) {
       let manager: { needed: boolean; title: string; note: string } | null = null;
 
       try {
+        const cleanedResponse = stripCodeFences(rawResponseText);
         if (isInquiry) {
-          const parsed = JSON.parse(rawResponseText) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
+          const parsed = JSON.parse(cleanedResponse) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
           responseMessage = parsed['guest message'] || rawResponseText;
           if (parsed.manager) manager = parsed.manager;
         } else {
-          const parsed = JSON.parse(rawResponseText) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
+          const parsed = JSON.parse(cleanedResponse) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
           responseMessage = parsed.guest_message || rawResponseText;
           escalation = parsed.escalation || null;
         }
