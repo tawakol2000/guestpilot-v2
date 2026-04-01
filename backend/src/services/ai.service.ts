@@ -1348,6 +1348,7 @@ export async function generateAndSendAiReply(
 
     // Build document checklist text as a separate variable (no longer inline in propertyInfo)
     let documentChecklistText = '';
+    console.log(`[AI] [${conversationId}] Checklist debug: isInquiry=${isInquiry}, checklistData=${!!checklistData}, checklistPending=${checklistPending}`);
     if (!isInquiry && checklistData && checklistPending) {
       documentChecklistText = `Passports/IDs: ${checklistData.passportsReceived}/${checklistData.passportsNeeded} received`;
       if (checklistData.marriageCertNeeded) {
@@ -1423,6 +1424,8 @@ export async function generateAndSendAiReply(
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
     };
+    console.log(`[AI] [${conversationId}] DOCUMENT_CHECKLIST value: "${variableDataMap.DOCUMENT_CHECKLIST}"`);
+    console.log(`[AI] [${conversationId}] mark_document_received tool included: ${checklistPending}`);
 
     // Resolve variables — system prompt stays static (cacheable), data becomes content blocks
     const { cleanedPrompt, contentBlocks: userContent } = resolveVariables(
