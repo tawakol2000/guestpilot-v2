@@ -360,10 +360,20 @@ export function makeConversationsController(prisma: PrismaClient) {
             checkOut: reservation.checkOut.toISOString().split('T')[0],
             guestCount: reservation.guestCount,
             reservationStatus: reservation.status,
-            listing: { name: property.name, internalListingName: property.name, address: property.address },
+            listing: {
+              name: property.name,
+              internalListingName: property.name,
+              address: property.address,
+              doorSecurityCode: (customKb as any)?.doorCode || (customKb as any)?.doorSecurityCode || '',
+              wifiUsername: (customKb as any)?.wifiName || (customKb as any)?.wifiUsername || '',
+              wifiPassword: (customKb as any)?.wifiPassword || '',
+            },
             customKnowledgeBase: customKb,
             listingDescription: property.listingDescription,
+            aiMode: reservation.aiMode,
             channel: reservation.channel,
+            reservationId: reservation.id,
+            screeningAnswers: reservation.screeningAnswers as Record<string, unknown>,
           },
           prisma
         ).catch(err => console.error(`[sendAiNow] Error for conv ${id}:`, err));
