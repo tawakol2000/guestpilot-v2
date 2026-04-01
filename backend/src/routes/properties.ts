@@ -230,7 +230,7 @@ export function propertiesRouter(prisma: PrismaClient): Router {
         },
       });
 
-      // Rebuild RAG chunks (property-info + property-description, preserves learned-answers)
+      // Rebuild RAG chunks (property-info, preserves learned-answers)
       const chunks = await ingestPropertyKnowledge(tenantId, propertyId, updated, prisma);
 
       res.json({

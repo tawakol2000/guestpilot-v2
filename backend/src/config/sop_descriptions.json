@@ -53,25 +53,16 @@
         ]
       }
     },
-    "property-description": {
-      "broad": false,
-      "descriptions": {
-        "en": [
-          "Visual and spatial overview of how the living space looks and feels. The traveler wants to picture the interior design style, the floor plan layout, how many square meters each room spans, whether the decor is modern or traditional, and what the view from the windows reveals. They ask about the bedroom configuration, the size of the living area, balcony or terrace presence, and whether the furnishing style suits couples or families. Typical triggers: \"describe the place\", \"what does the apartment look like\", \"how are the rooms laid out\", \"is there a balcony with a view\", \"show me the floor plan\", \"is the style modern or classic\"."
-        ],
-        "ar": [
-          "نظرة بصرية ومكانية عن شكل وأجواء مساحة السكن. يريد المسافر تصوّر أسلوب التصميم الداخلي ومخطط التوزيع وكم متراً مربعاً تمتد كل غرفة وهل الديكور عصري أم تقليدي وماذا تكشف النوافذ من إطلالة. يسأل عن تكوين غرف النوم وحجم منطقة الجلوس ووجود شرفة أو تراس وهل نمط التأثيث يناسب الأزواج أو العائلات. محفّزات نموذجية: \"وصفلي المكان\"، \"كيف شكل الشقة\"، \"كيف توزيع الغرف\"، \"في بلكونة بإطلالة\"، \"ورّني المخطط\"، \"الستايل مودرن ولا كلاسيك\"."
-        ]
-      }
-    },
     "property-info": {
       "broad": false,
       "descriptions": {
         "en": [
-          "Factual reference data about the building and its surroundings — the exact street address, which floor number the unit occupies, whether the building has a lift, proximity to the nearest supermarket or pharmacy, and neighborhood safety. Guests also ask about house rules such as the quiet hours policy, smoking restrictions, maximum occupancy, and pet regulations. Typical triggers: \"what's the exact address\", \"which floor is it on\", \"is there an elevator\", \"how far is the nearest grocery store\", \"are pets allowed\", \"what are the house rules\", \"is the neighborhood safe\"."
+          "Factual reference data about the building and its surroundings — the exact street address, which floor number the unit occupies, whether the building has a lift, proximity to the nearest supermarket or pharmacy, and neighborhood safety. Guests also ask about house rules such as the quiet hours policy, smoking restrictions, maximum occupancy, and pet regulations. Typical triggers: \"what's the exact address\", \"which floor is it on\", \"is there an elevator\", \"how far is the nearest grocery store\", \"are pets allowed\", \"what are the house rules\", \"is the neighborhood safe\".",
+          "Visual and spatial overview of how the living space looks and feels — bedroom count, floor plan layout, square meters, decor style, view from windows, balcony or terrace, pool access, security details. Typical triggers: \"how many bedrooms\", \"describe the place\", \"what does the apartment look like\", \"is there a pool\", \"is there a balcony\", \"how big is the apartment\", \"is there parking\"."
         ],
         "ar": [
-          "بيانات مرجعية واقعية عن المبنى ومحيطه — العنوان الدقيق بالشارع ورقم الطابق الذي تقع فيه الوحدة ووجود مصعد والقرب من أقرب سوبرماركت أو صيدلية وأمان الحي. يسأل النزلاء أيضاً عن قوانين السكن مثل سياسة ساعات الهدوء وقيود التدخين والحد الأقصى للإشغال وأنظمة الحيوانات الأليفة. محفّزات نموذجية: \"وش العنوان بالضبط\"، \"في أي طابق\"، \"في مصعد\"، \"كم يبعد أقرب بقالة\"، \"مسموح بالحيوانات\"، \"وش قوانين السكن\"، \"الحي آمن\"."
+          "بيانات مرجعية واقعية عن المبنى ومحيطه — العنوان الدقيق بالشارع ورقم الطابق الذي تقع فيه الوحدة ووجود مصعد والقرب من أقرب سوبرماركت أو صيدلية وأمان الحي. يسأل النزلاء أيضاً عن قوانين السكن مثل سياسة ساعات الهدوء وقيود التدخين والحد الأقصى للإشغال وأنظمة الحيوانات الأليفة. محفّزات نموذجية: \"وش العنوان بالضبط\"، \"في أي طابق\"، \"في مصعد\"، \"كم يبعد أقرب بقالة\"، \"مسموح بالحيوانات\"، \"وش قوانين السكن\"، \"الحي آمن\".",
+          "نظرة بصرية ومكانية عن شكل وأجواء مساحة السكن — عدد غرف النوم ومخطط التوزيع والمساحة والديكور والإطلالة ووجود شرفة أو مسبح أو موقف سيارات والأمن. محفّزات نموذجية: \"كم غرفة نوم\"، \"وصفلي المكان\"، \"كيف شكل الشقة\"، \"في مسبح\"، \"في بلكونة\"، \"كم مساحة الشقة\"، \"في باركنغ\"."
         ]
       }
     },

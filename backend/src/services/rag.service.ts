@@ -106,11 +106,11 @@ export async function ingestPropertyKnowledge(
     }
   }
 
-  // 2b. Build property-description chunk: full listing description as one chunk
+  // 2b. Build property description chunk (merged into property-info category)
   if (property.listingDescription && property.listingDescription.trim().length > 0) {
     chunks.push({
       content: property.listingDescription.trim(),
-      category: 'property-description',
+      category: 'property-info',
       sourceKey: 'property-description',
     });
   }
@@ -276,7 +276,7 @@ async function retrievePropertyChunks(
       WHERE "propertyId" = $2
         AND "tenantId" = $3
         AND "${col}" IS NOT NULL
-        AND category IN ('property-info', 'property-description', 'learned-answers')
+        AND category IN ('property-info', 'learned-answers')
       ORDER BY "${col}" <=> $1::vector(${embDim()})
       LIMIT $4`,
       embeddingStr, propertyId, tenantId, topK
@@ -604,7 +604,7 @@ export async function seedTenantSops(
     DELETE FROM "PropertyKnowledgeChunk"
     WHERE "propertyId" IS NULL
       AND "tenantId" = ${tenantId}
-      AND (category LIKE 'sop-%' OR category IN ('pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues', 'non-actionable', 'property-info', 'property-description'))
+      AND (category LIKE 'sop-%' OR category IN ('pricing-negotiation', 'pre-arrival-logistics', 'payment-issues', 'post-stay-issues', 'non-actionable', 'property-info'))
   `;
 
   const vectorEnabled = await isPgvectorAvailable(prisma);

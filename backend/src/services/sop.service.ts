@@ -33,7 +33,6 @@ export const SOP_CATEGORIES = [
   'payment-issues',
   'sop-long-term-rental',
   'property-info',
-  'property-description',
   'pre-arrival-logistics',
   'sop-property-viewing',
   'post-stay-issues',
@@ -369,8 +368,7 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'sop-booking-cancellation': 'Cancel requests, cancellation policy questions.',
   'payment-issues': 'Payment failures, refund requests, receipts, billing disputes.',
   'sop-long-term-rental': 'Monthly rental inquiries, corporate stays, stays over 3 weeks.',
-  'property-info': 'Address, parking, directions, floor, bedrooms, check-in/out times.',
-  'property-description': 'General property overview, neighborhood info, compound description.',
+  'property-info': 'Property details: bedrooms, bathrooms, floor, parking, address, check-in/out times, pool, security, neighborhood, compound description, general property overview.',
   'pre-arrival-logistics': 'Arrival coordination, ETA sharing, airport transfer, directions.',
   'sop-property-viewing': 'Property tours, photo/video requests, filming permission.',
   'post-stay-issues': 'Lost items after checkout, post-stay complaints, damage deposit.',
@@ -473,6 +471,13 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
   'sop-booking-cancellation': `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Escalate as booking-cancellation with booking details. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
 
   'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. First recommend that the photos are available online and comprehensive of the property. If wants videos, escalate to manager, and tell the guest I'll ask the manager if there are videos to provide.`,
+
+  'property-info': `PROPERTY INFO: Guest is asking about the property — bedrooms, bathrooms, floor level, parking, pool, security, neighborhood, compound, or general property details. Answer from the property description below and the available amenities. If the information is not in your knowledge, say you'll check and escalate as info_request.
+
+{PROPERTY_DESCRIPTION}
+
+## AVAILABLE AMENITIES
+{AVAILABLE_AMENITIES}`,
 
   'local-recommendations': `Guest asks about nearby places, local recommendations, or "where is the nearest X?"
 You do NOT have local area knowledge. Do NOT guess locations, distances, or directions.
