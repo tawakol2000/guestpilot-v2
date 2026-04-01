@@ -347,6 +347,30 @@ export function sandboxRouter(prisma: PrismaClient) {
             cats.map(c => getSopContent(tenantId, c, reservationStatus || 'DEFAULT', propertyId, propertyAmenities, prisma, variableDataMap))
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
+
+          // Auto-enrich: early check-in / late checkout within 2 days → check availability
+          if ((cats.includes('sop-early-checkin') || cats.includes('sop-late-checkout')) && hostawayListingId) {
+            try {
+              const ciDate = new Date(checkIn + 'T00:00:00Z');
+              const coDate = new Date(checkOut + 'T00:00:00Z');
+              const now = new Date(); now.setHours(0, 0, 0, 0);
+              const twoDays = 2 * 24 * 60 * 60 * 1000;
+              const ciSoon = ciDate.getTime() - now.getTime() <= twoDays;
+              const coSoon = coDate.getTime() - now.getTime() <= twoDays;
+              if ((cats.includes('sop-early-checkin') && ciSoon) || (cats.includes('sop-late-checkout') && coSoon)) {
+                const availResult = await checkExtendAvailability(
+                  { new_checkout: checkOut, new_checkin: cats.includes('sop-early-checkin') ? checkIn : null, reason: 'Auto-check back-to-back' },
+                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: safeTenant.hostawayAccountId, hostawayApiKey: safeTenant.hostawayApiKey },
+                );
+                const availData = JSON.parse(availResult);
+                const backToBack = availData.available === false || availData.blocked;
+                sopContent += `\n\n## AVAILABILITY CHECK RESULT\n${backToBack ? 'Back-to-back booking detected — another guest is checking out on that day. Early check-in/late checkout is NOT available.' : 'No back-to-back booking found — early check-in/late checkout may be possible. Escalate to manager for confirmation.'}`;
+              }
+            } catch (err) {
+              console.warn('[Sandbox] Auto availability check failed:', err);
+            }
+          }
+
           return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
         } else if (fnCall.name === 'search_available_properties') {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
