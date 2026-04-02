@@ -26,6 +26,7 @@ model Tenant {
   properties            Property[]
   reservations          Reservation[]
   tasks                 Task[]
+  faqEntries            FaqEntry[]
   messageTemplates      MessageTemplate[]
   knowledgeSuggestions  KnowledgeSuggestion[]
   aiApiLogs             AiApiLog[]
@@ -50,6 +51,7 @@ model Property {
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservations         Reservation[]
   tasks                Task[]
+  faqEntries              FaqEntry[]
   knowledgeSuggestions    KnowledgeSuggestion[]
   sopPropertyOverrides    SopPropertyOverride[]
 
@@ -277,6 +279,49 @@ enum MessageRole {
   HOST
   AI_PRIVATE
   MANAGER_PRIVATE
+}
+
+// ─── FAQ Knowledge System ────────────────────────────────────────────────────
+
+model FaqEntry {
+  id                     String    @id @default(cuid())
+  tenantId               String
+  propertyId             String?
+  question               String
+  answer                 String    @db.Text
+  category               String
+  scope                  FaqScope  @default(PROPERTY)
+  status                 FaqStatus @default(SUGGESTED)
+  source                 FaqSource @default(MANUAL)
+  usageCount             Int       @default(0)
+  lastUsedAt             DateTime?
+  sourceConversationId   String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property               Property? @relation(fields: [propertyId], references: [id])
+
+  @@unique([tenantId, propertyId, question])
+  @@index([tenantId, propertyId, status])
+  @@index([tenantId, scope, status])
+  @@index([tenantId, category, status])
+}
+
+enum FaqScope {
+  GLOBAL
+  PROPERTY
+}
+
+enum FaqStatus {
+  SUGGESTED
+  ACTIVE
+  STALE
+  ARCHIVED
+}
+
+enum FaqSource {
+  MANUAL
+  AUTO_SUGGESTED
 }
 
 // ─── Automated Messages ──────────────────────────────────────────────────────

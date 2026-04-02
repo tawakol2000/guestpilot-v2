@@ -65,6 +65,7 @@ import {
   apiToggleStar,
   apiResolveConversation,
   apiSyncConversation,
+  apiUpdateFaqEntry,
   mapChannel,
   mapMessageSender,
   formatTimestamp,
@@ -87,6 +88,7 @@ import SopEditorV5 from '@/components/sop-editor-v5'
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import ListingsV5 from '@/components/listings-v5'
+import FaqV5 from '@/components/faq-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -120,7 +122,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'sops' | 'tools' | 'sandbox' | 'listings'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1388,7 +1390,7 @@ export default function InboxV5() {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
         'overview','inbox','analytics','tasks','settings','configure',
-        'logs','sops','tools','sandbox',
+        'logs','sops','tools','sandbox','listings','faqs',
       ].includes(saved)) return saved as NavTab
     }
     return 'inbox'
@@ -1451,6 +1453,11 @@ export default function InboxV5() {
   const [wiggleMode, setWiggleMode] = useState(false)
   const [draggedSection, setDraggedSection] = useState<PanelSectionId | null>(null)
   const [dragOverSection, setDragOverSection] = useState<PanelSectionId | null>(null)
+  const [faqSuggestion, setFaqSuggestion] = useState<{
+    id: string; question: string; answer: string; category: string;
+    propertyId: string; propertyName: string;
+  } | null>(null)
+  const [faqSuggestionScope, setFaqSuggestionScope] = useState<'PROPERTY' | 'GLOBAL'>('PROPERTY')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -1546,9 +1553,10 @@ export default function InboxV5() {
 
   // ── Effect 2: Load detail on selection ──
   useEffect(() => {
-    // Clear copilot suggestion and typing state when switching conversations
+    // Clear copilot suggestion, typing state, and FAQ suggestion when switching conversations
     setAiSuggestion(null)
     setAiTyping(false)
+    setFaqSuggestion(null)
     seenMessageIds.current.clear()
     if (!selectedId) return
 
@@ -1883,6 +1891,12 @@ export default function InboxV5() {
         .catch(err => console.error('[Socket] property_ai_changed refresh failed:', err))
     })
 
+    socket.on('faq_suggestion', (data: any) => {
+      if (data.conversationId === selectedIdRef.current && data.suggestion) {
+        setFaqSuggestion(data.suggestion)
+      }
+    })
+
     return () => {
       socket.off('connect')
       socket.off('disconnect')
@@ -1898,6 +1912,7 @@ export default function InboxV5() {
       socket.off('conversation_starred')
       socket.off('conversation_resolved')
       socket.off('property_ai_changed')
+      socket.off('faq_suggestion')
       if (degradedPollTimer.current) clearInterval(degradedPollTimer.current)
       disconnectSocket()
     }
@@ -1962,6 +1977,23 @@ export default function InboxV5() {
     const el = e.currentTarget
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }
+
+  // ── FAQ suggestion handlers ──
+  const handleFaqApprove = async () => {
+    if (!faqSuggestion) return
+    try {
+      await apiUpdateFaqEntry(faqSuggestion.id, { status: 'ACTIVE', scope: faqSuggestionScope })
+      setFaqSuggestion(null)
+    } catch (err) { console.warn('FAQ approve failed:', err) }
+  }
+
+  const handleFaqReject = async () => {
+    if (!faqSuggestion) return
+    try {
+      await apiUpdateFaqEntry(faqSuggestion.id, { status: 'ARCHIVED' })
+      setFaqSuggestion(null)
+    } catch (err) { console.warn('FAQ reject failed:', err) }
   }
 
   // ── Actions ──
@@ -2550,6 +2582,7 @@ export default function InboxV5() {
             { id: 'sandbox', label: 'Sandbox' },
             /* OPUS tab removed — 014-openai-migration */
             { id: 'listings', label: 'Listings' },
+            { id: 'faqs', label: 'FAQs' },
             /* SOP Monitor tab removed */
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3949,6 +3982,44 @@ export default function InboxV5() {
                   )
                 })()}
 
+                {/* FAQ suggestion card */}
+                {faqSuggestion && (
+                  <div style={{
+                    margin: '8px 16px',
+                    padding: '12px 16px',
+                    background: '#FFFBEB',
+                    border: '1px solid #F59E0B33',
+                    borderRadius: 10,
+                    fontSize: 13,
+                  }}>
+                    <div style={{ fontWeight: 600, color: '#92400E', marginBottom: 6, fontSize: 12 }}>
+                      {'💡 Save as FAQ?'}
+                    </div>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>Q: {faqSuggestion.question}</div>
+                    <div style={{ color: '#666', marginBottom: 8 }}>A: {faqSuggestion.answer}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button onClick={handleFaqApprove} style={{
+                        padding: '4px 12px', background: '#22c55e', color: 'white',
+                        border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}>Approve</button>
+                      <button onClick={handleFaqReject} style={{
+                        padding: '4px 12px', background: '#ef4444', color: 'white',
+                        border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}>Reject</button>
+                      <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8, color: '#666' }}>
+                        <input type="radio" name="faqScope" checked={faqSuggestionScope === 'PROPERTY'}
+                          onChange={() => setFaqSuggestionScope('PROPERTY')} style={{ margin: 0 }} />
+                        This property
+                      </label>
+                      <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: '#666' }}>
+                        <input type="radio" name="faqScope" checked={faqSuggestionScope === 'GLOBAL'}
+                          onChange={() => setFaqSuggestionScope('GLOBAL')} style={{ margin: 0 }} />
+                        Global
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 {/* Compose card */}
                 <div style={{ position: 'relative' }}>
                 <div
@@ -4424,6 +4495,13 @@ export default function InboxV5() {
         </ErrorBoundary>
       )}
       {/* SOP Monitor tab removed */}
+      {navTab === 'faqs' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <FaqV5 />
+        </div>
+        </ErrorBoundary>
+      )}
 
       {/* Image lightbox modal */}
       {imageModalUrl && (

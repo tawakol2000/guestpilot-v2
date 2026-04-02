@@ -7,6 +7,7 @@ import * as hostawayService from '../services/hostaway.service';
 import { cancelPendingAiReply } from '../services/debounce.service';
 import { getAiConfig } from '../services/ai-config.service';
 import { createMessage, stripCodeFences } from '../services/ai.service';
+import { processFaqSuggestion } from '../services/faq-suggest.service';
 
 const sendMessageSchema = z.object({
   content: z.string().min(1),
@@ -73,6 +74,29 @@ export function makeMessagesController(prisma: PrismaClient) {
         });
 
         await cancelPendingAiReply(id, prisma);
+
+        // Auto-suggest FAQ: if conversation has an open info_request task, classify the reply
+        try {
+          const infoRequestTask = await prisma.task.findFirst({
+            where: { conversationId: id, status: 'open', urgency: 'info_request' },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (infoRequestTask) {
+            // Get the last guest message for context
+            const lastGuestMsg = await prisma.message.findFirst({
+              where: { conversationId: id, role: 'GUEST' },
+              orderBy: { sentAt: 'desc' },
+              select: { content: true },
+            });
+            if (lastGuestMsg) {
+              // Fire-and-forget — don't await
+              processFaqSuggestion(prisma, tenantId, id, conversation.propertyId, lastGuestMsg.content, content)
+                .catch(err => console.warn('[FAQ] Auto-suggest failed (non-fatal):', err.message));
+            }
+          }
+        } catch (err: any) {
+          console.warn('[FAQ] Auto-suggest trigger failed (non-fatal):', err.message);
+        }
 
         // Background: pre-fill pending knowledge suggestion if exists
         prisma.knowledgeSuggestion.findFirst({

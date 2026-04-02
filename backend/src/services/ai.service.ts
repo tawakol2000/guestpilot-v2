@@ -15,6 +15,7 @@ import { traceAiCall, traceEscalation } from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
 import { getSopContent, buildToolDefinition } from './sop.service';
+import { getFaqForProperty } from './faq.service';
 import { evaluateEscalation } from './task-manager.service';
 // memory.service imports removed — conversation history built inline
 import { getTenantAiConfig } from './tenant-config.service';
@@ -1567,7 +1568,7 @@ export async function generateAndSendAiReply(
       // Build tool set — get_sop uses dynamic definition, others from DB
       const toolsForCall = toolDefs
         .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(context.reservationStatus || 'INQUIRY'))
-        .filter(t => t.name !== 'get_sop') // get_sop uses dynamic definition with category enum
+        .filter(t => t.name !== 'get_sop' && t.name !== 'get_faq') // get_sop/get_faq use inline definitions
         .filter(t => t.name !== 'mark_document_received' || checklistPending) // conditional
         .map(t => ({
           type: 'function' as const,
@@ -1578,6 +1579,32 @@ export async function generateAndSendAiReply(
         }));
       // Add get_sop with dynamic category descriptions from enabled SOP definitions
       toolsForCall.push(sopToolDef);
+
+      // Add get_faq tool — lets the AI retrieve FAQ entries before escalating info requests
+      toolsForCall.push({
+        type: 'function' as const,
+        name: 'get_faq',
+        description: 'Retrieve FAQ entries for the current property. Call this BEFORE escalating an info_request when a guest asks a factual question about the property, local area, amenities, or policies. If the FAQ has an answer, use it directly instead of escalating.',
+        strict: false,
+        parameters: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              enum: [
+                'check-in-access', 'check-out-departure', 'wifi-technology',
+                'kitchen-cooking', 'appliances-equipment', 'house-rules',
+                'parking-transportation', 'local-recommendations', 'attractions-activities',
+                'cleaning-housekeeping', 'safety-emergencies', 'booking-reservation',
+                'payment-billing', 'amenities-supplies', 'property-neighborhood',
+              ],
+              description: 'FAQ category that best matches the guest\'s question',
+            },
+          },
+          required: ['category'],
+          additionalProperties: false,
+        },
+      });
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -1607,7 +1634,7 @@ export async function generateAndSendAiReply(
           // The AI already creates escalations with proper titles, notes, and urgency levels.
 
           // Fetch and return SOP content
-          if (cats.length === 0) return JSON.stringify({ category: 'none', content: '' });
+          if (cats.length === 0) return '## SOP\n\nNo matching SOP category found.';
           const texts = await Promise.all(
             cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma, variableDataMap))
           );
@@ -1651,7 +1678,8 @@ export async function generateAndSendAiReply(
             }
           }
 
-          return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
+          if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
+          return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;
         }],
         ['search_available_properties', async (input: unknown) => {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
@@ -1714,6 +1742,12 @@ export async function generateAndSendAiReply(
             console.warn(`[AI] mark_document_received failed (non-fatal):`, err.message);
             return JSON.stringify({ error: err.message });
           }
+        }],
+        ['get_faq', async (input: unknown) => {
+          const typedInput = input as { category: string };
+          const category = typedInput.category;
+          if (!category) return '## FAQ\n\nNo category specified.';
+          return getFaqForProperty(prisma, tenantId, context.propertyId || '', category);
         }],
       ]);
 

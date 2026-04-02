@@ -158,6 +158,8 @@ cd backend && npx prisma studio     # browse data
 - PostgreSQL + Prisma ORM (existing `conversationSummary` fields on Conversation model) (024-smart-context-summary)
 - TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM 5.22, ioredis, BullMQ, axios (Hostaway API client) (025-message-sync)
 - PostgreSQL + Prisma ORM (schema changes: `lastSyncedAt` field, partial unique index) (025-message-sync)
+- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM 5.22, OpenAI SDK (gpt-5-nano for auto-suggest classification/extraction) (027-faq-knowledge)
+- PostgreSQL + Prisma ORM (new FaqEntry model) (027-faq-knowledge)
 
 ## Recent Changes
 - 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ

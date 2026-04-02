@@ -955,3 +955,71 @@ export async function apiSyncConversation(conversationId: string, force = false)
   })
 }
 
+// ── FAQ Knowledge System ────────────────────────────────────────────────────
+
+export interface FaqEntry {
+  id: string
+  question: string
+  answer: string
+  category: string
+  scope: 'GLOBAL' | 'PROPERTY'
+  status: 'SUGGESTED' | 'ACTIVE' | 'STALE' | 'ARCHIVED'
+  propertyId: string | null
+  propertyName?: string
+  usageCount: number
+  lastUsedAt: string | null
+  source: 'MANUAL' | 'AUTO_SUGGESTED'
+  sourceConversationId: string | null
+  createdAt: string
+}
+
+export interface FaqCategoryStat {
+  id: string
+  label: string
+  count: number
+}
+
+export async function apiGetFaqEntries(filters?: {
+  propertyId?: string
+  scope?: string
+  status?: string
+  category?: string
+}): Promise<{ entries: FaqEntry[]; total: number; categories: string[] }> {
+  const params = new URLSearchParams()
+  if (filters?.propertyId) params.set('propertyId', filters.propertyId)
+  if (filters?.scope) params.set('scope', filters.scope)
+  if (filters?.status) params.set('status', filters.status)
+  if (filters?.category) params.set('category', filters.category)
+  const qs = params.toString()
+  return apiFetch<{ entries: FaqEntry[]; total: number; categories: string[] }>(`/api/faq${qs ? `?${qs}` : ''}`)
+}
+
+export async function apiCreateFaqEntry(data: {
+  question: string
+  answer: string
+  category: string
+  scope: 'GLOBAL' | 'PROPERTY'
+  propertyId?: string
+}): Promise<FaqEntry> {
+  return apiFetch<FaqEntry>('/api/faq', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function apiUpdateFaqEntry(id: string, data: Partial<{
+  question: string
+  answer: string
+  category: string
+  scope: 'GLOBAL' | 'PROPERTY'
+  status: string
+  propertyId: string | null
+}>): Promise<FaqEntry> {
+  return apiFetch<FaqEntry>(`/api/faq/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export async function apiDeleteFaqEntry(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/faq/${id}`, { method: 'DELETE' })
+}
+
+export async function apiGetFaqCategories(): Promise<{ categories: FaqCategoryStat[] }> {
+  return apiFetch<{ categories: FaqCategoryStat[] }>('/api/faq/categories')
+}
+

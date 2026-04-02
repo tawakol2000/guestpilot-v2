@@ -17,6 +17,7 @@ import { sandboxRouter } from './routes/sandbox';
 import { documentChecklistRouter } from './routes/document-checklist';
 import { toolDefinitionsRouter } from './routes/tool-definitions';
 import { pushRouter } from './routes/push';
+import { faqRouter } from './routes/faq';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { getAiApiLog } from './services/ai.service';
@@ -70,6 +71,7 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/conversations', documentChecklistRouter(prisma));
   app.use('/api/tools', toolDefinitionsRouter(prisma));
   app.use('/api/push', pushRouter(prisma));
+  app.use('/api/faq', faqRouter(prisma));
 
   // Message rating endpoint
   const knowledgeCtrl = makeKnowledgeController(prisma);
