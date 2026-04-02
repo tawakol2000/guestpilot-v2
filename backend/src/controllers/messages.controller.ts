@@ -39,18 +39,25 @@ export function makeMessagesController(prisma: PrismaClient) {
 
         const { content, channel } = parsed.data;
 
+        let hostawayMsgId = '';
         if (conversation.hostawayConversationId) {
           // Map frontend channel keys to Hostaway communicationType
           const communicationType = channel === 'whatsapp' ? 'whatsapp'
             : channel === 'email' ? 'email'
             : 'channel';
-          await hostawayService.sendMessageToConversation(
-            conversation.tenant.hostawayAccountId,
-            conversation.tenant.hostawayApiKey,
-            conversation.hostawayConversationId,
-            content,
-            communicationType
-          );
+          try {
+            const hwResult = await hostawayService.sendMessageToConversation(
+              conversation.tenant.hostawayAccountId,
+              conversation.tenant.hostawayApiKey,
+              conversation.hostawayConversationId,
+              content,
+              communicationType
+            );
+            // Capture Hostaway message ID to prevent duplicates when webhook echoes back
+            hostawayMsgId = String((hwResult as any)?.result?.id || '');
+          } catch (err: any) {
+            console.warn(`[Messages] Hostaway send failed (message still saved locally): ${err.message}`);
+          }
         }
 
         const hostCommType = channel === 'whatsapp' ? 'whatsapp'
@@ -65,6 +72,7 @@ export function makeMessagesController(prisma: PrismaClient) {
             channel: conversation.channel,
             communicationType: hostCommType,
             sentAt: new Date(),
+            hostawayMessageId: hostawayMsgId,
           },
         });
 
