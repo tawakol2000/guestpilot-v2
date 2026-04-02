@@ -226,8 +226,13 @@ export async function searchAvailableProperties(
   );
 
   // 6. Sort by amenity match count (descending), take top 3
-  available.sort((a, b) => b.matchCount - a.matchCount);
-  const top = available.slice(0, 3);
+  // Only include properties that matched at least one requested amenity (if amenities were requested)
+  const hasAmenityFilter = requestedAmenities.length > 0;
+  const filtered = hasAmenityFilter
+    ? available.filter(s => s.matchCount > 0)
+    : available;
+  filtered.sort((a, b) => b.matchCount - a.matchCount);
+  const top = filtered.slice(0, 3);
 
   // 7. Build results — NEVER include access codes
   const properties: PropertyResult[] = top.map(item => {
