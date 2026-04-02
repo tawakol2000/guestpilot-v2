@@ -241,7 +241,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolNames?: string[]; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -356,13 +356,18 @@ async function createMessage(
         }
         const toolDurationMs = Date.now() - toolStartMs;
 
-        // Log first tool to ragContext (for backward compat with single-tool logging)
-        if (toolOutputs.length === 0 && options?.ragContext) {
+        // Log tools to ragContext
+        if (options?.ragContext) {
           options.ragContext.toolUsed = true;
-          options.ragContext.toolName = fnCall.name;
-          try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
-          try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
-          options.ragContext.toolDurationMs = toolDurationMs;
+          if (!options.ragContext.toolNames) options.ragContext.toolNames = [];
+          options.ragContext.toolNames.push(fnCall.name);
+          // Keep first tool in toolName for backward compat
+          if (!options.ragContext.toolName) {
+            options.ragContext.toolName = fnCall.name;
+            try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
+            try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
+            options.ragContext.toolDurationMs = toolDurationMs;
+          }
         }
 
         console.log(`[AI] Tool ${fnCall.name} executed in ${toolDurationMs}ms (round ${toolRound}, ${fnCalls.length} call${fnCalls.length > 1 ? 's' : ''})`);

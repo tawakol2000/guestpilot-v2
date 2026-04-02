@@ -342,6 +342,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       // ── Tool use loop — identical to production ────────────────────────
       let toolUsed = false;
       let toolName: string | undefined;
+      const toolNames: string[] = [];
       let toolInput: any;
       let toolResults: any;
       let toolDurationMs: number | undefined;
@@ -453,7 +454,8 @@ export function sandboxRouter(prisma: PrismaClient) {
             const result = await executeSandboxTool(fnCall);
             toolOutputs.push({ type: 'function_call_output', call_id: fnCall.call_id, output: result });
 
-            // Log first tool for response metadata
+            // Track all tools used
+            toolNames.push(fnCall.name);
             if (!toolUsed) {
               toolUsed = true;
               toolName = fnCall.name;
@@ -540,6 +542,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         manager,
         toolUsed,
         toolName,
+        toolNames,
         toolInput,
         toolResults,
         toolDurationMs,

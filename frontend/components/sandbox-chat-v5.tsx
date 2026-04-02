@@ -57,6 +57,7 @@ interface ChatMessage {
     manager?: { needed: boolean; title: string; note: string } | null
     toolUsed?: boolean
     toolName?: string
+    toolNames?: string[]
     toolInput?: any
     toolResults?: any
     toolDurationMs?: number
@@ -183,6 +184,7 @@ export default function SandboxChatV5() {
           manager: resp.manager,
           toolUsed: resp.toolUsed,
           toolName: resp.toolName,
+          toolNames: resp.toolNames,
           toolInput: resp.toolInput,
           toolResults: resp.toolResults,
           toolDurationMs: resp.toolDurationMs,
@@ -557,17 +559,18 @@ export default function SandboxChatV5() {
                     />
                   )}
 
-                  {/* Tool badge */}
-                  {msg.meta.toolUsed && (
+                  {/* Tool badges — show all tools used */}
+                  {msg.meta.toolUsed && (msg.meta.toolNames || [msg.meta.toolName]).filter(Boolean).map((tn, i) => (
                     <Badge
+                      key={tn! + i}
                       icon={<Wrench size={10} />}
-                      color="#7C3AED"
-                      text={`Tool: ${msg.meta.toolName || 'unknown'}${msg.meta.toolDurationMs ? ` (${msg.meta.toolDurationMs}ms)` : ''}`}
-                      tooltip={msg.meta.toolResults
-                        ? `Input: ${JSON.stringify(msg.meta.toolInput, null, 1)}\nResults: ${typeof msg.meta.toolResults === 'string' ? msg.meta.toolResults : JSON.stringify(msg.meta.toolResults, null, 1).substring(0, 300)}`
+                      color={tn === 'get_faq' ? '#0891B2' : '#7C3AED'}
+                      text={`Tool: ${tn || 'unknown'}${i === 0 && msg.meta!.toolDurationMs ? ` (${msg.meta!.toolDurationMs}ms)` : ''}`}
+                      tooltip={i === 0 && msg.meta!.toolResults
+                        ? `Input: ${JSON.stringify(msg.meta!.toolInput, null, 1)}\nResults: ${typeof msg.meta!.toolResults === 'string' ? msg.meta!.toolResults : JSON.stringify(msg.meta!.toolResults, null, 1).substring(0, 300)}`
                         : undefined}
                     />
-                  )}
+                  ))}
 
                   {/* Token / timing info */}
                   <span style={{

@@ -85,7 +85,7 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         // Build a lookup: for each AI message, find the closest AiApiLog by timestamp
         const aiMessages = conversation.messages.filter(m => m.role === 'AI');
-        const aiMetaMap = new Map<string, { sopCategories?: string[]; toolName?: string }>();
+        const aiMetaMap = new Map<string, { sopCategories?: string[]; toolName?: string; toolNames?: string[] }>();
         for (const aiMsg of aiMessages) {
           let bestLog: (typeof aiLogs)[0] | null = null;
           let bestDiff = Infinity;
@@ -100,15 +100,11 @@ export function makeConversationsController(prisma: PrismaClient) {
             const rc = bestLog.ragContext as any;
             if (rc) {
               // Collect all tool names from the AI call
-              const toolNames: string[] = [];
-              if (rc.allToolCalls && Array.isArray(rc.allToolCalls)) {
-                for (const tc of rc.allToolCalls) if (tc.name) toolNames.push(tc.name);
-              } else if (rc.toolName) {
-                toolNames.push(rc.toolName);
-              }
+              const toolNames: string[] = rc.toolNames || (rc.toolName ? [rc.toolName] : []);
               aiMetaMap.set(aiMsg.id, {
                 sopCategories: rc.sopCategories || rc.classifierLabels || undefined,
-                toolName: toolNames.length > 0 ? toolNames.join(', ') : undefined,
+                toolName: toolNames[0] || undefined,
+                toolNames: toolNames.length > 0 ? toolNames : undefined,
               });
             }
           }

@@ -118,7 +118,7 @@ export interface ApiMessage {
   channel: string
   sentAt: string
   imageUrls?: string[]
-  aiMeta?: { sopCategories?: string[]; toolName?: string }
+  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
 }
 
 export interface ApiConversationDetail {

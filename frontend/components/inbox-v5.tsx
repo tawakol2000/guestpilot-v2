@@ -134,7 +134,7 @@ interface Message {
   channel?: Channel
   fromSelf?: boolean
   imageUrls?: string[]
-  aiMeta?: { sopCategories?: string[]; toolName?: string }
+  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
 }
 
 interface Guest {
@@ -3784,25 +3784,26 @@ export default function InboxV5() {
                                     {sop.replace('sop-', '').replace(/-/g, ' ')}
                                   </span>
                                 ))}
-                                {msg.aiMeta.toolName && (
+                                {(msg.aiMeta.toolNames || (msg.aiMeta.toolName ? [msg.aiMeta.toolName] : [])).map((tn: string) => (
                                   <span
-                                    title={`Tool: ${msg.aiMeta.toolName}`}
+                                    key={tn}
+                                    title={`Tool: ${tn}`}
                                     style={{
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: 2,
                                       fontSize: 9,
                                       fontFamily: T.font.mono,
-                                      color: T.text.tertiary,
-                                      background: T.status.orange + '18',
+                                      color: tn === 'get_faq' ? '#0891B2' : T.text.tertiary,
+                                      background: tn === 'get_faq' ? '#0891B218' : T.status.orange + '18',
                                       padding: '1px 5px',
                                       borderRadius: 4,
                                     }}
                                   >
                                     <Wrench size={8} strokeWidth={2} />
-                                    {msg.aiMeta.toolName.replace(/_/g, ' ')}
+                                    {tn.replace(/_/g, ' ')}
                                   </span>
-                                )}
+                                ))}
                               </span>
                             ) : null}
                             {/* AI message rating buttons */}
