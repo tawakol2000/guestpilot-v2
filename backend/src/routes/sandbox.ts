@@ -398,7 +398,8 @@ export function sandboxRouter(prisma: PrismaClient) {
             }
           }
 
-          return JSON.stringify({ categories: cats, content: sopContent || 'No SOP content available for this category.' });
+          if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
+          return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;
         } else if (fnCall.name === 'search_available_properties') {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
           const currentAddress = listing.address || '';
@@ -426,7 +427,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
           if (reservation?.id) {
             const updated = await updateChecklist(reservation.id, { documentType: typedInput.document_type, notes: typedInput.notes }, prisma);
-            return JSON.stringify({ passportsReceived: updated.passportsReceived, passportsNeeded: updated.passportsNeeded, marriageCertReceived: updated.marriageCertReceived, allComplete: !hasPendingItems(updated) });
+            return JSON.stringify({ passportsReceived: updated.passportsReceived, passportsNeeded: updated.passportsNeeded, marriageCertReceived: updated.marriageCertReceived, marriageCertNeeded: updated.marriageCertNeeded, allComplete: !hasPendingItems(updated) });
           }
           return JSON.stringify({ error: 'No reservation in sandbox context' });
         } else if (fnCall.name === 'get_faq') {
