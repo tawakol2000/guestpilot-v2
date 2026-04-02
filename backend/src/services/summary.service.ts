@@ -100,7 +100,7 @@ export async function generateOrExtendSummary(
         input: transcript,
         reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
-        store: false,
+        store: true,
       });
 
       summaryText = (response.output_text || '').trim();
@@ -120,7 +120,7 @@ export async function generateOrExtendSummary(
         input: `EXISTING SUMMARY:\n${conversation.conversationSummary}\n\nNEW MESSAGES:\n${newTranscript}`,
         reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
-        store: false,
+        store: true,
       });
 
       summaryText = (response.output_text || '').trim();
