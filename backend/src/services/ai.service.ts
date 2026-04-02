@@ -241,7 +241,7 @@ async function classifyMessageSop(
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolNames?: string[]; toolInput?: any; toolResults?: any; toolDurationMs?: number; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolNames?: string[]; toolInput?: any; toolResults?: any; toolDurationMs?: number; tools?: Array<{ name: string; input: any; results: any; durationMs: number }>; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -361,11 +361,23 @@ async function createMessage(
           options.ragContext.toolUsed = true;
           if (!options.ragContext.toolNames) options.ragContext.toolNames = [];
           options.ragContext.toolNames.push(fnCall.name);
+          // Per-tool details array for AI Logs
+          if (!options.ragContext.tools) options.ragContext.tools = [];
+          let parsedInput: any;
+          try { parsedInput = JSON.parse(fnCall.arguments); } catch { parsedInput = fnCall.arguments; }
+          let parsedResults: any;
+          try { parsedResults = JSON.parse(toolResultContent); } catch { parsedResults = toolResultContent; }
+          options.ragContext.tools.push({
+            name: fnCall.name,
+            input: parsedInput,
+            results: parsedResults,
+            durationMs: toolDurationMs,
+          });
           // Keep first tool in toolName for backward compat
           if (!options.ragContext.toolName) {
             options.ragContext.toolName = fnCall.name;
-            try { options.ragContext.toolInput = JSON.parse(fnCall.arguments); } catch { options.ragContext.toolInput = fnCall.arguments; }
-            try { options.ragContext.toolResults = JSON.parse(toolResultContent); } catch { options.ragContext.toolResults = toolResultContent; }
+            options.ragContext.toolInput = parsedInput;
+            options.ragContext.toolResults = parsedResults;
             options.ragContext.toolDurationMs = toolDurationMs;
           }
         }

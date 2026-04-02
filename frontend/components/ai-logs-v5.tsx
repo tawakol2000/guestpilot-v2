@@ -76,6 +76,28 @@ function costColor(usd: number): string {
   return T.status.red
 }
 
+function toolColor(name: string): { bg: string; fg: string; border: string } {
+  if (name.includes('faq')) return { bg: '#0891B210', fg: '#0891B2', border: '#0891B220' }
+  if (name.includes('sop')) return { bg: '#D9770610', fg: '#D97706', border: '#D9770620' }
+  if (name.includes('document') || name.includes('checklist')) return { bg: '#7C3AED10', fg: '#7C3AED', border: '#7C3AED20' }
+  if (name.includes('reservation') || name.includes('extend') || name.includes('stay')) return { bg: '#15803D10', fg: '#15803D', border: '#15803D20' }
+  return { bg: '#D9770610', fg: '#D97706', border: '#D9770620' }
+}
+
+function detectBlockLabel(text?: string): string {
+  if (!text) return 'Content Block'
+  const t = text.substring(0, 100).toLowerCase()
+  if (t.includes('context summary') || t.includes('earlier messages')) return 'Context Summary'
+  if (t.includes('pending documents') || t.includes('document checklist')) return 'Document Checklist'
+  if (t.includes('property info') || t.includes('property:') || t.includes('listing:')) return 'Property Info'
+  if (t.includes('guest info') || t.includes('guest name') || t.includes('reservation')) return 'Guest & Reservation'
+  if (t.includes('open task') || t.includes('active task') || t.includes('escalat')) return 'Open Tasks'
+  if (t.includes('conversation') || t.includes('message history') || t.includes('previous messages')) return 'Conversation History'
+  if (t.includes('screening') || t.includes('checklist')) return 'Screening Data'
+  if (t.includes('knowledge') || t.includes('custom knowledge')) return 'Property Knowledge'
+  return 'Content Block'
+}
+
 // ─── Metric Card ──────────────────────────────────────────────────────────────
 function MetricCard({ icon, label, value, subValue }: {
   icon: React.ReactNode
@@ -238,7 +260,6 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
   const displayEntry = detail ?? entry
   const systemPrompt = detail?.systemPromptFull ?? displayEntry.systemPromptPreview
   const blocks = displayEntry.contentBlocks
-  const firstBlock = blocks[0]
 
   return (
     <div
@@ -434,31 +455,36 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
           </span>
         )}
 
-        {/* Tool pill */}
-        {entry.ragContext?.toolUsed && entry.ragContext?.toolName && (
-          <span
-            style={{
-              background: '#D9770610',
-              color: '#D97706',
-              border: '1px solid #D9770620',
-              borderRadius: 999,
-              fontSize: 9,
-              padding: '2px 6px',
-              fontFamily: T.font.mono,
-              fontWeight: 600,
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 3,
-            }}
-          >
-            {entry.ragContext.toolName.replace(/_/g, ' ')}
-            {entry.ragContext.toolDurationMs != null && (
-              <span style={{ opacity: 0.7 }}>({entry.ragContext.toolDurationMs}ms)</span>
-            )}
-          </span>
-        )}
+        {/* Tool pills — show all tools used */}
+        {entry.ragContext?.toolUsed && (entry.ragContext?.toolNames ?? (entry.ragContext?.toolName ? [entry.ragContext.toolName] : [])).map((name: string, ti: number) => {
+          const tc = toolColor(name)
+          const toolDetail = entry.ragContext?.tools?.[ti]
+          return (
+            <span
+              key={`${name}-${ti}`}
+              style={{
+                background: tc.bg,
+                color: tc.fg,
+                border: `1px solid ${tc.border}`,
+                borderRadius: 999,
+                fontSize: 9,
+                padding: '2px 6px',
+                fontFamily: T.font.mono,
+                fontWeight: 600,
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+              }}
+            >
+              {name.replace(/_/g, ' ')}
+              {toolDetail?.durationMs != null && (
+                <span style={{ opacity: 0.7 }}>({toolDetail.durationMs}ms)</span>
+              )}
+            </span>
+          )
+        })}
 
         {/* Escalation signals */}
         {entry.ragContext?.escalationSignals?.length ? (
@@ -533,33 +559,27 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
             )}
           </ContentBlock>
 
-          {/* User Message — first content block */}
-          {firstBlock && (
-            <ContentBlock label="User Message">
-              <TextBox content={firstBlock.textPreview ?? `[${firstBlock.type}]`} maxHeight={200} />
-              {firstBlock.textLength && firstBlock.textLength > (firstBlock.textPreview?.length ?? 0) && (
-                <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 4 }}>
-                  {firstBlock.textLength.toLocaleString()} chars total
-                </div>
-              )}
-            </ContentBlock>
-          )}
-
-          {/* Additional Content Blocks */}
-          {blocks.length > 1 && (
-            <ContentBlock label={`Additional Blocks (${blocks.length - 1})`} defaultExpanded={false}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {blocks.slice(1).map((block, i) => (
-                  <div key={i}>
-                    <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginBottom: 4 }}>
-                      [{block.type}] {block.textLength ? `${block.textLength.toLocaleString()} chars` : ''}
-                    </div>
-                    <TextBox content={block.textPreview ?? `[${block.type}]`} maxHeight={150} />
+          {/* Content Blocks — each labeled by detected content type */}
+          {blocks.map((block, i) => {
+            const label = detectBlockLabel(block.textPreview)
+            const isFirst = i === 0
+            // First block = user message, conversation history = long, collapse by default
+            const isLong = (block.textLength ?? 0) > 2000
+            return (
+              <ContentBlock
+                key={i}
+                label={isFirst ? `User Message — ${label}` : `${label} (${(block.textLength ?? 0).toLocaleString()} chars)`}
+                defaultExpanded={isFirst || !isLong}
+              >
+                <TextBox content={block.textPreview ?? `[${block.type}]`} maxHeight={isFirst ? 200 : 150} />
+                {block.textLength && block.textLength > (block.textPreview?.length ?? 0) && (
+                  <div style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono, marginTop: 4 }}>
+                    {block.textLength.toLocaleString()} chars total (preview: {(block.textPreview?.length ?? 0).toLocaleString()})
                   </div>
-                ))}
-              </div>
-            </ContentBlock>
-          )}
+                )}
+              </ContentBlock>
+            )
+          })}
 
           {/* Response */}
           <ContentBlock label="Response">
@@ -585,32 +605,43 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
             )
           })()}
 
-          {/* Tool Execution */}
+          {/* Tool Execution — show all tools */}
           {(() => {
             const rc = displayEntry.ragContext as any
             if (!rc?.toolUsed) return null
-            return (
-              <ContentBlock
-                label={`Tool: ${rc.toolName || 'unknown'} (${rc.toolDurationMs || 0}ms)`}
-                labelColor="#D97706"
-                defaultExpanded={true}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 11, fontFamily: T.font.mono }}>
-                  {rc.toolInput && (
-                    <div>
-                      <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Input:</div>
-                      <TextBox content={JSON.stringify(rc.toolInput, null, 2)} maxHeight={150} />
-                    </div>
-                  )}
-                  {rc.toolResults && (
-                    <div>
-                      <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Results:</div>
-                      <TextBox content={typeof rc.toolResults === 'string' ? rc.toolResults : JSON.stringify(rc.toolResults, null, 2)} maxHeight={200} />
-                    </div>
-                  )}
-                </div>
-              </ContentBlock>
-            )
+            // Use per-tool details array if available, fallback to legacy single tool
+            const toolsList: Array<{ name: string; input: any; results: any; durationMs: number }> = rc.tools?.length
+              ? rc.tools
+              : rc.toolName
+                ? [{ name: rc.toolName, input: rc.toolInput, results: rc.toolResults, durationMs: rc.toolDurationMs || 0 }]
+                : []
+            if (!toolsList.length) return null
+            return toolsList.map((tool: any, ti: number) => {
+              const tc = toolColor(tool.name)
+              return (
+                <ContentBlock
+                  key={`tool-${ti}`}
+                  label={`Tool: ${tool.name} (${tool.durationMs}ms)`}
+                  labelColor={tc.fg}
+                  defaultExpanded={true}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 11, fontFamily: T.font.mono }}>
+                    {tool.input && (
+                      <div>
+                        <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Input:</div>
+                        <TextBox content={JSON.stringify(tool.input, null, 2)} maxHeight={150} />
+                      </div>
+                    )}
+                    {tool.results && (
+                      <div>
+                        <div style={{ color: T.text.tertiary, marginBottom: 4 }}>Results:</div>
+                        <TextBox content={typeof tool.results === 'string' ? tool.results : JSON.stringify(tool.results, null, 2)} maxHeight={200} />
+                      </div>
+                    )}
+                  </div>
+                </ContentBlock>
+              )
+            })
           })()}
 
           {/* Escalation Signals */}
@@ -831,6 +862,12 @@ function LogCard({ entry, index }: { entry: AiApiLogEntry; index: number }): Rea
             <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
               response_len: {displayEntry.responseLength.toLocaleString()}
             </span>
+            {displayEntry.ragContext?.reasoningEffort && (
+              <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+                reasoning: {displayEntry.ragContext.reasoningEffort}
+                {displayEntry.ragContext.reasoningTokens ? ` (${displayEntry.ragContext.reasoningTokens.toLocaleString()} tokens)` : ''}
+              </span>
+            )}
             {displayEntry.conversationId && (
               <span style={{ fontSize: 10, fontFamily: T.font.mono, color: T.accent }}>
                 conv: {displayEntry.conversationId.slice(0, 8)}…

@@ -484,9 +484,11 @@ export interface AiApiLogEntry {
     sopReasoning?: string
     toolUsed?: boolean
     toolName?: string
+    toolNames?: string[]
     toolInput?: any
     toolResults?: any
     toolDurationMs?: number
+    tools?: Array<{ name: string; input: any; results: any; durationMs: number }>
     cachedInputTokens?: number
     totalInputTokens?: number
     reasoningTokens?: number
