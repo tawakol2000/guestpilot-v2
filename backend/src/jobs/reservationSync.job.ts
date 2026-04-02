@@ -1,18 +1,18 @@
 /**
- * Reservation Sync Job — Polls Hostaway for new/updated reservations.
+ * Reservation Sync Job — Polls Hostaway for RECENTLY CREATED reservations only.
  *
- * Hostaway webhooks are unreliable (delays of 10-45+ minutes).
- * This job runs every 2 minutes, fetches active reservations from
- * Hostaway API, and creates/updates any missing in our DB.
+ * SAFETY: Only fetches reservations created in the last 24 hours.
+ * Never imports old/historical reservations. Never triggers AI for synced messages.
+ * Only creates reservations that don't already exist in our DB.
  *
- * Lightweight: only fetches reservations, not messages (message sync handles that).
+ * Runs every 2 minutes.
  */
 
 import { PrismaClient, ReservationStatus, Channel } from '@prisma/client';
 import * as hostawayService from '../services/hostaway.service';
 import { broadcastToTenant } from '../services/socket.service';
 
-function mapReservationStatus(status?: string): ReservationStatus {
+function mapStatus(status?: string): ReservationStatus {
   if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
     case 'inquiry': case 'inquirypreapproved': case 'inquirydenied': case 'unknown':
@@ -43,28 +43,30 @@ function mapChannel(channelName?: string): Channel {
 }
 
 export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
-  console.log('[ReservationSync] Background sync job started (interval: 120s)');
+  console.log('[ReservationSync] Background sync job started (interval: 120s, lookback: 24h)');
 
   return setInterval(async () => {
     try {
-      // Get all tenants with Hostaway credentials
       const tenants = await prisma.tenant.findMany({
-        where: {
-          hostawayAccountId: { not: '' },
-          hostawayApiKey: { not: '' },
-        },
+        where: { hostawayAccountId: { not: '' }, hostawayApiKey: { not: '' } },
         select: { id: true, hostawayAccountId: true, hostawayApiKey: true },
       });
 
       for (const tenant of tenants) {
         try {
-          // Fetch active reservations from Hostaway
-          const { result: reservations } = await hostawayService.listReservations(
-            tenant.hostawayAccountId, tenant.hostawayApiKey,
-            ['new', 'confirmed', 'inquiry', 'pending']
+          // SAFETY: Only fetch reservations created in the last 24 hours
+          const { result: reservations } = await hostawayService.listRecentReservations(
+            tenant.hostawayAccountId, tenant.hostawayApiKey, 24
           );
 
-          // Get existing reservation IDs for this tenant
+          if (!reservations || reservations.length === 0) continue;
+
+          // Skip cancelled/checked-out — only import active reservations
+          const activeReservations = reservations.filter(r => {
+            const s = (r.status || '').toLowerCase();
+            return !['cancelled', 'canceled', 'declined', 'expired', 'checkedout'].includes(s);
+          });
+
           const existingIds = new Set(
             (await prisma.reservation.findMany({
               where: { tenantId: tenant.id },
@@ -75,9 +77,9 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
           let newCount = 0;
           let updatedCount = 0;
 
-          for (const res of reservations) {
+          for (const res of activeReservations) {
             const hwResId = String(res.id);
-            const status = mapReservationStatus(res.status);
+            const status = mapStatus(res.status);
 
             if (!existingIds.has(hwResId)) {
               // NEW reservation — create it
@@ -99,88 +101,56 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                 update: { name: guestName, email: guestEmail, phone: res.guestPhone || '', nationality: res.guestCountry || '' },
               });
 
-              const reservation = await prisma.reservation.create({
-                data: {
-                  tenantId: tenant.id, propertyId: property.id, guestId: guest.id,
-                  hostawayReservationId: hwResId,
-                  checkIn: res.arrivalDate ? new Date(res.arrivalDate) : new Date(),
-                  checkOut: res.departureDate ? new Date(res.departureDate) : new Date(),
-                  guestCount: res.numberOfGuests || 1,
-                  channel: mapChannel(res.channelName),
-                  status,
-                  aiEnabled: true,
-                  aiMode: property.customKnowledgeBase && (property.customKnowledgeBase as any).defaultAiMode || 'copilot',
-                },
-              });
-
-              // Create conversation for the new reservation
               try {
-                await prisma.conversation.create({
+                const reservation = await prisma.reservation.create({
                   data: {
-                    tenantId: tenant.id, reservationId: reservation.id,
-                    guestId: guest.id, propertyId: property.id,
+                    tenantId: tenant.id, propertyId: property.id, guestId: guest.id,
+                    hostawayReservationId: hwResId,
+                    checkIn: res.arrivalDate ? new Date(res.arrivalDate) : new Date(),
+                    checkOut: res.departureDate ? new Date(res.departureDate) : new Date(),
+                    guestCount: res.numberOfGuests || 1,
                     channel: mapChannel(res.channelName),
-                    lastMessageAt: new Date(),
+                    status,
+                    aiEnabled: true,
+                    aiMode: 'copilot',
                   },
                 });
-              } catch (err: any) {
-                if (err?.code !== 'P2002') throw err; // ignore duplicate
-              }
 
-              // Fetch messages for the new conversation
-              const conv = await prisma.conversation.findFirst({
-                where: { reservationId: reservation.id },
-                select: { id: true, hostawayConversationId: true },
-              });
-              if (conv) {
+                // Create conversation
                 try {
-                  // Get Hostaway conversation ID if not yet set
-                  if (!conv.hostawayConversationId) {
-                    const { result: hwConvs } = await hostawayService.getConversationByReservation(
-                      tenant.hostawayAccountId, tenant.hostawayApiKey, res.id
-                    );
-                    const hwConvId = hwConvs?.[0]?.id || hwConvs?.[0]?.conversationId;
-                    if (hwConvId) {
-                      await prisma.conversation.update({
-                        where: { id: conv.id },
-                        data: { hostawayConversationId: String(hwConvId) },
-                      });
-                      // Sync messages from Hostaway
-                      const { syncConversationMessages } = await import('../services/message-sync.service');
-                      const syncResult = await syncConversationMessages(
-                        prisma, conv.id, String(hwConvId),
-                        tenant.id, tenant.hostawayAccountId, tenant.hostawayApiKey,
-                        { force: true },
-                      );
-                      if (syncResult.newMessages > 0) {
-                        console.log(`[ReservationSync] Synced ${syncResult.newMessages} messages for new reservation ${hwResId}`);
-                      }
-                    }
-                  }
+                  await prisma.conversation.create({
+                    data: {
+                      tenantId: tenant.id, reservationId: reservation.id,
+                      guestId: guest.id, propertyId: property.id,
+                      channel: mapChannel(res.channelName),
+                      lastMessageAt: new Date(),
+                    },
+                  });
                 } catch (err: any) {
-                  console.warn(`[ReservationSync] Message sync failed for new reservation ${hwResId}: ${err.message}`);
+                  if (err?.code !== 'P2002') throw err;
                 }
-              }
 
-              broadcastToTenant(tenant.id, 'reservation_created', { reservationId: reservation.id });
-              newCount++;
+                // NOTE: Do NOT sync messages or trigger AI here.
+                // Messages will be picked up by the message sync job (every 2 min).
+                // The message sync will schedule AI if it finds new guest messages.
+
+                broadcastToTenant(tenant.id, 'reservation_created', { reservationId: reservation.id });
+                newCount++;
+              } catch (err: any) {
+                if (err?.code === 'P2002') continue; // duplicate reservation, skip
+                throw err;
+              }
 
             } else {
-              // EXISTING reservation — check if status changed
+              // EXISTING reservation — check if status/dates changed
               const existing = await prisma.reservation.findFirst({
                 where: { tenantId: tenant.id, hostawayReservationId: hwResId },
                 select: { id: true, status: true, checkIn: true, checkOut: true, guestCount: true },
               });
               if (!existing) continue;
 
-              const needsUpdate =
-                existing.status !== status ||
-                (res.arrivalDate && existing.checkIn.toISOString().slice(0, 10) !== new Date(res.arrivalDate).toISOString().slice(0, 10)) ||
-                (res.departureDate && existing.checkOut.toISOString().slice(0, 10) !== new Date(res.departureDate).toISOString().slice(0, 10)) ||
-                (res.numberOfGuests && existing.guestCount !== res.numberOfGuests);
-
-              if (needsUpdate) {
-                const isCancelledOrCheckedOut = status === 'CANCELLED' || status === 'CHECKED_OUT';
+              if (existing.status !== status) {
+                const isCancelled = status === 'CANCELLED' || status === 'CHECKED_OUT';
                 await prisma.reservation.update({
                   where: { id: existing.id },
                   data: {
@@ -188,11 +158,10 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     ...(res.arrivalDate && { checkIn: new Date(res.arrivalDate) }),
                     ...(res.departureDate && { checkOut: new Date(res.departureDate) }),
                     ...(res.numberOfGuests && { guestCount: res.numberOfGuests }),
-                    ...(isCancelledOrCheckedOut && { aiEnabled: false }),
+                    ...(isCancelled && { aiEnabled: false }),
                   },
                 });
 
-                // Find conversation to broadcast update
                 const conv = await prisma.conversation.findFirst({
                   where: { reservationId: existing.id },
                   select: { id: true },
@@ -202,9 +171,6 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     reservationId: existing.id,
                     conversationIds: [conv.id],
                     status,
-                    ...(res.arrivalDate && { checkIn: new Date(res.arrivalDate).toISOString().slice(0, 10) }),
-                    ...(res.departureDate && { checkOut: new Date(res.departureDate).toISOString().slice(0, 10) }),
-                    ...(res.numberOfGuests && { guestCount: res.numberOfGuests }),
                   });
                 }
                 updatedCount++;

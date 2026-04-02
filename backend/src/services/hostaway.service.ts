@@ -181,6 +181,22 @@ export async function listReservations(
   };
 }
 
+/**
+ * Fetch only reservations created in the last N hours. Safe for polling — won't return old data.
+ */
+export async function listRecentReservations(
+  accountId: string,
+  apiKey: string,
+  hoursBack = 24
+): Promise<{ result: HostawayReservation[] }> {
+  const client = await getClient(accountId, apiKey);
+  const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/reservations?createdFrom=${since}&limit=50`, { timeout: 5000 })
+  );
+  return res.data;
+}
+
 export async function getReservation(
   accountId: string,
   apiKey: string,
