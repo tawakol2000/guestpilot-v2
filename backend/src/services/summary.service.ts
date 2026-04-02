@@ -99,7 +99,7 @@ export async function generateOrExtendSummary(
         instructions: SUMMARIZE_PROMPT,
         input: transcript,
         max_output_tokens: 300,
-        reasoning: { effort: 'none' },
+        reasoning: { effort: 'minimal' },
         store: false,
       });
 
@@ -119,7 +119,7 @@ export async function generateOrExtendSummary(
         instructions: EXTEND_PROMPT,
         input: `EXISTING SUMMARY:\n${conversation.conversationSummary}\n\nNEW MESSAGES:\n${newTranscript}`,
         max_output_tokens: 300,
-        reasoning: { effort: 'none' },
+        reasoning: { effort: 'minimal' },
         store: false,
       });
 
