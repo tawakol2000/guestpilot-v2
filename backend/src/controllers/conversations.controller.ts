@@ -12,6 +12,20 @@ const aiToggleSchema = z.object({
   aiEnabled: z.boolean(),
 });
 
+/**
+ * Delete an orphan reservation and all its related data (conversation, messages, tasks).
+ * Used when a reservation doesn't exist in Hostaway (test/fake data).
+ */
+async function deleteOrphanReservation(prisma: PrismaClient, reservationId: string, conversationId: string) {
+  // Delete in dependency order: Tasks → PendingAiReply → Messages → Conversation → Reservation
+  await prisma.task.deleteMany({ where: { conversationId } });
+  await prisma.pendingAiReply.deleteMany({ where: { conversationId } });
+  await prisma.message.deleteMany({ where: { conversationId } });
+  await prisma.conversation.deleteMany({ where: { reservationId } });
+  await prisma.reservation.delete({ where: { id: reservationId } });
+  console.log(`[Cleanup] Deleted orphan reservation=${reservationId} conversation=${conversationId}`);
+}
+
 export function makeConversationsController(prisma: PrismaClient) {
   return {
     async list(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -654,8 +668,24 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
-        const force = req.query.force === 'true';
         const { hostawayAccountId, hostawayApiKey } = conv.reservation.tenant;
+
+        // Verify reservation exists in Hostaway — if not, it's an orphan (test data)
+        try {
+          await hostawayService.getReservation(hostawayAccountId, hostawayApiKey, conv.reservation.hostawayReservationId);
+        } catch (hwErr: any) {
+          // Hostaway returned 404 or error — this reservation doesn't exist in Hostaway
+          if (hwErr?.response?.status === 404 || hwErr?.message?.includes('404')) {
+            console.log(`[Conversations] Orphan detected: reservation ${conv.reservation.hostawayReservationId} not found in Hostaway — deleting local data`);
+            await deleteOrphanReservation(prisma, conv.reservation.id, conversationId);
+            res.json({ ok: true, deleted: true, reason: 'Reservation not found in Hostaway — orphan cleaned up' });
+            return;
+          }
+          // Other Hostaway errors — don't delete, just proceed with sync
+          console.warn(`[Conversations] Hostaway verification failed (non-404): ${hwErr.message}`);
+        }
+
+        const force = req.query.force === 'true';
 
         const result = await syncConversationMessages(
           prisma,

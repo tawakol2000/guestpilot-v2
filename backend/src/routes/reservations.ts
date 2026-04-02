@@ -91,5 +91,61 @@ export function reservationsRouter(prisma: PrismaClient) {
     }
   });
 
+  /**
+   * DELETE /api/reservations/cleanup-orphans
+   * Finds all reservations for the tenant, checks each against Hostaway,
+   * and deletes any that don't exist in Hostaway (test/fake data).
+   */
+  router.delete('/cleanup-orphans', async (req: any, res) => {
+    try {
+      const { tenantId } = req as AuthenticatedRequest;
+
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { hostawayAccountId: true, hostawayApiKey: true },
+      });
+      if (!tenant?.hostawayAccountId || !tenant?.hostawayApiKey) {
+        res.status(400).json({ error: 'Hostaway not configured' });
+        return;
+      }
+
+      // Fetch ALL Hostaway reservations to build valid ID set
+      const { result: hwReservations } = await (await import('../services/hostaway.service')).listReservations(
+        tenant.hostawayAccountId, tenant.hostawayApiKey
+      );
+      const validIds = new Set((hwReservations || []).map((r: any) => String(r.id)));
+
+      // Find local reservations not in Hostaway
+      const localReservations = await prisma.reservation.findMany({
+        where: { tenantId },
+        select: { id: true, hostawayReservationId: true },
+      });
+
+      const orphans = localReservations.filter(r => !validIds.has(r.hostawayReservationId));
+
+      let deleted = 0;
+      for (const orphan of orphans) {
+        const conv = await prisma.conversation.findFirst({
+          where: { reservationId: orphan.id },
+          select: { id: true },
+        });
+        if (conv) {
+          await prisma.task.deleteMany({ where: { conversationId: conv.id } });
+          await prisma.pendingAiReply.deleteMany({ where: { conversationId: conv.id } });
+          await prisma.message.deleteMany({ where: { conversationId: conv.id } });
+        }
+        await prisma.conversation.deleteMany({ where: { reservationId: orphan.id } });
+        await prisma.reservation.delete({ where: { id: orphan.id } });
+        deleted++;
+      }
+
+      console.log(`[Cleanup] Deleted ${deleted} orphan reservations for tenant ${tenantId}`);
+      res.json({ ok: true, deleted, total: localReservations.length });
+    } catch (err: any) {
+      console.error('[Reservations] cleanup-orphans error:', err);
+      res.status(500).json({ error: 'Cleanup failed' });
+    }
+  });
+
   return router;
 }
