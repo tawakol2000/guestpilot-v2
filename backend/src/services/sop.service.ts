@@ -37,6 +37,7 @@ export const SOP_CATEGORIES = [
   'sop-property-viewing',
   'post-stay-issues',
   'local-recommendations',
+  'property-description',
   'none',
   'escalate',
 ] as const;
@@ -353,8 +354,8 @@ export async function buildToolDefinition(
 
 /** Tool description per category (one-line, for AI classification). */
 const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
-  'sop-cleaning': 'Mid-stay cleaning or housekeeping requests, $20 fee. NOT for cleanliness complaints on arrival (use sop-complaint).',
-  'sop-amenity-request': 'Requesting supplies (towels, pillows, hangers) or asking what amenities are available. NOT for general property info (use property-info).',
+  'sop-cleaning': 'Mid-stay cleaning or housekeeping requests. NOT for cleanliness complaints on arrival (use sop-complaint).',
+  'sop-amenity-request': 'Requesting supplies (towels, pillows, hangers) or asking for on request amenities. NOT for general property description (use property-description). NOT for standard available amenities (use property-info)',
   'sop-maintenance': 'Broken items, plumbing, HVAC, electrical, pests, mold, smell. NOT for WiFi issues (use sop-wifi-doorcode).',
   'sop-wifi-doorcode': 'WiFi password, internet issues, door codes, locked out, building access.',
   'sop-visitor-policy': 'Visitor requests, guest count verification, passport submission for visitors. NOT for guest\'s own documents.',
@@ -366,13 +367,13 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'sop-booking-modification': 'Extending stay, changing dates, adding nights, changing guest count, unit swaps.',
   'sop-booking-confirmation': 'Verifying reservation exists, checking booking status/details.',
   'sop-booking-cancellation': 'Cancel requests, cancellation policy questions.',
-  'payment-issues': 'Payment failures, refund requests, receipts, billing disputes.',
+  'payment-issues': 'Payment failures, refund requests, receipts, billing disputes or an invoice.',
   'sop-long-term-rental': 'Monthly rental inquiries, corporate stays, stays over 3 weeks.',
   'property-info': 'Property details: bedrooms, bathrooms, floor, parking, pool, gym, address, neighborhood, compound description, area vibe, security, and all standard amenities/features. Use for ANY property question — what the place looks like, what it has, where it is. NOT for on-request items like towels/pillows (use sop-amenity-request).',
-  'pre-arrival-logistics': 'Arrival coordination, ETA sharing, airport transfer, directions.',
+  'pre-arrival-logistics': 'Arrival coordination, compound instructions or  directions.',
   'sop-property-viewing': 'Property tours, photo/video requests, filming permission.',
   'post-stay-issues': 'Lost items after checkout, post-stay complaints, damage deposit.',
-  'local-recommendations': 'Guest asks about nearby places — pharmacy, mall, restaurant, hospital, supermarket, ATM, coffee shop, mosque. Always escalate.',
+  'property-description': 'Listing narrative only — neighborhood description, area vibe, compound overview. NOT for specific features like pool/gym/parking (use property-info).',
   'none': 'Simple greeting, thank you, acknowledgment, or message fully answered by system knowledge.',
   'escalate': 'Safety concern, legal issue, billing dispute requiring human, or anything needing immediate manager attention.',
 };
@@ -380,44 +381,23 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
 /** Default SOP content per category (used as DEFAULT variant during seeding). */
 const SEED_SOP_CONTENT: Record<string, string> = {
   'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
-Cleaning costs $20 per session. Recurring cleaning is OK ($20 each session).
-Process: Ask for preferred time → Guest confirms → Mention $20 fee → Escalate as "scheduled"
-**Exception: If the guest reports the unit was not cleaned on arrival, waive the $20 fee and do not mention it. Escalate as "immediate".**
-
-## SCHEDULING (use CURRENT LOCAL TIME)
-Working hours: 10:00 AM – 5:00 PM
-- During working hours: ask for preferred time. If guest says "now" → escalate immediately
-- After working hours: inform guest it will be arranged for tomorrow, ask for preferred morning time`,
+Extra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate to manager.`,
 
   'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
 
-## ON-REQUEST PROPERTY AMENITIES
+## AVAILABLE PROPERTY AMENITIES
 
-{ON_REQUEST_AMENITIES}
+{PROPERTY_AMENITIES}
 
 Check the property amenities list for available items. Only confirm items explicitly listed there.
-- Item on the amenities list → confirm availability and ask for preferred delivery time. Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
-- Item NOT on the list → say "Let me check on that" → escalate as "info_request"
-
-## SCHEDULING (use CURRENT LOCAL TIME)
-Working hours: 10:00 AM – 5:00 PM
-- During working hours: ask for preferred time. If guest says "now" → escalate immediately
-- After working hours: inform guest it will be arranged for tomorrow, ask for preferred morning time
-- Multiple requests: assume one time slot unless the guest explicitly wants separate visits`,
+- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
+- Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
-This also includes 'how do I use/turn on X' questions about appliances if the guest seems confused or the item may not be working properly.
-Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it, and escalate immediately.
-**All maintenance/technical issues → urgency: "immediate"**
+Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it and that you informed the manager, and escalate immediately.
+**All maintenance/technical issues → urgency: "immediate"**`,
 
-## SCHEDULING (use CURRENT LOCAL TIME)
-Working hours: 10:00 AM – 5:00 PM
-- During working hours: maintenance can come now or at a preferred time
-- After working hours: acknowledge urgency, escalate immediately. Inform guest someone will follow up. For non-urgent issues, arrange for tomorrow morning.`,
-
-  'sop-wifi-doorcode': `Guest asks about WiFi password, WiFi network name, internet connection, door code, entry code, lock code, how to get in, or can't open the door.
-WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Give them directly.
-If there's a **problem** (WiFi not working, code not working, can't connect, locked out) → escalate immediately.`,
+  'sop-wifi-doorcode': ``,
 
   'sop-visitor-policy': `Guest wants to invite someone ELSE over — a friend, family member, or visitor to the apartment. NOTE: This SOP is for VISITOR requests only. If the guest is asking about their OWN booking documents (passport, marriage cert, ID), this does not apply — escalate as info_request instead.
 
@@ -433,17 +413,17 @@ Any pushback on this rule → escalate as immediate`,
 
 ## EARLY CHECK-IN
 Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-**More than 2 days before check-in:** Do NOT escalate. Inform the guest naturally (in your own words) that: early check-in can only be confirmed 2 days before due to potential guest changeovers; they can leave luggage with housekeeping if they arrive early; O1 Mall is a 1-minute walk with food and coffee options.
+**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
 **Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
 **Never confirm early check-in yourself.**`,
 
   'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
 Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-**More than 2 days before checkout:** Do NOT escalate. Inform the guest naturally (in your own words) that: late checkout can only be confirmed 2 days before due to potential guest changeovers; you will update them closer to their checkout date.
+**More than 2 days before checkout:** Do NOT escalate. Tell guest: "We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date."
 **Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
 **Never confirm late checkout yourself.**`,
 
-  'sop-complaint': `**ALWAYS lead with empathy.** Your first sentence must acknowledge the guest's frustration before discussing any action.\n\nCOMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
+  'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
 Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
 - Cleanliness complaints → offer immediate cleaning (waive $20 fee) and escalate as immediate
 - Noise complaints → acknowledge and escalate as immediate
@@ -452,15 +432,15 @@ Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissiv
 - General dissatisfaction → empathize, ask for specifics, escalate as immediate
 Never offer refunds, discounts, or compensation yourself. Inform the guest you have notified the manager.`,
 
-  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties with booking links, include the actual URLs in your message — paste them directly. Never say 'I'll send the links' when you already have them from the tool. If no links are available (null/empty), list properties by name and escalate to manager to provide links. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties, present them with booking links from the tool results. If no booking links are available, list properties by name and escalate to manager to send links — never promise to send links you don't have. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
 
   'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
 
-  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know. For airport transfer requests, tell them unfortunately we don't provide airport transfer. If guest shares arrival time, confirm and escalate as scheduled so someone can meet them only if needed. Check-in starts at 3pm. It's self check-in and the door code is provided.`,
+  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know or escalate. If the guest asks for instructions for arriving at the compound, tell them to share the apartment number, building number, and their names with the gate security. The property is self check in. `,
 
-  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. First clarify: do they want to check in earlier, check out later, or both? Once clear, use the check_extend_availability tool to check availability and pricing. If available, share the price and ask the guest to modify the booking through their platform (Airbnb/Booking.com). The manager will accept the modification. If unavailable or tool fails, escalate as info_request. For guest count changes, escalate as info_request. NEVER confirm modifications yourself.`,
+  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
 
-  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll look into it. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
+  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll check with the team. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
 
   'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate-payment-issue. For receipt requests or invoice, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request. And inform the guest that you have notified the manager.`,
 
@@ -472,10 +452,13 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. First recommend that the photos are available online and comprehensive of the property. If wants videos, escalate to manager, and tell the guest I'll ask the manager if there are videos to provide.`,
 
-  'property-info': `PROPERTY INFO: Guest is asking about the property — bedrooms, bathrooms, floor level, parking, pool, security, neighborhood, compound, or general property details. Answer from the property description below and the available amenities. If the information is not in your knowledge, say you'll check and escalate as info_request.
+  'property-info': `PROPERTY INFO: Guest is asking about the property — bedrooms, bathrooms, floor level, parking, pool, security, neighborhood, compound, area description, or general property details. Answer from the property description and amenities below.
 
-If the guest asks for an amenity or feature this property does NOT have (e.g. sea view, jacuzzi, sauna), call search_available_properties to check if another property matches their request. Present any results to the guest as alternatives.
+If the guest asks for an amenity or feature this property does NOT have (e.g. sea view, jacuzzi, sauna), call search_available_properties to check if another property matches. Present results as alternatives.
 
+If the information is not in your knowledge, say you'll check and escalate as info_request.
+
+## PROPERTY DESCRIPTION
 {PROPERTY_DESCRIPTION}
 
 ## AVAILABLE AMENITIES
@@ -485,6 +468,9 @@ If the guest asks for an amenity or feature this property does NOT have (e.g. se
 You do NOT have local area knowledge. Do NOT guess locations, distances, or directions.
 Acknowledge the question naturally, then escalate as info_request with what the guest is looking for.
 Common requests: pharmacy (صيدلية), mall (مول), supermarket, restaurant, hospital, ATM, mosque (مسجد).`,
+
+  'property-description': `## PROPERTY DESCRIPTION
+{PROPERTY_DESCRIPTION} `,
 };
 
 // ── Status-variant overrides for SOPs whose response differs by reservation status ──
@@ -498,15 +484,15 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
   'sop-amenity-request': [
     {
       status: 'INQUIRY',
-      content: `Guest asks about available amenities or features. Confirm what amenities the property has from the list. Don't discuss delivery or scheduling — the guest is deciding whether to book.`,
+      content: `Guest asks about available amenities or features. Check the amenities listed in your context (AVAILABLE AMENITIES and ON REQUEST AMENITIES blocks). Confirm what is available. Don't discuss delivery or scheduling — the guest is deciding whether to book.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
     },
     {
       status: 'CONFIRMED',
-      content: `Guest asks about amenities for their upcoming stay. Confirm availability and assure the amenity will be ready for their arrival. Don't schedule delivery — they haven't checked in yet.`,
+      content: `Guest asks about amenities for their upcoming stay. Confirm availability and assure the amenity will be ready for their arrival. Don't schedule delivery — they haven't checked in yet.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
     },
     {
       status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-amenity-request'],
+      content: `Guest requests an amenity to be delivered. Check the ON REQUEST AMENITIES in your context.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n{ON_REQUEST_AMENITIES}\n\n- Item listed → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for guest to confirm time, THEN escalate as "scheduled"\n- Item NOT listed → say "Let me check on that" → escalate as "info_request"`,
     },
   ],
 
@@ -517,7 +503,7 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-early-checkin'],
+      content: `## EARLY CHECK-IN                                                                     \n  Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before. \n**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."                                                                         \n  **Within 2 days of check-in:** Check the AVAILABILITY CHECK RESULT section below. If it says back-to-back booking detected, tell the guest early check-in is not available because another guest is checking out the same day. If no back-to-back, tell the guest you'll check with the manager → escalate as "info_request" \n  **Never confirm early check-in yourself.**`,
     },
     {
       status: 'CHECKED_IN',
@@ -543,30 +529,30 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
   'sop-cleaning': [
     {
       status: 'INQUIRY',
-      content: '',
+      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, their booking has not been accepted yet. Reassure cleaning services are available on request.`,
     },
     {
       status: 'CONFIRMED',
-      content: '',
+      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, guest has not checked in yet. Reassure cleaning services are available on request. `,
     },
     {
       status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-cleaning'],
+      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate and schedule booking during working hours. `,
     },
   ],
 
   'sop-wifi-doorcode': [
     {
       status: 'INQUIRY',
-      content: `Guest asks about WiFi or access. Confirm WiFi is available at the property. Do NOT share the WiFi password or door code — the guest is not yet booked. Reassure that access details will be provided after check-in.`,
+      content: `Guest asks about WiFi or access. Confirm WiFi is available at the property. Reassure that access details will be provided after check-in — the guest is not yet booked.`,
     },
     {
       status: 'CONFIRMED',
-      content: `Guest asks about WiFi or access. WiFi credentials and door code are in PROPERTY & GUEST INFO under ACCESS & CONNECTIVITY. Share them so the guest can prepare for their arrival.`,
+      content: `{ACCESS_CONNECTIVITY}\nConfirm WiFi is available at the property, and its self check-in.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
     },
     {
       status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-wifi-doorcode'],
+      content: `{ACCESS_CONNECTIVITY}\nIf there is an issue with the Wifi apologies and escalate.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
     },
   ],
 
@@ -592,11 +578,11 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CONFIRMED',
-      content: `Guest wants to change their booking dates. First, clarify what they need: do they want to check in earlier, check out later, or both? Once clear, **use the check_extend_availability tool** with the correct dates. If available, tell the guest the price for additional nights and ask them to modify the booking through their booking platform (Airbnb/Booking.com/direct). The manager will then accept the modification. If not available, let the guest know and escalate as info_request. Never confirm modifications yourself.`,
+      content: SEED_SOP_CONTENT['sop-booking-modification'],
     },
     {
       status: 'CHECKED_IN',
-      content: `Guest wants to extend their stay or change dates. First, clarify what they need: do they want to check out later (add nights) or did they want to arrive earlier? Once clear, **use the check_extend_availability tool** with the correct dates. If available, tell the guest the price for additional nights and ask them to modify the booking through their booking platform (Airbnb/Booking.com/direct). The manager will then accept the modification. If not available, let the guest know and escalate as info_request. Never confirm modifications yourself.`,
+      content: `Guest wants to extend their current stay or change dates. Acknowledge the request. Check if the extend-stay tool is available to check availability and pricing. Escalate to manager with details. Never confirm modifications yourself.`,
     },
   ],
 
@@ -611,99 +597,10 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CHECKED_IN',
-      content: '',
+      content: SEED_SOP_CONTENT['pre-arrival-logistics'],
     },
   ],
 
-  'sop-booking-inquiry': [
-    {
-      status: 'INQUIRY',
-      content: SEED_SOP_CONTENT['sop-booking-inquiry'],
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest already has a confirmed booking but is asking about availability or new bookings. Acknowledge their existing reservation and ask if they want to modify it (redirect to sop-booking-modification) or if they're looking to book a separate stay. If separate stay, follow the standard booking inquiry flow.`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest is currently checked in but asking about availability or new bookings. Acknowledge their current stay and ask if they want to extend (redirect to sop-booking-modification) or book a future stay. If future stay, follow the standard booking inquiry flow.`,
-    },
-  ],
-
-  'pricing-negotiation': [
-    {
-      status: 'INQUIRY',
-      content: SEED_SOP_CONTENT['pricing-negotiation'],
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest has a confirmed booking and is asking about pricing or requesting a discount. The price is already set for this booking. If they want a rate change, this is a booking modification — redirect to sop-booking-modification and escalate. Do not negotiate pricing on confirmed bookings yourself.`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest is currently staying and asking about pricing or discounts. The price is set for this booking. If they're asking about extending at a better rate, acknowledge and escalate as info_request with the details. Do not negotiate pricing yourself.`,
-    },
-  ],
-
-  'sop-booking-confirmation': [
-    {
-      status: 'INQUIRY',
-      content: `Guest is asking to confirm a booking but their status is INQUIRY — they haven't booked yet. Let them know you don't see a confirmed reservation and ask if they'd like to proceed with booking. If they claim they already booked, escalate as immediate with details.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-booking-confirmation'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest is checked in and asking about their booking details. Confirm the reservation details you have — dates, unit, guest count. If anything looks wrong, escalate as immediate.`,
-    },
-  ],
-
-  'sop-booking-cancellation': [
-    {
-      status: 'INQUIRY',
-      content: `Guest wants to cancel their inquiry or withdraw interest. Acknowledge the request. No formal cancellation is needed since they haven't booked yet. If they want to cancel an inquiry on a specific platform, escalate as info_request with details.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-booking-cancellation'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest is currently checked in and wants to leave early or end their stay. This is an early checkout, not a standard cancellation. Acknowledge the request and escalate as immediate with the requested checkout date. Never process early checkouts or promise refunds for unused nights yourself.`,
-    },
-  ],
-
-  'sop-long-term-rental': [
-    {
-      status: 'INQUIRY',
-      content: SEED_SOP_CONTENT['sop-long-term-rental'],
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest has a confirmed booking and is asking about long-term rental or extending to a monthly stay. Acknowledge the interest and escalate as info_request with details (desired duration, budget). Monthly rates require manager approval. Redirect to sop-booking-modification for the date change.`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest is currently staying and wants to convert to a long-term/monthly rental. Acknowledge the interest and escalate as info_request with details (desired duration, budget). Monthly rates require manager approval. Note the current booking end date in the escalation.`,
-    },
-  ],
-
-  'sop-complaint': [
-    {
-      status: 'INQUIRY',
-      content: `**ALWAYS lead with empathy.** Your first sentence must acknowledge the guest's frustration before discussing any action.\n\nGuest is complaining during the inquiry/booking process — about response time, communication, listing accuracy, or the booking experience. Acknowledge their frustration with genuine empathy. Escalate as immediate with full details. Never be defensive.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-complaint'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-complaint'],
-    },
-  ],
 };
 
 // ════════════════════════════════════════════════════════════════════════════

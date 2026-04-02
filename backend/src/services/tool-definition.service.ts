@@ -72,12 +72,10 @@ const SYSTEM_TOOLS: Array<{
     name: 'get_sop',
     displayName: 'SOP Classification',
     description:
-      'Classifies a guest message and retrieves the Standard Operating Procedure that should guide your response. ' +
-      'You MUST call this for any guest request involving: cleaning, amenities, maintenance, complaints, check-in/out, booking changes, ' +
-      'early check-in, late checkout, WiFi issues, noise, visitors, extend stay, pricing, refunds, or any question needing action. ' +
-      'ONLY skip this for pure greetings ("hi", "hey"), simple acknowledgments ("ok", "thanks"), and conversation-ending messages. ' +
-      'When in doubt, call it — the SOP content guides your response quality. ' +
-      'For messages requiring human intervention, classify as "escalate".',
+      'Classifies a guest message to determine which Standard Operating Procedure should guide the response. ' +
+      'Call this for EVERY guest message. Returns the SOP category that best matches the guest\'s primary intent. ' +
+      'For simple greetings, acknowledgments, or messages that don\'t require procedure-based responses, use "none". ' +
+      'For messages requiring human intervention, use "escalate".',
     parameters: {
       type: 'object',
       properties: {
@@ -110,7 +108,7 @@ const SYSTEM_TOOLS: Array<{
     displayName: 'Property Search',
     description:
       'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. ' +
-      'Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options, or expresses ' +
+      'Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options for their stay or for others, or expresses ' +
       'a preference for different property attributes (size, view, amenities). ' +
       'Do NOT use this when the guest is asking about amenities this property already has.',
     parameters: {
@@ -133,7 +131,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['amenities', 'reason', 'min_capacity'],
       additionalProperties: false,
     },
-    agentScope: 'INQUIRY,PENDING,CONFIRMED,CHECKED_IN',
+    agentScope: 'INQUIRY,PENDING',
   },
   {
     name: 'create_document_checklist',
@@ -151,7 +149,7 @@ const SYSTEM_TOOLS: Array<{
         },
         marriage_certificate_needed: {
           type: 'boolean',
-          description: 'Whether a marriage certificate is required. MUST be true for Arab married couples AND Arab families with children (mandatory compliance requirement, no exceptions — a family with children IS a married couple). Set to false for non-Arab guests or unmarried/solo guests.',
+          description: 'Whether a marriage certificate is required (true for Arab married couples)',
         },
         reason: {
           type: 'string',
@@ -167,10 +165,9 @@ const SYSTEM_TOOLS: Array<{
     name: 'check_extend_availability',
     displayName: 'Extend Stay',
     description:
-      'Check availability and pricing for date changes on the guest\'s current booking. ' +
-      'Use ONLY after clarifying with the guest whether they want to check in earlier or check out later. ' +
-      'Set new_checkout for later checkout, new_checkin for earlier arrival. ' +
-      'Present the price and channel_instructions from the result. Do NOT use for unrelated questions.',
+      'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. ' +
+      'Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. ' +
+      'Do NOT use for unrelated questions.',
     parameters: {
       type: 'object',
       properties: {
@@ -215,7 +212,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['document_type', 'notes'],
       additionalProperties: false,
     },
-    agentScope: 'PENDING,CONFIRMED,CHECKED_IN',
+    agentScope: 'CONFIRMED,CHECKED_IN',
   },
 ];
 

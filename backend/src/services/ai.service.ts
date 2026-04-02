@@ -835,8 +835,8 @@ If any guest is Arab → Arab rules apply to entire party.
 7. Otherwise, answer the guest's basic question briefly.
 8. When escalating with an acceptance recommendation, also call create_document_checklist:
    - All guests need passports/IDs (one per person in the party — use guest count)
-   - For Arab married couples AND Arab families (couples with children), you MUST ALWAYS set marriage_certificate_needed to true — this is a mandatory compliance requirement, no exceptions. A family with children IS a married couple.
-   - For all other guests (non-Arab, or Arab but unmarried/solo), set marriage_certificate_needed to false
+   - For Arab married couples, you MUST ALWAYS set marriage_certificate_needed to true — this is a mandatory compliance requirement, no exceptions
+   - For all other guests (non-Arab, or Arab but unmarried), set marriage_certificate_needed to false
    - Do NOT call this tool when recommending rejection
 
 # Tools
