@@ -34,11 +34,11 @@ const T = {
 
 // Brand colors — match actual platform brand identity
 const CHANNEL_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  AIRBNB:   { bg: '#FF5A5F18', text: '#E31C5F', border: '#FF5A5F' },
-  BOOKING:  { bg: '#00358012', text: '#003580', border: '#003580' },
-  DIRECT:   { bg: '#FF8C0014', text: '#C66900', border: '#FF8C00' },
-  WHATSAPP: { bg: '#25D36614', text: '#128C7E', border: '#25D366' },
-  OTHER:    { bg: '#64748B10', text: '#475569', border: '#94A3B8' },
+  AIRBNB:   { bg: '#FF5A5F28', text: '#CC2936', border: '#FF5A5F' },
+  BOOKING:  { bg: '#00358025', text: '#002A66', border: '#003580' },
+  DIRECT:   { bg: '#FF8C0025', text: '#B36200', border: '#FF8C00' },
+  WHATSAPP: { bg: '#25D36620', text: '#0E7A5E', border: '#25D366' },
+  OTHER:    { bg: '#64748B18', text: '#475569', border: '#94A3B8' },
 }
 
 const CHANNEL_LOGOS: Record<string, string | null> = {
@@ -232,7 +232,23 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
 
   const numDays = viewMode === '2week' ? 14 : 30
-  const colWidth = viewMode === '2week' ? T.colWidth2w : T.colWidthMonth
+
+  // Dynamic column width: fill available screen width, with a minimum
+  const [containerWidth, setContainerWidth] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = containerRef.current?.parentElement
+    if (!el) return
+    const measure = () => setContainerWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const availableWidth = containerWidth - T.sidebarWidth
+  const minColWidth = viewMode === '2week' ? 72 : 44
+  const colWidth = Math.max(minColWidth, Math.floor(availableWidth / numDays))
 
   // Navigation limits
   const now = new Date(); now.setHours(0, 0, 0, 0)
@@ -332,7 +348,7 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
 
   // ══════════════════════════════════════════════════════════════════════
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div ref={containerRef} style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: 'Inter, system-ui, sans-serif' }}>
       <style>{`
         @keyframes tooltipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
         .cal-bar:hover { transform: translateY(-1px) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important; z-index: 10 !important; }
