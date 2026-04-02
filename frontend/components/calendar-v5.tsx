@@ -36,12 +36,13 @@ const T = {
   textMuted: '#94A3B8',
   border: '#E4ECFC',
   muted: '#F1F5FD',
-  rowHeight: 48,
+  rowHeight: 52,
   sidebarWidth: 240,
   colWidth2w: 80,
   colWidthMonth: 48,
   barRadius: 6,
-  barMinWidth: 32,
+  barMinWidth: 28,
+  barHeight: 28,
 }
 
 const CHANNEL_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -136,31 +137,27 @@ function barStyle(status: string, ch: string): React.CSSProperties {
   const cc = channelColor(ch)
   const base: React.CSSProperties = {
     borderRadius: T.barRadius,
-    padding: '0 8px',
+    padding: '0 6px',
     display: 'flex',
     alignItems: 'center',
     gap: 4,
-    height: 32,
+    height: T.barHeight,
     minWidth: T.barMinWidth,
     overflow: 'hidden',
     whiteSpace: 'nowrap',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'transform 150ms ease-out, box-shadow 150ms ease-out',
     position: 'relative',
+    boxSizing: 'border-box',
   }
 
   switch (status) {
     case 'INQUIRY':
-      return { ...base, background: 'transparent', border: `2px dashed ${cc.border}`, color: cc.text }
+      return { ...base, background: `${cc.bg}40`, border: `1.5px dashed ${cc.border}`, color: cc.text }
     case 'PENDING':
-      return {
-        ...base,
-        background: `repeating-linear-gradient(45deg, ${cc.bg}, ${cc.bg} 4px, transparent 4px, transparent 8px)`,
-        border: `1px solid ${cc.border}`,
-        color: cc.text,
-      }
+      return { ...base, background: cc.bg, border: `1.5px solid ${cc.border}`, opacity: 0.75, color: cc.text }
     case 'CHECKED_IN':
       return { ...base, background: cc.bg, borderLeft: `3px solid ${cc.border}`, color: cc.text }
     default: // CONFIRMED
@@ -390,22 +387,15 @@ export default function CalendarV5() {
     const startCol = daysBetween(rangeStart, barStart)
     const endCol = daysBetween(rangeStart, barEnd)
 
-    // Back-to-back: if there's another reservation checking in on this checkout day,
-    // end at midpoint. Similarly start at midpoint if another checks out on checkin day.
-    const propRes = resByProperty.get(r.propertyId) || []
-    const hasCheckoutSameDay = propRes.some(other => other.id !== r.id && fmtDate(new Date(other.checkIn)) === fmtDate(co))
-    const hasCheckinSameDay = propRes.some(other => other.id !== r.id && fmtDate(new Date(other.checkOut)) === fmtDate(ci))
-
-    const leftOffset = hasCheckinSameDay ? 0.5 : 0
-    const rightOffset = hasCheckoutSameDay ? -0.5 : 0
-
-    const left = (startCol + leftOffset) * colWidth
-    const width = Math.max(T.barMinWidth, (endCol - startCol + rightOffset - leftOffset) * colWidth - 4)
-
     const clippedLeft = ci < rangeStart
     const clippedRight = co > rangeEnd
 
-    return { left, width, clippedLeft, clippedRight }
+    // Padding: 2px on each side of the bar within its cell span
+    const left = startCol * colWidth + 2
+    const width = Math.max(T.barMinWidth, (endCol - startCol) * colWidth - 4)
+    const nights = endCol - startCol
+
+    return { left, width, clippedLeft, clippedRight, nights }
   }
 
   // ── Click handler ──────────────────────────────────────────────────────
@@ -429,14 +419,28 @@ export default function CalendarV5() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: 'Inter, system-ui, sans-serif' }}>
-      {/* Global CSS for tooltip animation */}
       <style>{`
         @keyframes tooltipIn {
           from { opacity: 0; transform: translateY(4px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .cal-bar:hover {
+          transform: translateY(-1px) !important;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
+          z-index: 10 !important;
+        }
+        .cal-bar:focus-visible {
+          outline: 2px solid ${T.primary};
+          outline-offset: 1px;
+        }
         @media (prefers-reduced-motion: reduce) {
           @keyframes tooltipIn { from { opacity: 1; } to { opacity: 1; } }
+          @keyframes shimmer { from {} to {} }
+          .cal-bar:hover { transform: none !important; }
         }
       `}</style>
 
@@ -445,7 +449,7 @@ export default function CalendarV5() {
         display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
         borderBottom: `1px solid ${T.border}`, background: T.card, flexShrink: 0,
       }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: T.text, margin: 0 }}>Calendar</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 600, color: T.text, margin: 0 }}>Calendar</h1>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 16 }}>
           <button
@@ -570,12 +574,7 @@ export default function CalendarV5() {
               ))}
             </div>
           </div>
-          <style>{`
-            @keyframes shimmer {
-              0% { background-position: 200% 0; }
-              100% { background-position: -200% 0; }
-            }
-          `}</style>
+          {/* shimmer keyframes defined in global style block above */}
         </div>
       ) : (
         <div ref={gridRef} style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
@@ -587,7 +586,7 @@ export default function CalendarV5() {
             }}>
               {/* Corner cell */}
               <div style={{
-                height: T.rowHeight, borderBottom: `1px solid ${T.border}`,
+                height: 44, borderBottom: `1px solid ${T.border}`,
                 borderRight: `1px solid ${T.border}`, position: 'sticky', top: 0,
                 zIndex: 30, background: T.card, display: 'flex', alignItems: 'center',
                 padding: '0 16px', fontSize: 12, color: T.textMuted, fontWeight: 500,
@@ -613,14 +612,15 @@ export default function CalendarV5() {
                     }}
                   >
                     <div style={{
-                      fontSize: 14, fontWeight: 500, color: T.text,
+                      fontSize: 13, fontWeight: 500, color: T.text,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }} title={prop.name}>
                       {prop.name}
                     </div>
-                    <div style={{ fontSize: 11, color: T.textMuted, display: 'flex', gap: 8 }}>
+                    <div style={{ fontSize: 11, color: T.textMuted, display: 'flex', gap: 6, marginTop: 1 }}>
+                      <span>{pct}%</span>
+                      <span style={{ color: T.border }}>·</span>
                       <span>{occ?.count || 0} bookings</span>
-                      <span>{pct}% occ.</span>
                     </div>
                   </div>
                 )
@@ -632,23 +632,22 @@ export default function CalendarV5() {
               {/* Date header (sticky top) */}
               <div style={{
                 display: 'flex', position: 'sticky', top: 0, zIndex: 10,
-                background: T.card, borderBottom: `1px solid ${T.border}`,
+                background: T.card, borderBottom: `1px solid ${T.border}`, height: 44,
               }}>
                 {dates.map((d, i) => {
                   const today = isToday(d)
                   return (
                     <div key={i} style={{
-                      width: colWidth, height: T.rowHeight, flexShrink: 0,
+                      width: colWidth, height: 44, flexShrink: 0,
                       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                       borderRight: `1px solid ${T.border}`,
                       background: today ? '#EFF6FF' : isWeekend(d) ? T.muted : T.card,
-                      position: 'relative',
                     }}>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: today ? T.primary : '#334155' }}>
-                        {d.getDate()}
-                      </span>
-                      <span style={{ fontSize: 11, color: today ? T.primary : T.textMuted }}>
+                      <span style={{ fontSize: 11, color: today ? T.primary : T.textMuted, lineHeight: 1, marginBottom: 2 }}>
                         {WEEKDAYS[d.getDay()]}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: today ? 600 : 400, color: today ? T.primary : '#334155', lineHeight: 1 }}>
+                        {d.getDate()}
                       </span>
                     </div>
                   )
@@ -716,8 +715,11 @@ export default function CalendarV5() {
 
                     {/* Reservation bars (positioned absolutely) */}
                     {propRes.map(r => {
-                      const { left, width, clippedLeft, clippedRight } = barPos(r)
+                      const { left, width, clippedLeft, clippedRight, nights } = barPos(r)
                       const style = barStyle(r.status, r.channel)
+                      // Smart content: hide text for very short bars
+                      const showName = width > 60
+                      const showCount = width > 100 && r.guestCount > 1
                       return (
                         <div
                           key={r.id}
@@ -734,28 +736,31 @@ export default function CalendarV5() {
                           style={{
                             ...style,
                             position: 'absolute',
-                            left: left + 2,
-                            top: (T.rowHeight - 32) / 2,
-                            width: width - 4,
+                            left,
+                            top: (T.rowHeight - T.barHeight) / 2,
+                            width,
                             zIndex: 5,
                             ...(clippedLeft ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } : {}),
                             ...(clippedRight ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 } : {}),
                           }}
+                          className="cal-bar"
                           role="button"
                           tabIndex={0}
                           aria-label={`${r.guest.name}, ${channelLabel(r.channel)}, ${new Date(r.checkIn).toLocaleDateString()} to ${new Date(r.checkOut).toLocaleDateString()}`}
                           onKeyDown={(e) => { if (e.key === 'Enter') handleBarClick(r) }}
                         >
-                          <ChannelIcon channel={r.channel} size={12} />
-                          <span style={{
-                            overflow: 'hidden', textOverflow: 'ellipsis',
-                            fontSize: 12, fontWeight: 500, lineHeight: 1,
-                          }}>
-                            {guestFirstName(r.guest.name)}
-                          </span>
-                          {r.guestCount > 1 && (
-                            <span style={{ fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}>
-                              <Users size={10} /> {r.guestCount}
+                          <ChannelIcon channel={r.channel} size={13} />
+                          {showName && (
+                            <span style={{
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              lineHeight: 1, flex: 1, minWidth: 0,
+                            }}>
+                              {guestFirstName(r.guest.name)}
+                            </span>
+                          )}
+                          {showCount && (
+                            <span style={{ fontSize: 10, opacity: 0.6, flexShrink: 0 }}>
+                              ·{r.guestCount}
                             </span>
                           )}
                         </div>
