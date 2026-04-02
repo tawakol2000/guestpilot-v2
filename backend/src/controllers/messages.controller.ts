@@ -89,18 +89,11 @@ export function makeMessagesController(prisma: PrismaClient) {
             where: { conversationId: id, status: 'open', urgency: 'info_request' },
             orderBy: { createdAt: 'desc' },
           });
-          if (infoRequestTask) {
-            // Get the last guest message for context
-            const lastGuestMsg = await prisma.message.findFirst({
-              where: { conversationId: id, role: 'GUEST' },
-              orderBy: { sentAt: 'desc' },
-              select: { content: true },
-            });
-            if (lastGuestMsg) {
-              // Fire-and-forget — don't await
-              processFaqSuggestion(prisma, tenantId, id, conversation.propertyId, lastGuestMsg.content, content)
-                .catch(err => console.warn('[FAQ] Auto-suggest failed (non-fatal):', err.message));
-            }
+          if (infoRequestTask?.note) {
+            // Use the task's note (escalation context) — not the last guest message,
+            // which might be "just escalate this" instead of the actual question.
+            processFaqSuggestion(prisma, tenantId, id, conversation.propertyId, infoRequestTask.note, content)
+              .catch(err => console.warn('[FAQ] Auto-suggest failed (non-fatal):', err.message));
           }
         } catch (err: any) {
           console.warn('[FAQ] Auto-suggest trigger failed (non-fatal):', err.message);

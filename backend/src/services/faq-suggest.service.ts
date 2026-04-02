@@ -93,7 +93,7 @@ export async function processFaqSuggestion(
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `Guest asked: "${guestMessage}"\nManager replied: "${managerReply}"`,
+          content: `Info request: ${guestMessage}\nManager reply: "${managerReply}"`,
         },
       ],
       response_format: {
