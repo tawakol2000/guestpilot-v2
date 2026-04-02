@@ -3483,6 +3483,62 @@ export default function InboxV5() {
                 </div>
               )}
 
+              {/* FAQ suggestion banner */}
+              <div style={{
+                maxHeight: faqSuggestion ? 120 : 0,
+                opacity: faqSuggestion ? 1 : 0,
+                overflow: 'hidden',
+                transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease',
+              }}>
+                {faqSuggestion && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '8px 16px',
+                    background: '#FFFBEB',
+                    borderBottom: '1px solid #F59E0B22',
+                    fontSize: 12,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, color: '#92400E' }}>FAQ suggestion </span>
+                      <span style={{ color: '#78716C' }}>
+                        {faqSuggestion.question} — <span style={{ fontStyle: 'italic' }}>{faqSuggestion.answer}</span>
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <select
+                        value={faqSuggestionScope}
+                        onChange={(e) => setFaqSuggestionScope(e.target.value as 'PROPERTY' | 'GLOBAL')}
+                        style={{
+                          fontSize: 11, padding: '3px 6px', borderRadius: 4,
+                          border: '1px solid #D6D3D1', background: 'white', color: '#57534E', cursor: 'pointer',
+                        }}
+                      >
+                        <option value="PROPERTY">Property</option>
+                        <option value="GLOBAL">Global</option>
+                      </select>
+                      <button onClick={handleFaqApprove} style={{
+                        padding: '3px 10px', background: '#16a34a', color: 'white',
+                        border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                        transition: 'background 0.15s',
+                      }} onMouseOver={e => (e.currentTarget.style.background = '#15803d')}
+                         onMouseOut={e => (e.currentTarget.style.background = '#16a34a')}>
+                        Save
+                      </button>
+                      <button onClick={handleFaqReject} style={{
+                        padding: '3px 10px', background: 'transparent', color: '#A8A29E',
+                        border: '1px solid #E7E5E4', borderRadius: 5, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }} onMouseOver={e => { e.currentTarget.style.color = '#dc2626'; e.currentTarget.style.borderColor = '#fca5a5' }}
+                         onMouseOut={e => { e.currentTarget.style.color = '#A8A29E'; e.currentTarget.style.borderColor = '#E7E5E4' }}>
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Messages */}
               <div
                 ref={messagesScrollRef}
@@ -4013,43 +4069,6 @@ export default function InboxV5() {
                   )
                 })()}
 
-                {/* FAQ suggestion card */}
-                {faqSuggestion && (
-                  <div style={{
-                    margin: '8px 16px',
-                    padding: '12px 16px',
-                    background: '#FFFBEB',
-                    border: '1px solid #F59E0B33',
-                    borderRadius: 10,
-                    fontSize: 13,
-                  }}>
-                    <div style={{ fontWeight: 600, color: '#92400E', marginBottom: 6, fontSize: 12 }}>
-                      {'💡 Save as FAQ?'}
-                    </div>
-                    <div style={{ fontWeight: 600, marginBottom: 2 }}>Q: {faqSuggestion.question}</div>
-                    <div style={{ color: '#666', marginBottom: 8 }}>A: {faqSuggestion.answer}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button onClick={handleFaqApprove} style={{
-                        padding: '4px 12px', background: '#22c55e', color: 'white',
-                        border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      }}>Approve</button>
-                      <button onClick={handleFaqReject} style={{
-                        padding: '4px 12px', background: '#ef4444', color: 'white',
-                        border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                      }}>Reject</button>
-                      <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8, color: '#666' }}>
-                        <input type="radio" name="faqScope" checked={faqSuggestionScope === 'PROPERTY'}
-                          onChange={() => setFaqSuggestionScope('PROPERTY')} style={{ margin: 0 }} />
-                        This property
-                      </label>
-                      <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: '#666' }}>
-                        <input type="radio" name="faqScope" checked={faqSuggestionScope === 'GLOBAL'}
-                          onChange={() => setFaqSuggestionScope('GLOBAL')} style={{ margin: 0 }} />
-                        Global
-                      </label>
-                    </div>
-                  </div>
-                )}
 
                 {/* Compose card */}
                 <div style={{ position: 'relative' }}>
