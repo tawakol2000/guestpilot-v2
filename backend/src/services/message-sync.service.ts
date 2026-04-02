@@ -269,6 +269,30 @@ export async function syncConversationMessages(
       data: updateData as any,
     });
 
+    // Schedule AI reply for synced guest messages (webhook may be delayed or never arrive)
+    if (newGuestMessages > 0) {
+      try {
+        const conv = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { reservation: { select: { aiEnabled: true, aiMode: true } } },
+        });
+        if (conv?.reservation?.aiEnabled && conv.reservation.aiMode !== 'off') {
+          // Only schedule if no pending reply exists
+          const existing = await prisma.pendingAiReply.findFirst({
+            where: { conversationId },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (!existing || (existing.fired && Date.now() - existing.createdAt.getTime() > 60_000)) {
+            const { scheduleAiReply } = await import('./debounce.service');
+            await scheduleAiReply(conversationId, tenantId, prisma);
+            console.log(`[MessageSync] Scheduled AI reply for synced guest message in conv=${conversationId}`);
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[MessageSync] Failed to schedule AI reply (non-fatal): ${err.message}`);
+      }
+    }
+
     // Check if host responded after the LATEST guest message (fresh DB query, not stale localMessages)
     if (latestHostSentAt) {
       const freshLatestGuest = await prisma.message.findFirst({
