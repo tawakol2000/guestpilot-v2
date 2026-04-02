@@ -13,7 +13,6 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
     try {
       const now = new Date();
       const twoMinAgo = new Date(now.getTime() - 120_000);
-      const oneDayAgo = new Date(now.getTime() - 86_400_000);
 
       // Find active conversations needing sync
       const conversations = await prisma.conversation.findMany({
@@ -22,7 +21,8 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
           reservation: {
             status: { in: ['INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN'] },
           },
-          lastMessageAt: { gte: oneDayAgo },
+          // No lastMessageAt filter — sync all active conversations regardless of when
+          // the last message was. A quiet guest can message after days of silence.
           OR: [
             { lastSyncedAt: null },
             { lastSyncedAt: { lt: twoMinAgo } },
