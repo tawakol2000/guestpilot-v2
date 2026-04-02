@@ -663,6 +663,18 @@ export async function apiApproveSuggestion(id: string, editedText?: string): Pro
   })
 }
 
+export interface KnowledgeChunk {
+  id: string
+  propertyId: string
+  category: string
+  content: string
+  createdAt: string
+}
+
+export async function apiGetKnowledgeChunks(propertyId: string): Promise<KnowledgeChunk[]> {
+  return apiFetch<KnowledgeChunk[]>(`/api/knowledge/chunks?propertyId=${propertyId}`)
+}
+
 export async function apiUpdateKnowledgeChunk(
   id: string,
   data: { content?: string; category?: string }
