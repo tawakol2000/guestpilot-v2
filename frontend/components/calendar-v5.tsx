@@ -36,7 +36,8 @@ const T = {
   textMuted: '#94A3B8',
   border: '#E4ECFC',
   muted: '#F1F5FD',
-  rowHeight: 52,
+  rowBaseHeight: 52,
+  rowOverlapHeight: 30, // extra height per overlap lane
   sidebarWidth: 240,
   colWidth2w: 80,
   colWidthMonth: 48,
@@ -114,6 +115,41 @@ function guestFirstName(name: string) {
   return name.split(' ')[0]
 }
 
+/** Assign vertical lanes to overlapping reservations within a property */
+function assignLanes(reservations: CalendarReservation[]): Map<string, number> {
+  const lanes = new Map<string, number>()
+  if (reservations.length === 0) return lanes
+
+  // Sort by check-in date
+  const sorted = [...reservations].sort((a, b) =>
+    new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime()
+  )
+
+  // Greedy lane assignment: each lane tracks its end date
+  const laneEnds: Date[] = []
+
+  for (const r of sorted) {
+    const start = new Date(r.checkIn)
+    // Find the first lane where the previous reservation has ended
+    let assigned = -1
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] <= start) {
+        assigned = i
+        laneEnds[i] = new Date(r.checkOut)
+        break
+      }
+    }
+    if (assigned === -1) {
+      // Need a new lane
+      assigned = laneEnds.length
+      laneEnds.push(new Date(r.checkOut))
+    }
+    lanes.set(r.id, assigned)
+  }
+
+  return lanes
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Channel Icon Component
 // ════════════════════════════════════════════════════════════════════════════
@@ -155,9 +191,9 @@ function barStyle(status: string, ch: string): React.CSSProperties {
 
   switch (status) {
     case 'INQUIRY':
-      return { ...base, background: `${cc.bg}40`, border: `1.5px dashed ${cc.border}`, color: cc.text }
+      return { ...base, background: `${cc.bg}60`, border: `1.5px dashed ${cc.border}`, color: cc.text, opacity: 0.7 }
     case 'PENDING':
-      return { ...base, background: cc.bg, border: `1.5px solid ${cc.border}`, opacity: 0.75, color: cc.text }
+      return { ...base, background: `${cc.bg}80`, border: `1.5px solid ${cc.border}`, color: cc.text, opacity: 0.8 }
     case 'CHECKED_IN':
       return { ...base, background: cc.bg, borderLeft: `3px solid ${cc.border}`, color: cc.text }
     default: // CONFIRMED
@@ -330,6 +366,25 @@ export default function CalendarV5() {
     for (let i = 0; i < numDays; i++) arr.push(addDays(startDate, i))
     return arr
   }, [startDate, numDays])
+
+  // ── Lane assignments per property (for overlapping reservations) ─────
+  const laneData = useMemo(() => {
+    const m = new Map<string, { lanes: Map<string, number>; maxLane: number }>()
+    for (const prop of properties) {
+      const propRes = resByProperty.get(prop.id) || []
+      const lanes = assignLanes(propRes)
+      let maxLane = 0
+      lanes.forEach(l => { if (l > maxLane) maxLane = l })
+      m.set(prop.id, { lanes, maxLane })
+    }
+    return m
+  }, [properties, resByProperty])
+
+  function rowHeight(propertyId: string) {
+    const data = laneData.get(propertyId)
+    const maxLane = data?.maxLane || 0
+    return T.rowBaseHeight + maxLane * T.rowOverlapHeight
+  }
 
   // ── Occupancy per property ─────────────────────────────────────────────
   const occupancy = useMemo(() => {
@@ -597,13 +652,14 @@ export default function CalendarV5() {
               {filteredProperties.map(prop => {
                 const occ = occupancy.get(prop.id)
                 const pct = occ ? Math.round((occ.booked / occ.total) * 100) : 0
+                const rh = rowHeight(prop.id)
                 return (
                   <div
                     key={prop.id}
                     onMouseEnter={() => setHoveredRow(prop.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                     style={{
-                      height: T.rowHeight, borderBottom: `1px solid ${T.border}`,
+                      height: rh, borderBottom: `1px solid ${T.border}`,
                       borderRight: `1px solid ${T.border}`,
                       display: 'flex', flexDirection: 'column', justifyContent: 'center',
                       padding: '0 16px', cursor: 'default',
@@ -660,12 +716,14 @@ export default function CalendarV5() {
                 const propPricing = pricing.get(prop.id) || []
                 const propCurrency = pricingCurrency.get(prop.id) || null
                 const pricingMap = new Map(propPricing.map(d => [d.date, d]))
+                const rh = rowHeight(prop.id)
+                const ld = laneData.get(prop.id)
 
                 return (
                   <div
                     key={prop.id}
                     style={{
-                      height: T.rowHeight, display: 'flex', position: 'relative',
+                      height: rh, display: 'flex', position: 'relative',
                       borderBottom: `1px solid ${T.border}`,
                       background: hoveredRow === prop.id ? '#FAFBFE' : 'transparent',
                       transition: prefersReducedMotion ? 'none' : 'background 100ms ease-out',
@@ -687,7 +745,7 @@ export default function CalendarV5() {
 
                       return (
                         <div key={i} style={{
-                          width: colWidth, height: T.rowHeight, flexShrink: 0,
+                          width: colWidth, height: rh, flexShrink: 0,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           borderRight: `1px solid ${T.border}`,
                           background: today ? 'rgba(37,99,235,0.03)' : isWeekend(d) ? 'rgba(241,245,253,0.5)' : 'transparent',
@@ -715,52 +773,43 @@ export default function CalendarV5() {
 
                     {/* Reservation bars (positioned absolutely) */}
                     {propRes.map(r => {
-                      const { left, width, clippedLeft, clippedRight, nights } = barPos(r)
+                      const { left, width, clippedLeft, clippedRight } = barPos(r)
                       const style = barStyle(r.status, r.channel)
-                      // Smart content: hide text for very short bars
-                      const showName = width > 60
-                      const showCount = width > 100 && r.guestCount > 1
+                      const lane = ld?.lanes.get(r.id) || 0
+                      const barTop = 4 + lane * (T.barHeight + 2) // 4px top padding + lane offset
+                      const showText = width > 50
+                      const label = showText
+                        ? r.guestCount > 1
+                          ? `${guestFirstName(r.guest.name)} ·${r.guestCount}`
+                          : guestFirstName(r.guest.name)
+                        : ''
                       return (
                         <div
                           key={r.id}
                           onClick={() => handleBarClick(r)}
-                          onMouseEnter={(e) => {
-                            setTooltip({ reservation: r, x: e.clientX, y: e.clientY })
-                          }}
-                          onMouseMove={(e) => {
-                            if (tooltip?.reservation.id === r.id) {
-                              setTooltip({ reservation: r, x: e.clientX, y: e.clientY })
-                            }
-                          }}
+                          onMouseEnter={(e) => setTooltip({ reservation: r, x: e.clientX, y: e.clientY })}
+                          onMouseMove={(e) => { if (tooltip?.reservation.id === r.id) setTooltip({ reservation: r, x: e.clientX, y: e.clientY }) }}
                           onMouseLeave={() => setTooltip(null)}
-                          style={{
-                            ...style,
-                            position: 'absolute',
-                            left,
-                            top: (T.rowHeight - T.barHeight) / 2,
-                            width,
-                            zIndex: 5,
-                            ...(clippedLeft ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } : {}),
-                            ...(clippedRight ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 } : {}),
-                          }}
                           className="cal-bar"
                           role="button"
                           tabIndex={0}
                           aria-label={`${r.guest.name}, ${channelLabel(r.channel)}, ${new Date(r.checkIn).toLocaleDateString()} to ${new Date(r.checkOut).toLocaleDateString()}`}
                           onKeyDown={(e) => { if (e.key === 'Enter') handleBarClick(r) }}
+                          style={{
+                            ...style,
+                            position: 'absolute',
+                            left,
+                            top: barTop,
+                            width,
+                            zIndex: 5,
+                            ...(clippedLeft ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 } : {}),
+                            ...(clippedRight ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 } : {}),
+                          }}
                         >
-                          <ChannelIcon channel={r.channel} size={13} />
-                          {showName && (
-                            <span style={{
-                              overflow: 'hidden', textOverflow: 'ellipsis',
-                              lineHeight: 1, flex: 1, minWidth: 0,
-                            }}>
-                              {guestFirstName(r.guest.name)}
-                            </span>
-                          )}
-                          {showCount && (
-                            <span style={{ fontSize: 10, opacity: 0.6, flexShrink: 0 }}>
-                              ·{r.guestCount}
+                          <ChannelIcon channel={r.channel} size={12} />
+                          {showText && (
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>
+                              {label}
                             </span>
                           )}
                         </div>
