@@ -113,6 +113,10 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     status,
                     aiEnabled: true,
                     aiMode: 'copilot',
+                    totalPrice: res.totalPrice != null ? Number(res.totalPrice) : undefined,
+                    hostPayout: res.hostPayout != null ? Number(res.hostPayout) : undefined,
+                    cleaningFee: res.cleaningFee != null ? Number(res.cleaningFee) : undefined,
+                    currency: res.currency || undefined,
                   },
                 });
 
@@ -159,6 +163,10 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     ...(res.departureDate && { checkOut: new Date(res.departureDate) }),
                     ...(res.numberOfGuests && { guestCount: res.numberOfGuests }),
                     ...(isCancelled && { aiEnabled: false }),
+                    ...(res.totalPrice != null && { totalPrice: Number(res.totalPrice) }),
+                    ...(res.hostPayout != null && { hostPayout: Number(res.hostPayout) }),
+                    ...(res.cleaningFee != null && { cleaningFee: Number(res.cleaningFee) }),
+                    ...(res.currency && { currency: res.currency }),
                   },
                 });
 

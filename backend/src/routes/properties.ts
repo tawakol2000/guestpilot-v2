@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 import { makePropertiesController } from '../controllers/properties.controller';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
+import * as calendarService from '../services/calendar.service';
 import { buildPropertyInfo, classifyAmenities } from '../services/ai.service';
 import { applyPropertyOverrides } from '../services/template-variable.service';
 
@@ -78,6 +79,38 @@ export function propertiesRouter(prisma: PrismaClient): Router {
 
   router.get('/', ((req, res) => ctrl.list(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/ai-status', ((req, res) => ctrl.listWithAiStatus(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // Calendar-bulk MUST be before /:id to avoid Express matching "calendar-bulk" as :id
+  router.get('/calendar-bulk', (async (req: any, res) => {
+    try {
+      const { tenantId } = req as AuthenticatedRequest;
+      const { startDate, endDate } = req.query as Record<string, string | undefined>;
+      if (!startDate || !endDate) {
+        res.status(400).json({ error: 'startDate and endDate are required (YYYY-MM-DD)' });
+        return;
+      }
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        res.status(400).json({ error: 'Invalid date format' });
+        return;
+      }
+      const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
+      if (end.getTime() - start.getTime() > sixMonths) {
+        res.status(400).json({ error: 'Date range must not exceed 6 months' });
+        return;
+      }
+
+      const result = await calendarService.getCalendarPricingBulk(
+        tenantId, startDate, endDate, prisma,
+      );
+      res.json(result);
+    } catch (err: any) {
+      console.error('[Properties] calendar-bulk error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }) as RequestHandler);
+
   router.get('/:id', ((req, res) => ctrl.get(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.put('/:id/knowledge-base', ((req, res) => ctrl.updateKnowledgeBase(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
@@ -327,6 +360,41 @@ export function propertiesRouter(prisma: PrismaClient): Router {
     } catch (err) {
       console.error('[Properties] Variable preview failed:', err);
       res.status(500).json({ error: 'Variable preview failed' });
+    }
+  }) as RequestHandler);
+
+  // ── Calendar pricing ───────────────────────────────────────────────────
+
+  router.get('/:id/calendar', (async (req: any, res) => {
+    try {
+      const { tenantId } = req as AuthenticatedRequest;
+      const { startDate, endDate } = req.query as Record<string, string | undefined>;
+      if (!startDate || !endDate) {
+        res.status(400).json({ error: 'startDate and endDate are required (YYYY-MM-DD)' });
+        return;
+      }
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        res.status(400).json({ error: 'Invalid date format' });
+        return;
+      }
+      // Max 6 months
+      const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
+      if (end.getTime() - start.getTime() > sixMonths) {
+        res.status(400).json({ error: 'Date range must not exceed 6 months' });
+        return;
+      }
+
+      const result = await calendarService.getCalendarPricing(
+        tenantId, req.params.id, startDate, endDate, prisma,
+      );
+      res.json(result);
+    } catch (err: any) {
+      if (err.status === 404) { res.status(404).json({ error: err.message }); return; }
+      if (err.status === 502) { res.status(502).json({ error: err.message }); return; }
+      console.error('[Properties] calendar error:', err);
+      res.status(500).json({ error: 'Internal server error' });
     }
   }) as RequestHandler);
 

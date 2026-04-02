@@ -1063,3 +1063,43 @@ export async function apiGetWebhookLogs(filters?: {
   return apiFetch<{ logs: WebhookLogEntry[]; total: number }>(`/api/webhook-logs${qs ? `?${qs}` : ''}`)
 }
 
+// ─── Calendar ────────────────────────────────────────────────────────────────
+
+export interface CalendarReservation {
+  id: string
+  propertyId: string
+  hostawayReservationId: string
+  checkIn: string
+  checkOut: string
+  guestCount: number
+  channel: string
+  status: string
+  totalPrice: number | null
+  hostPayout: number | null
+  cleaningFee: number | null
+  currency: string | null
+  guest: { id: string; name: string }
+  conversationId: string | null
+}
+
+export interface CalendarDay {
+  date: string
+  price: number | null
+  available: boolean
+  minimumStay?: number | null
+}
+
+export interface PropertyCalendar {
+  propertyId: string
+  currency: string
+  days: CalendarDay[]
+}
+
+export async function apiGetReservations(startDate: string, endDate: string): Promise<{ reservations: CalendarReservation[] }> {
+  return apiFetch<{ reservations: CalendarReservation[] }>(`/api/reservations?startDate=${startDate}&endDate=${endDate}`)
+}
+
+export async function apiGetCalendarBulk(startDate: string, endDate: string): Promise<{ properties: PropertyCalendar[]; errors: Array<{ propertyId: string; error: string }> }> {
+  return apiFetch<{ properties: PropertyCalendar[]; errors: Array<{ propertyId: string; error: string }> }>(`/api/properties/calendar-bulk?startDate=${startDate}&endDate=${endDate}`)
+}
+

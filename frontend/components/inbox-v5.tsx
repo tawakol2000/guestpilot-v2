@@ -88,6 +88,7 @@ import SopEditorV5 from '@/components/sop-editor-v5'
 import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import ListingsV5 from '@/components/listings-v5'
+import CalendarV5 from '@/components/calendar-v5'
 import FaqV5 from '@/components/faq-v5'
 import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
@@ -123,7 +124,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
+type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1390,7 +1391,7 @@ export default function InboxV5() {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
-        'overview','inbox','analytics','tasks','settings','configure',
+        'overview','inbox','calendar','analytics','tasks','settings','configure',
         'logs','webhooks','sops','tools','sandbox','listings','faqs',
       ].includes(saved)) return saved as NavTab
     }
@@ -2600,6 +2601,7 @@ export default function InboxV5() {
           [
             { id: 'overview', label: 'Overview' },
             { id: 'inbox', label: 'Inbox' },
+            { id: 'calendar', label: 'Calendar' },
             { id: 'analytics', label: 'Analytics' },
             { id: 'tasks', label: 'Tasks' },
             { id: 'settings', label: 'Settings' },
@@ -4474,6 +4476,13 @@ export default function InboxV5() {
               setNavTab('inbox')
             }}
           />
+        </div>
+        </ErrorBoundary>
+      )}
+      {navTab === 'calendar' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <CalendarV5 />
         </div>
         </ErrorBoundary>
       )}
