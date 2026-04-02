@@ -2,7 +2,7 @@
  * FAQ Auto-Suggest Service — Detects reusable answers in manager replies
  * and creates suggested FAQ entries for one-tap approval.
  *
- * Uses GPT-5 Nano for classification + extraction (~$0.0001 per call).
+ * Uses GPT-5 Nano via Responses API for classification + extraction.
  * Fire-and-forget — never blocks the manager's reply.
  */
 
@@ -22,41 +22,6 @@ function getClient(): OpenAI | null {
   }
   return _client;
 }
-
-// ── Structured output schema for GPT-5 Nano ─────────────────────────────────
-
-const CLASSIFY_SCHEMA = {
-  name: 'faq_classify',
-  strict: true,
-  schema: {
-    type: 'object' as const,
-    properties: {
-      reusable: {
-        type: 'boolean' as const,
-        description: 'True if the reply contains reusable property knowledge',
-      },
-      question: {
-        type: 'string' as const,
-        description: 'Generalized question, 5-20 words',
-      },
-      answer: {
-        type: 'string' as const,
-        description: 'Factual answer without personal details',
-      },
-      category: {
-        type: 'string' as const,
-        enum: [...FAQ_CATEGORIES],
-        description: 'One of the 15 FAQ categories',
-      },
-      reason: {
-        type: 'string' as const,
-        description: 'Why reusable or not',
-      },
-    },
-    required: ['reusable', 'question', 'answer', 'category', 'reason'],
-    additionalProperties: false,
-  },
-} as const;
 
 const SYSTEM_PROMPT = `You classify manager replies to guest questions. Determine if the reply contains reusable property knowledge (directions, amenities, policies, local info) or booking-specific information (dates, prices, guest names, reservation details). If reusable, extract a clean Q&A pair.`;
 
@@ -86,25 +51,35 @@ export async function processFaqSuggestion(
       return null;
     }
 
-    // 2. Call GPT-5 Nano to classify + extract in ONE call
-    const response = await client.chat.completions.create({
+    // 2. Call GPT-5 Nano via Responses API with structured output
+    const response = await (client.responses as any).create({
       model: 'gpt-5-nano',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: `Info request: ${guestMessage}\nManager reply: "${managerReply}"`,
+      instructions: SYSTEM_PROMPT,
+      input: `Info request: ${guestMessage}\nManager reply: "${managerReply}"`,
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'faq_classify',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              reusable: { type: 'boolean', description: 'True if the reply contains reusable property knowledge' },
+              question: { type: 'string', description: 'Generalized question, 5-20 words' },
+              answer: { type: 'string', description: 'Factual answer without personal details' },
+              category: { type: 'string', enum: [...FAQ_CATEGORIES], description: 'One of the 15 FAQ categories' },
+              reason: { type: 'string', description: 'Why reusable or not' },
+            },
+            required: ['reusable', 'question', 'answer', 'category', 'reason'],
+            additionalProperties: false,
+          },
         },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: CLASSIFY_SCHEMA,
       },
+      max_output_tokens: 256,
       store: true,
-      max_completion_tokens: 256,
     });
 
-    const raw = response.choices[0]?.message?.content;
+    const raw = (response.output_text || '').trim();
     if (!raw) {
       console.warn('[FAQ-Suggest] Empty response from GPT-5 Nano');
       return null;
