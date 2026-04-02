@@ -13,6 +13,7 @@ import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type D
 import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
+import { getFaqForProperty } from '../services/faq.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -203,7 +204,7 @@ export function sandboxRouter(prisma: PrismaClient) {
       // Build tool set — get_sop uses dynamic definition, others from DB
       const toolsForCall: any[] = sbToolDefs
         .filter(t => t.enabled && t.agentScope.split(',').map(s => s.trim()).includes(reservationStatus))
-        .filter(t => t.name !== 'get_sop') // get_sop uses dynamic definition with category enum
+        .filter(t => t.name !== 'get_sop' && t.name !== 'get_faq') // get_sop/get_faq use inline definitions
         .filter(t => t.name !== 'mark_document_received' || sbChecklistPending) // conditional
         .map(t => ({
           type: 'function' as const,
@@ -215,6 +216,32 @@ export function sandboxRouter(prisma: PrismaClient) {
       // Add get_sop with dynamic category descriptions from enabled SOP definitions
       const sopToolDef = await buildToolDefinition(tenantId, prisma);
       toolsForCall.push(sopToolDef);
+
+      // Add get_faq tool — matches production (ai.service.ts)
+      toolsForCall.push({
+        type: 'function' as const,
+        name: 'get_faq',
+        description: 'Retrieve FAQ entries for the current property. Call this BEFORE escalating an info_request when a guest asks a factual question about the property, local area, amenities, or policies. If the FAQ has an answer, use it directly instead of escalating.',
+        strict: false,
+        parameters: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              enum: [
+                'check-in-access', 'check-out-departure', 'wifi-technology',
+                'kitchen-cooking', 'appliances-equipment', 'house-rules',
+                'parking-transportation', 'local-recommendations', 'attractions-activities',
+                'cleaning-housekeeping', 'safety-emergencies', 'booking-reservation',
+                'payment-billing', 'amenities-supplies', 'property-neighborhood',
+              ],
+              description: 'FAQ category that best matches the guest\'s question',
+            },
+          },
+          required: ['category'],
+          additionalProperties: false,
+        },
+      });
 
       // Look up hostawayListingId for extend-stay tool
       let hostawayListingId = '';
@@ -402,6 +429,10 @@ export function sandboxRouter(prisma: PrismaClient) {
             return JSON.stringify({ passportsReceived: updated.passportsReceived, passportsNeeded: updated.passportsNeeded, marriageCertReceived: updated.marriageCertReceived, allComplete: !hasPendingItems(updated) });
           }
           return JSON.stringify({ error: 'No reservation in sandbox context' });
+        } else if (fnCall.name === 'get_faq') {
+          const typedInput = input as { category: string };
+          if (!typedInput.category) return '## FAQ\n\nNo category specified.';
+          return getFaqForProperty(prisma, tenantId, propertyId, typedInput.category);
         } else {
           const customToolDef = sbToolDefs.find(t => t.name === fnCall.name);
           if (customToolDef?.webhookUrl) {
