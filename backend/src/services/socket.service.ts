@@ -72,7 +72,7 @@ export function initSocketIO(httpServer: HttpServer): void {
     cors: { origin: corsOrigins, credentials: true },
     transports: ['websocket'] as const,
     pingInterval: 25000,
-    pingTimeout: 20000,
+    pingTimeout: 60000,  // 60s tolerance for Railway proxy latency (was 20s → frequent ping timeouts)
   };
 
   io = new Server(httpServer, serverOpts);

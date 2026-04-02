@@ -1521,8 +1521,8 @@ export default function InboxV5() {
       try {
         const data = await apiGetConversations()
         const mapped = data.map(summaryToConversation)
-        setConversations(prev =>
-          mapped.map(newConv => {
+        setConversations(prev => {
+          const updated = mapped.map(newConv => {
             const existing = prev.find(p => p.id === newConv.id)
             if (existing) {
               // Always preserve messages/guest/booking/property from existing state —
@@ -1539,7 +1539,24 @@ export default function InboxV5() {
             }
             return newConv
           })
-        )
+
+          // Heartbeat: if selected conversation's timestamp changed, re-fetch detail
+          const sel = selectedIdRef.current
+          if (sel) {
+            const oldConv = prev.find(c => c.id === sel)
+            const newConv = updated.find(c => c.id === sel)
+            if (oldConv && newConv && oldConv.timestamp !== newConv.timestamp) {
+              apiGetConversation(sel).then(detail => {
+                if (detail) {
+                  setConversations(p => p.map(c => c.id === sel ? mergeDetail(c, detail) : c))
+                  setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+                }
+              }).catch(() => {})
+            }
+          }
+
+          return updated
+        })
         setSelectedId(prev => prev || (mapped.length > 0 ? mapped[0].id : ''))
       } catch (err) {
         console.error(err)
@@ -1631,19 +1648,31 @@ export default function InboxV5() {
         clearInterval(degradedPollTimer.current)
         degradedPollTimer.current = null
       }
-      // Show "back online" banner if recovering
-      if (prevStatusRef.current === 'reconnecting' || prevStatusRef.current === 'delayed') {
-        setShowReconnectedBanner(true)
-        setTimeout(() => setShowReconnectedBanner(false), 3000)
-      }
       setConnectionStatus('connected')
 
-      if (!socket.recovered && selectedIdRef.current) {
+      const wasDisconnected = prevStatusRef.current === 'reconnecting' || prevStatusRef.current === 'delayed'
+
+      // ALWAYS re-fetch on reconnect — CSR is disabled, messages are lost during gaps
+      if (selectedIdRef.current) {
         apiGetConversation(selectedIdRef.current).then(detail => {
           if (detail) {
             setConversations(prev => prev.map(c => c.id === selectedIdRef.current ? mergeDetail(c, detail) : c))
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
           }
-        }).catch(() => {})
+          // Show banner AFTER fetch completes (not before)
+          if (wasDisconnected) {
+            setShowReconnectedBanner(true)
+            setTimeout(() => setShowReconnectedBanner(false), 3000)
+          }
+        }).catch(() => {
+          if (wasDisconnected) {
+            setShowReconnectedBanner(true)
+            setTimeout(() => setShowReconnectedBanner(false), 3000)
+          }
+        })
+      } else if (wasDisconnected) {
+        setShowReconnectedBanner(true)
+        setTimeout(() => setShowReconnectedBanner(false), 3000)
       }
     })
 
