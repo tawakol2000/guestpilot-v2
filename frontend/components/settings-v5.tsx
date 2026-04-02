@@ -1,16 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   apiGetImportProgress,
   apiRunImport,
-  apiGetProperties,
   apiToggleAIAll,
   apiToggleAIProperty,
   apiGetPropertiesAiStatus,
-  apiGetKnowledgeChunks,
-  apiResyncProperty,
   type PropertyAiStatus,
   apiDeleteAllData,
   apiChangePassword,
@@ -18,8 +14,6 @@ import {
   apiUpdateTenantAiConfig,
   getTenantMeta,
   type ImportProgress,
-  type ApiProperty,
-  type KnowledgeChunk,
 } from '@/lib/api'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -426,257 +420,6 @@ function DataSyncSection({ onImportComplete }: { onImportComplete: () => void })
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// ─── Section B: Properties ────────────────────────────────────────────────────
-
-/* PropertyInfoEditor removed — moved to Listings page (020-listings-management) */
-
-function PropertyDescriptionEditor({ prop }: { prop: ApiProperty }): React.ReactElement {
-  const [desc, setDesc] = useState(prop.listingDescription || '')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const saveBtnHover = useHover()
-
-  async function handleSave(): Promise<void> {
-    setSaving(true)
-    try {
-      // Description is read-only from Hostaway sync — use resync to update
-      // This textarea is for viewing; edits would need a custom endpoint
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
-        Property Description
-      </div>
-      <textarea
-        value={desc}
-        onChange={e => setDesc(e.target.value)}
-        readOnly
-        style={{
-          width: '100%',
-          minHeight: 80,
-          fontSize: 12,
-          padding: '8px 10px',
-          border: `1px solid ${T.border.default}`,
-          borderRadius: T.radius.sm,
-          background: T.bg.secondary,
-          color: T.text.primary,
-          fontFamily: T.font.sans,
-          outline: 'none',
-          resize: 'vertical',
-          boxSizing: 'border-box',
-        }}
-      />
-      <div style={{ fontSize: 11, color: T.text.tertiary, marginTop: 4 }}>
-        Synced from Hostaway. Use "Re-sync" to update.
-      </div>
-    </div>
-  )
-}
-
-function LearnedAnswersViewer({ propertyId }: { propertyId: string }): React.ReactElement {
-  const [chunks, setChunks] = useState<KnowledgeChunk[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    apiGetKnowledgeChunks(propertyId).then(all => {
-      setChunks(all.filter(c => c.category === 'learned-answers'))
-      setLoading(false)
-    }).catch(err => { console.error('[Knowledge] Failed to load learned answers:', err); setLoading(false) })
-  }, [propertyId])
-
-  const qaLines = chunks.length > 0
-    ? chunks[0].content.split(/\n\n/).filter(l => l.trim())
-    : []
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.text.secondary, marginBottom: 8 }}>
-        Learned Answers
-      </div>
-      {loading ? (
-        <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans }}>Loading...</div>
-      ) : qaLines.length === 0 ? (
-        <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans }}>
-          No learned answers yet. Approve knowledge suggestions to build this up.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {qaLines.map((qa, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: 12,
-                padding: '6px 10px',
-                background: T.bg.secondary,
-                borderRadius: T.radius.sm,
-                fontFamily: T.font.sans,
-                color: T.text.primary,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {qa}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PropertyCard({ prop, isOpen, onToggle, onUpdate }: { prop: ApiProperty; isOpen: boolean; onToggle: () => void; onUpdate: (p: ApiProperty) => void }): React.ReactElement {
-  const hover = useHover()
-  const resyncHover = useHover()
-  const [resyncing, setResyncing] = useState(false)
-  const [resyncMsg, setResyncMsg] = useState('')
-
-  async function handleResync(): Promise<void> {
-    setResyncing(true)
-    setResyncMsg('')
-    try {
-      const result = await apiResyncProperty(prop.id)
-      onUpdate(result.property)
-      setResyncMsg(`Synced (${result.chunks} chunks)`)
-      setTimeout(() => setResyncMsg(''), 3000)
-    } catch (err) {
-      console.error(err)
-      setResyncMsg('Sync failed')
-      setTimeout(() => setResyncMsg(''), 3000)
-    } finally {
-      setResyncing(false)
-    }
-  }
-
-  return (
-    <div
-      style={{
-        border: `1px solid ${T.border.default}`,
-        borderRadius: T.radius.md,
-        overflow: 'hidden',
-        boxShadow: hover.hovered ? T.shadow.md : T.shadow.sm,
-        transition: 'box-shadow 0.2s ease',
-      }}
-    >
-      <button
-        onClick={onToggle}
-        {...hover.handlers}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          padding: '12px 16px',
-          background: hover.hovered ? T.bg.secondary : T.bg.primary,
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontFamily: T.font.sans,
-          transition: 'background 0.2s ease',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary }}>
-            {prop.name}
-          </div>
-          {prop.address && (
-            <div style={{ fontSize: 12, color: T.text.secondary, marginTop: 2 }}>
-              {prop.address}
-            </div>
-          )}
-        </div>
-        {isOpen ? (
-          <ChevronDown size={14} color={T.text.tertiary} />
-        ) : (
-          <ChevronRight size={14} color={T.text.tertiary} />
-        )}
-      </button>
-      {isOpen && (
-        <div style={{ padding: '12px 16px 16px', borderTop: `1px solid ${T.border.default}`, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              style={{
-                ...btnGhost,
-                height: 28,
-                padding: '0 12px',
-                fontSize: 11,
-                opacity: resyncing ? 0.5 : resyncHover.hovered ? 0.85 : 1,
-                cursor: resyncing ? 'not-allowed' : 'pointer',
-              }}
-              disabled={resyncing}
-              onClick={handleResync}
-              {...resyncHover.handlers}
-            >
-              {resyncing ? 'Syncing…' : 'Re-sync from Hostaway'}
-            </button>
-            {resyncMsg && (
-              <span style={{ fontSize: 12, color: resyncMsg.includes('failed') ? T.status.red : T.status.green, fontFamily: T.font.sans }}>
-                {resyncMsg}
-              </span>
-            )}
-          </div>
-          {/* PropertyInfoEditor removed — use Listings page (020-listings-management) */}
-          <PropertyDescriptionEditor prop={prop} />
-          <LearnedAnswersViewer propertyId={prop.id} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PropertiesSection(): React.ReactElement {
-  const [properties, setProperties] = useState<ApiProperty[]>([])
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  function handlePropertyUpdate(updated: ApiProperty): void {
-    setProperties(prev => prev.map(p => p.id === updated.id ? updated : p))
-  }
-
-  useEffect(() => {
-    apiGetProperties().then(setProperties).catch(err => { console.error('[Properties] Failed to load:', err); setLoadError(err.message || 'Failed to load properties') })
-  }, [])
-
-  function toggleExpand(id: string): void {
-    setExpanded((prev) => (prev === id ? null : id))
-  }
-
-  return (
-    <div style={{ ...cardStyle, animation: 'fadeInUp 0.4s ease-out both', animationDelay: '0.05s' }}>
-      <div style={cardHeaderStyle}>Properties</div>
-      <div style={cardBodyStyle}>
-        {loadError ? (
-          <div style={{ fontSize: 13, color: T.status.red, fontFamily: T.font.sans }}>
-            {loadError}
-          </div>
-        ) : properties.length === 0 ? (
-          <div style={{ fontSize: 13, color: T.text.tertiary, fontFamily: T.font.sans }}>
-            No properties found. Run a sync first.
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {properties.map((prop) => (
-              <PropertyCard
-                key={prop.id}
-                prop={prop}
-                isOpen={expanded === prop.id}
-                onToggle={() => toggleExpand(prop.id)}
-                onUpdate={handlePropertyUpdate}
-              />
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -1324,7 +1067,6 @@ export function SettingsV5({ onImportComplete }: { onImportComplete: () => void 
         <WebhookUrlSection />
         <WorkingHoursSection />
         <DataSyncSection onImportComplete={onImportComplete} />
-        <PropertiesSection />
         <AIToggleSection onImportComplete={onImportComplete} />
         <ChangePasswordSection />
         <DangerZoneSection onImportComplete={onImportComplete} />
