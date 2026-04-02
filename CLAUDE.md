@@ -4,9 +4,9 @@ Multi-tenant AI communication platform for serviced apartments. Integrates with 
 
 ## Tech Stack
 - **Backend:** Node.js + TypeScript + Express
-- **Database:** PostgreSQL + Prisma ORM + pgvector
-- **AI:** Anthropic Claude API (Haiku 4.5 default), OpenAI/Cohere embeddings
-- **Queue:** BullMQ + Redis (optional)
+- **Database:** PostgreSQL + Prisma ORM
+- **AI:** OpenAI Responses API (GPT-5.4-Mini default, GPT-5-Nano for lightweight tasks)
+- **Queue:** BullMQ + Redis (optional — falls back to polling)
 - **Frontend:** Next.js 16 + React 19 + Tailwind 4 + shadcn/ui
 - **Hosting:** Railway (backend), Vercel (frontend)
 
@@ -14,66 +14,105 @@ Multi-tenant AI communication platform for serviced apartments. Integrates with 
 ```
 backend/
   src/
-    controllers/        # Request handlers (webhooks, conversations, auth, etc.)
+    controllers/        # Request handlers
     routes/             # Express route definitions
-    services/           # Business logic
-    workers/            # BullMQ workers (aiReply.worker.ts)
-    jobs/               # Scheduled jobs (aiDebounce.job.ts)
+    services/           # Business logic (AI pipeline, tools, SOPs, FAQ, etc.)
+    workers/            # BullMQ workers
+    jobs/               # Scheduled jobs (debounce poll, FAQ maintenance, sync)
     middleware/         # Auth (JWT), error handling
-    config/             # AI config, SOP data, prompt files
+    config/             # FAQ categories, SOP data, escalation rules, model pricing
   prisma/
     schema.prisma       # Database schema
 
 frontend/
   app/                  # Next.js pages (login, dashboard)
-  components/           # UI components (inbox-v5, ai-pipeline-v5, etc.)
-  lib/                  # Utils, API client
+  components/           # UI components (inbox-v5, configure-ai-v5, etc.)
+  lib/                  # Utils, API client, Socket.IO client
 ```
 
 ## Key Services
 
 | Service | Purpose |
 |---------|---------|
-| ai.service.ts | Core AI pipeline: prompt building, Claude API calls, response handling |
-| classifier.service.ts | KNN-3 embedding classifier for SOP routing |
-| judge.service.ts | LLM-as-Judge self-improvement + auto-fix |
-| debounce.service.ts | Message batching (30s) + working hours deferral |
-| rag.service.ts | pgvector retrieval for property knowledge |
-| intent-extractor.service.ts | Tier 2 Haiku intent extraction |
-| topic-state.service.ts | Tier 3 topic cache for contextual follow-ups |
-| embeddings.service.ts | OpenAI/Cohere dual embedding provider |
-| rerank.service.ts | Cohere cross-encoder reranking |
-| memory.service.ts | Conversation summarization |
-| escalation-enrichment.service.ts | Keyword-based escalation signals |
-| tenant-config.service.ts | Per-tenant AI settings (cached 5min) |
-| hostaway.service.ts | Hostaway API client |
-| sse.service.ts | Server-Sent Events (Redis pub/sub or in-memory) |
-| queue.service.ts | BullMQ job queue |
-| observability.service.ts | Langfuse tracing |
-| opus.service.ts | Daily audit reports (Claude Opus) |
+| ai.service.ts | Core AI pipeline: prompt building, OpenAI Responses API, tool use loop, structured output |
+| sop.service.ts | DB-backed SOPs with status variants + property overrides + dynamic tool schema |
+| tool-definition.service.ts | System + custom tool definitions (cached 5min) |
+| faq.service.ts | FAQ knowledge CRUD + retrieval (global + property-specific) |
+| faq-suggest.service.ts | Auto-suggest FAQ entries from manager replies (GPT-5-Nano) |
+| template-variable.service.ts | Resolve {VARIABLE} placeholders in system prompts → content blocks |
+| summary.service.ts | Conversation summarization after AI response (GPT-5-Nano, >10 messages) |
+| task-manager.service.ts | Escalation dedup — CREATE/UPDATE/RESOLVE/SKIP (GPT-5-Nano) |
+| debounce.service.ts | Message batching (30s default) + working hours deferral |
+| escalation-enrichment.service.ts | Keyword-based escalation signal detection |
+| extend-stay.service.ts | Check extended/modified stay availability via Hostaway calendar |
+| property-search.service.ts | Cross-sell alternative properties matching guest requirements |
+| document-checklist.service.ts | Passport/marriage certificate tracking |
+| tenant-config.service.ts | Per-tenant AI settings (cached 60s, auto-seeds prompts) |
+| hostaway.service.ts | Hostaway API client (OAuth2, retry, all CRUD operations) |
+| push.service.ts | Web Push notifications (VAPID) |
+| webhook-tool.service.ts | Custom webhook invocation for user-defined tools |
+| queue.service.ts | BullMQ wrapper (graceful fallback to polling if no Redis) |
 
-## Branch Strategy
+## AI Pipeline Flow
+```
+Guest Message → Hostaway Webhook → Save + SSE broadcast
+  → scheduleAiReply() → PendingAiReply (30s debounce)
+  → Poll job fires → generateAndSendAiReply()
+      1. Load tenant config + system prompt
+      2. Resolve template variables → content blocks
+      3. Inject conversation summary (if >10 messages)
+      4. SOP classification via forced get_sop tool call
+      5. Fetch SOP content (status variant → property override → default)
+      6. Tool use loop (max 5 rounds): get_faq, search_properties, extend_stay, etc.
+      7. Structured JSON output (coordinator or screening schema)
+      8. Escalation enrichment (keyword signals)
+      9. Task manager dedup (GPT-5-Nano)
+      10. Send via Hostaway → save → SSE broadcast → push notification
+      11. Fire-and-forget: summary generation
+```
 
-| Branch | Purpose | Deployed |
-|--------|---------|----------|
-| main | Production | Railway + Vercel |
-| advanced-ai-v7 | AI upgrades (current dev) | Railway (separate service) |
+## Models Used
+
+| Purpose | Model | Notes |
+|---------|-------|-------|
+| Main pipeline | gpt-5.4-mini-2026-03-17 | Coordinator + Screening personas |
+| SOP classification | gpt-5.4-mini-2026-03-17 | Forced get_sop tool call |
+| Summaries | gpt-5-nano | Fire-and-forget, >10 messages |
+| FAQ auto-suggest | gpt-5-nano | Classify manager replies as reusable FAQ |
+| Task dedup | gpt-5-nano | Escalation matching (CREATE/UPDATE/SKIP) |
+
+## System Tools
+
+| Tool | Purpose | Agent Scope |
+|------|---------|-------------|
+| get_sop | SOP content by category | All statuses |
+| get_faq | FAQ entries by category | All statuses |
+| search_available_properties | Cross-sell properties | INQUIRY/PENDING |
+| create_document_checklist | Screening doc setup | INQUIRY/PENDING |
+| check_extend_availability | Extend stay availability | CONFIRMED/CHECKED_IN |
+| mark_document_received | Mark passport/cert received | CONFIRMED/CHECKED_IN |
+
+Custom tools: webhook-backed, user-defined parameters via Tools management page.
 
 ## Database Hierarchy
 ```
 Tenant → Property → Reservation → Conversation → Message
                                               ↘ PendingAiReply
                                               ↘ Task
+       → TenantAiConfig (system prompts, model settings)
+       → SopDefinition → SopVariant (per-status) → SopPropertyOverride (per-listing)
+       → ToolDefinition (system + custom tools)
+       → FaqEntry (FAQ knowledge base)
+       → AiApiLog (persistent AI call logs)
+       → PushSubscription
+       → AiConfigVersion (prompt history)
 ```
-All models have `tenantId` for multi-tenancy.
 
 ## Environment Variables
 ```
 DATABASE_URL           # PostgreSQL (required)
 JWT_SECRET             # Auth (required)
-ANTHROPIC_API_KEY      # Claude API (required)
-OPENAI_API_KEY         # Embeddings (optional — RAG disabled without)
-COHERE_API_KEY         # Embeddings + reranking (optional)
+OPENAI_API_KEY         # OpenAI Responses API (required)
 REDIS_URL              # BullMQ queue (optional — falls back to polling)
 LANGFUSE_PUBLIC_KEY    # Observability (optional)
 LANGFUSE_SECRET_KEY
@@ -83,15 +122,15 @@ NODE_ENV               # development / production
 RAILWAY_PUBLIC_DOMAIN  # Public URL for webhooks
 CORS_ORIGINS           # Comma-separated frontend URLs
 DRY_RUN                # Restrict to specific conversation IDs
-VAPID_PUBLIC_KEY       # Web Push VAPID public key (optional — push disabled without)
-VAPID_PRIVATE_KEY      # Web Push VAPID private key (optional)
-VAPID_SUBJECT          # mailto:support@guestpilot.com (optional)
+VAPID_PUBLIC_KEY       # Web Push (optional — push disabled without)
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT          # mailto:support@guestpilot.com
 ```
 
 ## Critical Rules
-1. **Never break the main guest messaging flow** — all new features degrade gracefully
-2. **Missing env vars** (Redis, OpenAI, Langfuse, Cohere) → fall back silently, never crash
-3. **AI output** must be valid JSON — no markdown, code blocks, or extra text
+1. **Never break the main guest messaging flow** — all features degrade gracefully
+2. **Missing env vars** (Redis, Langfuse) → fall back silently, never crash
+3. **AI output** must be valid JSON — structured via json_schema enforcement
 4. **Never expose access codes** (door code, WiFi) to INQUIRY-status guests
 5. **Never commit secrets** — .env files, API keys, credentials
 6. **Escalate when in doubt** — better to over-escalate than miss an issue
@@ -109,57 +148,10 @@ cd backend && npx prisma db push    # apply schema
 cd backend && npx prisma studio     # browse data
 ```
 
+## Branch Strategy
+Feature branches merge directly to `main`. No long-lived dev branches.
+
 ## Reference Docs
-- `SPEC.md` — Complete system specification (endpoints, data model, AI pipeline, settings)
-- `AI_SYSTEM_FLOW-v7.md` — Detailed 9-stage AI pipeline flow
-- `CLASSIFIER_FRONTEND_CLAUDE_CODE.md` — Pending: classifier dashboard UI spec
-- `JUDGE_SELF_IMPROVEMENT_CLAUDE_CODE.md` — Pending: judge service spec
-
-## Active Technologies
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ (001-system-audit)
-- PostgreSQL + pgvector + Prisma ORM (001-system-audit)
-- TypeScript 5.x on Node.js 18+ (inference) + Python 3 (training) + Express 4.x, Prisma ORM, Cohere SDK, sklearn (Python) (003-ai-engine-fix)
-- PostgreSQL + Prisma ORM + file-based weights JSON (003-ai-engine-fix)
-- TypeScript 5.x on Node.js 18+ (inference) + Python 3 (training) + Express 4.x, Prisma ORM, Cohere SDK, sklearn (Python), numpy (003-ai-engine-fix)
-- PostgreSQL (shared with existing service) + file-based LR weights JSON (003-ai-engine-fix)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, PostgreSQL (004-fix-duplicate-convos)
-- PostgreSQL (existing) — one schema constraint change only (004-fix-duplicate-convos)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK (005-remove-knn-legacy)
-- No schema changes — configuration via `topic_state_config.json` (005-remove-knn-legacy)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ (006-ai-flow-audit)
-- PostgreSQL + pgvector + Prisma ORM + file-based weights JSON (006-ai-flow-audit)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK (Haiku) (007-smart-escalation)
-- No schema changes — uses existing Task model (007-smart-escalation)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Existing classifier.service.ts infrastructure (009-similarity-boost)
-- No schema changes — ragContext JSON field gets new keys (009-similarity-boost)
-- TypeScript 5.x on Node.js 18+ (backend), Python 3 (training script), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Cohere SDK (`cohere-ai@^7.20.0`), Anthropic SDK, scikit-learn + numpy (Python) (009-similarity-boost)
-- PostgreSQL + pgvector + Prisma ORM + file-based `classifier-weights.json` (009-similarity-boost)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK (`@anthropic-ai/sdk@^0.30.1`), Hostaway API (010-property-suggestions)
-- PostgreSQL + Prisma ORM + existing `customKnowledgeBase` JSON field (no schema migration) (010-property-suggestions)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, Hostaway API (011-extend-stay)
-- PostgreSQL + Prisma ORM (no schema changes) (011-extend-stay)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, Anthropic SDK, Hostaway API (012-system-audit)
-- PostgreSQL + Prisma ORM (add indexes only — no migrations) (012-system-audit)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK (`openai`), Express 4.x, Prisma ORM — replacing `@anthropic-ai/sdk` (014-sop-optimization)
-- PostgreSQL + Prisma ORM (no schema changes — ragContext JSON field gets new shape) (014-sop-optimization)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + OpenAI Node.js SDK, Express 4.x, Prisma ORM (015-sop-variants)
-- PostgreSQL + Prisma ORM (new SopDefinition + SopVariant models) (015-sop-variants)
-- TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK, Express 4.x, Prisma ORM, axios (image download) (016-fix-image-handling)
-- PostgreSQL + Prisma ORM (no schema changes — uses existing `screeningAnswers` JSON field) (017-document-checklist)
-- TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK, Express 4.x, Prisma ORM, axios (webhook calls) (018-tools-management)
-- PostgreSQL + Prisma ORM (new ToolDefinition model) (018-tools-management)
-- TypeScript 5.x on Node.js 18+ + `web-push` npm package, Express 4.x, Prisma ORM (019-web-push)
-- PostgreSQL + Prisma ORM (new PushSubscription model) (019-web-push)
-- TypeScript 5.x on Node.js 18+ + OpenAI Node.js SDK (summarization), Express 4.x, Prisma ORM (020-listings-management)
-- PostgreSQL + Prisma ORM (no schema changes — uses existing `customKnowledgeBase` JSON + `listingDescription`) (020-listings-management)
-- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, OpenAI Node.js SDK (021-prompt-template-variables)
-- PostgreSQL + Prisma ORM (no schema changes — uses existing `customKnowledgeBase` JSON field + `TenantAiConfig`) (021-prompt-template-variables)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, OpenAI SDK (for summarization calls) (024-smart-context-summary)
-- PostgreSQL + Prisma ORM (existing `conversationSummary` fields on Conversation model) (024-smart-context-summary)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM 5.22, ioredis, BullMQ, axios (Hostaway API client) (025-message-sync)
-- PostgreSQL + Prisma ORM (schema changes: `lastSyncedAt` field, partial unique index) (025-message-sync)
-- TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM 5.22, OpenAI SDK (gpt-5-nano for auto-suggest classification/extraction) (027-faq-knowledge)
-- PostgreSQL + Prisma ORM (new FaqEntry model) (027-faq-knowledge)
-
-## Recent Changes
-- 001-system-audit: Added TypeScript 5.x on Node.js 18+ + Express 4.x, Prisma ORM, Anthropic SDK, ioredis, BullMQ
+- `SPEC.md` — Complete system specification
+- `AI_SYSTEM_FLOW.md` — Detailed AI pipeline flow
+- `.specify/memory/constitution.md` — Project constitution (non-negotiable principles)
