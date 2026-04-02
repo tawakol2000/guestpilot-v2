@@ -118,7 +118,7 @@ export async function evaluateEscalation(input: TaskManagerInput): Promise<TaskM
       temperature: 0,
       instructions: SYSTEM_PROMPT,
       input: userMessage,
-
+      reasoning: { effort: 'minimal' },
       store: true,
     });
 

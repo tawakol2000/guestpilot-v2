@@ -98,8 +98,8 @@ export async function generateOrExtendSummary(
         model: SUMMARY_MODEL,
         instructions: SUMMARIZE_PROMPT,
         input: transcript,
+        reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
-  
         store: false,
       });
 
@@ -118,8 +118,8 @@ export async function generateOrExtendSummary(
         model: SUMMARY_MODEL,
         instructions: EXTEND_PROMPT,
         input: `EXISTING SUMMARY:\n${conversation.conversationSummary}\n\nNEW MESSAGES:\n${newTranscript}`,
+        reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
-  
         store: false,
       });
 

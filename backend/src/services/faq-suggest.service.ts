@@ -75,6 +75,7 @@ export async function processFaqSuggestion(
           },
         },
       },
+      reasoning: { effort: 'minimal' },
       max_output_tokens: 256,
       store: true,
     });
