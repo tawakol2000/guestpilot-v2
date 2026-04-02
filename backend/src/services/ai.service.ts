@@ -1292,7 +1292,7 @@ export async function generateAndSendAiReply(
     // Upgrade 6d: Fetch per-tenant AI configuration (cached, 5min TTL)
     const tenantConfig = await getTenantAiConfig(tenantId, prisma).catch(() => null);
 
-    // Pre-response sync: fetch latest messages from Hostaway before loading history
+    // Pre-response sync: fetch latest messages + reservation status from Hostaway
     if (hostawayConversationId && hostawayAccountId && hostawayApiKey) {
       try {
         const syncResult = await syncConversationMessages(
@@ -1311,6 +1311,56 @@ export async function generateAndSendAiReply(
         }
       } catch (err: any) {
         console.warn(`[AI] Pre-response sync failed (non-fatal): ${err.message}`);
+      }
+
+      // Resync reservation status from Hostaway — webhooks are unreliable for status changes
+      try {
+        const reservation = await prisma.reservation.findFirst({
+          where: { id: context.reservationId },
+          select: { hostawayReservationId: true, status: true },
+        });
+        if (reservation?.hostawayReservationId) {
+          const { result: fresh } = await hostawayService.getReservation(
+            hostawayAccountId, hostawayApiKey, reservation.hostawayReservationId
+          );
+          if (fresh.status) {
+            // Map Hostaway status string to our ReservationStatus enum
+            const statusMap: Record<string, string> = {
+              inquiry: 'INQUIRY', inquirypreapproved: 'INQUIRY', inquirydenied: 'INQUIRY', unknown: 'INQUIRY',
+              pending: 'PENDING', unconfirmed: 'PENDING', awaitingpayment: 'PENDING',
+              new: 'CONFIRMED', confirmed: 'CONFIRMED', accepted: 'CONFIRMED', modified: 'CONFIRMED',
+              checkedin: 'CHECKED_IN', checkedout: 'CHECKED_OUT',
+              cancelled: 'CANCELLED', canceled: 'CANCELLED', declined: 'CANCELLED', expired: 'CANCELLED',
+            };
+            const freshStatus = statusMap[fresh.status.toLowerCase()] || 'INQUIRY';
+            if (freshStatus !== reservation.status) {
+              console.log(`[AI] Reservation status changed: ${reservation.status} → ${freshStatus} (from Hostaway API)`);
+              await prisma.reservation.update({
+                where: { id: context.reservationId },
+                data: {
+                  status: freshStatus as any,
+                  ...(fresh.arrivalDate && { checkIn: new Date(fresh.arrivalDate).toISOString() }),
+                  ...(fresh.departureDate && { checkOut: new Date(fresh.departureDate).toISOString() }),
+                  ...(fresh.numberOfGuests && { guestCount: fresh.numberOfGuests }),
+                  aiEnabled: freshStatus !== 'CANCELLED' && freshStatus !== 'CHECKED_OUT',
+                },
+              });
+              // Update context so the correct agent is selected
+              context.reservationStatus = freshStatus;
+              if (fresh.arrivalDate) context.checkIn = new Date(fresh.arrivalDate).toISOString().slice(0, 10);
+              if (fresh.departureDate) context.checkOut = new Date(fresh.departureDate).toISOString().slice(0, 10);
+              if (fresh.numberOfGuests) context.guestCount = fresh.numberOfGuests;
+              // Broadcast status change to frontend
+              broadcastToTenant(tenantId, 'reservation_updated', {
+                reservationId: context.reservationId,
+                conversationIds: [conversationId],
+                status: freshStatus,
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[AI] Reservation resync failed (non-fatal): ${err.message}`);
       }
     }
 
