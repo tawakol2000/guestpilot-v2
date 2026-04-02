@@ -113,7 +113,7 @@ export async function evaluateEscalation(input: TaskManagerInput): Promise<TaskM
     const userMessage = `OPEN TASKS:\n${tasksFormatted}\n\nNEW ESCALATION:\nTitle: ${input.newEscalation.title}\nNote: ${input.newEscalation.note}\nUrgency: ${input.newEscalation.urgency}\n\nGUEST MESSAGE: "${input.guestMessage}"\n\nReturn: {"action":"create|update|resolve|skip","taskId":"id-if-applicable","reason":"brief-reason"}`;
 
     const response = await (client.responses as any).create({
-      model: 'gpt-5.4-nano-2026-03-17',
+      model: 'gpt-5-nano',
       max_output_tokens: 256,
       temperature: 0,
       instructions: SYSTEM_PROMPT,

@@ -32,7 +32,7 @@ async function summarizeProperty(
   if (!description || !description.trim()) return null;
 
   const response = await (openai.responses as any).create({
-    model: 'gpt-5.4-mini-2026-03-17',
+    model: 'gpt-5-nano',
     max_output_tokens: 300,
     instructions: SUMMARIZE_INSTRUCTIONS,
     input: description,

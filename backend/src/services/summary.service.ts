@@ -2,13 +2,13 @@
  * Conversation Summary Service
  * Generates and extends compact summaries of conversation history.
  * Runs asynchronously (fire-and-forget) after AI responses — never blocks the pipeline.
- * Uses the cheapest model (gpt-5.4-nano) to minimize cost.
+ * Uses the cheapest model (gpt-5-nano) to minimize cost.
  */
 
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 
-const SUMMARY_MODEL = 'gpt-5.4-nano';
+const SUMMARY_MODEL = 'gpt-5-nano';
 const MAX_SUMMARY_WORDS = 150;
 const WINDOW_SIZE = 10;
 

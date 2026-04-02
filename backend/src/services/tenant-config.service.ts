@@ -20,6 +20,7 @@ const ALLOWED_MODELS = [
   'gpt-5.4-mini-2026-03-17',
   'gpt-5.4-nano-2026-03-17',
   'gpt-5.4-2026-03-17',
+  'gpt-5-nano',
 ];
 
 export async function getTenantAiConfig(
