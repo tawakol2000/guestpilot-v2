@@ -186,10 +186,10 @@ export async function getFaqForProperty(
   });
 
   // Fetch global ACTIVE entries for this category
+  // scope: GLOBAL means available to all properties, regardless of which property created it
   const globalEntries = await prisma.faqEntry.findMany({
     where: {
       tenantId,
-      propertyId: null,
       category,
       status: 'ACTIVE',
       scope: 'GLOBAL',
