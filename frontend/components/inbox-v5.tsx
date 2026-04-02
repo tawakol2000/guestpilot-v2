@@ -46,6 +46,10 @@ import {
   ArrowRight,
   FileText,
   Wrench,
+  Ban,
+  CheckCircle2,
+  RefreshCw,
+  ShieldAlert,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -66,6 +70,12 @@ import {
   apiResolveConversation,
   apiSyncConversation,
   apiUpdateFaqEntry,
+  apiApproveReservation,
+  apiRejectReservation,
+  apiCancelReservation,
+  apiGetLastAction,
+  apiGetHostawayConnectStatus,
+  ApiError,
   mapChannel,
   mapMessageSender,
   formatTimestamp,
@@ -75,6 +85,9 @@ import {
   type ApiConversationDetail,
   type ApiMessage,
   type ApiTask,
+  type ReservationActionResult,
+  type LastActionResult,
+  type HostawayConnectStatus,
 } from '@/lib/api'
 import { socket, connectSocket, disconnectSocket } from '../lib/socket'
 import { ConnectionStatus } from './ui/connection-status'
@@ -180,6 +193,7 @@ interface Conversation {
   starred: boolean
   status: 'OPEN' | 'RESOLVED'
   checkInStatus: CheckInStatus
+  reservationId: string
   messages: Message[]
   guest: Guest
   booking: Booking
@@ -270,6 +284,7 @@ function summaryToConversation(s: ApiConversationSummary): Conversation {
     starred: s.starred ?? false,
     status: (s.status as 'OPEN' | 'RESOLVED') || 'OPEN',
     checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn, s.checkOut),
+    reservationId: s.reservationId || '',
     messages: [],
     guest: { name: s.guestName && s.guestName !== 'Unknown Guest' ? s.guestName : 'Guest', email: '', phone: '', nationality: '' },
     booking: {
@@ -307,6 +322,7 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
     ...conv,
     channel: channelFromApi(res?.channel || detail.channel || conv.channel),
     checkInStatus: checkInStatusFromApi(res?.status || '', res?.checkIn || '', res?.checkOut || ''),
+    reservationId: res?.id || conv.reservationId,
     status: (detail.status as 'OPEN' | 'RESOLVED') || conv.status,
     aiOn: res?.aiEnabled ?? conv.aiOn,
     aiMode: (res?.aiMode as AiMode) || conv.aiMode,
@@ -1461,6 +1477,13 @@ export default function InboxV5() {
   } | null>(null)
   const [faqSuggestionScope, setFaqSuggestionScope] = useState<'PROPERTY' | 'GLOBAL'>('PROPERTY')
 
+  // ── Reservation action state ──
+  const [actionInFlight, setActionInFlight] = useState<Record<string, string>>({}) // reservationId → action type
+  const [actionResult, setActionResult] = useState<Record<string, { status: 'success' | 'error'; message?: string; suggestion?: string }>>({})
+  const [lastActions, setLastActions] = useState<Record<string, LastActionResult>>({})
+  const [hostawayConnectStatus, setHostawayConnectStatus] = useState<HostawayConnectStatus | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'reject' | 'cancel'; reservationId: string; conversationId?: string } | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const isInitialMsgLoad = useRef(false)
@@ -2025,6 +2048,100 @@ export default function InboxV5() {
       await apiUpdateFaqEntry(faqSuggestion.id, { status: 'ARCHIVED' })
       setFaqSuggestion(null)
     } catch (err) { console.warn('FAQ reject failed:', err) }
+  }
+
+  // ── Fetch hostaway connect status on mount ──
+  useEffect(() => {
+    apiGetHostawayConnectStatus()
+      .then(s => setHostawayConnectStatus(s))
+      .catch(() => {/* silent */})
+  }, [])
+
+  // ── Fetch last action when selected conversation changes ──
+  useEffect(() => {
+    if (!selectedConv?.reservationId) return
+    const rid = selectedConv.reservationId
+    if (lastActions[rid]) return // already cached
+    apiGetLastAction(rid)
+      .then(result => {
+        if (result) setLastActions(prev => ({ ...prev, [rid]: result }))
+      })
+      .catch(() => {/* silent */})
+  }, [selectedConv?.reservationId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Reservation action handler ──
+  async function executeReservationAction(
+    reservationId: string,
+    action: 'approve' | 'reject' | 'cancel',
+    conversationId?: string
+  ) {
+    if (!reservationId || actionInFlight[reservationId]) return
+
+    setActionInFlight(prev => ({ ...prev, [reservationId]: action }))
+    setActionResult(prev => { const next = { ...prev }; delete next[reservationId]; return next })
+
+    try {
+      const fn =
+        action === 'approve' ? apiApproveReservation :
+        action === 'reject' ? apiRejectReservation :
+        apiCancelReservation
+      await fn(reservationId)
+
+      setActionResult(prev => ({ ...prev, [reservationId]: { status: 'success' } }))
+
+      // Refresh last action cache
+      apiGetLastAction(reservationId)
+        .then(result => { if (result) setLastActions(prev => ({ ...prev, [reservationId]: result })) })
+        .catch(() => {/* silent */})
+
+      // Refresh conversations list to pick up status change
+      setTimeout(async () => {
+        try {
+          const data = await apiGetConversations()
+          setConversations(prev => {
+            const newConvs = data.map(summaryToConversation)
+            // Preserve loaded details for conversations that were already fetched
+            return newConvs.map(nc => {
+              const existing = prev.find(p => p.id === nc.id)
+              return existing && existing.messages.length > 0
+                ? { ...existing, checkInStatus: nc.checkInStatus, reservationId: nc.reservationId }
+                : nc
+            })
+          })
+        } catch { /* silent */ }
+      }, 1000)
+
+      // Auto-dismiss success after 1.5s
+      setTimeout(() => {
+        setActionResult(prev => { const next = { ...prev }; delete next[reservationId]; return next })
+      }, 1500)
+    } catch (err: unknown) {
+      let message = 'Something went wrong'
+      let suggestion: string | undefined
+      if (err instanceof ApiError) {
+        if (err.status === 403) {
+          message = 'Hostaway dashboard not connected'
+        } else if (err.status === 422) {
+          suggestion = (err.data as any)?.suggestion || err.message
+          message = err.message
+        } else if (err.status === 502) {
+          message = err.message || 'Hostaway API error'
+        } else {
+          message = err.message
+        }
+      } else if (err instanceof Error) {
+        message = err.message
+      }
+      setActionResult(prev => ({ ...prev, [reservationId]: { status: 'error', message, suggestion } }))
+    } finally {
+      setActionInFlight(prev => { const next = { ...prev }; delete next[reservationId]; return next })
+    }
+  }
+
+  function handleConfirmAction() {
+    if (!confirmDialog) return
+    executeReservationAction(confirmDialog.reservationId, confirmDialog.type, confirmDialog.conversationId)
+    setConfirmDialog(null)
   }
 
   // ── Actions ──
@@ -3255,7 +3372,7 @@ export default function InboxV5() {
                       {conv.lastMessage}
                     </div>
 
-                    {/* Row 4: status pill + AI mode badge */}
+                    {/* Row 4: status pill + AI mode badge + inline actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span
                         style={{
@@ -3283,6 +3400,77 @@ export default function InboxV5() {
                       >
                         {(!conv.aiOn || conv.aiMode === 'off') ? 'OFF' : conv.aiMode === 'autopilot' ? 'AUTOPILOT' : 'COPILOT'}
                       </span>
+                      {/* Inline reservation action buttons */}
+                      {conv.reservationId && (conv.checkInStatus === 'inquiry' || conv.checkInStatus === 'pending') && (
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0 }}>
+                          {(() => {
+                            const rid = conv.reservationId
+                            const inFlight = actionInFlight[rid]
+                            const result = actionResult[rid]
+                            if (result?.status === 'success') return <CheckCircle2 size={14} color={T.status.green} />
+                            if (result?.status === 'error') return <span title={result.message}><AlertTriangle size={13} color={T.status.red} /></span>
+                            return (
+                              <>
+                                <button
+                                  disabled={!!inFlight}
+                                  onClick={(e) => { e.stopPropagation(); executeReservationAction(rid, 'approve', conv.id) }}
+                                  title="Approve"
+                                  style={{
+                                    width: 22, height: 22, borderRadius: 4, border: 'none',
+                                    background: inFlight === 'approve' ? T.status.green + '44' : T.status.green + '18',
+                                    color: T.status.green, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 0.15s', opacity: inFlight && inFlight !== 'approve' ? 0.4 : 1,
+                                  }}
+                                >
+                                  {inFlight === 'approve' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />}
+                                </button>
+                                <button
+                                  disabled={!!inFlight}
+                                  onClick={(e) => { e.stopPropagation(); setConfirmDialog({ type: 'reject', reservationId: rid, conversationId: conv.id }) }}
+                                  title="Reject"
+                                  style={{
+                                    width: 22, height: 22, borderRadius: 4, border: 'none',
+                                    background: inFlight === 'reject' ? T.status.red + '44' : T.status.red + '18',
+                                    color: T.status.red, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 0.15s', opacity: inFlight && inFlight !== 'reject' ? 0.4 : 1,
+                                  }}
+                                >
+                                  {inFlight === 'reject' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={12} />}
+                                </button>
+                              </>
+                            )
+                          })()}
+                        </div>
+                      )}
+                      {conv.reservationId && (conv.checkInStatus === 'upcoming' || conv.checkInStatus === 'checked-in' || conv.checkInStatus === 'checking-in-today' || conv.checkInStatus === 'checking-out-today') && (
+                        <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                          {(() => {
+                            const rid = conv.reservationId
+                            const inFlight = actionInFlight[rid]
+                            const result = actionResult[rid]
+                            if (result?.status === 'success') return <CheckCircle2 size={14} color={T.status.green} />
+                            if (result?.status === 'error') return <span title={result.message}><AlertTriangle size={13} color={T.status.red} /></span>
+                            return (
+                              <button
+                                disabled={!!inFlight}
+                                onClick={(e) => { e.stopPropagation(); setConfirmDialog({ type: 'cancel', reservationId: rid, conversationId: conv.id }) }}
+                                title="Cancel reservation"
+                                style={{
+                                  width: 22, height: 22, borderRadius: 4, border: 'none',
+                                  background: inFlight === 'cancel' ? T.status.red + '44' : T.status.red + '18',
+                                  color: T.status.red, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                {inFlight === 'cancel' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Ban size={12} />}
+                              </button>
+                            )
+                          })()}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -4446,6 +4634,203 @@ export default function InboxV5() {
 
           {selectedConv ? (
             <div style={{ padding: 12 }}>
+              {/* ── Reservation Action Block ── */}
+              {(() => {
+                const st = selectedConv.checkInStatus
+                const rid = selectedConv.reservationId
+                const isActionable = rid && (st === 'inquiry' || st === 'pending' || st === 'upcoming' || st === 'checked-in' || st === 'checking-in-today' || st === 'checking-out-today')
+                if (!isActionable) return null
+
+                const inFlight = rid ? actionInFlight[rid] : undefined
+                const result = rid ? actionResult[rid] : undefined
+                const lastAction = rid ? lastActions[rid] : undefined
+                const showApproveReject = st === 'inquiry' || st === 'pending'
+                const showCancel = st === 'upcoming' || st === 'checked-in' || st === 'checking-in-today' || st === 'checking-out-today'
+
+                return (
+                  <div
+                    style={{
+                      background: T.bg.primary,
+                      border: `1px solid ${T.border.default}`,
+                      borderRadius: 8,
+                      marginBottom: 8,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        background: T.bg.secondary,
+                        padding: '6px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <ShieldAlert size={12} color={T.text.tertiary} />
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                          color: T.text.secondary,
+                          fontFamily: T.font.sans,
+                        }}
+                      >
+                        ACTIONS
+                      </span>
+                    </div>
+                    <div style={{ padding: 12 }}>
+                      {/* Success flash */}
+                      {result?.status === 'success' && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '8px 12px', borderRadius: 6,
+                          background: T.status.green + '14', color: T.status.green,
+                          fontSize: 12, fontWeight: 600, marginBottom: 8,
+                        }}>
+                          <CheckCircle2 size={14} />
+                          Action completed
+                        </div>
+                      )}
+
+                      {/* Error state */}
+                      {result?.status === 'error' && (
+                        <div style={{
+                          padding: '8px 12px', borderRadius: 6,
+                          background: T.status.red + '14',
+                          fontSize: 12, marginBottom: 8,
+                        }}>
+                          <div style={{ color: T.status.red, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <AlertTriangle size={13} />
+                            {result.message || 'Action failed'}
+                          </div>
+                          {result.suggestion && (
+                            <div style={{ color: T.text.secondary, fontSize: 11, marginBottom: 6 }}>
+                              {result.suggestion}
+                            </div>
+                          )}
+                          {result.message === 'Hostaway dashboard not connected' ? (
+                            <button
+                              onClick={() => setNavTab('settings')}
+                              style={{
+                                fontSize: 11, fontWeight: 600, color: T.accent,
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                padding: 0, textDecoration: 'underline',
+                              }}
+                            >
+                              Go to Settings to connect
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setActionResult(prev => { const next = { ...prev }; delete next[rid]; return next })
+                              }}
+                              style={{
+                                fontSize: 11, fontWeight: 600, color: T.accent,
+                                background: 'none', border: `1px solid ${T.accent}`,
+                                borderRadius: 4, cursor: 'pointer', padding: '2px 8px',
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                              }}
+                            >
+                              <RefreshCw size={10} />
+                              Retry
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      {result?.status !== 'success' && (
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {showApproveReject && (
+                            <>
+                              <button
+                                disabled={!!inFlight}
+                                onClick={() => executeReservationAction(rid, 'approve', selectedConv.id)}
+                                style={{
+                                  flex: 1, padding: '8px 0', borderRadius: 6, border: 'none',
+                                  fontSize: 13, fontWeight: 600, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                  fontFamily: T.font.sans, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                  background: inFlight === 'approve' ? T.status.green + '44' : T.status.green,
+                                  color: '#fff', opacity: inFlight && inFlight !== 'approve' ? 0.5 : 1,
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                {inFlight === 'approve' ? (
+                                  <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Approving...</>
+                                ) : (
+                                  <><Check size={14} /> Approve</>
+                                )}
+                              </button>
+                              <button
+                                disabled={!!inFlight}
+                                onClick={() => setConfirmDialog({ type: 'reject', reservationId: rid, conversationId: selectedConv.id })}
+                                style={{
+                                  flex: 1, padding: '8px 0', borderRadius: 6, border: 'none',
+                                  fontSize: 13, fontWeight: 600, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                  fontFamily: T.font.sans, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                  background: inFlight === 'reject' ? T.status.red + '44' : T.status.red,
+                                  color: '#fff', opacity: inFlight && inFlight !== 'reject' ? 0.5 : 1,
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                {inFlight === 'reject' ? (
+                                  <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Rejecting...</>
+                                ) : (
+                                  <><X size={14} /> Reject</>
+                                )}
+                              </button>
+                            </>
+                          )}
+                          {showCancel && (
+                            <button
+                              disabled={!!inFlight}
+                              onClick={() => setConfirmDialog({ type: 'cancel', reservationId: rid, conversationId: selectedConv.id })}
+                              style={{
+                                flex: 1, padding: '8px 0', borderRadius: 6, border: 'none',
+                                fontSize: 13, fontWeight: 600, cursor: inFlight ? 'not-allowed' : 'pointer',
+                                fontFamily: T.font.sans, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                background: inFlight === 'cancel' ? T.status.red + '44' : T.status.red,
+                                color: '#fff', opacity: inFlight && inFlight !== 'cancel' ? 0.5 : 1,
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {inFlight === 'cancel' ? (
+                                <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Cancelling...</>
+                              ) : (
+                                <><Ban size={14} /> Cancel Reservation</>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Last action label */}
+                      {lastAction && (
+                        <div style={{
+                          marginTop: 8, fontSize: 11, color: T.text.tertiary,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}>
+                          <Clock size={10} />
+                          {lastAction.action.charAt(0).toUpperCase() + lastAction.action.slice(1).toLowerCase()}d by {lastAction.initiatedBy.split('@')[0]}
+                          {', '}
+                          {(() => {
+                            const diff = Date.now() - new Date(lastAction.createdAt).getTime()
+                            const mins = Math.floor(diff / 60000)
+                            if (mins < 1) return 'just now'
+                            if (mins < 60) return `${mins}m ago`
+                            const hours = Math.floor(mins / 60)
+                            if (hours < 24) return `${hours}h ago`
+                            const days = Math.floor(hours / 24)
+                            return `${days}d ago`
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
               {panelOrder.map(id => renderPanelSection(id))}
             </div>
           ) : (
@@ -4482,7 +4867,7 @@ export default function InboxV5() {
       {navTab === 'calendar' && (
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <CalendarV5 />
+          <CalendarV5 onSelectConversation={id => { setSelectedId(id); setNavTab('inbox') }} />
         </div>
         </ErrorBoundary>
       )}
@@ -4568,6 +4953,89 @@ export default function InboxV5() {
           <FaqV5 />
         </div>
         </ErrorBoundary>
+      )}
+
+      {/* Confirmation dialog for reject / cancel */}
+      {confirmDialog && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setConfirmDialog(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: T.bg.primary, borderRadius: 12,
+              padding: 24, width: 380, maxWidth: '90vw',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
+              fontFamily: T.font.sans,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text.primary, marginBottom: 8 }}>
+              {confirmDialog.type === 'reject' ? 'Reject Inquiry' : 'Cancel Reservation'}
+            </div>
+            <div style={{ fontSize: 13, color: T.text.secondary, marginBottom: 20, lineHeight: 1.5 }}>
+              {confirmDialog.type === 'reject'
+                ? 'Are you sure you want to reject this inquiry?'
+                : 'Are you sure you want to cancel this reservation? This cannot be undone.'}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setConfirmDialog(null)}
+                style={{
+                  padding: '8px 16px', borderRadius: 6,
+                  border: `1px solid ${T.border.default}`, background: T.bg.primary,
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  color: T.text.secondary, fontFamily: T.font.sans,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAction}
+                style={{
+                  padding: '8px 16px', borderRadius: 6, border: 'none',
+                  background: T.status.red, color: '#fff',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  fontFamily: T.font.sans,
+                }}
+              >
+                {confirmDialog.type === 'reject' ? 'Reject' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hostaway connection expiry warning banner */}
+      {hostawayConnectStatus?.warning && navTab === 'inbox' && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9998,
+            background: '#FFFBEB', borderBottom: '1px solid #F59E0B44',
+            padding: '8px 16px', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8, fontSize: 13,
+            fontFamily: T.font.sans,
+          }}
+        >
+          <AlertTriangle size={14} color="#D97706" />
+          <span style={{ color: '#92400E' }}>
+            Your Hostaway connection expires in {hostawayConnectStatus.daysRemaining} day{hostawayConnectStatus.daysRemaining !== 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={() => setNavTab('settings')}
+            style={{
+              fontSize: 12, fontWeight: 600, color: T.accent,
+              background: 'none', border: `1px solid ${T.accent}`,
+              borderRadius: 4, cursor: 'pointer', padding: '2px 10px',
+            }}
+          >
+            Reconnect in Settings
+          </button>
+        </div>
       )}
 
       {/* Image lightbox modal */}

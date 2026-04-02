@@ -155,3 +155,10 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - `SPEC.md` — Complete system specification
 - `AI_SYSTEM_FLOW.md` — Detailed AI pipeline flow
 - `.specify/memory/constitution.md` — Project constitution (non-negotiable principles)
+
+## Active Technologies
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui (029-inquiry-accept-reject)
+- PostgreSQL + Prisma ORM (new fields on Tenant, new InquiryActionLog model) (029-inquiry-accept-reject)
+
+## Recent Changes
+- 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui

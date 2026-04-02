@@ -32,6 +32,18 @@ export function isAuthenticated(): boolean {
   return !!getToken()
 }
 
+// ─── ApiError (preserves HTTP status + response body) ────────────────────────
+export class ApiError extends Error {
+  status: number
+  data: Record<string, unknown>
+  constructor(message: string, status: number, data: Record<string, unknown> = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.data = data
+  }
+}
+
 // ─── Fetch wrapper ────────────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
@@ -47,11 +59,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   if (res.status === 401) {
     clearToken()
     window.location.href = '/login'
-    throw new Error('Unauthorized')
+    throw new ApiError('Unauthorized', 401)
   }
 
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `Request failed: ${res.status}`)
+  if (!res.ok) throw new ApiError(data.error || `Request failed: ${res.status}`, res.status, data)
   return data as T
 }
 
@@ -106,6 +118,7 @@ export interface ApiConversationSummary {
   lastMessageRole: 'GUEST' | 'AI' | 'HOST' | null
   lastMessageAt: string
   reservationStatus: string
+  reservationId: string
   checkIn: string
   checkOut: string
   hostawayConversationId: string
@@ -1105,5 +1118,69 @@ export async function apiGetReservations(startDate: string, endDate: string): Pr
 
 export async function apiGetCalendarBulk(startDate: string, endDate: string): Promise<{ properties: PropertyCalendar[]; errors: Array<{ propertyId: string; error: string }> }> {
   return apiFetch<{ properties: PropertyCalendar[]; errors: Array<{ propertyId: string; error: string }> }>(`/api/properties/calendar-bulk?startDate=${startDate}&endDate=${endDate}`)
+}
+
+// ─── Hostaway Dashboard Connection ───────────────────────────────────────────
+
+export interface HostawayConnectStatus {
+  connected: boolean
+  connectedBy: string | null
+  issuedAt: string | null
+  expiresAt: string | null
+  daysRemaining: number
+  warning: boolean
+}
+
+export async function apiGetHostawayConnectStatus(): Promise<HostawayConnectStatus> {
+  return apiFetch<HostawayConnectStatus>('/api/hostaway-connect/status')
+}
+
+export async function apiDisconnectHostaway(): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>('/api/hostaway-connect', { method: 'DELETE' })
+}
+
+export function getHostawayConnectCallbackUrl(): string {
+  return `${BASE_URL}/api/hostaway-connect/callback`
+}
+
+export function generateBookmarkletCode(): string {
+  const callbackUrl = getHostawayConnectCallbackUrl()
+  return `javascript:void((function(){var t=localStorage.getItem('jwt');if(!t){alert('Not logged in to Hostaway. Please log in first.');return;}window.location='${callbackUrl}?token='+encodeURIComponent(t);})())`
+}
+
+// ─── Reservation Actions (Approve / Reject / Cancel) ────────────────────────
+
+export interface ReservationActionResult {
+  success: boolean
+  action?: string
+  reservationId?: number
+  previousStatus?: string
+  newStatus?: string
+  error?: string
+  suggestion?: string
+  details?: string
+}
+
+export async function apiApproveReservation(reservationId: string): Promise<ReservationActionResult> {
+  return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/approve`, { method: 'POST' })
+}
+
+export async function apiRejectReservation(reservationId: string): Promise<ReservationActionResult> {
+  return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/reject`, { method: 'POST' })
+}
+
+export async function apiCancelReservation(reservationId: string): Promise<ReservationActionResult> {
+  return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/cancel`, { method: 'POST' })
+}
+
+export interface LastActionResult {
+  action: string
+  initiatedBy: string
+  createdAt: string
+  status: string
+}
+
+export async function apiGetLastAction(reservationId: string): Promise<LastActionResult | null> {
+  return apiFetch<LastActionResult | null>(`/api/reservations/${reservationId}/last-action`)
 }
 

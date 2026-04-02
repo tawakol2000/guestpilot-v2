@@ -20,6 +20,7 @@ import { pushRouter } from './routes/push';
 import { faqRouter } from './routes/faq';
 import { webhookLogsRouter } from './routes/webhook-logs';
 import { reservationsRouter } from './routes/reservations';
+import { hostawayConnectRouter } from './routes/hostaway-connect';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { getAiApiLog } from './services/ai.service';
@@ -76,6 +77,7 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/faq', faqRouter(prisma));
   app.use('/api/webhook-logs', webhookLogsRouter(prisma));
   app.use('/api/reservations', reservationsRouter(prisma));
+  app.use('/api/hostaway-connect', hostawayConnectRouter(prisma));
 
   // Message rating endpoint
   const knowledgeCtrl = makeKnowledgeController(prisma);

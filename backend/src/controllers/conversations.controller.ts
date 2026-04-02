@@ -58,6 +58,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           lastMessageRole: conv.messages[0]?.role || null,
           lastMessageAt: conv.lastMessageAt,
           reservationStatus: conv.reservation.status,
+          reservationId: conv.reservation.id,
           checkIn: conv.reservation.checkIn,
           checkOut: conv.reservation.checkOut,
           hostawayConversationId: conv.hostawayConversationId,

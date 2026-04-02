@@ -36,6 +36,13 @@ model Tenant {
   sopDefinitions          SopDefinition[]
   toolDefinitions         ToolDefinition[]
   pushSubscriptions       PushSubscription[]
+  inquiryActionLogs       InquiryActionLog[]
+
+  // Dashboard connection (platform.hostaway.com internal API)
+  dashboardJwt            String?           @db.Text
+  dashboardJwtIssuedAt    DateTime?
+  dashboardJwtExpiresAt   DateTime?
+  dashboardConnectedBy    String?
 }
 
 model Property {
@@ -101,6 +108,8 @@ model Reservation {
   guest                 Guest             @relation(fields: [guestId], references: [id])
   property              Property          @relation(fields: [propertyId], references: [id])
   tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  inquiryActionLogs     InquiryActionLog[]
 
   @@unique([tenantId, hostawayReservationId])
   @@index([tenantId])
@@ -527,4 +536,35 @@ model PushSubscription {
 
   @@unique([tenantId, endpoint])
   @@index([tenantId])
+}
+
+// ─── Inquiry Action Log (approve/reject/cancel) ────────────────────────────
+
+model InquiryActionLog {
+  id              String              @id @default(cuid())
+  tenantId        String
+  reservationId   String
+  actionType      InquiryActionType
+  status          InquiryActionStatus @default(PENDING)
+  initiatedBy     String
+  errorMessage    String?
+  hostawayResponse Json?
+  createdAt       DateTime            @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reservationId, createdAt(sort: Desc)])
+}
+
+enum InquiryActionType {
+  APPROVE
+  REJECT
+  CANCEL
+}
+
+enum InquiryActionStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }
