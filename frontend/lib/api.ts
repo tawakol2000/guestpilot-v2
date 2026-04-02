@@ -1095,6 +1095,10 @@ export interface PropertyCalendar {
   days: CalendarDay[]
 }
 
+export async function apiCleanupOrphanReservations(): Promise<{ ok: boolean; deleted: number; total: number }> {
+  return apiFetch<{ ok: boolean; deleted: number; total: number }>('/api/reservations/cleanup-orphans', { method: 'DELETE' })
+}
+
 export async function apiGetReservations(startDate: string, endDate: string): Promise<{ reservations: CalendarReservation[] }> {
   return apiFetch<{ reservations: CalendarReservation[] }>(`/api/reservations?startDate=${startDate}&endDate=${endDate}`)
 }

@@ -9,6 +9,7 @@ import {
   apiGetPropertiesAiStatus,
   type PropertyAiStatus,
   apiDeleteAllData,
+  apiCleanupOrphanReservations,
   apiChangePassword,
   apiGetTenantAiConfig,
   apiUpdateTenantAiConfig,
@@ -753,7 +754,10 @@ function PasswordField({
 // ─── Section G: Danger Zone ───────────────────────────────────────────────────
 function DangerZoneSection({ onImportComplete }: { onImportComplete: () => void }): React.ReactElement {
   const [loading, setLoading] = useState(false)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null)
   const deleteBtnHover = useHover()
+  const cleanupBtnHover = useHover()
 
   async function handleDelete(): Promise<void> {
     if (!window.confirm('Are you sure? This cannot be undone.')) return
@@ -765,6 +769,21 @@ function DangerZoneSection({ onImportComplete }: { onImportComplete: () => void 
       alert(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleCleanupOrphans(): Promise<void> {
+    if (!window.confirm('This will check all reservations against Hostaway and delete any that don\'t exist (test/fake data). Continue?')) return
+    setCleanupLoading(true)
+    setCleanupResult(null)
+    try {
+      const result = await apiCleanupOrphanReservations()
+      setCleanupResult(`Cleaned up ${result.deleted} orphan reservation${result.deleted !== 1 ? 's' : ''} (${result.total - result.deleted} valid)`)
+      if (result.deleted > 0) onImportComplete()
+    } catch (err) {
+      setCleanupResult(err instanceof Error ? err.message : 'Cleanup failed')
+    } finally {
+      setCleanupLoading(false)
     }
   }
 
@@ -787,21 +806,50 @@ function DangerZoneSection({ onImportComplete }: { onImportComplete: () => void 
         Danger Zone
       </div>
       <div style={cardBodyStyle}>
-        <div style={{ fontSize: 13, color: T.text.secondary, marginBottom: 16, fontFamily: T.font.sans, lineHeight: 1.5 }}>
-          This will permanently delete all conversations, reservations, and messages.
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, marginBottom: 4, fontFamily: T.font.sans }}>
+            Clean Up Orphan Reservations
+          </div>
+          <div style={{ fontSize: 12, color: T.text.secondary, marginBottom: 10, fontFamily: T.font.sans, lineHeight: 1.5 }}>
+            Validates all local reservations against Hostaway and removes any that don't exist (test data, deleted bookings).
+          </div>
+          <button
+            style={{
+              height: 32, padding: '0 14px', fontSize: 12, fontWeight: 600,
+              background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA',
+              borderRadius: 6, cursor: cleanupLoading ? 'not-allowed' : 'pointer',
+              opacity: cleanupLoading ? 0.5 : cleanupBtnHover.hovered ? 0.85 : 1,
+              transition: 'opacity 150ms',
+            }}
+            disabled={cleanupLoading}
+            onClick={handleCleanupOrphans}
+            {...cleanupBtnHover.handlers}
+          >
+            {cleanupLoading ? 'Cleaning up...' : 'Clean Up Orphans'}
+          </button>
+          {cleanupResult && (
+            <div style={{ fontSize: 12, color: T.text.secondary, marginTop: 8, fontFamily: T.font.sans }}>
+              {cleanupResult}
+            </div>
+          )}
         </div>
-        <button
-          style={{
-            ...btnDanger,
-            opacity: loading ? 0.5 : deleteBtnHover.hovered ? 0.85 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-          disabled={loading}
-          onClick={handleDelete}
-          {...deleteBtnHover.handlers}
-        >
-          {loading ? 'Deleting...' : 'Delete All Data'}
-        </button>
+        <div style={{ borderTop: '1px solid rgba(220,38,38,0.12)', paddingTop: 16 }}>
+          <div style={{ fontSize: 13, color: T.text.secondary, marginBottom: 12, fontFamily: T.font.sans, lineHeight: 1.5 }}>
+            Permanently delete all conversations, reservations, and messages.
+          </div>
+          <button
+            style={{
+              ...btnDanger,
+              opacity: loading ? 0.5 : deleteBtnHover.hovered ? 0.85 : 1,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+            disabled={loading}
+            onClick={handleDelete}
+            {...deleteBtnHover.handlers}
+          >
+            {loading ? 'Deleting...' : 'Delete All Data'}
+          </button>
+        </div>
       </div>
     </div>
   )
