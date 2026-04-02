@@ -102,9 +102,6 @@ export async function processFaqSuggestion(
       },
       store: true,
       max_completion_tokens: 256,
-      // reasoning: { effort: 'none' } — SDK types don't include this yet;
-      // pass via spread to avoid TS error while the API supports it.
-      ...({ reasoning: { effort: 'none' } } as any),
     });
 
     const raw = response.choices[0]?.message?.content;
