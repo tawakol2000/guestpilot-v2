@@ -11,6 +11,7 @@ import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
 import { setPropertySearchPrisma } from './services/property-search.service';
 import { startFaqMaintenanceJob } from './jobs/faqMaintenance.job';
+import { startReservationSyncJob } from './jobs/reservationSync.job';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -51,6 +52,9 @@ async function main() {
   const jobTimer = startAiDebounceJob(prisma);
   const syncJobTimer = startMessageSyncJob(prisma);
 
+  // Start reservation sync job (polls Hostaway for new/updated reservations every 2 min)
+  const resSyncTimer = startReservationSyncJob(prisma);
+
   // Start FAQ maintenance job (daily staleness + suggestion expiry)
   const faqJobTimer = startFaqMaintenanceJob(prisma);
 
@@ -67,6 +71,7 @@ async function main() {
     console.log('[Server] Shutting down...');
     clearInterval(jobTimer);
     clearInterval(syncJobTimer);
+    clearInterval(resSyncTimer);
     clearInterval(faqJobTimer);
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
