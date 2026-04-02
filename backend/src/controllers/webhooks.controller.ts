@@ -174,28 +174,58 @@ async function processWebhook(
   payload: HostawayWebhookPayload,
   prisma: PrismaClient
 ): Promise<void> {
-  const { event, data } = payload;
-  console.log(`[Webhook] [${tenantId}] Event: ${event} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests} channel=${data.channelName} listing=${data.listingMapId}`);
+  const { event: eventType, data } = payload;
+  const webhookStartMs = Date.now();
+  console.log(`[Webhook] [${tenantId}] Event: ${eventType} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests} channel=${data.channelName} listing=${data.listingMapId}`);
   // Debug: log full payload for reservation events to diagnose status mapping
-  if (event.startsWith('reservation.')) {
+  if (eventType.startsWith('reservation.')) {
     console.log(`[Webhook] [${tenantId}] Full reservation payload:`, JSON.stringify(data).substring(0, 500));
   }
 
-  switch (event) {
-    case 'message.received':
-      await handleNewMessage(tenantId, data, prisma);
-      break;
-    case 'reservation.created':
-      await handleNewReservation(tenantId, data, prisma);
-      break;
-    // 'reservation.modified' is not a documented Hostaway event (only 'reservation.updated'),
-    // but kept as a harmless alias in case Hostaway ever sends it.
-    case 'reservation.modified':
-    case 'reservation.updated':
-      await handleReservationUpdated(tenantId, data, prisma);
-      break;
-    default:
-      console.log(`[Webhook] [${tenantId}] Unhandled event: ${event} | payload: ${JSON.stringify(data).substring(0, 300)}`);
+  try {
+    switch (eventType) {
+      case 'message.received':
+        await handleNewMessage(tenantId, data, prisma);
+        break;
+      case 'reservation.created':
+        await handleNewReservation(tenantId, data, prisma);
+        break;
+      // 'reservation.modified' is not a documented Hostaway event (only 'reservation.updated'),
+      // but kept as a harmless alias in case Hostaway ever sends it.
+      case 'reservation.modified':
+      case 'reservation.updated':
+        await handleReservationUpdated(tenantId, data, prisma);
+        break;
+      default:
+        console.log(`[Webhook] [${tenantId}] Unhandled event: ${eventType} | payload: ${JSON.stringify(data).substring(0, 300)}`);
+    }
+
+    // Log webhook (fire-and-forget)
+    prisma.webhookLog.create({
+      data: {
+        tenantId,
+        event: eventType,
+        hostawayId: String(data.id || data.reservationId || ''),
+        status: 'processed',
+        payload: data as any,
+        durationMs: Date.now() - webhookStartMs,
+      },
+    }).catch(err => console.warn('[Webhook] Log save failed:', err.message));
+  } catch (err: any) {
+    // Log webhook error (fire-and-forget)
+    prisma.webhookLog.create({
+      data: {
+        tenantId,
+        event: eventType,
+        hostawayId: String(data.id || data.reservationId || ''),
+        status: 'error',
+        payload: data as any,
+        error: err.message,
+        durationMs: Date.now() - webhookStartMs,
+      },
+    }).catch(() => {});
+
+    throw err; // Re-throw so the outer .catch() in handleHostaway still logs it
   }
 }
 

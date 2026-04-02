@@ -1035,3 +1035,29 @@ export async function apiGetFaqCategories(): Promise<{ categories: FaqCategorySt
   return apiFetch<{ categories: FaqCategoryStat[] }>('/api/faq/categories')
 }
 
+// ── Webhook Logs ──────────────────────────────────────────────────────────────
+
+export interface WebhookLogEntry {
+  id: string
+  event: string
+  hostawayId: string | null
+  status: string
+  payload: Record<string, unknown> | null
+  error: string | null
+  durationMs: number
+  createdAt: string
+}
+
+export async function apiGetWebhookLogs(filters?: {
+  limit?: number
+  event?: string
+  status?: string
+}): Promise<{ logs: WebhookLogEntry[]; total: number }> {
+  const params = new URLSearchParams()
+  if (filters?.limit) params.set('limit', String(filters.limit))
+  if (filters?.event) params.set('event', filters.event)
+  if (filters?.status) params.set('status', filters.status)
+  const qs = params.toString()
+  return apiFetch<{ logs: WebhookLogEntry[]; total: number }>(`/api/webhook-logs${qs ? `?${qs}` : ''}`)
+}
+

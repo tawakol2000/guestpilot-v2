@@ -27,6 +27,7 @@ model Tenant {
   reservations          Reservation[]
   tasks                 Task[]
   faqEntries            FaqEntry[]
+  webhookLogs           WebhookLog[]
   messageTemplates      MessageTemplate[]
   knowledgeSuggestions  KnowledgeSuggestion[]
   aiApiLogs             AiApiLog[]
@@ -326,6 +327,24 @@ enum FaqSource {
 
 // ─── Automated Messages ──────────────────────────────────────────────────────
 
+
+// ─── Webhook Logs ────────────────────────────────────────────────────────────
+
+model WebhookLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  event          String
+  hostawayId     String?
+  status         String   @default("processed")
+  payload        Json?
+  error          String?
+  durationMs     Int      @default(0)
+  createdAt      DateTime @default(now())
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, event])
+}
 
 // ─── AI API Logs (persistent) ────────────────────────────────────────────────
 

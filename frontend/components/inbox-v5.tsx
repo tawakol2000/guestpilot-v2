@@ -89,6 +89,7 @@ import ToolsV5 from '@/components/tools-v5'
 import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import ListingsV5 from '@/components/listings-v5'
 import FaqV5 from '@/components/faq-v5'
+import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
+type NavTab = 'overview' | 'inbox' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
 
 interface Message {
@@ -1390,7 +1391,7 @@ export default function InboxV5() {
       const saved = sessionStorage.getItem('gp-nav-tab')
       if (saved && [
         'overview','inbox','analytics','tasks','settings','configure',
-        'logs','sops','tools','sandbox','listings','faqs',
+        'logs','webhooks','sops','tools','sandbox','listings','faqs',
       ].includes(saved)) return saved as NavTab
     }
     return 'inbox'
@@ -2575,6 +2576,7 @@ export default function InboxV5() {
             { id: 'settings', label: 'Settings' },
             { id: 'configure', label: 'Configure AI' },
             { id: 'logs', label: 'AI Logs' },
+            { id: 'webhooks', label: 'Webhooks' },
             /* Pipeline tab removed */
             { id: 'sops', label: 'SOPs' },
             /* Examples tab removed — 013-sop-tool-routing */
@@ -4460,6 +4462,13 @@ export default function InboxV5() {
         <ErrorBoundary>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <AiLogsV5 />
+        </div>
+        </ErrorBoundary>
+      )}
+      {navTab === 'webhooks' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <WebhookLogsV5 />
         </div>
         </ErrorBoundary>
       )}
