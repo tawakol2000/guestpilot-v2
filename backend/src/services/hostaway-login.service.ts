@@ -4,7 +4,7 @@
  * Captures JWT from outgoing request headers after successful login.
  */
 
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser, Page } from 'rebrowser-playwright';
 
 const LOGIN_URL = 'https://dashboard.hostaway.com/login';
 const DASHBOARD_URL_PREFIX = 'https://dashboard.hostaway.com/';
@@ -43,34 +43,27 @@ export interface LoginResult {
  * Launch a browser with anti-detection measures.
  */
 async function launchStealthBrowser() {
+  // Use headed mode (via Xvfb on server) + full Chrome for Turnstile bypass.
+  // rebrowser-playwright patches the CDP Runtime.Enable leak that Turnstile detects.
+  // Headed mode fixes the screenX/screenY mouse event detection.
+  const isProduction = process.env.NODE_ENV === 'production';
   const browser = await chromium.launch({
-    headless: true,
+    headless: !isProduction, // headed via Xvfb in production, headless locally
+    channel: 'chrome',
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
     ],
   });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 720 },
     locale: 'en-US',
     timezoneId: 'America/New_York',
   });
   const page = await context.newPage();
-
-  // Patch navigator.webdriver and other automation indicators
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    // @ts-ignore
-    window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5], // Non-empty plugins array
-    });
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['en-US', 'en'],
-    });
-  });
-
   return { browser, page };
 }
 
@@ -121,9 +114,14 @@ export async function loginToHostaway(email: string, password: string): Promise<
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: LOGIN_TIMEOUT });
     await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15_000 });
 
-    // ── Fill credentials ──
-    await page.fill('input[type="email"], input[name="email"]', email);
-    await page.fill('input[type="password"], input[name="password"]', password);
+    // ── Fill credentials with realistic typing ──
+    const emailInput = page.locator('input[type="email"], input[name="email"]');
+    const passwordInput = page.locator('input[type="password"], input[name="password"]');
+    await emailInput.click();
+    await emailInput.pressSequentially(email, { delay: 40 + Math.random() * 60 });
+    await passwordInput.click();
+    await passwordInput.pressSequentially(password, { delay: 40 + Math.random() * 60 });
+    await page.waitForTimeout(500 + Math.random() * 500); // brief pause before submit
     console.log('[HostawayLogin] Credentials filled, submitting...');
 
     // ── Submit form ──

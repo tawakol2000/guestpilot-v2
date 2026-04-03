@@ -19,9 +19,10 @@ COPY scripts ./scripts/
 COPY config ./config/
 COPY tsconfig.json ./
 
-# Install Chromium dependencies for Playwright
+# Install Xvfb (virtual display) for headed Chrome mode + Chrome system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+       xvfb xauth dbus-x11 fonts-liberation fonts-noto-color-emoji \
        libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
        libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
        libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
@@ -31,8 +32,8 @@ RUN apt-get update \
 # Install Node packages
 RUN npm install
 
-# Install Playwright Chromium browser
-RUN npx playwright install chromium
+# Install full Google Chrome (rebrowser-playwright uses this in headed mode via Xvfb)
+RUN npx playwright install chrome --with-deps
 
 # Generate Prisma client
 RUN npx prisma generate
@@ -41,5 +42,6 @@ RUN npx prisma generate
 RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 EXPOSE 3000
+# xvfb-run provides a virtual display for headed Chrome (Turnstile bypass)
 # Runtime heap: 1GB (Prisma + Socket.IO + BullMQ + Redis need ~500MB baseline)
-CMD ["sh", "-c", "echo '[Deploy] Starting server...' && NODE_OPTIONS=--max-old-space-size=1024 node dist/server.js"]
+CMD ["sh", "-c", "echo '[Deploy] Starting server...' && xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' node --max-old-space-size=1024 dist/server.js"]
