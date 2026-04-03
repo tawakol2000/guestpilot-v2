@@ -58,10 +58,10 @@ async function solveCaptcha(): Promise<string> {
   const { data: createData } = await axios.post('https://api.capsolver.com/createTask', {
     clientKey: apiKey,
     task: {
-      type: 'ReCaptchaV2EnterpriseTaskProxyLess',
+      type: 'ReCaptchaV3EnterpriseTaskProxyLess',
       websiteURL: LOGIN_PAGE_URL,
       websiteKey: RECAPTCHA_SITEKEY,
-      enterprisePayload: {},
+      pageAction: 'login',
     },
   });
 
