@@ -62,7 +62,13 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     throw new ApiError('Unauthorized', 401)
   }
 
-  const data = await res.json()
+  let data: any
+  try {
+    data = await res.json()
+  } catch {
+    if (!res.ok) throw new ApiError(`Request failed: ${res.status}`, res.status, {})
+    throw new ApiError('Invalid JSON response', res.status, {})
+  }
   if (!res.ok) throw new ApiError(data.error || `Request failed: ${res.status}`, res.status, data)
   return data as T
 }
@@ -1181,6 +1187,7 @@ export interface LastActionResult {
 }
 
 export async function apiGetLastAction(reservationId: string): Promise<LastActionResult | null> {
-  return apiFetch<LastActionResult | null>(`/api/reservations/${reservationId}/last-action`)
+  const res = await apiFetch<{ lastAction: LastActionResult | null }>(`/api/reservations/${reservationId}/last-action`)
+  return res.lastAction
 }
 
