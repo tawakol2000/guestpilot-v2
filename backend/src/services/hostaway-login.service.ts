@@ -83,80 +83,14 @@ async function solveCaptcha(): Promise<string> {
 // ─── Castle.io: Generate auditToken via browser ─────────────────────────────
 
 /**
- * Generate BOTH tokens from the same browser session:
- * - auditToken from Castle.io's createRequestToken()
- * - captchaToken from grecaptcha.enterprise.execute()
+ * Generate BOTH tokens by filling the login form and intercepting the POST.
+ * The SPA generates auditToken (Castle.io) and captchaToken (reCAPTCHA Enterprise)
+ * through its own code path — we just intercept and steal them.
  */
 export async function generateBothTokens(): Promise<{ auditToken: string; captchaToken: string }> {
-  console.log('[HostawayLogin] Generating both tokens via browser...');
+  console.log('[HostawayLogin] Generating tokens by intercepting form submission...');
   let browser: Browser | null = null;
 
-  try {
-    const isProduction = process.env.NODE_ENV === 'production';
-    browser = await chromium.launch({
-      headless: !isProduction,
-      executablePath: isProduction ? '/usr/bin/google-chrome-stable' : undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-    const page = await browser.newPage();
-    await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Wait for both Castle.io and reCAPTCHA to load
-    await page.waitForTimeout(8000);
-
-    // Generate auditToken from Castle.io
-    const auditToken = await page.evaluate(`
-      (function() {
-        try {
-          if (typeof castle !== 'undefined' && castle.createRequestToken) return castle.createRequestToken();
-          if (typeof _castle !== 'undefined' && _castle.createRequestToken) return _castle.createRequestToken();
-          var keys = Object.keys(window);
-          for (var i = 0; i < keys.length; i++) {
-            var obj = window[keys[i]];
-            if (obj && typeof obj === 'object' && typeof obj.createRequestToken === 'function') return obj.createRequestToken();
-          }
-          return null;
-        } catch(e) { return null; }
-      })()
-    `) as string | null;
-
-    // Generate captchaToken from reCAPTCHA Enterprise
-    const captchaToken = await page.evaluate(`
-      new Promise(function(resolve) {
-        try {
-          if (typeof grecaptcha !== 'undefined' && grecaptcha.enterprise) {
-            grecaptcha.enterprise.ready(function() {
-              grecaptcha.enterprise.execute('${RECAPTCHA_SITEKEY}', { action: 'login' })
-                .then(function(token) { resolve(token); })
-                .catch(function() { resolve(null); });
-            });
-          } else {
-            resolve(null);
-          }
-        } catch(e) { resolve(null); }
-        // Timeout after 10s
-        setTimeout(function() { resolve(null); }, 10000);
-      })
-    `) as string | null;
-
-    await browser.close();
-
-    console.log(`[HostawayLogin] auditToken: ${auditToken ? auditToken.length + ' chars' : 'FAILED'}`);
-    console.log(`[HostawayLogin] captchaToken: ${captchaToken ? captchaToken.length + ' chars' : 'FAILED'}`);
-
-    return {
-      auditToken: auditToken || '',
-      captchaToken: captchaToken || '',
-    };
-  } catch (err: any) {
-    console.error('[HostawayLogin] Token generation failed:', err.message);
-    if (browser) await browser.close().catch(() => {});
-    return { auditToken: '', captchaToken: '' };
-  }
-}
-
-async function extractAuditTokenFromForm(): Promise<string> {
-  let browser: Browser | null = null;
   try {
     const isProduction = process.env.NODE_ENV === 'production';
     browser = await chromium.launch({
@@ -166,39 +100,61 @@ async function extractAuditTokenFromForm(): Promise<string> {
     });
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 720 },
     });
     const page = await context.newPage();
 
-    let captured: string | null = null;
+    let capturedAuditToken: string | null = null;
+    let capturedCaptchaToken: string | null = null;
 
-    // Intercept the login POST to capture auditToken
+    // Intercept the login POST to steal both tokens
     await page.route('**/account/session', async (route) => {
       try {
         const body = route.request().postDataJSON();
-        captured = body?.auditToken || null;
-        console.log(`[HostawayLogin] Intercepted auditToken: ${captured ? captured.substring(0, 40) + '...' : 'null'}`);
-      } catch {}
+        capturedAuditToken = body?.auditToken || null;
+        capturedCaptchaToken = body?.captchaToken || null;
+        console.log(`[HostawayLogin] Intercepted POST — auditToken: ${capturedAuditToken ? capturedAuditToken.length + ' chars' : 'null'}, captchaToken: ${capturedCaptchaToken ? capturedCaptchaToken.length + ' chars' : 'null'}`);
+      } catch (e: any) {
+        console.error('[HostawayLogin] Intercept parse error:', e.message);
+      }
+      // ABORT the request — we don't want the browser to consume the tokens
+      // We'll use them in our own API call
       await route.abort();
     });
 
     await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('input[type="email"]', { timeout: 15000 });
+    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15000 });
 
-    // Fill dummy credentials and submit to trigger Castle token generation
-    await page.locator('input[type="email"]').pressSequentially('test@test.com', { delay: 30 });
-    await page.locator('input[type="password"]').pressSequentially('test', { delay: 30 });
+    // Fill form with dummy credentials to trigger token generation
+    // (we'll use the real credentials in our own API call)
+    await page.locator('input[type="email"], input[name="email"]').pressSequentially('test@example.com', { delay: 30 });
+    await page.locator('input[type="password"], input[name="password"]').pressSequentially('dummypassword', { delay: 30 });
+
+    // Wait for reCAPTCHA and Castle to be ready
     await page.waitForTimeout(3000);
+
+    // Click submit — this triggers the SPA to generate both tokens and POST
+    console.log('[HostawayLogin] Clicking submit to trigger token generation...');
     await page.click('button[type="submit"]');
-    await page.waitForTimeout(5000);
+
+    // Wait for the intercepted request
+    await page.waitForTimeout(8000);
 
     await browser.close();
-    return captured || '';
+
+    console.log(`[HostawayLogin] Final — auditToken: ${capturedAuditToken ? String(capturedAuditToken).length + ' chars' : 'FAILED'}, captchaToken: ${capturedCaptchaToken ? String(capturedCaptchaToken).length + ' chars' : 'FAILED'}`);
+
+    return {
+      auditToken: capturedAuditToken || '',
+      captchaToken: capturedCaptchaToken || '',
+    };
   } catch (err: any) {
-    console.error('[HostawayLogin] Form intercept failed:', err.message);
+    console.error('[HostawayLogin] Token generation failed:', err.message);
     if (browser) await browser.close().catch(() => {});
-    return '';
+    return { auditToken: '', captchaToken: '' };
   }
 }
+
 
 // ─── Direct API Login ───────────────────────────────────────────────────────
 
