@@ -1,82 +1,130 @@
 /**
  * Hostaway Dashboard Connection routes.
- * GET  /api/hostaway-connect/callback  — bookmarklet redirect (no auth)
- * GET  /api/hostaway-connect/status    — connection status (auth required)
- * DELETE /api/hostaway-connect         — disconnect (auth required)
+ * POST /api/hostaway-connect/login      — start login via headless browser (auth required)
+ * POST /api/hostaway-connect/verify-2fa — complete 2FA verification (auth required)
+ * GET  /api/hostaway-connect/status     — connection status (auth required)
+ * DELETE /api/hostaway-connect          — disconnect (auth required)
  */
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt } from '../lib/encryption';
 import { validateDashboardJwt } from '../services/hostaway-dashboard.service';
-
-function getFrontendUrl(): string {
-  const origins = process.env.CORS_ORIGINS;
-  if (origins) {
-    const first = origins.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return 'http://localhost:3001';
-}
+import { loginToHostaway, verify2fa } from '../services/hostaway-login.service';
 
 export function hostawayConnectRouter(prisma: PrismaClient): Router {
   const router = Router();
+  const auth = authMiddleware as unknown as RequestHandler;
 
-  // ── GET /callback?token=<jwt> — bookmarklet redirect (no auth) ──────────
-  router.get('/callback', async (req: any, res) => {
-    const frontendUrl = getFrontendUrl();
+  // ── POST /login — start headless browser login ──────────────────────────
+  router.post('/login', auth, async (req: any, res) => {
     try {
-      const token = req.query.token as string | undefined;
-      if (!token) {
-        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=invalid_token`);
+      const tenantId = req.tenantId as string;
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        res.status(400).json({ success: false, error: 'Email and password are required' });
         return;
       }
 
-      const result = validateDashboardJwt(token);
+      const result = await loginToHostaway(email, password);
 
-      if (!result.valid) {
-        const reason = result.error === 'Token expired' ? 'token_expired' : 'invalid_token';
-        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=${reason}`);
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error });
         return;
       }
 
-      const payload = result.payload;
-      const accountId = String(payload.accountId);
-
-      // Look up tenant by hostawayAccountId
-      const tenant = await prisma.tenant.findFirst({
-        where: { hostawayAccountId: accountId },
-        select: { id: true },
-      });
-
-      if (!tenant) {
-        console.error(`[HostawayConnect] No tenant found for accountId ${accountId}`);
-        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=invalid_token`);
+      // 2FA required — return session for user to verify
+      if (result.pending2fa) {
+        res.json({ success: true, pending2fa: true, sessionId: result.sessionId });
         return;
       }
 
-      // Encrypt token and store on tenant
-      const encryptedJwt = encrypt(token);
+      // Login succeeded — validate and store JWT
+      if (!result.jwt) {
+        res.status(500).json({ success: false, error: 'No token received' });
+        return;
+      }
+
+      const validation = validateDashboardJwt(result.jwt);
+      if (!validation.valid) {
+        res.status(500).json({ success: false, error: 'Received invalid token' });
+        return;
+      }
+
+      const payload = validation.payload;
+      const encryptedJwt = encrypt(result.jwt);
+
       await prisma.tenant.update({
-        where: { id: tenant.id },
+        where: { id: tenantId },
         data: {
           dashboardJwt: encryptedJwt,
           dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
           dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
-          dashboardConnectedBy: payload.userEmail || null,
+          dashboardConnectedBy: result.userEmail || email,
         },
       });
 
-      console.log(`[HostawayConnect] Dashboard connected for tenant ${tenant.id} by ${payload.userEmail || 'unknown'}`);
-      res.redirect(`${frontendUrl}/settings?hostaway=connected`);
+      console.log(`[HostawayConnect] Dashboard connected for tenant ${tenantId} by ${result.userEmail || email}`);
+      res.json({ success: true, connected: true });
     } catch (err) {
-      console.error('[HostawayConnect] Callback failed:', err);
-      res.redirect(`${frontendUrl}/settings?hostaway=error&reason=invalid_token`);
+      console.error('[HostawayConnect] Login failed:', err);
+      res.status(500).json({ success: false, error: 'Login failed. Please try again.' });
+    }
+  });
+
+  // ── POST /verify-2fa — complete 2FA after user clicks email link ────────
+  router.post('/verify-2fa', auth, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { sessionId } = req.body;
+
+      if (!sessionId) {
+        res.status(400).json({ success: false, error: 'Session ID is required' });
+        return;
+      }
+
+      const result = await verify2fa(sessionId);
+
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error });
+        return;
+      }
+
+      if (!result.jwt) {
+        res.status(500).json({ success: false, error: 'No token received' });
+        return;
+      }
+
+      const validation = validateDashboardJwt(result.jwt);
+      if (!validation.valid) {
+        res.status(500).json({ success: false, error: 'Received invalid token' });
+        return;
+      }
+
+      const payload = validation.payload;
+      const encryptedJwt = encrypt(result.jwt);
+
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          dashboardJwt: encryptedJwt,
+          dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
+          dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
+          dashboardConnectedBy: result.userEmail || null,
+        },
+      });
+
+      console.log(`[HostawayConnect] 2FA verified, dashboard connected for tenant ${tenantId}`);
+      res.json({ success: true, connected: true });
+    } catch (err) {
+      console.error('[HostawayConnect] 2FA verification failed:', err);
+      res.status(500).json({ success: false, error: 'Verification failed. Please try again.' });
     }
   });
 
   // ── GET /status — connection status (auth required) ─────────────────────
-  router.get('/status', authMiddleware as unknown as RequestHandler, async (req: any, res) => {
+  router.get('/status', auth, async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
       const tenant = await prisma.tenant.findUnique({
@@ -90,14 +138,7 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
       });
 
       if (!tenant || !tenant.dashboardJwt) {
-        res.json({
-          connected: false,
-          connectedBy: null,
-          issuedAt: null,
-          expiresAt: null,
-          daysRemaining: 0,
-          warning: false,
-        });
+        res.json({ connected: false, connectedBy: null, issuedAt: null, expiresAt: null, daysRemaining: 0, warning: false });
         return;
       }
 
@@ -108,12 +149,12 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
       }
 
       res.json({
-        connected: true,
+        connected: daysRemaining > 0,
         connectedBy: tenant.dashboardConnectedBy,
         issuedAt: tenant.dashboardJwtIssuedAt,
         expiresAt: tenant.dashboardJwtExpiresAt,
         daysRemaining,
-        warning: daysRemaining <= 7,
+        warning: daysRemaining > 0 && daysRemaining <= 7,
       });
     } catch (err) {
       console.error('[HostawayConnect] Status check failed:', err);
@@ -122,19 +163,13 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
   });
 
   // ── DELETE / — disconnect (auth required) ───────────────────────────────
-  router.delete('/', authMiddleware as unknown as RequestHandler, async (req: any, res) => {
+  router.delete('/', auth, async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
       await prisma.tenant.update({
         where: { id: tenantId },
-        data: {
-          dashboardJwt: null,
-          dashboardJwtIssuedAt: null,
-          dashboardJwtExpiresAt: null,
-          dashboardConnectedBy: null,
-        },
+        data: { dashboardJwt: null, dashboardJwtIssuedAt: null, dashboardJwtExpiresAt: null, dashboardConnectedBy: null },
       });
-
       console.log(`[HostawayConnect] Dashboard disconnected for tenant ${tenantId}`);
       res.json({ success: true });
     } catch (err) {

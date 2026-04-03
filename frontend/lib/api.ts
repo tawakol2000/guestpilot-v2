@@ -1145,13 +1145,26 @@ export async function apiDisconnectHostaway(): Promise<{ success: boolean }> {
   return apiFetch<{ success: boolean }>('/api/hostaway-connect', { method: 'DELETE' })
 }
 
-export function getHostawayConnectCallbackUrl(): string {
-  return `${BASE_URL}/api/hostaway-connect/callback`
+export interface HostawayLoginResult {
+  success: boolean
+  connected?: boolean
+  pending2fa?: boolean
+  sessionId?: string
+  error?: string
 }
 
-export function generateBookmarkletCode(): string {
-  const callbackUrl = getHostawayConnectCallbackUrl()
-  return `javascript:void((function(){var t=localStorage.getItem('jwt');if(!t){alert('Not logged in to Hostaway. Please log in first.');return;}window.location='${callbackUrl}?token='+encodeURIComponent(t);})())`
+export async function apiHostawayLogin(email: string, password: string): Promise<HostawayLoginResult> {
+  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function apiHostawayVerify2fa(sessionId: string): Promise<HostawayLoginResult> {
+  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/verify-2fa', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId }),
+  })
 }
 
 // ─── Reservation Actions (Approve / Reject / Cancel) ────────────────────────
