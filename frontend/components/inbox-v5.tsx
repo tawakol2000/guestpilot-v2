@@ -3400,50 +3400,7 @@ export default function InboxV5() {
                       >
                         {(!conv.aiOn || conv.aiMode === 'off') ? 'OFF' : conv.aiMode === 'autopilot' ? 'AUTOPILOT' : 'COPILOT'}
                       </span>
-                      {/* Inline reservation action buttons */}
-                      {conv.reservationId && (conv.checkInStatus === 'inquiry' || conv.checkInStatus === 'pending') && (
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 2, flexShrink: 0 }}>
-                          {(() => {
-                            const rid = conv.reservationId
-                            const inFlight = actionInFlight[rid]
-                            const result = actionResult[rid]
-                            if (result?.status === 'success') return <CheckCircle2 size={14} color={T.status.green} />
-                            if (result?.status === 'error') return <span title={result.message}><AlertTriangle size={13} color={T.status.red} /></span>
-                            return (
-                              <>
-                                <button
-                                  disabled={!!inFlight}
-                                  onClick={(e) => { e.stopPropagation(); executeReservationAction(rid, 'approve', conv.id) }}
-                                  title="Approve"
-                                  style={{
-                                    width: 22, height: 22, borderRadius: 4, border: 'none',
-                                    background: inFlight === 'approve' ? T.status.green + '44' : T.status.green + '18',
-                                    color: T.status.green, cursor: inFlight ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    transition: 'all 0.15s', opacity: inFlight && inFlight !== 'approve' ? 0.4 : 1,
-                                  }}
-                                >
-                                  {inFlight === 'approve' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />}
-                                </button>
-                                <button
-                                  disabled={!!inFlight}
-                                  onClick={(e) => { e.stopPropagation(); setConfirmDialog({ type: 'reject', reservationId: rid, conversationId: conv.id }) }}
-                                  title="Reject"
-                                  style={{
-                                    width: 22, height: 22, borderRadius: 4, border: 'none',
-                                    background: inFlight === 'reject' ? T.status.red + '44' : T.status.red + '18',
-                                    color: T.status.red, cursor: inFlight ? 'not-allowed' : 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    transition: 'all 0.15s', opacity: inFlight && inFlight !== 'reject' ? 0.4 : 1,
-                                  }}
-                                >
-                                  {inFlight === 'reject' ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={12} />}
-                                </button>
-                              </>
-                            )
-                          })()}
-                        </div>
-                      )}
+                      {/* Inline reservation action buttons removed — actions available in conversation detail */}
                       {conv.reservationId && (conv.checkInStatus === 'upcoming' || conv.checkInStatus === 'checked-in' || conv.checkInStatus === 'checking-in-today' || conv.checkInStatus === 'checking-out-today') && (
                         <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
                           {(() => {
@@ -4866,7 +4823,7 @@ export default function InboxV5() {
       )}
       {navTab === 'calendar' && (
         <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <CalendarV5 onSelectConversation={id => { setSelectedId(id); setNavTab('inbox') }} />
         </div>
         </ErrorBoundary>

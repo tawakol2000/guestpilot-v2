@@ -134,8 +134,8 @@ function barStyle(status: string, ch: string): React.CSSProperties {
   switch (status) {
     case 'INQUIRY': return { ...base, background: cc.bg, border: `1.5px dashed ${cc.border}`, color: cc.text, opacity: 0.75 }
     case 'PENDING': return { ...base, background: cc.bg, border: `1.5px solid ${cc.border}`, color: cc.text, opacity: 0.85 }
-    case 'CHECKED_IN': return { ...base, background: cc.bg, borderLeft: `3px solid ${cc.border}`, color: cc.text }
-    default: return { ...base, background: cc.bg, color: cc.text }
+    case 'CHECKED_IN': return { ...base, background: cc.bg, borderLeft: `3px solid ${cc.border}`, color: cc.text, opacity: 0.9 }
+    default: return { ...base, background: cc.bg, color: cc.text, opacity: 0.8 }
   }
 }
 
