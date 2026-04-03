@@ -177,57 +177,119 @@ async function callLoginApi(email: string, password: string, captchaToken: strin
 
 export async function loginToHostaway(email: string, password: string): Promise<LoginResult> {
   try {
-    // Step 1: Generate BOTH tokens from the browser (~15s)
-    // auditToken from Castle.io, captchaToken from reCAPTCHA Enterprise
-    const tokens = await generateBothTokens();
+    // Strategy: Let the browser do EVERYTHING naturally.
+    // Fill real credentials, let SPA generate tokens, let it submit.
+    // Capture JWT from the response or from localStorage after login.
+    console.log('[HostawayLogin] Starting full browser login...');
 
-    if (!tokens.auditToken) {
-      return { success: false, error: 'Failed to generate security token. Please use the manual connection method.' };
-    }
+    const isProduction = process.env.NODE_ENV === 'production';
+    const browser = await chromium.launch({
+      headless: !isProduction,
+      executablePath: isProduction ? '/usr/bin/google-chrome-stable' : undefined,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 720 },
+    });
+    const page = await context.newPage();
 
-    // Step 2: If browser reCAPTCHA failed, try CapSolver
-    let captchaToken = tokens.captchaToken;
-    if (!captchaToken && process.env.CAPSOLVER_API_KEY) {
-      console.log('[HostawayLogin] Browser reCAPTCHA failed, trying CapSolver...');
-      captchaToken = await solveCaptcha();
-    }
+    // Capture JWT from the login API response
+    let capturedJwt: string | null = null;
+    page.on('response', async (response) => {
+      try {
+        if (response.url().includes('/account/session') && response.status() === 200) {
+          const body = await response.json().catch(() => null);
+          if (body) {
+            const jwt = extractJwtFromResponse(body);
+            if (jwt) {
+              capturedJwt = jwt;
+              console.log('[HostawayLogin] JWT captured from login response!');
+            }
+          }
+        }
+      } catch {}
+    });
 
-    if (!captchaToken) {
-      return { success: false, error: 'Failed to solve CAPTCHA. Please use the manual connection method.' };
-    }
-
-    // Step 3: Call Hostaway login API directly
-    console.log('[HostawayLogin] Calling login API...');
-    const result = await callLoginApi(email, password, captchaToken, tokens.auditToken);
-    console.log(`[HostawayLogin] Response: ${result.status} — ${JSON.stringify(result.data).substring(0, 300)}`);
-
-    // Handle success
-    if (result.status === 200) {
-      const jwt = extractJwtFromResponse(result.data);
-      if (jwt) {
-        const payload = decodeJwtPayload(jwt);
-        console.log(`[HostawayLogin] Login successful for ${email}`);
-        return { success: true, jwt, userEmail: payload?.userEmail || email, accountId: payload?.accountId?.toString() };
+    // Also capture from outgoing request headers (after login redirect)
+    page.on('request', (request) => {
+      if (capturedJwt) return;
+      const jwtHeader = request.headers()['jwt'];
+      if (jwtHeader && jwtHeader.startsWith('eyJ')) {
+        capturedJwt = jwtHeader;
+        console.log('[HostawayLogin] JWT captured from request header!');
       }
-      console.log('[HostawayLogin] 200 but no JWT in response body');
-      return { success: false, error: 'Login succeeded but token not found in response' };
+    });
+
+    // Navigate and fill form
+    await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15000 });
+    await page.locator('input[type="email"], input[name="email"]').pressSequentially(email, { delay: 40 });
+    await page.locator('input[type="password"], input[name="password"]').pressSequentially(password, { delay: 40 });
+    await page.waitForTimeout(2000);
+
+    // Click submit — SPA generates both tokens and submits
+    console.log('[HostawayLogin] Submitting form...');
+    await page.click('button[type="submit"]');
+
+    // Wait for redirect away from /login
+    let loginSucceeded = false;
+    try {
+      await page.waitForURL(
+        (url) => url.toString().startsWith('https://dashboard.hostaway.com/') && !url.toString().includes('/login'),
+        { timeout: 25000 }
+      );
+      loginSucceeded = true;
+      console.log(`[HostawayLogin] Redirected to: ${page.url()}`);
+    } catch {
+      console.log(`[HostawayLogin] Still on: ${page.url()}`);
     }
 
-    // Handle 403
-    if (result.status === 403) {
-      const msg = result.data?.message || '';
-      // 2FA check
-      if (msg.toLowerCase().includes('verify') || msg.toLowerCase().includes('email') || msg.toLowerCase().includes('2fa') || msg.toLowerCase().includes('link')) {
-        const sessionId = crypto.randomUUID();
-        const timeout = setTimeout(() => cleanupSession(sessionId), 180_000);
-        pendingSessions.set(sessionId, { email, password, createdAt: Date.now(), timeout });
-        console.log(`[HostawayLogin] 2FA required, session: ${sessionId}`);
-        return { success: true, pending2fa: true, sessionId };
+    if (!loginSucceeded) {
+      // Check for errors or 2FA
+      const errorText = await page.evaluate(`
+        (function() {
+          var el = document.querySelector('[class*="error"], [role="alert"], .toast');
+          return el && el.textContent ? el.textContent.trim() : null;
+        })()
+      `).catch(() => null) as string | null;
+
+      // Check if form is gone (2FA screen)
+      const formVisible = await page.$('input[type="password"]');
+
+      await browser.close();
+
+      if (formVisible) {
+        return { success: false, error: errorText || 'Login failed. Please use the manual connection method.' };
       }
-      return { success: false, error: `Hostaway: ${msg}` };
+
+      // 2FA
+      return { success: true, pending2fa: true, sessionId: 'browser-2fa-' + Date.now() };
     }
 
-    return { success: false, error: result.data?.message || `Login failed (${result.status})` };
+    // Wait for JWT capture
+    if (!capturedJwt) {
+      await page.waitForTimeout(5000);
+    }
+    if (!capturedJwt) {
+      capturedJwt = await page.evaluate('localStorage.getItem("jwt")').catch(() => null) as string | null;
+    }
+
+    await browser.close();
+
+    if (!capturedJwt) {
+      return { success: false, error: 'Login succeeded but token not captured. Please use the manual method.' };
+    }
+
+    const payload = decodeJwtPayload(capturedJwt);
+    console.log(`[HostawayLogin] Login successful for ${email}`);
+
+    return {
+      success: true,
+      jwt: capturedJwt,
+      userEmail: payload?.userEmail || email,
+      accountId: payload?.accountId?.toString(),
+    };
   } catch (err: any) {
     console.error('[HostawayLogin] Login error:', err.message);
     return { success: false, error: err.message };
