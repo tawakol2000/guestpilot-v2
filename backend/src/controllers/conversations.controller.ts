@@ -61,6 +61,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           reservationId: conv.reservation.id,
           checkIn: conv.reservation.checkIn,
           checkOut: conv.reservation.checkOut,
+          reservationCreatedAt: conv.reservation.createdAt,
           hostawayConversationId: conv.hostawayConversationId,
         })));
       } catch (err) {

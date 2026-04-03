@@ -263,7 +263,15 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
 
   const resByProperty = useMemo(() => {
     const m = new Map<string, CalendarReservation[]>()
-    for (const r of reservations) { const arr = m.get(r.propertyId) || []; arr.push(r); m.set(r.propertyId, arr) }
+    const now = Date.now()
+    for (const r of reservations) {
+      // Hide expired inquiries (24h+ since creation)
+      if ((r.status === 'INQUIRY' || r.status === 'PENDING') && r.createdAt) {
+        const age = now - new Date(r.createdAt).getTime()
+        if (age > 24 * 60 * 60 * 1000) continue
+      }
+      const arr = m.get(r.propertyId) || []; arr.push(r); m.set(r.propertyId, arr)
+    }
     return m
   }, [reservations])
 

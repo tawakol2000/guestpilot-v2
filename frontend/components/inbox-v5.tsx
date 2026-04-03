@@ -138,7 +138,7 @@ type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
 type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
-type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today'
+type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today' | 'expired'
 
 interface Message {
   id: string
@@ -194,6 +194,7 @@ interface Conversation {
   status: 'OPEN' | 'RESOLVED'
   checkInStatus: CheckInStatus
   reservationId: string
+  reservationCreatedAt: string
   messages: Message[]
   guest: Guest
   booking: Booking
@@ -220,6 +221,7 @@ const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   inquiry: { label: 'Inquiry', color: T.accent },
   pending: { label: 'Pending', color: '#D97706' },
   cancelled: { label: 'Cancelled', color: T.status.red },
+  expired: { label: 'Expired', color: T.text.tertiary },
 }
 
 function channelFromApi(ch: string): Channel {
@@ -231,10 +233,17 @@ function channelFromApi(ch: string): Channel {
   return 'direct'
 }
 
-function checkInStatusFromApi(status: string, checkIn: string, checkOut?: string): CheckInStatus {
+function checkInStatusFromApi(status: string, checkIn: string, checkOut?: string, createdAt?: string): CheckInStatus {
   if (status === 'CANCELLED') return 'cancelled'
   if (status === 'CHECKED_OUT') return 'checked-out'
   if (status === 'PENDING') return 'pending'
+
+  // Check if inquiry/pending has expired (24h after creation)
+  if ((status === 'INQUIRY' || status === 'PENDING') && createdAt) {
+    const created = new Date(createdAt).getTime()
+    const now = Date.now()
+    if (now - created > 24 * 60 * 60 * 1000) return 'expired'
+  }
 
   // Compute from dates for CONFIRMED/CHECKED_IN/INQUIRY
   const today = new Date()
@@ -283,8 +292,9 @@ function summaryToConversation(s: ApiConversationSummary): Conversation {
     unreadCount: s.unreadCount,
     starred: s.starred ?? false,
     status: (s.status as 'OPEN' | 'RESOLVED') || 'OPEN',
-    checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn, s.checkOut),
+    checkInStatus: checkInStatusFromApi(s.reservationStatus, s.checkIn, s.checkOut, s.reservationCreatedAt),
     reservationId: s.reservationId || '',
+    reservationCreatedAt: s.reservationCreatedAt || '',
     messages: [],
     guest: { name: s.guestName && s.guestName !== 'Unknown Guest' ? s.guestName : 'Guest', email: '', phone: '', nationality: '' },
     booking: {
@@ -321,8 +331,9 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
   return {
     ...conv,
     channel: channelFromApi(res?.channel || detail.channel || conv.channel),
-    checkInStatus: checkInStatusFromApi(res?.status || '', res?.checkIn || '', res?.checkOut || ''),
+    checkInStatus: checkInStatusFromApi(res?.status || '', res?.checkIn || '', res?.checkOut || '', res?.createdAt || conv.reservationCreatedAt),
     reservationId: res?.id || conv.reservationId,
+    reservationCreatedAt: res?.createdAt || conv.reservationCreatedAt,
     status: (detail.status as 'OPEN' | 'RESOLVED') || conv.status,
     aiOn: res?.aiEnabled ?? conv.aiOn,
     aiMode: (res?.aiMode as AiMode) || conv.aiMode,
@@ -4604,6 +4615,19 @@ export default function InboxV5() {
                 const showApproveReject = st === 'inquiry' || st === 'pending'
                 const showCancel = st === 'upcoming' || st === 'checked-in' || st === 'checking-in-today' || st === 'checking-out-today'
 
+                // Compute time remaining for inquiry/pending (24h from creation)
+                let timeRemaining: string | null = null
+                if (showApproveReject && selectedConv.reservationCreatedAt) {
+                  const created = new Date(selectedConv.reservationCreatedAt).getTime()
+                  const expiresAt = created + 24 * 60 * 60 * 1000
+                  const msLeft = expiresAt - Date.now()
+                  if (msLeft > 0) {
+                    const hours = Math.floor(msLeft / (60 * 60 * 1000))
+                    const mins = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000))
+                    timeRemaining = hours > 0 ? `${hours}h ${mins}m left to respond` : `${mins}m left to respond`
+                  }
+                }
+
                 return (
                   <div
                     style={{
@@ -4636,6 +4660,17 @@ export default function InboxV5() {
                       >
                         ACTIONS
                       </span>
+                      {timeRemaining && (
+                        <span style={{
+                          marginLeft: 'auto',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: T.status.amber,
+                          fontFamily: T.font.sans,
+                        }}>
+                          {timeRemaining}
+                        </span>
+                      )}
                     </div>
                     <div style={{ padding: 12 }}>
                       {/* Success flash */}

@@ -88,6 +88,7 @@ export function reservationsRouter(prisma: PrismaClient) {
           hostPayout: r.hostPayout ? Number(r.hostPayout) : null,
           cleaningFee: r.cleaningFee ? Number(r.cleaningFee) : null,
           currency: r.currency,
+          createdAt: r.createdAt.toISOString(),
           guest: r.guest,
           conversationId: r.conversations[0]?.id || null,
         })),

@@ -127,6 +127,7 @@ export interface ApiConversationSummary {
   reservationId: string
   checkIn: string
   checkOut: string
+  reservationCreatedAt: string
   hostawayConversationId: string
 }
 
@@ -1097,6 +1098,7 @@ export interface CalendarReservation {
   hostPayout: number | null
   cleaningFee: number | null
   currency: string | null
+  createdAt: string
   guest: { id: string; name: string }
   conversationId: string | null
 }
