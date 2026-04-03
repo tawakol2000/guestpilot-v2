@@ -177,10 +177,10 @@ async function callLoginApi(email: string, password: string, captchaToken: strin
 
 export async function loginToHostaway(email: string, password: string): Promise<LoginResult> {
   try {
-    // Strategy: Let the browser do EVERYTHING naturally.
-    // Fill real credentials, let SPA generate tokens, let it submit.
-    // Capture JWT from the response or from localStorage after login.
-    console.log('[HostawayLogin] Starting full browser login...');
+    // Strategy: Fill form with DUMMY data, let SPA generate tokens,
+    // intercept the POST, SWAP in real credentials, and CONTINUE the request.
+    // This keeps tokens bound to the browser session while using real creds.
+    console.log('[HostawayLogin] Starting browser login with request modification...');
 
     const isProduction = process.env.NODE_ENV === 'production';
     const browser = await chromium.launch({
@@ -221,15 +221,36 @@ export async function loginToHostaway(email: string, password: string): Promise<
       }
     });
 
-    // Navigate and fill form
+    // Intercept the login POST — swap dummy credentials with real ones
+    await page.route('**/account/session', async (route) => {
+      const request = route.request();
+      if (request.method() === 'POST') {
+        try {
+          const body = request.postDataJSON();
+          // Replace dummy credentials with real ones, keep the generated tokens
+          body.email = email;
+          body.password = password;
+          console.log(`[HostawayLogin] Modified POST: auditToken=${body.auditToken ? body.auditToken.length + ' chars' : 'null'}, captchaToken=${body.captchaToken ? body.captchaToken.length + ' chars' : 'null'}`);
+          // Continue the request with modified body
+          await route.continue({ postData: JSON.stringify(body) });
+          return;
+        } catch (err: any) {
+          console.error('[HostawayLogin] Route modify failed:', err.message);
+        }
+      }
+      await route.continue();
+    });
+
+    // Navigate and fill form with DUMMY data
     await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15000 });
-    await page.locator('input[type="email"], input[name="email"]').pressSequentially(email, { delay: 40 });
-    await page.locator('input[type="password"], input[name="password"]').pressSequentially(password, { delay: 40 });
+    await page.locator('input[type="email"], input[name="email"]').pressSequentially('dummy@example.com', { delay: 40 });
+    await page.locator('input[type="password"], input[name="password"]').pressSequentially('dummypassword123', { delay: 40 });
     await page.waitForTimeout(2000);
 
-    // Click submit — SPA generates both tokens and submits
-    console.log('[HostawayLogin] Submitting form...');
+    // Click submit — SPA generates both tokens and POSTs
+    // Our route handler swaps in real credentials before the request leaves
+    console.log('[HostawayLogin] Submitting form (credentials will be swapped in-flight)...');
     await page.click('button[type="submit"]');
 
     // Wait for redirect away from /login
@@ -246,7 +267,6 @@ export async function loginToHostaway(email: string, password: string): Promise<
     }
 
     if (!loginSucceeded) {
-      // Check for errors or 2FA
       const errorText = await page.evaluate(`
         (function() {
           var el = document.querySelector('[class*="error"], [role="alert"], .toast');
@@ -254,23 +274,18 @@ export async function loginToHostaway(email: string, password: string): Promise<
         })()
       `).catch(() => null) as string | null;
 
-      // Check if form is gone (2FA screen)
       const formVisible = await page.$('input[type="password"]');
-
       await browser.close();
 
       if (formVisible) {
         return { success: false, error: errorText || 'Login failed. Please use the manual connection method.' };
       }
-
       // 2FA
       return { success: true, pending2fa: true, sessionId: 'browser-2fa-' + Date.now() };
     }
 
     // Wait for JWT capture
-    if (!capturedJwt) {
-      await page.waitForTimeout(5000);
-    }
+    if (!capturedJwt) await page.waitForTimeout(5000);
     if (!capturedJwt) {
       capturedJwt = await page.evaluate('localStorage.getItem("jwt")').catch(() => null) as string | null;
     }
