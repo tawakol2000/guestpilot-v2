@@ -82,8 +82,13 @@ async function solveCaptcha(): Promise<string> {
 
 // ─── Castle.io: Generate auditToken via browser ─────────────────────────────
 
-export async function generateAuditToken(): Promise<string> {
-  console.log('[HostawayLogin] Generating Castle.io auditToken via browser...');
+/**
+ * Generate BOTH tokens from the same browser session:
+ * - auditToken from Castle.io's createRequestToken()
+ * - captchaToken from grecaptcha.enterprise.execute()
+ */
+export async function generateBothTokens(): Promise<{ auditToken: string; captchaToken: string }> {
+  console.log('[HostawayLogin] Generating both tokens via browser...');
   let browser: Browser | null = null;
 
   try {
@@ -96,51 +101,57 @@ export async function generateAuditToken(): Promise<string> {
     const page = await browser.newPage();
     await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Wait for Castle.io SDK to initialize (loaded from CloudFront CDN)
-    await page.waitForTimeout(5000);
+    // Wait for both Castle.io and reCAPTCHA to load
+    await page.waitForTimeout(8000);
 
-    // Call Castle's createRequestToken() to generate the auditToken
+    // Generate auditToken from Castle.io
     const auditToken = await page.evaluate(`
       (function() {
         try {
-          // Castle SDK exposes createRequestToken on the global castle object
-          // or on _castle namespace
-          if (typeof castle !== 'undefined' && castle.createRequestToken) {
-            return castle.createRequestToken();
-          }
-          // Try window._castle
-          if (typeof _castle !== 'undefined' && _castle.createRequestToken) {
-            return _castle.createRequestToken();
-          }
-          // Search for Castle in window properties
+          if (typeof castle !== 'undefined' && castle.createRequestToken) return castle.createRequestToken();
+          if (typeof _castle !== 'undefined' && _castle.createRequestToken) return _castle.createRequestToken();
           var keys = Object.keys(window);
           for (var i = 0; i < keys.length; i++) {
             var obj = window[keys[i]];
-            if (obj && typeof obj === 'object' && typeof obj.createRequestToken === 'function') {
-              return obj.createRequestToken();
-            }
+            if (obj && typeof obj === 'object' && typeof obj.createRequestToken === 'function') return obj.createRequestToken();
           }
           return null;
-        } catch(e) {
-          return 'ERROR:' + e.message;
-        }
+        } catch(e) { return null; }
       })()
+    `) as string | null;
+
+    // Generate captchaToken from reCAPTCHA Enterprise
+    const captchaToken = await page.evaluate(`
+      new Promise(function(resolve) {
+        try {
+          if (typeof grecaptcha !== 'undefined' && grecaptcha.enterprise) {
+            grecaptcha.enterprise.ready(function() {
+              grecaptcha.enterprise.execute('${RECAPTCHA_SITEKEY}', { action: 'login' })
+                .then(function(token) { resolve(token); })
+                .catch(function() { resolve(null); });
+            });
+          } else {
+            resolve(null);
+          }
+        } catch(e) { resolve(null); }
+        // Timeout after 10s
+        setTimeout(function() { resolve(null); }, 10000);
+      })
     `) as string | null;
 
     await browser.close();
 
-    if (auditToken && !auditToken.startsWith('ERROR:')) {
-      console.log(`[HostawayLogin] auditToken generated (${auditToken.length} chars)`);
-      return auditToken;
-    }
+    console.log(`[HostawayLogin] auditToken: ${auditToken ? auditToken.length + ' chars' : 'FAILED'}`);
+    console.log(`[HostawayLogin] captchaToken: ${captchaToken ? captchaToken.length + ' chars' : 'FAILED'}`);
 
-    // Fallback: try intercepting the token from the form submission
-    console.warn(`[HostawayLogin] Castle.createRequestToken() returned: ${auditToken || 'null'}. Trying form intercept...`);
-    return await extractAuditTokenFromForm();
+    return {
+      auditToken: auditToken || '',
+      captchaToken: captchaToken || '',
+    };
   } catch (err: any) {
-    console.error('[HostawayLogin] auditToken generation failed:', err.message);
+    console.error('[HostawayLogin] Token generation failed:', err.message);
     if (browser) await browser.close().catch(() => {});
-    return '';
+    return { auditToken: '', captchaToken: '' };
   }
 }
 
@@ -210,16 +221,28 @@ async function callLoginApi(email: string, password: string, captchaToken: strin
 
 export async function loginToHostaway(email: string, password: string): Promise<LoginResult> {
   try {
-    // Step 1: Generate Castle.io auditToken (browser-based, ~10s)
-    const auditToken = await generateAuditToken();
-    console.log(`[HostawayLogin] auditToken: ${auditToken ? 'obtained' : 'FAILED'}`);
+    // Step 1: Generate BOTH tokens from the browser (~15s)
+    // auditToken from Castle.io, captchaToken from reCAPTCHA Enterprise
+    const tokens = await generateBothTokens();
 
-    // Step 2: Solve reCAPTCHA via CapSolver (~5-15s)
-    const captchaToken = await solveCaptcha();
+    if (!tokens.auditToken) {
+      return { success: false, error: 'Failed to generate security token. Please use the manual connection method.' };
+    }
+
+    // Step 2: If browser reCAPTCHA failed, try CapSolver
+    let captchaToken = tokens.captchaToken;
+    if (!captchaToken && process.env.CAPSOLVER_API_KEY) {
+      console.log('[HostawayLogin] Browser reCAPTCHA failed, trying CapSolver...');
+      captchaToken = await solveCaptcha();
+    }
+
+    if (!captchaToken) {
+      return { success: false, error: 'Failed to solve CAPTCHA. Please use the manual connection method.' };
+    }
 
     // Step 3: Call Hostaway login API directly
     console.log('[HostawayLogin] Calling login API...');
-    const result = await callLoginApi(email, password, captchaToken, auditToken);
+    const result = await callLoginApi(email, password, captchaToken, tokens.auditToken);
     console.log(`[HostawayLogin] Response: ${result.status} — ${JSON.stringify(result.data).substring(0, 300)}`);
 
     // Handle success
@@ -262,8 +285,12 @@ export async function verify2fa(sessionId: string): Promise<LoginResult> {
   if (!session) return { success: false, error: 'Session expired. Please try again.' };
 
   try {
-    const auditToken = await generateAuditToken();
-    const captchaToken = await solveCaptcha();
+    const tokens = await generateBothTokens();
+    let captchaToken = tokens.captchaToken;
+    if (!captchaToken && process.env.CAPSOLVER_API_KEY) {
+      captchaToken = await solveCaptcha();
+    }
+    const auditToken = tokens.auditToken;
     const result = await callLoginApi(session.email, session.password, captchaToken, auditToken);
 
     if (result.status === 200) {
