@@ -212,17 +212,14 @@ export async function loginToHostaway(email: string, password: string): Promise<
     if (result.status === 403) {
       const msg = result.data?.message || 'Login failed';
       if (msg.toLowerCase().includes('2fa') || msg.toLowerCase().includes('verify') || msg.toLowerCase().includes('email')) {
-        // 2FA required — store session for retry
         const sessionId = crypto.randomUUID();
         const timeout = setTimeout(() => cleanupSession(sessionId), 180_000);
         pendingSessions.set(sessionId, { email, password, captchaToken: '', auditToken: '', createdAt: Date.now(), timeout });
         console.log(`[HostawayLogin] 2FA required for ${email}, session: ${sessionId}`);
         return { success: true, pending2fa: true, sessionId };
       }
-      if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('wrong') || msg.toLowerCase().includes('incorrect')) {
-        return { success: false, error: 'Invalid email or password' };
-      }
-      return { success: false, error: msg };
+      // Return the actual Hostaway error — don't guess
+      return { success: false, error: `Hostaway: ${msg}` };
     }
 
     return { success: false, error: result.data?.message || `Login failed with status ${result.status}` };
