@@ -221,36 +221,24 @@ export async function loginToHostaway(email: string, password: string): Promise<
       }
     });
 
-    // Intercept the login POST — swap dummy credentials with real ones
-    await page.route('**/account/session', async (route) => {
-      const request = route.request();
-      if (request.method() === 'POST') {
-        try {
-          const body = request.postDataJSON();
-          // Replace dummy credentials with real ones, keep the generated tokens
-          body.email = email;
-          body.password = password;
-          console.log(`[HostawayLogin] Modified POST: auditToken=${body.auditToken ? body.auditToken.length + ' chars' : 'null'}, captchaToken=${body.captchaToken ? body.captchaToken.length + ' chars' : 'null'}`);
-          // Continue the request with modified body
-          await route.continue({ postData: JSON.stringify(body) });
-          return;
-        } catch (err: any) {
-          console.error('[HostawayLogin] Route modify failed:', err.message);
-        }
-      }
-      await route.continue();
-    });
-
-    // Navigate and fill form with DUMMY data
+    // Navigate and fill form with REAL credentials
     await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15000 });
-    await page.locator('input[type="email"], input[name="email"]').pressSequentially('dummy@example.com', { delay: 40 });
-    await page.locator('input[type="password"], input[name="password"]').pressSequentially('dummypassword123', { delay: 40 });
-    await page.waitForTimeout(2000);
+    await page.locator('input[type="email"], input[name="email"]').pressSequentially(email, { delay: 50 + Math.random() * 50 });
+    await page.locator('input[type="password"], input[name="password"]').pressSequentially(password, { delay: 50 + Math.random() * 50 });
+    await page.waitForTimeout(1500 + Math.random() * 1500);
 
-    // Click submit — SPA generates both tokens and POSTs
-    // Our route handler swaps in real credentials before the request leaves
-    console.log('[HostawayLogin] Submitting form (credentials will be swapped in-flight)...');
+    // Log what the SPA sends
+    page.on('request', (req) => {
+      if (req.url().includes('/account/session') && req.method() === 'POST') {
+        try {
+          const body = req.postDataJSON();
+          console.log(`[HostawayLogin] POST /account/session: auditToken=${body?.auditToken?.length || 0} chars, captchaToken=${body?.captchaToken?.length || 0} chars`);
+        } catch {}
+      }
+    });
+
+    console.log('[HostawayLogin] Submitting form with real credentials...');
     await page.click('button[type="submit"]');
 
     // Wait for redirect away from /login
