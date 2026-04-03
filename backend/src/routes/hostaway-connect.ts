@@ -162,6 +162,44 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // ── POST /manual — connect with a manually-pasted JWT token ─────────────
+  router.post('/manual', auth, async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+      const { token } = req.body;
+
+      if (!token) {
+        res.status(400).json({ success: false, error: 'Token is required' });
+        return;
+      }
+
+      const validation = validateDashboardJwt(token);
+      if (!validation.valid) {
+        res.status(400).json({ success: false, error: validation.error || 'Invalid token' });
+        return;
+      }
+
+      const payload = validation.payload;
+      const encryptedJwt = encrypt(token);
+
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          dashboardJwt: encryptedJwt,
+          dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
+          dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
+          dashboardConnectedBy: payload.userEmail || 'manual',
+        },
+      });
+
+      console.log(`[HostawayConnect] Dashboard connected manually for tenant ${tenantId}`);
+      res.json({ success: true, connected: true });
+    } catch (err) {
+      console.error('[HostawayConnect] Manual connect failed:', err);
+      res.status(500).json({ success: false, error: 'Failed to connect' });
+    }
+  });
+
   // ── DELETE / — disconnect (auth required) ───────────────────────────────
   router.delete('/', auth, async (req: any, res) => {
     try {

@@ -19,6 +19,7 @@ import {
   apiDisconnectHostaway,
   apiHostawayLogin,
   apiHostawayVerify2fa,
+  apiHostawayConnectManual,
   type HostawayConnectStatus,
 } from '@/lib/api'
 
@@ -1104,9 +1105,15 @@ function HostawayDashboardSection(): React.ReactElement {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [pending2faSessionId, setPending2faSessionId] = useState<string | null>(null)
   const [verifyLoading, setVerifyLoading] = useState(false)
+  const [connectMode, setConnectMode] = useState<'automatic' | 'manual'>('automatic')
+  const [manualToken, setManualToken] = useState('')
+  const [manualLoading, setManualLoading] = useState(false)
+  const [manualError, setManualError] = useState('')
+  const [manualInstructionsOpen, setManualInstructionsOpen] = useState(false)
   const connectBtnHover = useHover()
   const disconnectBtnHover = useHover()
   const verifyBtnHover = useHover()
+  const manualConnectBtnHover = useHover()
 
   function fetchStatus() {
     setLoading(true)
@@ -1148,10 +1155,14 @@ function HostawayDashboardSection(): React.ReactElement {
       } else if (result.pending2fa && result.sessionId) {
         setPending2faSessionId(result.sessionId)
       } else {
-        setLoginError(result.error || 'Connection failed. Please check your credentials.')
+        const msg = result.error || 'Connection failed. Please check your credentials.'
+        setLoginError(msg)
+        if (/manual|blocked/i.test(msg)) setConnectMode('manual')
       }
     } catch (err: any) {
-      setLoginError(err.message || 'Network error. Please try again.')
+      const msg = err.message || 'Network error. Please try again.'
+      setLoginError(msg)
+      if (/manual|blocked/i.test(msg)) setConnectMode('manual')
     } finally {
       setLoginLoading(false)
     }
@@ -1175,6 +1186,28 @@ function HostawayDashboardSection(): React.ReactElement {
       setLoginError(err.message || 'Verification failed. Please try again.')
     } finally {
       setVerifyLoading(false)
+    }
+  }
+
+  async function handleManualConnect() {
+    if (!manualToken.trim()) {
+      setManualError('Please paste a token.')
+      return
+    }
+    setManualLoading(true)
+    setManualError('')
+    try {
+      const result = await apiHostawayConnectManual(manualToken.trim())
+      if (result.connected) {
+        setManualToken('')
+        fetchStatus()
+      } else {
+        setManualError(result.error || 'Connection failed. Please check the token and try again.')
+      }
+    } catch (err: any) {
+      setManualError(err.message || 'Network error. Please try again.')
+    } finally {
+      setManualLoading(false)
     }
   }
 
@@ -1326,7 +1359,7 @@ function HostawayDashboardSection(): React.ReactElement {
             </div>
           </div>
         ) : (
-          /* Not connected — login form */
+          /* Not connected — login form with automatic/manual tabs */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
               <span style={{
@@ -1351,58 +1384,178 @@ function HostawayDashboardSection(): React.ReactElement {
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
-                  Hostaway Email
-                </label>
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                  style={loginInputStyle}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
-                  Hostaway Password
-                </label>
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                  style={loginInputStyle}
-                />
-              </div>
+            {/* Tab switcher */}
+            <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border.default}`, marginBottom: 4 }}>
+              {(['automatic', 'manual'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setConnectMode(tab)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: connectMode === tab ? `2px solid ${T.border.strong}` : '2px solid transparent',
+                    padding: '6px 14px',
+                    fontSize: 12,
+                    fontWeight: connectMode === tab ? 700 : 500,
+                    fontFamily: T.font.sans,
+                    color: connectMode === tab ? T.text.primary : T.text.tertiary,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    textTransform: 'capitalize',
+                    marginBottom: -1,
+                  }}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
 
-            {loginError && (
-              <div style={{ fontSize: 12, color: T.status.red, fontFamily: T.font.sans }}>
-                {loginError}
-              </div>
+            {connectMode === 'automatic' ? (
+              /* Automatic — email/password form */
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
+                      Hostaway Email
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                      style={loginInputStyle}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
+                      Hostaway Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                      style={loginInputStyle}
+                    />
+                  </div>
+                </div>
+
+                {loginError && (
+                  <div style={{ fontSize: 12, color: T.status.red, fontFamily: T.font.sans }}>
+                    {loginError}
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
+                  Connection takes about 15-30 seconds. Your credentials are not stored.
+                </div>
+
+                <div>
+                  <button
+                    style={{
+                      ...btnPrimary,
+                      opacity: connectBtnHover.hovered ? 0.85 : 1,
+                    }}
+                    onClick={handleLogin}
+                    {...connectBtnHover.handlers}
+                  >
+                    Connect
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Manual — paste token form */
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
+                    Paste your Hostaway token
+                  </label>
+                  <textarea
+                    placeholder="eyJhbGciOiJI..."
+                    value={manualToken}
+                    onChange={e => setManualToken(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleManualConnect() } }}
+                    rows={3}
+                    style={{
+                      ...loginInputStyle,
+                      height: 'auto',
+                      padding: '8px 12px',
+                      resize: 'vertical',
+                      minHeight: 60,
+                    }}
+                  />
+                </div>
+
+                {manualError && (
+                  <div style={{ fontSize: 12, color: T.status.red, fontFamily: T.font.sans }}>
+                    {manualError}
+                  </div>
+                )}
+
+                <div>
+                  <button
+                    style={{
+                      ...btnPrimary,
+                      opacity: manualLoading ? 0.5 : manualConnectBtnHover.hovered ? 0.85 : 1,
+                      cursor: manualLoading ? 'not-allowed' : 'pointer',
+                    }}
+                    disabled={manualLoading}
+                    onClick={handleManualConnect}
+                    {...manualConnectBtnHover.handlers}
+                  >
+                    {manualLoading ? 'Connecting...' : 'Connect'}
+                  </button>
+                </div>
+
+                {/* Collapsible instructions */}
+                <div>
+                  <button
+                    onClick={() => setManualInstructionsOpen(v => !v)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      fontFamily: T.font.sans,
+                      color: T.text.tertiary,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <span style={{
+                      display: 'inline-block',
+                      transition: 'transform 0.15s ease',
+                      transform: manualInstructionsOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+                      fontSize: 10,
+                    }}>
+                      &#9654;
+                    </span>
+                    How to get the token
+                  </button>
+                  {manualInstructionsOpen && (
+                    <ol style={{
+                      margin: '8px 0 0 0',
+                      paddingLeft: 18,
+                      fontSize: 12,
+                      lineHeight: 1.7,
+                      color: T.text.secondary,
+                      fontFamily: T.font.sans,
+                    }}>
+                      <li>Open <strong>dashboard.hostaway.com</strong> and log in</li>
+                      <li>Press <strong>F12</strong> &rarr; <strong>Console</strong> tab</li>
+                      <li>Type: <code style={{ fontFamily: T.font.mono, fontSize: 11, background: T.bg.secondary, padding: '1px 5px', borderRadius: 4 }}>copy(localStorage.jwt)</code> and press Enter</li>
+                      <li>Come back here and paste (<strong>Ctrl+V</strong> / <strong>Cmd+V</strong>)</li>
+                    </ol>
+                  )}
+                </div>
+              </>
             )}
-
-            <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
-              Connection takes about 15-30 seconds. Your credentials are not stored.
-            </div>
-
-            <div>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: connectBtnHover.hovered ? 0.85 : 1,
-                }}
-                onClick={handleLogin}
-                {...connectBtnHover.handlers}
-              >
-                Connect
-              </button>
-            </div>
           </div>
         )}
       </div>

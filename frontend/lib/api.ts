@@ -1167,6 +1167,13 @@ export async function apiHostawayVerify2fa(sessionId: string): Promise<HostawayL
   })
 }
 
+export async function apiHostawayConnectManual(token: string): Promise<HostawayLoginResult> {
+  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/manual', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
 // ─── Reservation Actions (Approve / Reject / Cancel) ────────────────────────
 
 export interface ReservationActionResult {
