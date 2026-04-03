@@ -55,17 +55,21 @@ export async function loginToHostaway(email: string, password: string): Promise<
     });
     const page = await context.newPage();
 
-    // Intercept network responses to capture JWT from login API
+    // Intercept network responses to capture JWT
     let capturedJwt: string | null = null;
     page.on('response', async (response) => {
       try {
         const url = response.url();
-        if (url.includes('/account/session') && response.status() === 200) {
+        if (url.includes('hostaway') && response.status() === 200) {
+          const contentType = response.headers()['content-type'] || '';
+          if (!contentType.includes('json') && !contentType.includes('text')) return;
           const body = await response.text();
-          // The JWT might be in the response body or set via the page after redirect
-          // Check if the response contains a JWT-like token
-          const jwtMatch = body.match(/"jwt"\s*:\s*"(eyJ[^"]+)"/);
-          if (jwtMatch) capturedJwt = jwtMatch[1];
+          // Look for JWT token in any response
+          const jwtMatch = body.match(/"(?:jwt|token|accessToken)"\s*:\s*"(eyJ[^"]+)"/);
+          if (jwtMatch && !capturedJwt) {
+            capturedJwt = jwtMatch[1];
+            console.log(`[HostawayLogin] JWT captured from response: ${url}`);
+          }
         }
       } catch { /* response body might not be available */ }
     });
@@ -108,18 +112,30 @@ export async function loginToHostaway(email: string, password: string): Promise<
       }
     }
 
+    // Wait for SPA to fully initialize after redirect
+    console.log(`[HostawayLogin] Redirected to: ${page.url()}`);
+    await page.waitForLoadState('load').catch(() => {});
+    await page.waitForTimeout(3000); // Give SPA time to hydrate
+
     // Success — extract JWT from localStorage or network capture
-    // The Hostaway SPA takes a moment after redirect to store the token
     let jwt: string | null = capturedJwt;
-    if (!jwt) {
-      for (let attempt = 0; attempt < 15; attempt++) {
-        jwt = await page.evaluate(() => localStorage.getItem('jwt'));
-        if (jwt) break;
+    if (jwt) {
+      console.log('[HostawayLogin] JWT captured from network response');
+    } else {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        // Try reading JWT from localStorage
+        const result = await page.evaluate(() => {
+          const keys = Object.keys(localStorage);
+          const jwt = localStorage.getItem('jwt');
+          return { keys, jwt, url: window.location.href };
+        });
+        console.log(`[HostawayLogin] Attempt ${attempt + 1}: url=${result.url}, localStorage keys=[${result.keys.join(', ')}], jwt=${result.jwt ? 'FOUND' : 'null'}`);
+        if (result.jwt) { jwt = result.jwt; break; }
         await page.waitForTimeout(1000);
       }
     }
     if (!jwt) {
-      console.warn('[HostawayLogin] JWT not found after 15 attempts (localStorage + network)');
+      console.warn('[HostawayLogin] JWT not found after all attempts');
       await browser.close();
       return { success: false, error: 'Login succeeded but no token found. Please try again.' };
     }
