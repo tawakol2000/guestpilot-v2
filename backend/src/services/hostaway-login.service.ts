@@ -71,7 +71,10 @@ export async function loginToHostaway(email: string, password: string): Promise<
     });
 
     // Navigate to login
-    await page.goto(LOGIN_URL, { waitUntil: 'networkidle', timeout: LOGIN_TIMEOUT });
+    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: LOGIN_TIMEOUT });
+
+    // Wait for login form to render
+    await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 15_000 });
 
     // Fill credentials
     await page.fill('input[type="email"], input[name="email"]', email);
