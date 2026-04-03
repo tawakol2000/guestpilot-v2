@@ -19,18 +19,6 @@ COPY scripts ./scripts/
 COPY config ./config/
 COPY tsconfig.json ./
 
-# Install Xvfb + Google Chrome stable from Google's apt repo
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       xvfb xauth dbus-x11 fonts-liberation fonts-noto-color-emoji \
-       wget gnupg ca-certificates \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends google-chrome-stable \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install Node packages
 RUN npm install
 
@@ -41,6 +29,5 @@ RUN npx prisma generate
 RUN NODE_OPTIONS=--max-old-space-size=2048 npm run build
 
 EXPOSE 3000
-# xvfb-run provides a virtual display for headed Chrome (Turnstile bypass)
 # Runtime heap: 1GB (Prisma + Socket.IO + BullMQ + Redis need ~500MB baseline)
-CMD ["sh", "-c", "echo '[Deploy] Starting server...' && xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' node --max-old-space-size=1024 dist/server.js"]
+CMD ["sh", "-c", "echo '[Deploy] Starting server...' && NODE_OPTIONS=--max-old-space-size=1024 node dist/server.js"]

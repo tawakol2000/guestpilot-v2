@@ -1,109 +1,98 @@
 /**
  * Hostaway Dashboard Connection routes.
- * POST /api/hostaway-connect/login      — start login via headless browser (auth required)
- * POST /api/hostaway-connect/verify-2fa — complete 2FA verification (auth required)
- * GET  /api/hostaway-connect/status     — connection status (auth required)
- * DELETE /api/hostaway-connect          — disconnect (auth required)
+ * GET  /api/hostaway-connect/callback  — bookmarklet redirect target
+ * POST /api/hostaway-connect/manual    — paste token directly
+ * GET  /api/hostaway-connect/status    — connection status
+ * DELETE /api/hostaway-connect         — disconnect
  */
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt } from '../lib/encryption';
 import { validateDashboardJwt } from '../services/hostaway-dashboard.service';
-import { loginToHostaway, verify2fa } from '../services/hostaway-login.service';
+
+function getFrontendUrl(): string {
+  const origins = process.env.CORS_ORIGINS;
+  if (origins) {
+    const first = origins.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return 'http://localhost:3001';
+}
 
 export function hostawayConnectRouter(prisma: PrismaClient): Router {
   const router = Router();
   const auth = authMiddleware as unknown as RequestHandler;
 
-  // ── POST /login — start headless browser login ──────────────────────────
-  router.post('/login', auth, async (req: any, res) => {
+  // ── GET /callback?token=<jwt> — bookmarklet redirect (no auth) ──────────
+  router.get('/callback', async (req: any, res) => {
+    const frontendUrl = getFrontendUrl();
     try {
-      const tenantId = req.tenantId as string;
-      const { email, password } = req.body;
-
-      if (!email || !password) {
-        res.status(400).json({ success: false, error: 'Email and password are required' });
+      const token = req.query.token as string | undefined;
+      if (!token) {
+        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=missing_token`);
         return;
       }
 
-      const result = await loginToHostaway(email, password);
-
-      if (!result.success) {
-        res.status(400).json({ success: false, error: result.error });
+      const result = validateDashboardJwt(token);
+      if (!result.valid) {
+        const reason = result.error === 'Token expired' ? 'token_expired' : 'invalid_token';
+        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=${reason}`);
         return;
       }
 
-      // 2FA required — return session for user to verify
-      if (result.pending2fa) {
-        res.json({ success: true, pending2fa: true, sessionId: result.sessionId });
+      const payload = result.payload;
+      const accountId = String(payload.accountId);
+
+      const tenant = await prisma.tenant.findFirst({
+        where: { hostawayAccountId: accountId },
+        select: { id: true },
+      });
+
+      if (!tenant) {
+        console.error(`[HostawayConnect] No tenant for accountId ${accountId}`);
+        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=no_account`);
         return;
       }
 
-      // Login succeeded — validate and store JWT
-      if (!result.jwt) {
-        res.status(500).json({ success: false, error: 'No token received' });
-        return;
-      }
-
-      const validation = validateDashboardJwt(result.jwt);
-      if (!validation.valid) {
-        res.status(500).json({ success: false, error: 'Received invalid token' });
-        return;
-      }
-
-      const payload = validation.payload;
-      const encryptedJwt = encrypt(result.jwt);
-
+      const encryptedJwt = encrypt(token);
       await prisma.tenant.update({
-        where: { id: tenantId },
+        where: { id: tenant.id },
         data: {
           dashboardJwt: encryptedJwt,
           dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
           dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
-          dashboardConnectedBy: result.userEmail || email,
+          dashboardConnectedBy: payload.userEmail || null,
         },
       });
 
-      console.log(`[HostawayConnect] Dashboard connected for tenant ${tenantId} by ${result.userEmail || email}`);
-      res.json({ success: true, connected: true });
+      console.log(`[HostawayConnect] Connected for tenant ${tenant.id} by ${payload.userEmail || 'unknown'}`);
+      res.redirect(`${frontendUrl}/settings?hostaway=connected`);
     } catch (err) {
-      console.error('[HostawayConnect] Login failed:', err);
-      res.status(500).json({ success: false, error: 'Login failed. Please try again.' });
+      console.error('[HostawayConnect] Callback failed:', err);
+      res.redirect(`${frontendUrl}/settings?hostaway=error&reason=server_error`);
     }
   });
 
-  // ── POST /verify-2fa — complete 2FA after user clicks email link ────────
-  router.post('/verify-2fa', auth, async (req: any, res) => {
+  // ── POST /manual — paste token directly (auth required) ────────────────
+  router.post('/manual', auth, async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
-      const { sessionId } = req.body;
+      const { token } = req.body;
 
-      if (!sessionId) {
-        res.status(400).json({ success: false, error: 'Session ID is required' });
+      if (!token) {
+        res.status(400).json({ success: false, error: 'Token is required' });
         return;
       }
 
-      const result = await verify2fa(sessionId);
-
-      if (!result.success) {
-        res.status(400).json({ success: false, error: result.error });
-        return;
-      }
-
-      if (!result.jwt) {
-        res.status(500).json({ success: false, error: 'No token received' });
-        return;
-      }
-
-      const validation = validateDashboardJwt(result.jwt);
+      const validation = validateDashboardJwt(token);
       if (!validation.valid) {
-        res.status(500).json({ success: false, error: 'Received invalid token' });
+        res.status(400).json({ success: false, error: validation.error || 'Invalid token' });
         return;
       }
 
       const payload = validation.payload;
-      const encryptedJwt = encrypt(result.jwt);
+      const encryptedJwt = encrypt(token);
 
       await prisma.tenant.update({
         where: { id: tenantId },
@@ -111,15 +100,15 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
           dashboardJwt: encryptedJwt,
           dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
           dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
-          dashboardConnectedBy: result.userEmail || null,
+          dashboardConnectedBy: payload.userEmail || 'manual',
         },
       });
 
-      console.log(`[HostawayConnect] 2FA verified, dashboard connected for tenant ${tenantId}`);
+      console.log(`[HostawayConnect] Connected manually for tenant ${tenantId}`);
       res.json({ success: true, connected: true });
     } catch (err) {
-      console.error('[HostawayConnect] 2FA verification failed:', err);
-      res.status(500).json({ success: false, error: 'Verification failed. Please try again.' });
+      console.error('[HostawayConnect] Manual connect failed:', err);
+      res.status(500).json({ success: false, error: 'Failed to connect' });
     }
   });
 
@@ -162,58 +151,6 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
     }
   });
 
-  // ── GET /debug-login — test login steps without submitting (TEMPORARY) ──
-  router.get('/debug-login', auth, async (req: any, res) => {
-    try {
-      const { generateBothTokens } = require('../services/hostaway-login.service');
-      const tokens = await generateBothTokens();
-      res.json({
-        auditToken: tokens.auditToken ? { success: true, length: tokens.auditToken.length, preview: tokens.auditToken.substring(0, 50) + '...' } : { success: false },
-        captchaToken: tokens.captchaToken ? { success: true, length: tokens.captchaToken.length, preview: tokens.captchaToken.substring(0, 50) + '...' } : { success: false },
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── POST /manual — connect with a manually-pasted JWT token ─────────────
-  router.post('/manual', auth, async (req: any, res) => {
-    try {
-      const tenantId = req.tenantId as string;
-      const { token } = req.body;
-
-      if (!token) {
-        res.status(400).json({ success: false, error: 'Token is required' });
-        return;
-      }
-
-      const validation = validateDashboardJwt(token);
-      if (!validation.valid) {
-        res.status(400).json({ success: false, error: validation.error || 'Invalid token' });
-        return;
-      }
-
-      const payload = validation.payload;
-      const encryptedJwt = encrypt(token);
-
-      await prisma.tenant.update({
-        where: { id: tenantId },
-        data: {
-          dashboardJwt: encryptedJwt,
-          dashboardJwtIssuedAt: payload.iat ? new Date(payload.iat * 1000) : new Date(),
-          dashboardJwtExpiresAt: payload.exp ? new Date(payload.exp * 1000) : null,
-          dashboardConnectedBy: payload.userEmail || 'manual',
-        },
-      });
-
-      console.log(`[HostawayConnect] Dashboard connected manually for tenant ${tenantId}`);
-      res.json({ success: true, connected: true });
-    } catch (err) {
-      console.error('[HostawayConnect] Manual connect failed:', err);
-      res.status(500).json({ success: false, error: 'Failed to connect' });
-    }
-  });
-
   // ── DELETE / — disconnect (auth required) ───────────────────────────────
   router.delete('/', auth, async (req: any, res) => {
     try {
@@ -222,7 +159,7 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
         where: { id: tenantId },
         data: { dashboardJwt: null, dashboardJwtIssuedAt: null, dashboardJwtExpiresAt: null, dashboardConnectedBy: null },
       });
-      console.log(`[HostawayConnect] Dashboard disconnected for tenant ${tenantId}`);
+      console.log(`[HostawayConnect] Disconnected for tenant ${tenantId}`);
       res.json({ success: true });
     } catch (err) {
       console.error('[HostawayConnect] Disconnect failed:', err);

@@ -17,8 +17,6 @@ import {
   type ImportProgress,
   apiGetHostawayConnectStatus,
   apiDisconnectHostaway,
-  apiHostawayLogin,
-  apiHostawayVerify2fa,
   apiHostawayConnectManual,
   type HostawayConnectStatus,
 } from '@/lib/api'
@@ -1095,25 +1093,23 @@ function WorkingHoursSection(): React.ReactElement {
 }
 
 // ─── Section: Hostaway Dashboard Connection ─────────────────────────────────
-function HostawayDashboardSection(): React.ReactElement {
+function HostawayDashboardSection({ onToast }: { onToast: (text: string, ok: boolean) => void }): React.ReactElement {
   const [status, setStatus] = useState<HostawayConnectStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
-  const [loginEmail, setLoginEmail] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [loginError, setLoginError] = useState<string | null>(null)
-  const [pending2faSessionId, setPending2faSessionId] = useState<string | null>(null)
-  const [verifyLoading, setVerifyLoading] = useState(false)
-  const [connectMode, setConnectMode] = useState<'automatic' | 'manual'>('automatic')
+  const [connectMode, setConnectMode] = useState<'quick' | 'manual'>('quick')
   const [manualToken, setManualToken] = useState('')
   const [manualLoading, setManualLoading] = useState(false)
   const [manualError, setManualError] = useState('')
   const [manualInstructionsOpen, setManualInstructionsOpen] = useState(false)
-  const connectBtnHover = useHover()
   const disconnectBtnHover = useHover()
-  const verifyBtnHover = useHover()
   const manualConnectBtnHover = useHover()
+
+  const callbackUrl =
+    (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001') +
+    '/api/hostaway-connect/callback'
+
+  const bookmarkletCode = `javascript:void((function(){var t=localStorage.getItem('jwt');if(!t){alert('Please log into Hostaway first');return;}window.location='${callbackUrl}?token='+encodeURIComponent(t);})())`
 
   function fetchStatus() {
     setLoading(true)
@@ -1125,6 +1121,22 @@ function HostawayDashboardSection(): React.ReactElement {
 
   useEffect(() => { fetchStatus() }, [])
 
+  // Handle redirect URL params from bookmarklet callback
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('hostaway') === 'connected') {
+      onToast('Hostaway connected successfully!', true)
+      fetchStatus()
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (params.get('hostaway') === 'error') {
+      const reason = params.get('reason') || 'Unknown error'
+      onToast(`Hostaway connection failed: ${reason}`, false)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function handleDisconnect() {
     if (!window.confirm('Disconnect Hostaway dashboard? You can reconnect at any time.')) return
     setDisconnecting(true)
@@ -1135,57 +1147,6 @@ function HostawayDashboardSection(): React.ReactElement {
       console.error('[Hostaway Connect] Disconnect failed:', err)
     } finally {
       setDisconnecting(false)
-    }
-  }
-
-  async function handleLogin() {
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setLoginError('Please enter both email and password.')
-      return
-    }
-    setLoginLoading(true)
-    setLoginError(null)
-    try {
-      const result = await apiHostawayLogin(loginEmail.trim(), loginPassword)
-      if (result.connected) {
-        setLoginEmail('')
-        setLoginPassword('')
-        setPending2faSessionId(null)
-        fetchStatus()
-      } else if (result.pending2fa && result.sessionId) {
-        setPending2faSessionId(result.sessionId)
-      } else {
-        const msg = result.error || 'Connection failed. Please check your credentials.'
-        setLoginError(msg)
-        if (/manual|blocked/i.test(msg)) setConnectMode('manual')
-      }
-    } catch (err: any) {
-      const msg = err.message || 'Network error. Please try again.'
-      setLoginError(msg)
-      if (/manual|blocked/i.test(msg)) setConnectMode('manual')
-    } finally {
-      setLoginLoading(false)
-    }
-  }
-
-  async function handleVerify2fa() {
-    if (!pending2faSessionId) return
-    setVerifyLoading(true)
-    setLoginError(null)
-    try {
-      const result = await apiHostawayVerify2fa(pending2faSessionId)
-      if (result.connected) {
-        setLoginEmail('')
-        setLoginPassword('')
-        setPending2faSessionId(null)
-        fetchStatus()
-      } else {
-        setLoginError(result.error || 'Verification not yet complete. Please click the link in your email first.')
-      }
-    } catch (err: any) {
-      setLoginError(err.message || 'Verification failed. Please try again.')
-    } finally {
-      setVerifyLoading(false)
     }
   }
 
@@ -1234,6 +1195,11 @@ function HostawayDashboardSection(): React.ReactElement {
     borderRadius: T.radius.sm,
     outline: 'none',
     transition: 'border-color 0.2s ease',
+  }
+
+  const TAB_LABELS: Record<'quick' | 'manual', string> = {
+    quick: 'Quick Connect',
+    manual: 'Manual',
   }
 
   return (
@@ -1299,67 +1265,8 @@ function HostawayDashboardSection(): React.ReactElement {
               {disconnecting ? 'Disconnecting...' : 'Disconnect'}
             </button>
           </>
-        ) : loginLoading ? (
-          /* Loading / connecting state */
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '16px 0' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              <circle cx="12" cy="12" r="10" stroke={T.border.default} strokeWidth="2.5" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-            <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>
-              Connecting to Hostaway...
-            </div>
-            <div style={{ fontSize: 12, color: T.text.tertiary, fontFamily: T.font.sans }}>
-              This may take 15-30 seconds. Please wait.
-            </div>
-          </div>
-        ) : pending2faSessionId ? (
-          /* 2FA verification state */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{
-              padding: '12px 14px',
-              background: 'rgba(29,78,216,0.06)',
-              borderRadius: T.radius.sm,
-              border: `1px solid rgba(29,78,216,0.15)`,
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 4 }}>
-                Email verification required
-              </div>
-              <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, lineHeight: 1.5 }}>
-                Check your email and click the verification link from Hostaway, then click the button below.
-              </div>
-            </div>
-
-            {loginError && (
-              <div style={{ fontSize: 12, color: T.status.red, fontFamily: T.font.sans }}>
-                {loginError}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: verifyLoading ? 0.6 : verifyBtnHover.hovered ? 0.85 : 1,
-                  cursor: verifyLoading ? 'not-allowed' : 'pointer',
-                }}
-                disabled={verifyLoading}
-                onClick={handleVerify2fa}
-                {...verifyBtnHover.handlers}
-              >
-                {verifyLoading ? 'Verifying...' : "I've verified, continue"}
-              </button>
-              <button
-                style={btnGhost}
-                onClick={() => { setPending2faSessionId(null); setLoginError(null) }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
         ) : (
-          /* Not connected — login form with automatic/manual tabs */
+          /* Not connected — Quick Connect / Manual tabs */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
               <span style={{
@@ -1386,7 +1293,7 @@ function HostawayDashboardSection(): React.ReactElement {
 
             {/* Tab switcher */}
             <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border.default}`, marginBottom: 4 }}>
-              {(['automatic', 'manual'] as const).map(tab => (
+              {(['quick', 'manual'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setConnectMode(tab)}
@@ -1401,71 +1308,126 @@ function HostawayDashboardSection(): React.ReactElement {
                     color: connectMode === tab ? T.text.primary : T.text.tertiary,
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
-                    textTransform: 'capitalize',
                     marginBottom: -1,
                   }}
                 >
-                  {tab}
+                  {TAB_LABELS[tab]}
                 </button>
               ))}
             </div>
 
-            {connectMode === 'automatic' ? (
-              /* Automatic — email/password form */
-              <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
-                      Hostaway Email
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="you@example.com"
-                      value={loginEmail}
-                      onChange={e => setLoginEmail(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                      style={loginInputStyle}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: T.text.secondary, fontFamily: T.font.sans }}>
-                      Hostaway Password
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="Password"
-                      value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                      style={loginInputStyle}
-                    />
+            {connectMode === 'quick' ? (
+              /* Quick Connect — bookmarklet-based */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '4px 0' }}>
+                {/* Step 1 */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: T.border.strong,
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: T.font.sans,
+                    flexShrink: 0,
+                  }}>1</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 8 }}>
+                      Drag this button to your bookmarks bar
+                    </div>
+                    <a
+                      href={bookmarkletCode}
+                      onClick={e => e.preventDefault()}
+                      draggable
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '10px 20px',
+                        background: T.border.strong,
+                        color: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        fontFamily: T.font.sans,
+                        borderRadius: 999,
+                        textDecoration: 'none',
+                        cursor: 'grab',
+                        boxShadow: T.shadow.md,
+                        transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+                        userSelect: 'none',
+                      }}
+                      onMouseDown={e => {
+                        const el = e.currentTarget
+                        el.style.cursor = 'grabbing'
+                        el.style.transform = 'scale(1.05)'
+                      }}
+                      onMouseUp={e => {
+                        const el = e.currentTarget
+                        el.style.cursor = 'grab'
+                        el.style.transform = 'scale(1)'
+                      }}
+                    >
+                      Connect to GuestPilot
+                    </a>
+                    <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans, marginTop: 6 }}>
+                      Drag the button above into your browser's bookmarks bar
+                    </div>
                   </div>
                 </div>
 
-                {loginError && (
-                  <div style={{ fontSize: 12, color: T.status.red, fontFamily: T.font.sans }}>
-                    {loginError}
+                {/* Step 2 */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: T.border.strong,
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: T.font.sans,
+                    flexShrink: 0,
+                  }}>2</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans }}>
+                      Open <strong>dashboard.hostaway.com</strong> and log in
+                    </div>
                   </div>
-                )}
-
-                <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
-                  Connection takes about 15-30 seconds. Your credentials are not stored.
                 </div>
 
-                <div>
-                  <button
-                    style={{
-                      ...btnPrimary,
-                      opacity: connectBtnHover.hovered ? 0.85 : 1,
-                    }}
-                    onClick={handleLogin}
-                    {...connectBtnHover.handlers}
-                  >
-                    Connect
-                  </button>
+                {/* Step 3 */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: T.border.strong,
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: T.font.sans,
+                    flexShrink: 0,
+                  }}>3</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 4 }}>
+                      Click "Connect to GuestPilot" from your bookmarks bar
+                    </div>
+                    <div style={{ fontSize: 11, color: T.text.tertiary, fontFamily: T.font.sans }}>
+                      You'll be redirected back here automatically
+                    </div>
+                  </div>
                 </div>
-              </>
+              </div>
             ) : (
               /* Manual — paste token form */
               <>
@@ -1597,7 +1559,7 @@ export function SettingsV5({ onImportComplete }: { onImportComplete: () => void 
         </div>
 
         <WebhookUrlSection />
-        <HostawayDashboardSection />
+        <HostawayDashboardSection onToast={(text, ok) => setToast({ text, ok })} />
         <WorkingHoursSection />
         <DataSyncSection onImportComplete={onImportComplete} />
         <AIToggleSection onImportComplete={onImportComplete} />

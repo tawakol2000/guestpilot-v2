@@ -1145,30 +1145,8 @@ export async function apiDisconnectHostaway(): Promise<{ success: boolean }> {
   return apiFetch<{ success: boolean }>('/api/hostaway-connect', { method: 'DELETE' })
 }
 
-export interface HostawayLoginResult {
-  success: boolean
-  connected?: boolean
-  pending2fa?: boolean
-  sessionId?: string
-  error?: string
-}
-
-export async function apiHostawayLogin(email: string, password: string): Promise<HostawayLoginResult> {
-  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  })
-}
-
-export async function apiHostawayVerify2fa(sessionId: string): Promise<HostawayLoginResult> {
-  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/verify-2fa', {
-    method: 'POST',
-    body: JSON.stringify({ sessionId }),
-  })
-}
-
-export async function apiHostawayConnectManual(token: string): Promise<HostawayLoginResult> {
-  return apiFetch<HostawayLoginResult>('/api/hostaway-connect/manual', {
+export async function apiHostawayConnectManual(token: string): Promise<{ success: boolean; connected?: boolean; error?: string }> {
+  return apiFetch<{ success: boolean; connected?: boolean; error?: string }>('/api/hostaway-connect/manual', {
     method: 'POST',
     body: JSON.stringify({ token }),
   })
