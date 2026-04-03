@@ -233,22 +233,8 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
 
   const numDays = viewMode === '2week' ? 14 : 30
 
-  // Dynamic column width: fill available screen width, with a minimum
-  const [containerWidth, setContainerWidth] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = containerRef.current?.parentElement
-    if (!el) return
-    const measure = () => setContainerWidth(el.clientWidth)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const availableWidth = containerWidth - T.sidebarWidth
-  const minColWidth = viewMode === '2week' ? 72 : 44
-  const colWidth = Math.max(minColWidth, Math.floor(availableWidth / numDays))
+  // Fixed column widths — grid scrolls horizontally when wider than viewport
+  const colWidth = viewMode === '2week' ? 80 : 52
 
   // Navigation limits
   const now = new Date(); now.setHours(0, 0, 0, 0)
@@ -330,11 +316,17 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
     const co = new Date(r.checkOut); co.setHours(0, 0, 0, 0)
     const rangeStart = new Date(startDate); rangeStart.setHours(0, 0, 0, 0)
     const rangeEnd = addDays(rangeStart, numDays)
-    const barStart = ci < rangeStart ? rangeStart : ci
-    const barEnd = co > rangeEnd ? rangeEnd : co
+    const clippedLeft = ci < rangeStart
+    const clippedRight = co > rangeEnd
+    const barStart = clippedLeft ? rangeStart : ci
+    const barEnd = clippedRight ? rangeEnd : co
     const startCol = daysBetween(rangeStart, barStart)
     const endCol = daysBetween(rangeStart, barEnd)
-    return { left: startCol * colWidth + 2, width: Math.max(T.barMinWidth, (endCol - startCol) * colWidth - 4), clippedLeft: ci < rangeStart, clippedRight: co > rangeEnd }
+    // Bars start/end at midpoint of day column (check-in/out happens midday, not midnight)
+    // Clipped edges go to the column boundary instead of midpoint
+    const left = clippedLeft ? 0 : startCol * colWidth + colWidth / 2
+    const right = clippedRight ? endCol * colWidth : endCol * colWidth + colWidth / 2
+    return { left, width: Math.max(T.barMinWidth, right - left), clippedLeft, clippedRight }
   }
 
   // ── Click handler ─────────────────────────────────────────────────────
@@ -348,7 +340,7 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
 
   // ══════════════════════════════════════════════════════════════════════
   return (
-    <div ref={containerRef} style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg, fontFamily: 'Inter, system-ui, sans-serif' }}>
       <style>{`
         @keyframes tooltipIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
         .cal-bar:hover { transform: translateY(-1px) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important; z-index: 10 !important; }
