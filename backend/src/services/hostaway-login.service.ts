@@ -127,9 +127,9 @@ export async function loginToHostaway(email: string, password: string): Promise<
         const result = await page.evaluate(() => {
           const keys = Object.keys(localStorage);
           const jwt = localStorage.getItem('jwt');
-          return { keys, jwt, url: window.location.href };
+          return { keys, jwt };
         });
-        console.log(`[HostawayLogin] Attempt ${attempt + 1}: url=${result.url}, localStorage keys=[${result.keys.join(', ')}], jwt=${result.jwt ? 'FOUND' : 'null'}`);
+        console.log(`[HostawayLogin] Attempt ${attempt + 1}: url=${page.url()}, localStorage keys=[${result.keys.join(', ')}], jwt=${result.jwt ? 'FOUND' : 'null'}`);
         if (result.jwt) { jwt = result.jwt; break; }
         await page.waitForTimeout(1000);
       }
