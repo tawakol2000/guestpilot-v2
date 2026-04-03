@@ -49,7 +49,7 @@ async function launchStealthBrowser() {
   const isProduction = process.env.NODE_ENV === 'production';
   const browser = await chromium.launch({
     headless: !isProduction, // headed via Xvfb in production, headless locally
-    channel: 'chrome',
+    executablePath: isProduction ? '/usr/bin/google-chrome-stable' : undefined,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-sandbox',

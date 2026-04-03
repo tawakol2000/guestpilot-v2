@@ -19,21 +19,20 @@ COPY scripts ./scripts/
 COPY config ./config/
 COPY tsconfig.json ./
 
-# Install Xvfb (virtual display) for headed Chrome mode + Chrome system dependencies
+# Install Xvfb + Google Chrome stable from Google's apt repo
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        xvfb xauth dbus-x11 fonts-liberation fonts-noto-color-emoji \
-       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-       libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-       libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
+       wget gnupg ca-certificates \
+    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends google-chrome-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node packages
 RUN npm install
-
-# Install full Google Chrome (rebrowser-playwright uses this in headed mode via Xvfb)
-RUN npx playwright install chrome --with-deps
 
 # Generate Prisma client
 RUN npx prisma generate
