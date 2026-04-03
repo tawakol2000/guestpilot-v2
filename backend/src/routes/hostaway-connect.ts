@@ -162,6 +162,26 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // ── GET /debug-login — test login steps without submitting (TEMPORARY) ──
+  router.get('/debug-login', auth, async (req: any, res) => {
+    try {
+      const { generateAuditToken, solveCaptchaDebug } = require('../services/hostaway-login.service');
+      const steps: Record<string, any> = {};
+
+      // Step 1: Generate auditToken
+      try {
+        const auditToken = await generateAuditToken();
+        steps.auditToken = auditToken ? { success: true, length: auditToken.length, preview: auditToken.substring(0, 50) + '...' } : { success: false };
+      } catch (e: any) {
+        steps.auditToken = { success: false, error: e.message };
+      }
+
+      res.json({ steps });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── POST /manual — connect with a manually-pasted JWT token ─────────────
   router.post('/manual', auth, async (req: any, res) => {
     try {

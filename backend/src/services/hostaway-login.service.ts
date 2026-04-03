@@ -82,7 +82,7 @@ async function solveCaptcha(): Promise<string> {
 
 // ─── Castle.io: Generate auditToken via browser ─────────────────────────────
 
-async function generateAuditToken(): Promise<string> {
+export async function generateAuditToken(): Promise<string> {
   console.log('[HostawayLogin] Generating Castle.io auditToken via browser...');
   let browser: Browser | null = null;
 
