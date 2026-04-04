@@ -72,7 +72,7 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
     name: 'OPEN_TASKS',
     description: 'Currently open escalation tasks for this conversation',
     essential: false,
-    agentScope: ['coordinator'],
+    agentScope: ['coordinator', 'screening'],
     propertyBound: false,
     emptyDefault: 'No open tasks.',
   },
