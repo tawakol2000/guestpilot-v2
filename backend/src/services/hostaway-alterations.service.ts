@@ -2,9 +2,10 @@
  * Hostaway Alteration Service
  * Calls platform.hostaway.com (internal dashboard API) for alteration fetch/accept/reject.
  *
- * NOTE: Accept and reject endpoint paths are PLACEHOLDERS.
- * Replace them by intercepting network traffic on the Hostaway dashboard
- * when a real pending alteration is available (see quickstart.md Scenario 6).
+ * Endpoints (confirmed via network intercept 2026-04-04):
+ *   GET  /reservations/{id}/alterations                    — fetch pending alterations
+ *   PUT  /reservations/{id}/alterations/{altId}  {"status":"ACCEPTED"}  — accept
+ *   PUT  /reservations/{id}/alterations/{altId}  {"status":"DECLINED"}  — reject
  */
 
 import axios, { AxiosError } from 'axios';
@@ -83,7 +84,7 @@ export async function fetchAlteration(
 
 /**
  * Accept a pending alteration.
- * PLACEHOLDER endpoint — update path before launch.
+ * Real endpoint: PUT /reservations/{id}/alterations/{altId} with body {"status":"ACCEPTED"}
  */
 export async function acceptAlteration(
   dashboardJwt: string,
@@ -93,9 +94,9 @@ export async function acceptAlteration(
   console.log(`[HostawayAlterations] Accepting alteration ${hostawayAlterationId} for reservation ${hostawayReservationId}`);
   try {
     const client = createClient(dashboardJwt);
-    // PLACEHOLDER — replace with real endpoint once discovered
     const res = await client.put(
-      `/reservations/${hostawayReservationId}/alterations/${hostawayAlterationId}/accept`,
+      `/reservations/${hostawayReservationId}/alterations/${hostawayAlterationId}`,
+      { status: 'ACCEPTED' },
     );
     console.log(`[HostawayAlterations] Accept success: ${res.status}`);
     return { success: true, data: res.data };
@@ -106,7 +107,7 @@ export async function acceptAlteration(
 
 /**
  * Reject a pending alteration.
- * PLACEHOLDER endpoint — update path before launch.
+ * Real endpoint: PUT /reservations/{id}/alterations/{altId} with body {"status":"DECLINED"}
  */
 export async function rejectAlteration(
   dashboardJwt: string,
@@ -116,9 +117,9 @@ export async function rejectAlteration(
   console.log(`[HostawayAlterations] Rejecting alteration ${hostawayAlterationId} for reservation ${hostawayReservationId}`);
   try {
     const client = createClient(dashboardJwt);
-    // PLACEHOLDER — replace with real endpoint once discovered
     const res = await client.put(
-      `/reservations/${hostawayReservationId}/alterations/${hostawayAlterationId}/decline`,
+      `/reservations/${hostawayReservationId}/alterations/${hostawayAlterationId}`,
+      { status: 'DECLINED' },
     );
     console.log(`[HostawayAlterations] Reject success: ${res.status}`);
     return { success: true, data: res.data };
