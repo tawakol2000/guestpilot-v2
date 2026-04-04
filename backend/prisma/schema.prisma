@@ -37,6 +37,8 @@ model Tenant {
   toolDefinitions         ToolDefinition[]
   pushSubscriptions       PushSubscription[]
   inquiryActionLogs       InquiryActionLog[]
+  bookingAlterations      BookingAlteration[]
+  alterationActionLogs    AlterationActionLog[]
 
   // Dashboard connection (platform.hostaway.com internal API)
   dashboardJwt            String?           @db.Text
@@ -110,6 +112,8 @@ model Reservation {
   tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   inquiryActionLogs     InquiryActionLog[]
+  alteration            BookingAlteration?
+  alterationActionLogs  AlterationActionLog[]
 
   @@unique([tenantId, hostawayReservationId])
   @@index([tenantId])
@@ -564,6 +568,74 @@ enum InquiryActionType {
 }
 
 enum InquiryActionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// ─── Booking Alteration (accept/reject guest modification requests) ───────────
+
+model BookingAlteration {
+  id                   String           @id @default(cuid())
+  tenantId             String
+  reservationId        String           @unique
+  hostawayAlterationId String           @default("")
+
+  // Original booking values (before alteration)
+  originalCheckIn      DateTime?
+  originalCheckOut     DateTime?
+  originalGuestCount   Int?
+
+  // Proposed new values from the guest
+  proposedCheckIn      DateTime?
+  proposedCheckOut     DateTime?
+  proposedGuestCount   Int?
+
+  status               AlterationStatus @default(PENDING)
+  fetchError           String?          // set if Hostaway detail fetch failed
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation          Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  actionLogs           AlterationActionLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, reservationId])
+}
+
+model AlterationActionLog {
+  id               String                 @id @default(cuid())
+  tenantId         String
+  reservationId    String
+  alterationId     String
+  actionType       AlterationActionType
+  status           AlterationActionStatus @default(PENDING)
+  initiatedBy      String
+  errorMessage     String?
+  hostawayResponse Json?
+  createdAt        DateTime               @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation       @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  alteration  BookingAlteration @relation(fields: [alterationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reservationId, createdAt(sort: Desc)])
+}
+
+enum AlterationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum AlterationActionType {
+  ACCEPT
+  REJECT
+}
+
+enum AlterationActionStatus {
   PENDING
   SUCCESS
   FAILED

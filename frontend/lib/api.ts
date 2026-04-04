@@ -1191,3 +1191,32 @@ export async function apiGetLastAction(reservationId: string): Promise<LastActio
   return res.lastAction
 }
 
+// ─── Booking Alteration Actions ────────────────────────────────────────────────
+
+export interface BookingAlteration {
+  id: string
+  hostawayAlterationId: string
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED'
+  originalCheckIn: string | null
+  originalCheckOut: string | null
+  originalGuestCount: number | null
+  proposedCheckIn: string | null
+  proposedCheckOut: string | null
+  proposedGuestCount: number | null
+  fetchError: string | null
+  createdAt: string
+}
+
+export async function apiGetAlteration(reservationId: string): Promise<BookingAlteration | null> {
+  const res = await apiFetch<{ alteration: BookingAlteration | null }>(`/api/reservations/${reservationId}/alteration`)
+  return res.alteration
+}
+
+export async function apiAcceptAlteration(reservationId: string): Promise<ReservationActionResult> {
+  return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/alteration/accept`, { method: 'POST' })
+}
+
+export async function apiRejectAlteration(reservationId: string): Promise<ReservationActionResult> {
+  return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/alteration/reject`, { method: 'POST' })
+}
+

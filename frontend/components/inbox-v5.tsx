@@ -75,6 +75,10 @@ import {
   apiCancelReservation,
   apiGetLastAction,
   apiGetHostawayConnectStatus,
+  apiGetAlteration,
+  apiAcceptAlteration,
+  apiRejectAlteration,
+  type BookingAlteration,
   ApiError,
   mapChannel,
   mapMessageSender,
@@ -853,284 +857,317 @@ function parseAlterationNote(note: string | undefined): {
   return result
 }
 
-function AlterationRequestCard({
-  conversationId,
-  guestName,
-  onMessageSent,
+function AlterationPanel({
+  reservationId,
 }: {
-  conversationId: string
-  guestName: string
-  onMessageSent: (msg: { id: string; content: string; sentAt: string }) => void
+  reservationId: string
 }) {
-  const [tasks, setTasks] = useState<ApiTask[]>([])
-  const [processing, setProcessing] = useState<string | null>(null) // taskId being processed
-  const [processedTasks, setProcessedTasks] = useState<Record<string, 'accepted' | 'rejected'>>({})
+  const [alteration, setAlteration] = useState<BookingAlteration | null | 'loading'>('loading')
+  const [actionInFlight, setActionInFlight] = useState<'accept' | 'reject' | null>(null)
+  const [actionResult, setActionResult] = useState<{ status: 'success' | 'error'; message?: string } | null>(null)
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false)
+  const [reconnectWarning, setReconnectWarning] = useState(false)
+  const [channelError, setChannelError] = useState<string | null>(null)
 
   useEffect(() => {
-    apiGetConversationTasks(conversationId).then(all => {
-      const alteration = all.filter(
-        t => (ALTERATION_TITLES as readonly string[]).includes(t.title) && t.status !== 'completed'
-      )
-      setTasks(alteration)
-    }).catch(err => console.error('[Alteration] Failed to load alteration tasks:', err))
-  }, [conversationId])
+    if (!reservationId) { setAlteration(null); return }
+    setAlteration('loading')
+    setActionResult(null)
+    setReconnectWarning(false)
+    setChannelError(null)
+    apiGetAlteration(reservationId)
+      .then(a => setAlteration(a))
+      .catch(() => setAlteration(null))
+  }, [reservationId])
 
-  async function handleAction(task: ApiTask, action: 'accept' | 'reject') {
-    if (processing) return
-    setProcessing(task.id)
+  function fmtDate(iso: string | null): string {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
+  async function handleAccept() {
+    if (actionInFlight) return
+    setActionInFlight('accept')
+    setActionResult(null)
+    setReconnectWarning(false)
+    setChannelError(null)
     try {
-      // 1. Mark task completed
-      await apiUpdateTask(task.id, { status: 'completed' })
-
-      // 2. Send the appropriate message to the guest
-      const displayTitle = alterationDisplayTitle(task.title).toLowerCase()
-      const message = action === 'accept'
-        ? `Great news! Your ${displayTitle} has been approved. We'll update your reservation details accordingly. Please let us know if you have any questions.`
-        : `Unfortunately, we're unable to accommodate the ${displayTitle} at this time. Please let us know if there's anything else we can help with.`
-
-      const msg = await apiSendMessage(conversationId, message)
-      onMessageSent({ id: msg.id, content: message, sentAt: msg.sentAt })
-
-      // 3. Update local state
-      setProcessedTasks(prev => ({ ...prev, [task.id]: action === 'accept' ? 'accepted' : 'rejected' }))
-    } catch (err) {
-      console.error('[AlterationRequest]', action, 'error:', err)
+      await apiAcceptAlteration(reservationId)
+      setAlteration(prev => prev && prev !== 'loading' ? { ...prev, status: 'ACCEPTED' } : prev)
+      setActionResult({ status: 'success' })
+    } catch (err: any) {
+      if (err?.status === 403) {
+        setReconnectWarning(true)
+      } else {
+        setActionResult({ status: 'error', message: err?.data?.error || err?.message || 'Failed to accept alteration' })
+      }
     } finally {
-      setProcessing(null)
+      setActionInFlight(null)
     }
   }
 
-  // Filter out processed tasks after a short delay
-  const visibleTasks = tasks.filter(t => !processedTasks[t.id])
+  async function handleReject() {
+    if (actionInFlight) return
+    setShowRejectConfirm(false)
+    setActionInFlight('reject')
+    setActionResult(null)
+    setReconnectWarning(false)
+    setChannelError(null)
+    try {
+      await apiRejectAlteration(reservationId)
+      setAlteration(prev => prev && prev !== 'loading' ? { ...prev, status: 'REJECTED' } : prev)
+      setActionResult({ status: 'success' })
+    } catch (err: any) {
+      if (err?.status === 403) {
+        setReconnectWarning(true)
+      } else if (err?.status === 422) {
+        setChannelError('Rejection not supported for this channel — please reject on Airbnb/Booking.com.')
+      } else {
+        setActionResult({ status: 'error', message: err?.data?.error || err?.message || 'Failed to reject alteration' })
+      }
+    } finally {
+      setActionInFlight(null)
+    }
+  }
 
-  if (visibleTasks.length === 0 && Object.keys(processedTasks).length === 0) return null
+  if (alteration === 'loading') return null
+  if (!alteration) return null
 
-  // Show recently-processed tasks briefly
-  const recentlyProcessed = tasks.filter(t => processedTasks[t.id])
+  const isPending = alteration.status === 'PENDING'
+  const isAccepted = alteration.status === 'ACCEPTED'
+  const isRejected = alteration.status === 'REJECTED'
 
-  if (visibleTasks.length === 0 && recentlyProcessed.length === 0) return null
+  const hasDetails = alteration.originalCheckIn || alteration.proposedCheckIn || alteration.originalGuestCount !== null
+
+  const checkInChanged = alteration.originalCheckIn !== alteration.proposedCheckIn
+  const checkOutChanged = alteration.originalCheckOut !== alteration.proposedCheckOut
+  const guestCountChanged = alteration.originalGuestCount !== alteration.proposedGuestCount
+
+  const panelColor = isAccepted ? T.status.green : isRejected ? T.status.red : T.status.amber
 
   return (
     <div style={{ padding: '0 16px', flexShrink: 0 }}>
-      {visibleTasks.map(task => {
-        const parsed = parseAlterationNote(task.note)
-        const isProcessing = processing === task.id
+      <div style={{
+        background: T.bg.primary,
+        border: `1px solid ${panelColor}44`,
+        borderLeft: `4px solid ${panelColor}`,
+        borderRadius: 8,
+        overflow: 'hidden',
+        marginBottom: 8,
+        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+      }}>
+        {/* Header */}
+        <div style={{
+          background: panelColor + '12',
+          padding: '8px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          borderBottom: `1px solid ${panelColor}22`,
+        }}>
+          {isAccepted ? <CheckCircle size={14} color={T.status.green} /> :
+           isRejected ? <CircleX size={14} color={T.status.red} /> :
+           <AlertTriangle size={14} color={T.status.amber} />}
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans }}>
+            Booking Alteration Request
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 600,
+            color: panelColor,
+            background: panelColor + '20',
+            padding: '2px 6px',
+            borderRadius: 4,
+            marginLeft: 'auto',
+            textTransform: 'uppercase' as const,
+            letterSpacing: '0.04em',
+          }}>
+            {isAccepted ? 'Accepted' : isRejected ? 'Rejected' : 'Pending'}
+          </span>
+        </div>
 
-        return (
-          <div
-            key={task.id}
-            style={{
-              background: T.bg.primary,
-              border: `1px solid ${T.status.amber}44`,
-              borderLeft: `4px solid ${T.status.amber}`,
-              borderRadius: 8,
-              overflow: 'hidden',
-              marginBottom: 8,
-              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                background: T.status.amber + '12',
-                padding: '8px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                borderBottom: `1px solid ${T.status.amber}22`,
-              }}
-            >
-              <AlertTriangle size={14} color={T.status.amber} />
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: T.text.primary,
-                  fontFamily: T.font.sans,
-                }}
-              >
-                {alterationDisplayTitle(task.title)}
-              </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: T.status.amber,
-                  background: T.status.amber + '20',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  marginLeft: 'auto',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                Pending
-              </span>
+        {/* Details */}
+        <div style={{ padding: '8px 12px' }}>
+          {alteration.fetchError ? (
+            <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, fontStyle: 'italic' }}>
+              Unable to load alteration details — connect Hostaway Dashboard in Settings to view changes.
             </div>
-
-            {/* Details */}
-            <div style={{ padding: '8px 12px' }}>
-              {parsed.guestName && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Users size={11} color={T.text.tertiary} />
-                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
-                    {parsed.guestName}
-                  </span>
-                </div>
-              )}
-              {(parsed.currentDates || parsed.requestedDates) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <CalendarClock size={11} color={T.text.tertiary} />
-                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
-                    {parsed.currentDates && parsed.requestedDates
-                      ? (<>{parsed.currentDates} <ArrowRight size={10} style={{ display: 'inline', verticalAlign: 'middle', margin: '0 2px' }} /> {parsed.requestedDates}</>)
-                      : parsed.requestedDates || parsed.currentDates
-                    }
-                  </span>
-                </div>
-              )}
-              {parsed.price && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Tag size={11} color={T.text.tertiary} />
-                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
-                    {parsed.price}
-                  </span>
-                </div>
-              )}
-              {parsed.channel && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Globe size={11} color={T.text.tertiary} />
-                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
-                    {parsed.channel}
-                  </span>
-                </div>
-              )}
-              {parsed.reason && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <ClipboardList size={11} color={T.text.tertiary} />
-                  <span style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
-                    {parsed.reason}
-                  </span>
-                </div>
-              )}
-              {/* Fallback: show raw note if no structured fields found */}
-              {!parsed.guestName && !parsed.currentDates && !parsed.requestedDates && !parsed.price && !parsed.reason && parsed.raw && (
-                <div style={{
-                  fontSize: 12,
-                  color: T.text.secondary,
-                  fontFamily: T.font.sans,
-                  lineHeight: 1.5,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}>
-                  {parsed.raw}
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div
-              style={{
-                padding: '8px 12px',
-                display: 'flex',
-                gap: 8,
-                borderTop: `1px solid ${T.border.default}`,
-              }}
-            >
-              <button
-                onClick={() => handleAction(task, 'accept')}
-                disabled={isProcessing}
-                style={{
-                  flex: 1,
-                  height: 34,
-                  borderRadius: 6,
-                  border: 'none',
-                  background: T.status.green,
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  fontFamily: T.font.sans,
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  opacity: isProcessing ? 0.7 : 1,
-                  transition: 'opacity 0.15s',
-                }}
-              >
-                {isProcessing && processing === task.id ? (
-                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <Check size={14} />
+          ) : hasDetails ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: T.font.sans }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' as const, color: T.text.tertiary, fontWeight: 500, paddingBottom: 4, width: '35%' }}></th>
+                  <th style={{ textAlign: 'left' as const, color: T.text.tertiary, fontWeight: 500, paddingBottom: 4, width: '30%' }}>Original</th>
+                  <th style={{ textAlign: 'left' as const, color: T.text.tertiary, fontWeight: 500, paddingBottom: 4, width: '35%' }}>Proposed</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ color: T.text.secondary, paddingBottom: 2, paddingRight: 8 }}>Check-in</td>
+                  <td style={{ color: T.text.primary, paddingBottom: 2, paddingRight: 8 }}>{fmtDate(alteration.originalCheckIn)}</td>
+                  <td style={{
+                    color: checkInChanged ? panelColor : T.text.primary,
+                    fontWeight: checkInChanged ? 600 : 400,
+                    paddingBottom: 2,
+                  }}>{fmtDate(alteration.proposedCheckIn)}</td>
+                </tr>
+                <tr>
+                  <td style={{ color: T.text.secondary, paddingBottom: 2, paddingRight: 8 }}>Check-out</td>
+                  <td style={{ color: T.text.primary, paddingBottom: 2, paddingRight: 8 }}>{fmtDate(alteration.originalCheckOut)}</td>
+                  <td style={{
+                    color: checkOutChanged ? panelColor : T.text.primary,
+                    fontWeight: checkOutChanged ? 600 : 400,
+                    paddingBottom: 2,
+                  }}>{fmtDate(alteration.proposedCheckOut)}</td>
+                </tr>
+                {(alteration.originalGuestCount !== null || alteration.proposedGuestCount !== null) && (
+                  <tr>
+                    <td style={{ color: T.text.secondary, paddingRight: 8 }}>Guests</td>
+                    <td style={{ color: T.text.primary, paddingRight: 8 }}>{alteration.originalGuestCount ?? '—'}</td>
+                    <td style={{
+                      color: guestCountChanged ? panelColor : T.text.primary,
+                      fontWeight: guestCountChanged ? 600 : 400,
+                    }}>{alteration.proposedGuestCount ?? '—'}</td>
+                  </tr>
                 )}
-                Accept
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans }}>
+              Alteration details are loading — check back shortly.
+            </div>
+          )}
+        </div>
+
+        {/* Reconnect warning */}
+        {reconnectWarning && (
+          <div style={{
+            padding: '6px 12px',
+            background: T.status.red + '12',
+            borderTop: `1px solid ${T.status.red}22`,
+            fontSize: 12,
+            color: T.status.red,
+            fontFamily: T.font.sans,
+          }}>
+            Hostaway dashboard connection expired.{' '}
+            <a href="/settings?tab=hostaway" style={{ color: T.status.red, fontWeight: 600 }}>Reconnect in Settings →</a>
+          </div>
+        )}
+
+        {/* Channel error */}
+        {channelError && (
+          <div style={{
+            padding: '6px 12px',
+            background: T.status.amber + '12',
+            borderTop: `1px solid ${T.status.amber}22`,
+            fontSize: 12,
+            color: T.text.secondary,
+            fontFamily: T.font.sans,
+          }}>
+            {channelError}
+          </div>
+        )}
+
+        {/* Action error */}
+        {actionResult?.status === 'error' && (
+          <div style={{
+            padding: '6px 12px',
+            background: T.status.red + '12',
+            borderTop: `1px solid ${T.status.red}22`,
+            fontSize: 12,
+            color: T.status.red,
+            fontFamily: T.font.sans,
+          }}>
+            {actionResult.message}
+          </div>
+        )}
+
+        {/* Reject confirm dialog */}
+        {showRejectConfirm && (
+          <div style={{
+            padding: '8px 12px',
+            background: T.status.red + '08',
+            borderTop: `1px solid ${T.status.red}22`,
+            display: 'flex',
+            flexDirection: 'column' as const,
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 12, color: T.text.primary, fontFamily: T.font.sans }}>
+              Reject this alteration? The original booking dates will be kept.
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleReject}
+                style={{
+                  flex: 1, height: 30, borderRadius: 6, border: 'none',
+                  background: T.status.red, color: '#fff',
+                  fontSize: 12, fontWeight: 700, fontFamily: T.font.sans, cursor: 'pointer',
+                }}
+              >
+                Confirm Reject
               </button>
               <button
-                onClick={() => handleAction(task, 'reject')}
-                disabled={isProcessing}
+                onClick={() => setShowRejectConfirm(false)}
                 style={{
-                  flex: 0,
-                  minWidth: 90,
-                  height: 34,
-                  borderRadius: 6,
-                  border: `1px solid ${T.status.red}66`,
-                  background: 'transparent',
-                  color: T.status.red,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  fontFamily: T.font.sans,
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  opacity: isProcessing ? 0.7 : 1,
-                  transition: 'opacity 0.15s',
+                  flex: 1, height: 30, borderRadius: 6,
+                  border: `1px solid ${T.border.default}`,
+                  background: 'transparent', color: T.text.secondary,
+                  fontSize: 12, fontWeight: 500, fontFamily: T.font.sans, cursor: 'pointer',
                 }}
               >
-                <X size={13} />
-                Reject
+                Cancel
               </button>
             </div>
           </div>
-        )
-      })}
+        )}
 
-      {/* Recently processed */}
-      {recentlyProcessed.map(task => (
-        <div
-          key={`done-${task.id}`}
-          style={{
-            background: T.bg.primary,
-            border: `1px solid ${processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red}44`,
-            borderLeft: `4px solid ${processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red}`,
-            borderRadius: 8,
-            padding: '10px 12px',
-            marginBottom: 8,
+        {/* Actions */}
+        {isPending && !showRejectConfirm && (
+          <div style={{
+            padding: '8px 12px',
             display: 'flex',
-            alignItems: 'center',
             gap: 8,
-          }}
-        >
-          {processedTasks[task.id] === 'accepted' ? (
-            <CheckCircle size={14} color={T.status.green} />
-          ) : (
-            <CircleX size={14} color={T.status.red} />
-          )}
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: processedTasks[task.id] === 'accepted' ? T.status.green : T.status.red,
-              fontFamily: T.font.sans,
-            }}
-          >
-            {alterationDisplayTitle(task.title)} — {processedTasks[task.id] === 'accepted' ? 'Approved' : 'Rejected'}
-          </span>
-        </div>
-      ))}
+            borderTop: `1px solid ${T.border.default}`,
+          }}>
+            <button
+              onClick={handleAccept}
+              disabled={!!actionInFlight}
+              style={{
+                flex: 1, height: 34, borderRadius: 6, border: 'none',
+                background: actionResult?.status === 'success' && actionInFlight === null ? T.status.green : T.status.green,
+                color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: T.font.sans,
+                cursor: actionInFlight ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                opacity: actionInFlight === 'reject' ? 0.5 : 1,
+                transition: 'opacity 0.15s',
+              }}
+            >
+              {actionInFlight === 'accept' ? (
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Check size={14} />
+              )}
+              Accept Alteration
+            </button>
+            <button
+              onClick={() => setShowRejectConfirm(true)}
+              disabled={!!actionInFlight}
+              style={{
+                flex: 0, minWidth: 90, height: 34, borderRadius: 6,
+                border: `1px solid ${T.status.red}66`,
+                background: 'transparent', color: T.status.red,
+                fontSize: 13, fontWeight: 600, fontFamily: T.font.sans,
+                cursor: actionInFlight ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                opacity: actionInFlight === 'accept' ? 0.5 : 1,
+                transition: 'opacity 0.15s',
+              }}
+            >
+              <X size={13} />
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -3599,36 +3636,10 @@ export default function InboxV5() {
                 </div>
               </div>
 
-              {/* Alteration Request Banner */}
-              <AlterationRequestCard
-                key={`alteration-${selectedConv.id}`}
-                conversationId={selectedConv.id}
-                guestName={selectedConv.guestName}
-                onMessageSent={(msg) => {
-                  const newMsg: Message = {
-                    id: msg.id,
-                    sender: 'host',
-                    text: msg.content,
-                    time: formatTimestamp(msg.sentAt),
-                  }
-                  setConversations(prev =>
-                    prev.map(c =>
-                      c.id === selectedConv.id
-                        ? {
-                            ...c,
-                            messages: [...c.messages, newMsg],
-                            lastMessage: msg.content,
-                            lastMessageSender: 'host',
-                            timestamp: formatTimestamp(msg.sentAt),
-                          }
-                        : c
-                    )
-                  )
-                  setTimeout(
-                    () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }),
-                    50
-                  )
-                }}
+              {/* Alteration Panel */}
+              <AlterationPanel
+                key={`alteration-${selectedConv.reservationId}`}
+                reservationId={selectedConv.reservationId}
               />
 
               {/* Reconnected banner */}

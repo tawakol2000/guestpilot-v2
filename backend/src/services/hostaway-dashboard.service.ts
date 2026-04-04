@@ -43,22 +43,12 @@ export async function rejectReservation(dashboardJwt: string, hostawayReservatio
   console.log(`[HostawayDashboard] Rejecting reservation ${hostawayReservationId}`);
   try {
     const client = createClient(dashboardJwt);
-    // Try PUT /status/declined first (most likely pattern based on approve)
+    // Confirmed endpoint: PUT /reservations/{id}/status/declined
+    // Only works for Airbnb, VRBO, Booking.com channels (not direct bookings)
     const res = await client.put(`/reservations/${hostawayReservationId}/status/declined`);
     console.log(`[HostawayDashboard] Reject success: ${res.status}`);
     return { success: true, data: res.data };
-  } catch (err: any) {
-    // If declined doesn't work, try denied
-    if (err?.response?.status === 404 || err?.response?.status === 400) {
-      try {
-        const client = createClient(dashboardJwt);
-        const res = await client.put(`/reservations/${hostawayReservationId}/status/denied`);
-        console.log(`[HostawayDashboard] Reject (denied) success: ${res.status}`);
-        return { success: true, data: res.data };
-      } catch (err2) {
-        return handleError(err2, 'reject', hostawayReservationId);
-      }
-    }
+  } catch (err) {
     return handleError(err, 'reject', hostawayReservationId);
   }
 }

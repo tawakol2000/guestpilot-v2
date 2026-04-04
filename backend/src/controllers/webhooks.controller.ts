@@ -7,11 +7,13 @@
  */
 
 import { Request, Response } from 'express';
-import { PrismaClient, MessageRole, Channel, ReservationStatus } from '@prisma/client';
+import { PrismaClient, MessageRole, Channel, ReservationStatus, AlterationStatus } from '@prisma/client';
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
 import { broadcastToTenant, broadcastCritical } from '../services/socket.service';
 import { getReservation } from '../services/hostaway.service';
 import { sendPushToTenant } from '../services/push.service';
+import { fetchAlteration } from '../services/hostaway-alterations.service';
+import { decrypt } from '../lib/encryption';
 
 interface HostawayWebhookPayload {
   event: string;
@@ -452,12 +454,79 @@ async function handleNewMessage(
       data: {
         tenantId, conversationId: conversation.id, propertyId: conversation.propertyId,
         title: 'alteration-request',
-        note: `${guestName} (${propertyName}) submitted a booking alteration request. Review and accept/reject on the Airbnb/Booking.com dashboard. Message: "${(data.body || '').substring(0, 200)}"`,
+        note: `${guestName} (${propertyName}) submitted a booking alteration request. Review and accept/reject in GuestPilot inbox. Message: "${(data.body || '').substring(0, 200)}"`,
         urgency: 'modification_request',
         source: 'system',
       },
     });
     broadcastToTenant(tenantId, 'new_task', { conversationId: conversation.id, task });
+
+    // Fetch alteration details from Hostaway and persist (fire-and-forget, does not block)
+    const hostawayResId = conversation.reservation?.hostawayReservationId;
+    if (hostawayResId) {
+      (async () => {
+        try {
+          const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { dashboardJwt: true, dashboardJwtExpiresAt: true },
+          });
+
+          let fetchError: string | null = null;
+          let alterationData: {
+            hostawayAlterationId: string;
+            originalCheckIn: string | null;
+            originalCheckOut: string | null;
+            originalGuestCount: number | null;
+            proposedCheckIn: string | null;
+            proposedCheckOut: string | null;
+            proposedGuestCount: number | null;
+          } | null = null;
+
+          if (tenant?.dashboardJwt && !(tenant.dashboardJwtExpiresAt && tenant.dashboardJwtExpiresAt < new Date())) {
+            const decryptedJwt = decrypt(tenant.dashboardJwt);
+            const result = await fetchAlteration(decryptedJwt, hostawayResId);
+            if ('error' in result) {
+              fetchError = result.error;
+            } else {
+              alterationData = result.alteration;
+            }
+          } else {
+            fetchError = 'Hostaway dashboard not connected — connect in Settings to enable in-app alteration actions';
+          }
+
+          await prisma.bookingAlteration.upsert({
+            where: { reservationId: conversation.reservationId },
+            create: {
+              tenantId,
+              reservationId: conversation.reservationId,
+              hostawayAlterationId: alterationData?.hostawayAlterationId ?? '',
+              originalCheckIn: alterationData?.originalCheckIn ? new Date(alterationData.originalCheckIn) : null,
+              originalCheckOut: alterationData?.originalCheckOut ? new Date(alterationData.originalCheckOut) : null,
+              originalGuestCount: alterationData?.originalGuestCount ?? null,
+              proposedCheckIn: alterationData?.proposedCheckIn ? new Date(alterationData.proposedCheckIn) : null,
+              proposedCheckOut: alterationData?.proposedCheckOut ? new Date(alterationData.proposedCheckOut) : null,
+              proposedGuestCount: alterationData?.proposedGuestCount ?? null,
+              status: AlterationStatus.PENDING,
+              fetchError,
+            },
+            update: {
+              hostawayAlterationId: alterationData?.hostawayAlterationId ?? '',
+              originalCheckIn: alterationData?.originalCheckIn ? new Date(alterationData.originalCheckIn) : null,
+              originalCheckOut: alterationData?.originalCheckOut ? new Date(alterationData.originalCheckOut) : null,
+              originalGuestCount: alterationData?.originalGuestCount ?? null,
+              proposedCheckIn: alterationData?.proposedCheckIn ? new Date(alterationData.proposedCheckIn) : null,
+              proposedCheckOut: alterationData?.proposedCheckOut ? new Date(alterationData.proposedCheckOut) : null,
+              proposedGuestCount: alterationData?.proposedGuestCount ?? null,
+              status: AlterationStatus.PENDING,
+              fetchError,
+            },
+          });
+          console.log(`[Webhook] [${tenantId}] Alteration detail ${alterationData ? 'saved' : 'saved with fetchError'} for reservation ${conversation.reservationId}`);
+        } catch (err) {
+          console.warn(`[Webhook] [${tenantId}] Failed to save alteration detail:`, err);
+        }
+      })();
+    }
     broadcastCritical(tenantId, 'message', {
       conversationId: conversation.id,
       message: { role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: conversation.channel, imageUrls: [] },
