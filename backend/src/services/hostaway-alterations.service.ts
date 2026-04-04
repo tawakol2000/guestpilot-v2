@@ -60,18 +60,24 @@ export async function fetchAlteration(
       return { alteration: null };
     }
 
-    // Take the first pending alteration
+    // Take the first pending alteration, or the most recent one
     const pending = result.find((a: any) => a.status === 'pending' || a.status === 'PENDING') ?? result[0];
+
+    // Real Hostaway field names (confirmed 2026-04-04):
+    //   Original: reservationArrivalDate, reservationDepartureDate, reservationAdults + reservationChildren + reservationInfants
+    //   Proposed: startDate, endDate, numberOfAdults + numberOfChildren + numberOfInfants
+    const originalGuests = (pending.reservationAdults ?? 0) + (pending.reservationChildren ?? 0) + (pending.reservationInfants ?? 0);
+    const proposedGuests = (pending.numberOfAdults ?? 0) + (pending.numberOfChildren ?? 0) + (pending.numberOfInfants ?? 0);
 
     return {
       alteration: {
-        hostawayAlterationId: String(pending.id ?? pending.alterationId ?? ''),
-        originalCheckIn: pending.arrivalDate ?? pending.originalCheckIn ?? null,
-        originalCheckOut: pending.departureDate ?? pending.originalCheckOut ?? null,
-        originalGuestCount: pending.numberOfGuests ?? pending.originalGuestCount ?? null,
-        proposedCheckIn: pending.newArrivalDate ?? pending.proposedCheckIn ?? pending.requestedArrivalDate ?? null,
-        proposedCheckOut: pending.newDepartureDate ?? pending.proposedCheckOut ?? pending.requestedDepartureDate ?? null,
-        proposedGuestCount: pending.newNumberOfGuests ?? pending.proposedGuestCount ?? pending.requestedNumberOfGuests ?? null,
+        hostawayAlterationId: String(pending.id ?? ''),
+        originalCheckIn: pending.reservationArrivalDate ?? null,
+        originalCheckOut: pending.reservationDepartureDate ?? null,
+        originalGuestCount: originalGuests || null,
+        proposedCheckIn: pending.startDate ?? null,
+        proposedCheckOut: pending.endDate ?? null,
+        proposedGuestCount: proposedGuests || null,
       },
     };
   } catch (err) {
