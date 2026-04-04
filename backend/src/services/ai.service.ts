@@ -493,6 +493,17 @@ async function createMessage(
               console.log(`[AI] Post-tool response has wrong type for "${key}": expected object|null, got string "${val}"`);
               break;
             }
+            // Check required sub-fields exist on object values
+            if (types.includes('object') && val && typeof val === 'object' && def.required) {
+              for (const req of def.required) {
+                if (!(req in val)) {
+                  needsSchemaEnforcement = true;
+                  console.log(`[AI] Post-tool response missing required field "${key}.${req}"`);
+                  break;
+                }
+              }
+              if (needsSchemaEnforcement) break;
+            }
           }
         }
       } catch {
@@ -1951,6 +1962,13 @@ export async function generateAndSendAiReply(
           guestMessage = parsed['guest message'] || '';
           // Handle screening escalation — derive urgency from title
           if (parsed.manager?.needed) {
+            // Fallback: AI sometimes returns "reason" instead of "note" after tool use
+            if (!parsed.manager.note && (parsed.manager as any).reason) {
+              parsed.manager.note = (parsed.manager as any).reason;
+            }
+            if (!parsed.manager.title) {
+              parsed.manager.title = 'awaiting-manager-review';
+            }
             const t = parsed.manager.title || '';
             const screeningUrgency = (t.startsWith('eligible-') || t.startsWith('violation-') || t === 'awaiting-manager-review')
               ? 'inquiry_decision' : 'info_request';
@@ -1974,6 +1992,14 @@ export async function generateAndSendAiReply(
             const validUrgencies = ['immediate', 'scheduled', 'info_request'];
             if (!validUrgencies.includes(parsed.escalation.urgency)) {
               parsed.escalation.urgency = 'immediate';
+            }
+            // Fallback: AI sometimes returns "reason" instead of "note" after tool use
+            if (!parsed.escalation.note && (parsed.escalation as any).reason) {
+              parsed.escalation.note = (parsed.escalation as any).reason;
+            }
+            // Fallback: generate title from urgency if missing
+            if (!parsed.escalation.title) {
+              parsed.escalation.title = parsed.escalation.urgency;
             }
             if (parsed.escalation.title) {
               parsed.escalation.title = parsed.escalation.title.slice(0, 200);
