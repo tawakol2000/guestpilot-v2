@@ -500,7 +500,7 @@ export function sandboxRouter(prisma: PrismaClient) {
             (openai.responses as any).create({
               model: effectiveModel,
               instructions: effectiveSystemPrompt,
-              input: [{ type: 'function_call_output', call_id: 'schema-enforce', output: 'Now generate your final JSON response based on all the information gathered.' }],
+              input: 'Based on all the tool results and context, generate your final JSON response now.',
               previous_response_id: response.id,
               max_output_tokens: effectiveMaxTokens,
               reasoning: { effort: reasoningEffort },
