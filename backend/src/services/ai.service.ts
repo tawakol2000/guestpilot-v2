@@ -1927,12 +1927,15 @@ export async function generateAndSendAiReply(
             manager?: { needed: boolean; title: string; note: string };
           };
           guestMessage = parsed['guest message'] || '';
-          // Handle screening escalation
+          // Handle screening escalation — derive urgency from title
           if (parsed.manager?.needed) {
-            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, 'inquiry_decision');
+            const t = parsed.manager.title || '';
+            const screeningUrgency = (t.startsWith('eligible-') || t.startsWith('violation-') || t === 'awaiting-manager-review')
+              ? 'inquiry_decision' : 'info_request';
+            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, screeningUrgency);
             traceEscalation({
               tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.manager.title, escalationUrgency: 'inquiry_decision',
+              escalationType: parsed.manager.title, escalationUrgency: screeningUrgency,
               escalationNote: parsed.manager.note,
             });
           }
