@@ -476,13 +476,30 @@ async function createMessage(
       });
     }
 
-    // If tools were used, ensure response is valid JSON (schema wasn't enforced during tool rounds)
+    // If tools were used, ensure response is valid JSON matching the schema (not enforced during tool rounds)
     if (toolRound > 0 && options?.outputSchema && response.output_text) {
+      let needsSchemaEnforcement = false;
       try {
-        JSON.parse(stripCodeFences(response.output_text));
+        const parsed = JSON.parse(stripCodeFences(response.output_text));
+        // Validate schema shape — check that required fields have correct types
+        const schemaProps = options.outputSchema?.schema?.properties;
+        if (schemaProps) {
+          for (const [key, def] of Object.entries(schemaProps) as [string, any][]) {
+            const val = parsed[key];
+            // Check nullable object fields aren't strings (e.g. escalation: "info_request" instead of object|null)
+            const types = Array.isArray(def.type) ? def.type : [def.type];
+            if (types.includes('object') && typeof val === 'string') {
+              needsSchemaEnforcement = true;
+              console.log(`[AI] Post-tool response has wrong type for "${key}": expected object|null, got string "${val}"`);
+              break;
+            }
+          }
+        }
       } catch {
-        // Response isn't valid JSON — re-run with schema enforcement
-        console.log(`[AI] Post-tool response not valid JSON — enforcing schema`);
+        needsSchemaEnforcement = true;
+      }
+      if (needsSchemaEnforcement) {
+        console.log(`[AI] Post-tool response doesn't match schema — enforcing`);
         response = await withRetry(() =>
           (openai.responses as any).create({
             model,
