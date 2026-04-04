@@ -3875,6 +3875,7 @@ export default function InboxV5() {
                                   key={idx}
                                   src={url}
                                   alt="attachment"
+                                  loading="lazy"
                                   onClick={() => setImageModalUrl(url)}
                                   style={{
                                     maxWidth: 180,
@@ -3883,6 +3884,7 @@ export default function InboxV5() {
                                     objectFit: 'cover',
                                     cursor: 'pointer',
                                     border: `1px solid ${T.border.default}`,
+                                    background: T.bg.secondary,
                                   }}
                                 />
                               ))}
