@@ -3876,6 +3876,8 @@ export default function InboxV5() {
                                   src={url}
                                   alt="attachment"
                                   loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                  crossOrigin="anonymous"
                                   onClick={() => setImageModalUrl(url)}
                                   style={{
                                     maxWidth: 180,
@@ -5062,6 +5064,8 @@ export default function InboxV5() {
           <img
             src={imageModalUrl}
             alt="Full size"
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
           />
         </div>
