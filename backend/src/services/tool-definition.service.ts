@@ -107,10 +107,9 @@ const SYSTEM_TOOLS: Array<{
     name: 'search_available_properties',
     displayName: 'Property Search',
     description:
-      'Search for alternative properties in the same city that match specific criteria and are available for the guest\'s dates. ' +
-      'Use this when a guest asks about amenities or features this property doesn\'t have, wants to see other options for their stay or for others, or expresses ' +
-      'a preference for different property attributes (size, view, amenities). ' +
-      'Do NOT use this when the guest is asking about amenities this property already has.',
+      'Score this property and alternatives against the guest\'s requirements. Returns a match score, met/unmet breakdown, and notes for each property. ' +
+      'Use this when a guest lists multiple requirements or asks what\'s available. The current property is included and flagged in results. ' +
+      'If the current property is the best match, pitch it confidently. Only suggest alternatives if they add value.',
     parameters: {
       type: 'object',
       properties: {

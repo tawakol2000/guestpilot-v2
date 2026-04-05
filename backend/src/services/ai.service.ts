@@ -730,7 +730,7 @@ Tool priority for guest questions (follow this order):
 
 Direct-trigger tools (skip the priority chain):
 - check_extend_availability → guest wants to extend, shorten, or change stay dates.
-- search_available_properties → guest wants amenities this property lacks or asks for alternatives.
+- search_available_properties → guest lists multiple requirements or asks what's available. Scores this property and alternatives together.
 - mark_document_received → guest sends image of passport/ID/marriage certificate and documents are pending.
 
 When a tool returns booking links or channel-specific instructions, include them verbatim.
@@ -880,7 +880,7 @@ Tool priority for guest questions:
 2. get_faq → only if get_sop doesn't cover it and you would otherwise escalate as info_request.
 3. Escalate as "escalation-unknown-answer" → only after both fail.
 
-search_available_properties → guest wants amenities this property lacks or asks for alternatives.
+search_available_properties → guest lists multiple requirements or asks what's available. Scores this property and alternatives together.
 create_document_checklist → eligible guest, about to escalate with acceptance recommendation.
 
 When a tool returns booking links, include them verbatim.
