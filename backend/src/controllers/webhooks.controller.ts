@@ -13,6 +13,7 @@ import { broadcastToTenant, broadcastCritical } from '../services/socket.service
 import { getReservation } from '../services/hostaway.service';
 import { sendPushToTenant } from '../services/push.service';
 import { fetchAlteration } from '../services/hostaway-alterations.service';
+import { captionMessageImages } from '../services/image-caption.service';
 import { decrypt } from '../lib/encryption';
 
 interface HostawayWebhookPayload {
@@ -431,10 +432,11 @@ async function handleNewMessage(
   );
 
   if (isAlterationRequest) {
-    // Save the message but DON'T trigger AI — create an immediate task instead
-    console.log(`[Webhook] [${tenantId}] Alteration request detected in conv ${conversation.id} — creating task, skipping AI`);
+    // Save the message, create a task, fetch alteration details, then trigger AI
+    console.log(`[Webhook] [${tenantId}] Alteration request detected in conv ${conversation.id}`);
+    let savedMsg: any;
     try {
-      await prisma.message.create({
+      savedMsg = await prisma.message.create({
         data: {
           conversationId: conversation.id, tenantId,
           role: MessageRole.GUEST, content: data.body || '',
@@ -461,26 +463,38 @@ async function handleNewMessage(
     });
     broadcastToTenant(tenantId, 'new_task', { conversationId: conversation.id, task });
 
-    // Fetch alteration details from Hostaway and persist (fire-and-forget, does not block)
+    // Broadcast the raw message immediately for real-time UI
+    broadcastCritical(tenantId, 'message', {
+      conversationId: conversation.id,
+      message: { role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: conversation.channel, imageUrls: [] },
+      lastMessageRole: 'GUEST', lastMessageAt: new Date().toISOString(),
+    });
+    sendPushToTenant(tenantId, {
+      title: 'Alteration Request',
+      body: `${guestName} (${propertyName}) submitted a booking modification.`,
+      data: { conversationId: conversation.id, taskId: task.id, type: 'task' },
+    }, prisma).catch(err => console.warn('[Push] Alteration notification failed:', err));
+
+    // Fetch alteration details, enrich message, then trigger AI (fire-and-forget — does not block webhook response)
     const hostawayResId = conversation.reservation?.hostawayReservationId;
-    if (hostawayResId) {
-      (async () => {
-        try {
+    (async () => {
+      try {
+        let alterationData: {
+          hostawayAlterationId: string;
+          originalCheckIn: string | null;
+          originalCheckOut: string | null;
+          originalGuestCount: number | null;
+          proposedCheckIn: string | null;
+          proposedCheckOut: string | null;
+          proposedGuestCount: number | null;
+        } | null = null;
+        let fetchError: string | null = null;
+
+        if (hostawayResId) {
           const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
             select: { dashboardJwt: true, dashboardJwtExpiresAt: true },
           });
-
-          let fetchError: string | null = null;
-          let alterationData: {
-            hostawayAlterationId: string;
-            originalCheckIn: string | null;
-            originalCheckOut: string | null;
-            originalGuestCount: number | null;
-            proposedCheckIn: string | null;
-            proposedCheckOut: string | null;
-            proposedGuestCount: number | null;
-          } | null = null;
 
           if (tenant?.dashboardJwt && !(tenant.dashboardJwtExpiresAt && tenant.dashboardJwtExpiresAt < new Date())) {
             const decryptedJwt = decrypt(tenant.dashboardJwt);
@@ -491,7 +505,7 @@ async function handleNewMessage(
               alterationData = result.alteration;
             }
           } else {
-            fetchError = 'Hostaway dashboard not connected — connect in Settings to enable in-app alteration actions';
+            fetchError = 'Hostaway dashboard not connected';
           }
 
           await prisma.bookingAlteration.upsert({
@@ -522,21 +536,42 @@ async function handleNewMessage(
             },
           });
           console.log(`[Webhook] [${tenantId}] Alteration detail ${alterationData ? 'saved' : 'saved with fetchError'} for reservation ${conversation.reservationId}`);
-        } catch (err) {
-          console.warn(`[Webhook] [${tenantId}] Failed to save alteration detail:`, err);
         }
-      })();
-    }
-    broadcastCritical(tenantId, 'message', {
-      conversationId: conversation.id,
-      message: { role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: conversation.channel, imageUrls: [] },
-      lastMessageRole: 'GUEST', lastMessageAt: new Date().toISOString(),
-    });
-    sendPushToTenant(tenantId, {
-      title: 'Alteration Request',
-      body: `${guestName} (${propertyName}) submitted a booking modification. Review on Airbnb.`,
-      data: { conversationId: conversation.id, taskId: task.id, type: 'task' },
-    }, prisma).catch(err => console.warn('[Push] Alteration notification failed:', err));
+
+        // Enrich the saved message with structured alteration details
+        if (savedMsg && alterationData) {
+          const fmtD = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+          const lines = [
+            `Guest requested a booking alteration.`,
+            `Check-in: ${fmtD(alterationData.originalCheckIn)} → ${fmtD(alterationData.proposedCheckIn)}`,
+            `Check-out: ${fmtD(alterationData.originalCheckOut)} → ${fmtD(alterationData.proposedCheckOut)}`,
+          ];
+          if (alterationData.originalGuestCount !== null || alterationData.proposedGuestCount !== null) {
+            lines.push(`Guests: ${alterationData.originalGuestCount ?? '—'} → ${alterationData.proposedGuestCount ?? '—'}`);
+          }
+          lines.push(`Status: Pending manager review.`);
+          await prisma.message.update({
+            where: { id: savedMsg.id },
+            data: { content: lines.join('\n') },
+          });
+          console.log(`[Webhook] [${tenantId}] Enriched alteration message ${savedMsg.id}`);
+        }
+
+        // Update unread count
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { unreadCount: { increment: 1 }, lastMessageAt: new Date() },
+        });
+
+        // Trigger AI pipeline so it can acknowledge the alteration
+        if (conversation.reservation.aiEnabled && conversation.reservation.aiMode !== 'off') {
+          await scheduleAiReply(conversation.id, tenantId, prisma);
+          console.log(`[Webhook] [${tenantId}] AI reply scheduled for alteration in conv ${conversation.id}`);
+        }
+      } catch (err) {
+        console.warn(`[Webhook] [${tenantId}] Alteration enrichment/AI failed:`, err);
+      }
+    })();
     return;
   }
 
@@ -549,8 +584,9 @@ async function handleNewMessage(
   const role = isGuest ? MessageRole.GUEST : MessageRole.HOST;
 
   // Deduplicate via create + P2002 catch (atomic, no race window)
+  const msgImageUrls: string[] = (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean);
   try {
-    await prisma.message.create({
+    const savedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         tenantId,
@@ -560,9 +596,15 @@ async function handleNewMessage(
         communicationType: data.communicationType?.toLowerCase() || 'channel',
         sentAt: data.date ? parseHostawayDate(data.date) : new Date(),
         hostawayMessageId: hostawayMsgId,
-        imageUrls: (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean),
+        imageUrls: msgImageUrls,
       },
     });
+
+    // Fire-and-forget: caption images so conversation history shows "[Image: description]"
+    if (msgImageUrls.length > 0) {
+      captionMessageImages(savedMessage.id, msgImageUrls, data.body || '', prisma)
+        .catch(err => console.warn(`[Webhook] Image captioning failed:`, err));
+    }
   } catch (err: any) {
     // P2002 = unique constraint violation — message already exists (inserted by sync or duplicate webhook)
     if (err?.code === 'P2002') {
