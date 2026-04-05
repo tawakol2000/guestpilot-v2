@@ -166,7 +166,7 @@ async function scorePropertiesWithNano(
         ...SCORING_SCHEMA,
       },
     },
-    max_output_tokens: 1000,
+    max_output_tokens: 4000,
   });
 
   const text = (response as any).output_text || '';
