@@ -107,12 +107,16 @@ const SYSTEM_TOOLS: Array<{
     name: 'search_available_properties',
     displayName: 'Property Search',
     description:
-      'Score this property and alternatives against the guest\'s requirements. Returns a match score, met/unmet breakdown, and notes for each property. ' +
-      'Use this when a guest lists multiple requirements or asks what\'s available. The current property is included and flagged in results. ' +
-      'If the current property is the best match, pitch it confidently. Only suggest alternatives if they add value.',
+      'Score this property and alternatives against the guest\'s requirements. Returns match scores, met/unmet breakdown, and notes. ' +
+      'CALL for: guest lists multiple requirements, asks what\'s available, wants to compare options, asks about amenities. ' +
+      'DO NOT call for: single factual property questions (use get_sop or get_faq), extend/shorten stay (use check_extend_availability).',
     parameters: {
       type: 'object',
       properties: {
+        reasoning: {
+          type: 'string',
+          description: 'Why calling search and what requirements to match against.',
+        },
         amenities: {
           type: 'array',
           items: { type: 'string' },
@@ -124,10 +128,10 @@ const SYSTEM_TOOLS: Array<{
         },
         reason: {
           type: 'string',
-          description: 'Brief reason for the search, e.g. \'guest asked for pool\'. Used for logging.',
+          description: 'Brief reason for the search, verbatim or near-verbatim from guest.',
         },
       },
-      required: ['amenities', 'reason', 'min_capacity'],
+      required: ['reasoning', 'amenities', 'reason', 'min_capacity'],
       additionalProperties: false,
     },
     agentScope: 'INQUIRY,PENDING',
@@ -164,12 +168,16 @@ const SYSTEM_TOOLS: Array<{
     name: 'check_extend_availability',
     displayName: 'Extend Stay',
     description:
-      'Check if the guest\'s current property is available for extended or modified dates, and calculate the price for additional nights. ' +
-      'Use this when a guest asks to extend their stay, shorten their stay, change dates, or asks how much extra nights would cost. ' +
-      'Do NOT use for unrelated questions.',
+      'Check if the guest\'s current property is available for extended or modified dates, and calculate pricing. ' +
+      'CALL for: extending stay, adding nights, leaving early, shortening stay, changing dates, cost of more nights. ' +
+      'DO NOT call for: late checkout under 2 hours beyond standard (use get_sop with sop-late-checkout), unrelated questions.',
     parameters: {
       type: 'object',
       properties: {
+        reasoning: {
+          type: 'string',
+          description: 'Why this change and these dates. E.g. "Guest says flight changed to Sunday, needs 2 extra nights."',
+        },
         new_checkout: {
           type: 'string',
           description: 'The requested new checkout date in YYYY-MM-DD format.',
@@ -180,10 +188,10 @@ const SYSTEM_TOOLS: Array<{
         },
         reason: {
           type: 'string',
-          description: 'Brief reason, e.g. \'guest wants 2 more nights\'. Used for logging.',
+          description: 'Specific reason from guest. Not generic "wants to extend".',
         },
       },
-      required: ['new_checkout', 'reason', 'new_checkin'],
+      required: ['reasoning', 'new_checkout', 'reason', 'new_checkin'],
       additionalProperties: false,
     },
     agentScope: 'CONFIRMED,CHECKED_IN',
@@ -192,12 +200,16 @@ const SYSTEM_TOOLS: Array<{
     name: 'mark_document_received',
     displayName: 'Mark Document Received',
     description:
-      'Mark a document as received after the guest sends it through the chat. Call this when you see an image that is clearly a ' +
-      'government-issued ID (passport, national ID, driver\'s license) or marriage certificate. ' +
-      'Do NOT call this for unclear images — escalate those instead.',
+      'Mark a document as received after the guest sends it via chat. ' +
+      'CALL for: clear passport, national ID, driver\'s license, or marriage certificate images when documents are pending. ' +
+      'DO NOT call for: unclear/blurry images (escalate for manager review), images that aren\'t documents, or when no documents are pending.',
     parameters: {
       type: 'object',
       properties: {
+        reasoning: {
+          type: 'string',
+          description: 'Why you believe this image is this document type. E.g. "Image shows passport photo page for Mohamed with visible MRZ code."',
+        },
         document_type: {
           type: 'string',
           enum: ['passport', 'marriage_certificate'],
@@ -205,10 +217,10 @@ const SYSTEM_TOOLS: Array<{
         },
         notes: {
           type: 'string',
-          description: 'Brief description, e.g. \'passport for Mohamed\' or \'marriage certificate\'',
+          description: 'Brief description, e.g. \'passport for Mohamed\' or \'marriage certificate for Ahmed and Sara\'',
         },
       },
-      required: ['document_type', 'notes'],
+      required: ['reasoning', 'document_type', 'notes'],
       additionalProperties: false,
     },
     agentScope: 'CONFIRMED,CHECKED_IN',

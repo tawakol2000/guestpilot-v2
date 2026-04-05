@@ -944,6 +944,7 @@ function TenantConfigSection({
         memorySummaryEnabled: local.memorySummaryEnabled,
         reasoningCoordinator: local.reasoningCoordinator,
         reasoningScreening: local.reasoningScreening,
+        showAiReasoning: local.showAiReasoning,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -1160,8 +1161,9 @@ function TenantConfigSection({
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Features</label>
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
+          {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           <div style={{ borderBottom: 'none' }}>
-            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
+            {toggleRow('Show AI Reasoning', 'Display the AI\'s internal reasoning alongside messages in the inbox', local.showAiReasoning, 'showAiReasoning')}
           </div>
         </div>
 

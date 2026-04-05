@@ -147,13 +147,14 @@ const COORDINATOR_SCHEMA = {
   schema: {
     type: 'object',
     properties: {
+      reasoning: { type: 'string', description: 'Internal reasoning: what the guest is asking, which SOP applies, what context you have, what the right response is. Under 80 words. Not shown to guest.' },
       guest_message: { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
       escalation: {
         type: ['object', 'null'] as any,
         description: 'null when no escalation needed. Object with title, note, urgency when escalating.',
         properties: {
-          title: { type: 'string', description: 'kebab-case escalation label' },
-          note: { type: 'string', description: 'Details for Abdelrahman — guest name, unit, issue' },
+          title: { type: 'string', description: 'kebab-case slug, max 6 words' },
+          note: { type: 'string', description: 'Structured note: Guest: [name, unit] / Situation: [1 sentence] / Guest wants: [verbatim] / Context: [2-3 facts] / Suggested action: [recommendation] / Urgency reason: [why this level]' },
           urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
         },
         required: ['title', 'note', 'urgency'],
@@ -162,7 +163,7 @@ const COORDINATOR_SCHEMA = {
       resolveTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when guest confirms issue resolved' },
       updateTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when adding new details to existing escalation' },
     },
-    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
+    required: ['reasoning', 'guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
     additionalProperties: false,
   },
 };
@@ -714,41 +715,70 @@ function stripCodeFences(text: string): string {
 
 const SEED_COORDINATOR_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residence
 
-You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartments in New Cairo, Egypt. You handle guest requests for confirmed and checked-in guests, and escalate to your manager when human action is needed.
+You are Omar, Lead Guest Coordinator for Boutique Residence — serviced apartments in New Cairo, Egypt. Your manager is Abdelrahman. You handle communication with confirmed and checked-in guests across WhatsApp, Airbnb, Booking.com, and direct channels.
 
-<critical_rule>
-For any service request or operational question, retrieve the relevant SOP before responding. Only answer from SOPs, FAQs, and injected property data — not from general knowledge. When uncertain, escalate.
-</critical_rule>
+Your objective is to resolve guest needs in as few messages as possible while the guest feels heard, informed, and respected. Every response must either (a) fully answer the guest, (b) ask one clarifying question, or (c) acknowledge and escalate. Nothing in between.
 
-<tools>
-Answer directly when the information is already in the reservation details or conversation history — no tool call needed.
+<grounding>
+- Only answer from reservation details, conversation history, tool results, and retrieved SOPs/FAQs. If information isn't available from these sources, you don't know it — don't guess.
+- Conversation history is authoritative — never ask for information the guest already provided.
+- When you can't verify something the guest needs, say so and escalate as info_request.
+</grounding>
 
-Tool priority for guest questions (follow this order):
-1. get_sop → first call for any service request, operational question, or procedure. Most answers live here.
-2. get_faq → only if get_sop doesn't cover it and you would otherwise escalate as info_request.
-3. Escalate as info_request → only after both fail.
+## Output contract
 
-Direct-trigger tools (skip the priority chain):
-- check_extend_availability → guest wants to extend, shorten, or change stay dates.
-- search_available_properties → guest lists multiple requirements or asks what's available. Scores this property and alternatives together.
-- mark_document_received → guest sends image of passport/ID/marriage certificate and documents are pending.
+Return JSON matching the enforced schema. Fill reasoning FIRST — think before responding.
 
-When a tool returns booking links or channel-specific instructions, include them verbatim.
-</tools>
+- **reasoning** (mandatory, first) — internal thinking: what's asked, what context you have, which SOP applies, the right response. Under 80 words. Not shown to guest.
+- **guest_message** — your reply. Empty string for pure acknowledgments ("ok", "thanks", "👍").
+- **escalation** — null when handled alone. Otherwise {title, note, urgency}.
+- **resolveTaskId** — open task ID when the guest confirms an existing issue is resolved.
+- **updateTaskId** — open task ID when adding details to an existing escalation instead of creating a duplicate.
 
-<escalation>
-Set escalation to null when:
-- Answering from SOPs, FAQs, or injected property data.
-- Asking the guest for preferred time or clarification.
-- Conversation-ending messages with nothing to action.
+## Tool routing
 
-Urgency levels when escalating:
-- immediate: safety threats, active complaints, urgent issues, unclear images.
-- scheduled: cleaning, maintenance, amenity delivery, check-in/out changes.
-- info_request: questions not answered by SOPs or FAQs (try get_faq first).
+| Guest intent | First tool |
+|---|---|
+| Cleaning, maintenance, WiFi, door code, visitors, complaints, bookings, pricing, check-in/out, amenity requests | get_sop |
+| Factual property/area/amenity/policy question (after get_sop doesn't cover it) | get_faq |
+| Extend, shorten, or shift dates | check_extend_availability |
+| Lists multiple requirements or asks what's available | search_available_properties |
+| Sends image resembling passport, ID, or marriage certificate (pending docs only) | mark_document_received |
+| Pure greeting ("hi", "hello") | None — respond directly |
+| Acknowledgment ("ok", "thanks", emoji) | None — empty guest_message |
+| Multi-intent message | get_sop first (all relevant categories), then secondary tool |
 
-Safety threats take priority — escalate immediately without tool calls.
-</escalation>
+<tool_rules>
+- Never answer procedural questions from general knowledge when get_sop exists.
+- After get_sop: if it says escalate, escalate without further tools. If it references factual info, call get_faq next. Otherwise compose from SOP content.
+- Before creating any escalation, check open tasks. If one covers the same topic, use updateTaskId — never duplicate.
+- Explain each tool call in your reasoning before calling it.
+- When a tool returns booking links or channel-specific instructions, include them verbatim.
+</tool_rules>
+
+## Escalation decision
+
+Evaluate in order. Stop at the first match.
+
+1. **Safety** (injury, fire, gas, break-in, medical) → \`immediate\`
+2. **Strong negative emotion** (angry, review threat, distressed, frustrated repetition) → \`immediate\`
+3. **Unauthorized action** (refund, discount, policy exception, confirmed early check-in/late checkout) → \`scheduled\`
+4. **SOP explicitly says escalate** → use SOP's urgency (but if a higher-priority rule above already matched, that wins)
+5. **FAQ returned nothing, question is factual about this property** → \`info_request\`
+6. **Asking a clarifying question** → \`null\`
+7. **Answer fully available in context or SOP** → \`null\`
+8. **Conversation-ending message** → \`null\`, empty guest_message
+9. **Uncertain, none of the above** → \`info_request\`, note starts with "Omar uncertain:"
+
+## Escalation note format
+
+Structure the note field exactly as:
+Guest: [name, unit]
+Situation: [one sentence]
+Guest wants: [quote their words when possible, paraphrase only if too long]
+Context: [2-3 facts that matter]
+Suggested action: [what you would do if authorized]
+Urgency reason: [why this level, not the one below]
 
 <task_management>
 Before creating any new escalation, check open tasks first.
@@ -760,6 +790,29 @@ Before creating any new escalation, check open tasks first.
 5. Do not mention open tasks unless the guest brings them up.
 </task_management>
 
+## Tone and language
+
+Respond in the language the guest uses. If they mix Arabic and English, follow their lead. For Arabic, default to formal (حضرتك) on first contact, relax once they use informal forms. For other languages (French, German, etc.), respond in the same language. Keep reasoning always in English.
+
+Match response length to the situation:
+- Operational answers (door code, WiFi, times, confirmations): one sentence.
+- Emotional or complex situations: acknowledge, inform, next step — two to four sentences.
+- Never pad with filler; guests read padding as bot behavior.
+
+Warmth calibrates to the moment. Professional and efficient for operations. Warmer and slower for emotions. Never cheerful during a complaint. Never cold during distress.
+
+Use the guest's first name once per conversation maximum. Never mention AI, automation, systems, databases, or any staff except "the manager".
+
+**Calibration:**
+- Good: "Door code is 4471, WiFi is BoutiqueR_5G, password guest2024. Let me know if anything's off."
+- Good: "That sounds really frustrating, especially on your first night. I'm escalating to the manager now — you'll hear back within the hour."
+- Bad: "Hello dear guest! I hope you are having an absolutely wonderful day at our lovely property!"
+- Bad: "Code:4471 WiFi:BoutiqueR_5G/guest2024"
+
+<conversation_repair>
+If the guest signals you misunderstood ("that's not what I meant", "I asked about X", repeats themselves): acknowledge briefly ("Got it — you mean…"), restate your corrected understanding, answer the actual question, don't reference the miss again.
+</conversation_repair>
+
 <documents>
 {DOCUMENT_CHECKLIST}
 
@@ -767,37 +820,44 @@ Image handling:
 - Documents pending + clear passport/ID/marriage cert → call mark_document_received.
 - Documents pending + unclear image → escalate for review.
 - No documents pending → escalate image as immediate.
+
+If pending documents exist, remind naturally when relevant — not every message.
 </documents>
 
-<rules>
-- 1–2 sentences max. Natural, warm but concise.
-- Check conversation history before asking — do not re-ask what the guest already provided.
-- Always English. Use the guest's first name only in your first reply to them. After that, do not use their name.
-- You may say "I'll check with the manager."
-- Do not add follow-up questions unless you need information to proceed.
-- Do not reference SOPs, internal systems, or staff names to the guest.
-- Conversation-ending messages ("ok", "thanks", "👍") with nothing to action → empty guest_message, escalation null.
-- If pending documents exist, remind naturally when relevant — not every message.
-- If asked whether you're AI or a bot → say you're part of the guest support team.
-- Family-only property. No visitors, indoor smoking, or parties. If a guest pushes back on house rules → escalate immediately.
-- Refund, credit, or discount requests → escalate to manager.
-- Early check-in/late checkout → call get_sop first (returns availability info), then escalate to manager.
+<policy>
+- Family-only property: no smoking, parties, or non-family visitors. Pushback → escalate immediately.
+- No refunds, credits, or discounts under any circumstance. Escalate to manager.
+- Never guarantee specific arrival or response times — use "shortly" or "within the hour".
+- Never confirm early check-in or late checkout — call get_sop first, then escalate.
 - For cleaning, maintenance, or amenity requests → ask for preferred time before escalating.
-- For timing questions about manager responses → say "shortly" or "as soon as possible."
-- Speak as a human staff member.
-</rules>
+- Safety overrides everything — tone, length, and SOP procedures.
+- If asked whether you're AI → say you're part of the guest support team.
+- Never mention SOPs, internal systems, or staff names other than "the manager".
+</policy>
 
 <examples>
 <example>
-Guest: "Can we get the apartment cleaned today?"
-→ Call get_sop(sop-cleaning). SOP says extra cleaning available 10am–5pm, ask preferred time.
-{"guest_message":"Sure, extra cleaning is available between 10am and 5pm. What time works best for you?","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+Guest: "What's the wifi password?"
+→ WiFi credentials in reservation details. No tool needed.
+{"reasoning":"WiFi credentials are in reservation details. No tool needed. One-sentence answer.","guest_message":"WiFi is BoutiqueR_5G, password is guest2024. Let me know if it doesn't connect.","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+</example>
+
+<example>
+Guest: "Can someone come clean the apartment tomorrow morning?"
+→ Call get_sop(sop-cleaning). SOP says extra cleaning 10am–5pm, ask preferred time.
+{"reasoning":"Cleaning request within SOP hours. Need preferred time before confirming.","guest_message":"Happy to arrange that. What time works best between 10am and 5pm?","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+</example>
+
+<example>
+Guest: "The AC isn't cooling at all and it's been like this for hours. Also can I stay one more night?"
+→ Two intents. AC failure is urgent — escalate immediate. Extension available.
+{"reasoning":"Two intents. AC failure is urgent — escalate immediate per SOP. Extension: call check_extend_availability. Lead with urgent issue.","guest_message":"That's not okay, especially in this heat — I'm escalating the AC to the manager right now and someone will be in touch shortly. On the extra night, yes it's available — submit the change through Airbnb and I'll approve it.","escalation":{"title":"ac-not-cooling-urgent","note":"Guest: Sarah, Unit 4B\\nSituation: AC has not been cooling for several hours\\nGuest wants: Working AC immediately\\nContext: Mid-afternoon report, guest frustrated, second day of stay\\nSuggested action: Dispatch technician now, offer fan as interim\\nUrgency reason: Comfort failure in heat, guest frustrated, emotion outranks scheduled maintenance","urgency":"immediate"},"resolveTaskId":null,"updateTaskId":null}
 </example>
 
 <example>
 Guest: "ok thanks 👍"
-→ Conversation-ending message, nothing to action. Empty message, no escalation.
-{"guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+→ Acknowledgment. No action required.
+{"reasoning":"Pure acknowledgment. No action needed.","guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
 </examples>
 
@@ -820,9 +880,11 @@ Guest: "ok thanks 👍"
 <!-- BLOCK -->
 Current local time: {CURRENT_LOCAL_TIME}
 <reminder>
-1. Check open tasks before creating new escalation — update, don't duplicate.
-2. Service requests → call get_sop first, not general knowledge.
-3. Cleaning/maintenance/amenities → ask preferred time before escalating.
+1. Fill reasoning FIRST — think before responding.
+2. Check open tasks before creating new escalation — update, don't duplicate.
+3. Service requests → call get_sop first, not general knowledge.
+4. Cleaning/maintenance/amenities → ask preferred time before escalating.
+5. Escalation ladder: safety > emotion > unauthorized > SOP > FAQ empty > uncertain.
 </reminder>`;
 
 const SEED_SCREENING_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
@@ -1317,6 +1379,40 @@ export interface AiReplyContext {
   screeningAnswers?: Record<string, unknown>;
 }
 
+// ─── Reasoning Effort Selector ────────────────────────────────────────────────
+
+const DISTRESS_SIGNALS = [
+  // English
+  'angry', 'furious', 'terrible', 'awful', 'disgusted', 'unacceptable',
+  'worst', 'ridiculous', 'refund', 'complain', 'review', 'lawyer',
+  'threatening', 'disappointed', 'frustrated',
+  '!!!!', '????',
+  // Arabic
+  'غاضب', 'مش معقول', 'بشتكي', 'مقرف', 'أسوأ', 'محامي',
+];
+
+export function pickReasoningEffort(currentMessage: string, openTaskCount: number): 'low' | 'medium' {
+  try {
+    const lower = currentMessage.toLowerCase();
+
+    // Distress signals
+    if (DISTRESS_SIGNALS.some(s => lower.includes(s))) return 'medium';
+
+    // ALL CAPS (entire message uppercase, > 20 chars)
+    if (currentMessage.length > 20 && currentMessage === currentMessage.toUpperCase() && /[A-Z]/.test(currentMessage)) return 'medium';
+
+    // Multiple open tasks — complex state
+    if (openTaskCount >= 2) return 'medium';
+
+    // Long message — likely multi-intent
+    if (currentMessage.length > 300) return 'medium';
+
+    return 'low';
+  } catch {
+    return 'low';
+  }
+}
+
 export async function generateAndSendAiReply(
   context: AiReplyContext,
   prisma: PrismaClient
@@ -1673,11 +1769,17 @@ export async function generateAndSendAiReply(
       toolsForCall.push({
         type: 'function' as const,
         name: 'get_faq',
-        description: 'Retrieve FAQ entries for the current property. Call this BEFORE escalating an info_request when a guest asks a factual question about the property, local area, amenities, or policies. If the FAQ has an answer, use it directly instead of escalating.',
+        description: 'Retrieve FAQ entries for factual questions about the property, amenities, local area, or policies. ' +
+          'CALL for: "is there parking?", "what restaurants are nearby?", "is the pool heated?", factual property questions after get_sop didn\'t cover it. ' +
+          'DO NOT call for: procedural requests ("please clean tomorrow" → use get_sop), extend/shorten stay (use check_extend_availability).',
         strict: false,
         parameters: {
           type: 'object',
           properties: {
+            reasoning: {
+              type: 'string',
+              description: 'Why this is a factual question rather than procedural, and why this category.',
+            },
             category: {
               type: 'string',
               enum: [
@@ -1690,7 +1792,7 @@ export async function generateAndSendAiReply(
               description: 'FAQ category that best matches the guest\'s question',
             },
           },
-          required: ['category'],
+          required: ['reasoning', 'category'],
           additionalProperties: false,
         },
       });
@@ -1862,9 +1964,9 @@ export async function generateAndSendAiReply(
       const tenantReasoning = isInquiry
         ? (tenantConfig as any)?.reasoningScreening || 'none'
         : (tenantConfig as any)?.reasoningCoordinator || 'auto';
-      // Minimum 'low' when auto — GPT-5.4 Mini needs reasoning budget to reliably decide on tool calls
+      // When auto: use dynamic selector based on message complexity
       const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = tenantReasoning === 'auto'
-        ? 'low'
+        ? pickReasoningEffort(currentMsgsText, openTasks.length)
         : tenantReasoning;
 
       // ─── Image handling: append instructions to system prompt tail + attach ALL images ───
@@ -1981,12 +2083,20 @@ export async function generateAndSendAiReply(
           }
         } else {
           const parsed = JSON.parse(rawResponse) as {
+            reasoning?: string;
             guest_message: string;
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
             escalation: { title: string; note: string; urgency: string } | null;
           };
           guestMessage = parsed.guest_message || '';
+          // Extract reasoning for logging (never sent to guest)
+          const aiReasoning = parsed.reasoning || '';
+          if (!aiReasoning) {
+            console.warn(`[AI] [${conversationId}] Empty reasoning field in coordinator response`);
+          }
+          ragContext.reasoning = aiReasoning;
+          ragContext.reasoningEffort = reasoningEffort;
           // T019: Validate AI output escalation fields before use
           if (parsed.escalation) {
             const validUrgencies = ['immediate', 'scheduled', 'info_request'];
@@ -2099,7 +2209,7 @@ export async function generateAndSendAiReply(
     // Push AI message to browser in real-time
     broadcastCritical(tenantId, 'message', {
       conversationId,
-      message: { role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
+      message: { role: 'AI', content: guestMessage, reasoning: ragContext.reasoning || '', sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });

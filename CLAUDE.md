@@ -163,6 +163,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL + Prisma ORM — 2 new models (BookingAlteration, AlterationActionLog), 2 new enums (030-booking-alterations)
 - TypeScript 5.x on Node.js 18+ + Express 4.x, OpenAI SDK (Responses API), Prisma ORM, axios (031-ai-property-search)
 - PostgreSQL (existing Property model with `customKnowledgeBase` JSON field, `listingDescription` text field) (031-ai-property-search)
+- TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, OpenAI SDK (Responses API), Prisma ORM, axios (backend); React 19, Tailwind 4, shadcn/ui (frontend) (033-coordinator-prompt-rework)
+- PostgreSQL + Prisma ORM (new field on TenantAiConfig) (033-coordinator-prompt-rework)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui

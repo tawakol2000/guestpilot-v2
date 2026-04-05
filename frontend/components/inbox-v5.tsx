@@ -92,6 +92,7 @@ import {
   type ReservationActionResult,
   type LastActionResult,
   type HostawayConnectStatus,
+  apiGetTenantAiConfig,
 } from '@/lib/api'
 import { socket, connectSocket, disconnectSocket } from '../lib/socket'
 import { ConnectionStatus } from './ui/connection-status'
@@ -153,6 +154,7 @@ interface Message {
   fromSelf?: boolean
   imageUrls?: string[]
   aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  reasoning?: string
 }
 
 interface Guest {
@@ -1445,6 +1447,14 @@ export default function InboxV5() {
   const [correctionLabels, setCorrectionLabels] = useState<string[]>([])
   const [correctionSubmitted, setCorrectionSubmitted] = useState<Record<string, boolean>>({})
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null)
+  const [showAiReasoning, setShowAiReasoning] = useState(false)
+
+  // Fetch tenant config for showAiReasoning toggle
+  useEffect(() => {
+    apiGetTenantAiConfig()
+      .then(cfg => setShowAiReasoning(cfg.showAiReasoning ?? false))
+      .catch(() => {})
+  }, [])
 
   // Socket.IO connection state
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'delayed' | 'reconnecting' | 'disconnected'>('reconnecting')
@@ -1767,7 +1777,7 @@ export default function InboxV5() {
         const resolved = msg.channel ? channelFromApi(msg.channel) : undefined
         // 'direct' is the catch-all fallback — treat as no channel so conversation channel is used
         const sseChannel = (resolved && resolved !== 'direct') ? resolved : undefined
-        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel })
+        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel, ...(msg.reasoning ? { reasoning: msg.reasoning } : {}) })
       }
       // Extract visible text for lastMessage preview
       const previewText = newSseMsgs[0]?.text || msg.content
@@ -3867,6 +3877,25 @@ export default function InboxV5() {
                           >
                             {msg.text}
                           </div>
+                          {/* AI reasoning — shown only when toggle is on and reasoning exists */}
+                          {isAI && showAiReasoning && msg.reasoning && (
+                            <div style={{
+                              fontSize: 11,
+                              color: T.text.tertiary,
+                              fontStyle: 'italic',
+                              fontFamily: T.font.sans,
+                              padding: '4px 10px',
+                              marginTop: 2,
+                              background: T.bg.secondary,
+                              borderRadius: 6,
+                              border: `1px solid ${T.border.default}`,
+                              lineHeight: 1.4,
+                            }}>
+                              <span style={{ fontWeight: 600, fontStyle: 'normal', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', color: T.text.secondary }}>Reasoning</span>
+                              <br />
+                              {msg.reasoning}
+                            </div>
+                          )}
                           {/* Below bubble: logo + timestamp + rating */}
                           <div
                             style={{

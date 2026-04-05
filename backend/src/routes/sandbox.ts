@@ -10,7 +10,7 @@ import { resolveVariables, applyPropertyOverrides } from '../services/template-v
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences, pickReasoningEffort } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 import { getFaqForProperty } from '../services/faq.service';
@@ -312,11 +312,16 @@ export function sandboxRouter(prisma: PrismaClient) {
         // Sandbox allows explicit override for testing
         reasoningEffort = requestedReasoning as any;
       } else {
-        // Production logic: tenant config > minimum 'low' when 'auto'
+        // Production logic: tenant config > dynamic selector when 'auto'
         const tenantReasoning = isInquiry
           ? (tenantConfig as any)?.reasoningScreening || 'none'
           : (tenantConfig as any)?.reasoningCoordinator || 'auto';
-        reasoningEffort = tenantReasoning === 'auto' ? 'low' : tenantReasoning;
+        if (tenantReasoning === 'auto') {
+          const lastGuestMsg = messages.filter(m => m.role === 'guest').pop()?.content || '';
+          reasoningEffort = pickReasoningEffort(lastGuestMsg, 0);
+        } else {
+          reasoningEffort = tenantReasoning;
+        }
       }
 
       // ── Call OpenAI — identical to production createMessage ──────────────

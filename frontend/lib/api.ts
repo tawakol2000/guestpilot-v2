@@ -437,6 +437,7 @@ export interface TenantAiConfig {
   systemPromptCoordinator: string | null
   systemPromptScreening: string | null
   systemPromptVersion: number
+  showAiReasoning: boolean
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
