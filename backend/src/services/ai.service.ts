@@ -147,11 +147,13 @@ const COORDINATOR_SCHEMA = {
   schema: {
     type: 'object',
     properties: {
-      reasoning: { type: 'string', description: 'Internal reasoning: what the guest is asking, which SOP applies, what context you have, what the right response is. Under 80 words. Not shown to guest.' },
-      guest_message: { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
+      reasoning: { type: 'string', description: 'Internal reasoning: what the guest is asking, which SOP applies, what path to take, what the right response is. Under 80 words. Not shown to guest.' },
+      action: { type: 'string', enum: ['reply', 'ask', 'offer', 'escalate', 'none'], description: 'Discrete action: reply=direct answer, ask=clarifying question, offer=propose alternative, escalate=create escalation, none=conversation-ending acknowledgment with empty guest_message.' },
+      sop_step: { type: ['string', 'null'] as any, description: 'SOP path taken, format {sop_name}:{path_identifier}. Example: cleaning_checked_in:path_a_awaiting_time. Null if no SOP consulted.' },
+      guest_message: { type: 'string', description: 'Reply to the guest. Empty string for action=none.' },
       escalation: {
         type: ['object', 'null'] as any,
-        description: 'null when no escalation needed. Object with title, note, urgency when escalating.',
+        description: 'Required when action=escalate. Null for all other actions.',
         properties: {
           title: { type: 'string', description: 'kebab-case slug, max 6 words' },
           note: { type: 'string', description: 'Structured note: Guest: [name, unit] / Situation: [1 sentence] / Guest wants: [verbatim] / Context: [2-3 facts] / Suggested action: [recommendation] / Urgency reason: [why this level]' },
@@ -163,7 +165,7 @@ const COORDINATOR_SCHEMA = {
       resolveTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when guest confirms issue resolved' },
       updateTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when adding new details to existing escalation' },
     },
-    required: ['reasoning', 'guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
+    required: ['reasoning', 'action', 'sop_step', 'guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
     additionalProperties: false,
   },
 };
@@ -719,6 +721,16 @@ You are Omar, Lead Guest Coordinator for Boutique Residence — serviced apartme
 
 Your objective is to resolve guest needs in as few messages as possible while the guest feels heard, informed, and respected. Every response must either (a) fully answer the guest, (b) ask one clarifying question, or (c) acknowledge and escalate. Nothing in between.
 
+## Operating rules (these apply to every response)
+
+Always answer from context. Use only information from injected reservation details, pre-computed context variables, conversation history, SOP content, and tool results. When information is missing, say so and escalate as info_request.
+Always preserve the family-only policy. Only immediate family members are permitted as visitors. Pushback escalates immediately.
+Always refer financial decisions to the manager. Refunds, discounts, credits, and payment authorizations are the manager's decision.
+Always use non-committal timing language. Use "shortly" or "within the hour" rather than specific times.
+Always escalate early check-in and late checkout requests. These require manager approval.
+Always treat safety as the highest priority. Safety overrides tone, length, and SOP procedures.
+Stay in role as Omar. Never mention AI, automation, systems, databases, or any staff except "the manager".
+
 <grounding>
 - Only answer from reservation details, conversation history, tool results, and retrieved SOPs/FAQs. If information isn't available from these sources, you don't know it — don't guess.
 - Conversation history is authoritative — never ask for information the guest already provided.
@@ -729,11 +741,24 @@ Your objective is to resolve guest needs in as few messages as possible while th
 
 Return JSON matching the enforced schema. Fill reasoning FIRST — think before responding.
 
-- **reasoning** (mandatory, first) — internal thinking: what's asked, what context you have, which SOP applies, the right response. Under 80 words. Not shown to guest.
-- **guest_message** — your reply. Empty string for pure acknowledgments ("ok", "thanks", "👍").
-- **escalation** — null when handled alone. Otherwise {title, note, urgency}.
+- **reasoning** (mandatory, first) — internal thinking: what's asked, what context you have, which SOP applies, what path to take. Under 80 words. Not shown to guest.
+- **action** — the discrete action you're taking: reply, ask, offer, escalate, or none.
+- **sop_step** — which SOP path you followed, format {sop_name}:{path_id}. Null if no SOP consulted.
+- **guest_message** — your reply. Empty string for action=none.
+- **escalation** — required when action=escalate. Null for all other actions. Contains {title, note, urgency}.
 - **resolveTaskId** — open task ID when the guest confirms an existing issue is resolved.
 - **updateTaskId** — open task ID when adding details to an existing escalation instead of creating a duplicate.
+
+## How to read SOPs and produce output
+
+When get_sop returns SOP content, it contains:
+- A description of what the SOP covers
+- Pre-computed context variables the SOP depends on
+- Numbered paths, each with a trigger condition and action sequence
+- Rules specific to this SOP
+- Worked examples showing exact input and output
+
+To use an SOP: read the paths, find the one whose trigger matches the current situation (using pre-computed context and conversation history), follow the action sequence, and produce JSON with the correct action, sop_step, and other fields.
 
 ## Tool routing
 
@@ -839,25 +864,25 @@ If pending documents exist, remind naturally when relevant — not every message
 <example>
 Guest: "What's the wifi password?"
 → WiFi credentials in reservation details. No tool needed.
-{"reasoning":"WiFi credentials are in reservation details. No tool needed. One-sentence answer.","guest_message":"WiFi is BoutiqueR_5G, password is guest2024. Let me know if it doesn't connect.","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+{"reasoning":"WiFi credentials are in reservation details. No tool needed.","action":"reply","sop_step":null,"guest_message":"WiFi is BoutiqueR_5G, password is guest2024. Let me know if it doesn't connect.","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
 
 <example>
 Guest: "Can someone come clean the apartment tomorrow morning?"
-→ Call get_sop(sop-cleaning). SOP says extra cleaning 10am–5pm, ask preferred time.
-{"reasoning":"Cleaning request within SOP hours. Need preferred time before confirming.","guest_message":"Happy to arrange that. What time works best between 10am and 5pm?","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+→ Call get_sop(sop-cleaning). SOP Path A — ask for preferred time.
+{"reasoning":"Cleaning request. Path A — need specific time before escalating.","action":"ask","sop_step":"cleaning_checked_in:path_a_awaiting_time","guest_message":"Happy to arrange that. What time works best between 10am and 5pm?","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
 
 <example>
 Guest: "The AC isn't cooling at all and it's been like this for hours. Also can I stay one more night?"
-→ Two intents. AC failure is urgent — escalate immediate. Extension available.
-{"reasoning":"Two intents. AC failure is urgent — escalate immediate per SOP. Extension: call check_extend_availability. Lead with urgent issue.","guest_message":"That's not okay, especially in this heat — I'm escalating the AC to the manager right now and someone will be in touch shortly. On the extra night, yes it's available — submit the change through Airbnb and I'll approve it.","escalation":{"title":"ac-not-cooling-urgent","note":"Guest: Sarah, Unit 4B\\nSituation: AC has not been cooling for several hours\\nGuest wants: Working AC immediately\\nContext: Mid-afternoon report, guest frustrated, second day of stay\\nSuggested action: Dispatch technician now, offer fan as interim\\nUrgency reason: Comfort failure in heat, guest frustrated, emotion outranks scheduled maintenance","urgency":"immediate"},"resolveTaskId":null,"updateTaskId":null}
+→ Two intents. AC failure is urgent — escalate immediate. Extension: call check_extend_availability.
+{"reasoning":"Two intents. AC failure urgent — escalate immediate. Extension: call check_extend_availability.","action":"escalate","sop_step":"maintenance:path_b_comfort_critical","guest_message":"That's not okay, especially in this heat — I'm escalating the AC to the manager right now and someone will be in touch shortly. On the extra night, yes it's available — submit the change through Airbnb and I'll approve it.","escalation":{"title":"ac-not-cooling-4B","note":"Guest: Sarah, Unit 4B\\nSituation: AC not cooling for several hours\\nGuest wants: Working AC immediately\\nContext: Mid-afternoon, guest frustrated, second day of stay\\nSuggested action: Dispatch technician, offer fan as interim\\nUrgency reason: Comfort failure in heat, guest frustrated","urgency":"immediate"},"resolveTaskId":null,"updateTaskId":null}
 </example>
 
 <example>
 Guest: "ok thanks 👍"
 → Acknowledgment. No action required.
-{"reasoning":"Pure acknowledgment. No action needed.","guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+{"reasoning":"Pure acknowledgment. No action needed.","action":"none","sop_step":null,"guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
 </examples>
 
@@ -865,6 +890,10 @@ Guest: "ok thanks 👍"
 <reservation_details>
 {RESERVATION_DETAILS}
 </reservation_details>
+<!-- BLOCK -->
+<pre_computed_context>
+{PRE_COMPUTED_CONTEXT}
+</pre_computed_context>
 <!-- BLOCK -->
 <open_tasks>
 {OPEN_TASKS}
@@ -879,12 +908,19 @@ Guest: "ok thanks 👍"
 </current_message>
 <!-- BLOCK -->
 Current local time: {CURRENT_LOCAL_TIME}
+
+## Operating rules (restated — these apply to every response)
+
+Always answer from context. Always preserve the family-only policy. Always refer financial decisions to the manager. Always use non-committal timing language. Always escalate early check-in and late checkout requests. Always treat safety as highest priority. Stay in role as Omar.
+
 <reminder>
 1. Fill reasoning FIRST — think before responding.
-2. Check open tasks before creating new escalation — update, don't duplicate.
-3. Service requests → call get_sop first, not general knowledge.
-4. Cleaning/maintenance/amenities → ask preferred time before escalating.
-5. Escalation ladder: safety > emotion > unauthorized > SOP > FAQ empty > uncertain.
+2. Set action to the correct enum value matching your intent.
+3. Set sop_step to the SOP path you followed (null if no SOP).
+4. Check open tasks before creating new escalation — update, don't duplicate.
+5. Service requests → call get_sop first, not general knowledge.
+6. Cleaning/maintenance/amenities → ask preferred time before escalating.
+7. Escalation ladder: safety > emotion > unauthorized > SOP > FAQ empty > uncertain.
 </reminder>`;
 
 const SEED_SCREENING_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
@@ -1413,6 +1449,81 @@ export function pickReasoningEffort(currentMessage: string, openTaskCount: numbe
   }
 }
 
+// ─── Post-Parse Validation ────────────────────────────────────────────────────
+
+function validateCoordinatorResponse(parsed: any): string[] {
+  const errors: string[] = [];
+  const action = parsed.action;
+
+  if (action === 'escalate') {
+    if (!parsed.escalation) {
+      errors.push('action=escalate requires non-null escalation');
+    }
+  } else if (parsed.escalation !== null && parsed.escalation !== undefined) {
+    errors.push(`action=${action} must have escalation=null`);
+  }
+
+  if (action === 'none' && parsed.guest_message && parsed.guest_message.trim()) {
+    errors.push('action=none requires empty guest_message');
+  }
+
+  if (['reply', 'ask', 'offer'].includes(action) && (!parsed.guest_message || !parsed.guest_message.trim())) {
+    errors.push(`action=${action} requires non-empty guest_message`);
+  }
+
+  return errors;
+}
+
+// ─── Pre-Computed Context Variables ───────────────────────────────────────────
+
+function computeContextVariables(
+  checkIn: string,
+  checkOut: string,
+  reservationStatus: string,
+  hasBackToBackCheckin?: boolean,
+  hasBackToBackCheckout?: boolean,
+  stayLengthNights?: number,
+): Record<string, unknown> {
+  try {
+    const now = new Date();
+    const cairoOffset = 2; // Africa/Cairo is UTC+2 (simplification — EET)
+    const nowCairo = new Date(now.getTime() + cairoOffset * 60 * 60 * 1000);
+    const hour = nowCairo.getUTCHours();
+
+    const checkinDate = checkIn ? new Date(checkIn + 'T00:00:00Z') : null;
+    const checkoutDate = checkOut ? new Date(checkOut + 'T00:00:00Z') : null;
+    const todayCairo = new Date(Date.UTC(nowCairo.getUTCFullYear(), nowCairo.getUTCMonth(), nowCairo.getUTCDate()));
+
+    const daysUntilCheckin = checkinDate ? Math.round((checkinDate.getTime() - todayCairo.getTime()) / (24 * 60 * 60 * 1000)) : 999;
+    const daysUntilCheckout = checkoutDate ? Math.round((checkoutDate.getTime() - todayCairo.getTime()) / (24 * 60 * 60 * 1000)) : 999;
+    const nights = stayLengthNights ?? (checkinDate && checkoutDate ? Math.round((checkoutDate.getTime() - checkinDate.getTime()) / (24 * 60 * 60 * 1000)) : 0);
+
+    return {
+      is_business_hours: hour >= 10 && hour < 17,
+      day_of_week: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nowCairo.getUTCDay()],
+      days_until_checkin: daysUntilCheckin,
+      is_within_2_days_of_checkin: daysUntilCheckin >= 0 && daysUntilCheckin <= 2,
+      days_until_checkout: daysUntilCheckout,
+      is_within_2_days_of_checkout: daysUntilCheckout >= 0 && daysUntilCheckout <= 2,
+      stay_length_nights: nights,
+      is_long_term_stay: nights > 21,
+      has_back_to_back_checkin: hasBackToBackCheckin ?? false,
+      has_back_to_back_checkout: hasBackToBackCheckout ?? false,
+      booking_status: reservationStatus,
+    };
+  } catch {
+    return { is_business_hours: false, booking_status: reservationStatus };
+  }
+}
+
+function renderPreComputedContext(vars: Record<string, unknown>): string {
+  const lines = ['### PRE_COMPUTED_CONTEXT', 'These values are computed by the system. Use them directly — do not recompute.', ''];
+  for (const [key, value] of Object.entries(vars)) {
+    lines.push(`- ${key}: ${value}`);
+  }
+  return lines.join('\n');
+}
+
 export async function generateAndSendAiReply(
   context: AiReplyContext,
   prisma: PrismaClient
@@ -1696,6 +1807,12 @@ export async function generateAndSendAiReply(
       CURRENT_LOCAL_TIME: localTime,
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+      PRE_COMPUTED_CONTEXT: renderPreComputedContext(
+        computeContextVariables(
+          context.checkIn, context.checkOut,
+          context.reservationStatus || 'DEFAULT',
+        )
+      ),
     };
     // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
     effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', '');
@@ -2084,19 +2201,30 @@ export async function generateAndSendAiReply(
         } else {
           const parsed = JSON.parse(rawResponse) as {
             reasoning?: string;
+            action?: string;
+            sop_step?: string | null;
             guest_message: string;
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
             escalation: { title: string; note: string; urgency: string } | null;
           };
           guestMessage = parsed.guest_message || '';
-          // Extract reasoning for logging (never sent to guest)
+          // Extract reasoning, action, sop_step for logging (never sent to guest)
           const aiReasoning = parsed.reasoning || '';
           if (!aiReasoning) {
             console.warn(`[AI] [${conversationId}] Empty reasoning field in coordinator response`);
           }
           ragContext.reasoning = aiReasoning;
           ragContext.reasoningEffort = reasoningEffort;
+          ragContext.action = parsed.action || '';
+          ragContext.sopStep = parsed.sop_step || null;
+
+          // Post-parse validation
+          const validationErrors = validateCoordinatorResponse(parsed);
+          if (validationErrors.length > 0) {
+            console.warn(`[AI] [${conversationId}] Response validation errors:`, validationErrors);
+            ragContext.validationErrors = validationErrors;
+          }
           // T019: Validate AI output escalation fields before use
           if (parsed.escalation) {
             const validUrgencies = ['immediate', 'scheduled', 'info_request'];

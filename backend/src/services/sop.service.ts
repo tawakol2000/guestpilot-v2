@@ -378,99 +378,511 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'escalate': 'Safety concern, legal issue, billing dispute requiring human, or anything needing immediate manager attention.',
 };
 
-/** Default SOP content per category (used as DEFAULT variant during seeding). */
+/** Default SOP content per category (used as DEFAULT variant during seeding).
+ *  v4 format: structured Markdown with XML tags, numbered paths, positive directives, worked examples.
+ *  Status-specific content is in SEED_STATUS_VARIANTS below. */
 const SEED_SOP_CONTENT: Record<string, string> = {
-  'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
-Extra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate to manager.`,
+  'sop-cleaning': `<sop name="cleaning" status="all">
+<description>Guest asks about cleaning services. Pre-booking: informational only. Checked-in: schedule with confirmed time before escalating.</description>
+<paths>
+### Path A: Pre-booking informational
+**When**: Booking status is INQUIRY or PENDING.
+**Do**: Confirm extra cleaning is available during the stay. Note scheduling happens after check-in. Action: reply.
 
-  'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
+### Path B: Checked-in, awaiting time
+**When**: Checked-in guest requests cleaning, no specific time yet.
+**Do**: Ask what time works between 10am and 5pm. Action: ask. sop_step: cleaning_checked_in:path_b_awaiting_time.
 
-## AVAILABLE PROPERTY AMENITIES
+### Path C: Checked-in, time confirmed
+**When**: Previous turn was Path B and guest provided a time.
+**Do**: Confirm time, escalate scheduled. Title: cleaning-{unit}-{date}-{time}. Action: escalate.
 
-{PROPERTY_AMENITIES}
+### Path D: Recurring request
+**When**: Guest mentions recurring, daily, every-other-day.
+**Do**: Ask for frequency and preferred time. Action: ask. Once confirmed, escalate scheduled.
 
-Check the property amenities list for available items. Only confirm items explicitly listed there.
-- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
-- Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
+### Path E: Outside business hours
+**When**: is_business_hours is false and guest wants cleaning now/today.
+**Do**: Note cleaning runs 10am–5pm, offer tomorrow morning. Action: offer.
+</paths>
+<rules>
+Always receive explicit guest agreement on a specific time before escalating.
+Always include unit, date, and confirmed time in escalation title.
+The first turn of any cleaning request uses action ask or offer, not escalate.
+</rules>
+</sop>`,
 
-  'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
-Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it and that you informed the manager, and escalate immediately.
-**All maintenance/technical issues → urgency: "immediate"**`,
+  'sop-amenity-request': `<sop name="amenity_request" status="all">
+<description>Guest asks about amenities or supplies. Pre-booking: informational. Checked-in: confirm item, get delivery time, then escalate.</description>
+<inputs>
+- on_request_amenities: {ON_REQUEST_AMENITIES}
+</inputs>
+<paths>
+### Path A: Pre-booking, listed item
+**When**: Status is INQUIRY/PENDING and item is in on_request_amenities.
+**Do**: Confirm available. Note delivery arranged after check-in. Action: reply.
 
-  'sop-wifi-doorcode': ``,
+### Path B: Checked-in, listed item, awaiting time
+**When**: Checked-in, item in on_request_amenities, no delivery time yet.
+**Do**: Confirm item available, ask for delivery time (10am–5pm). Action: ask. sop_step: amenity_request_checked_in:path_b_awaiting_time.
 
-  'sop-visitor-policy': `Guest wants to invite someone ELSE over — a friend, family member, or visitor to the apartment. NOTE: This SOP is for VISITOR requests only. If the guest is asking about their OWN booking documents (passport, marriage cert, ID), this does not apply — escalate as info_request instead.
+### Path C: Checked-in, time confirmed
+**When**: Previous turn was Path B and guest provided time.
+**Do**: Confirm, escalate scheduled. Title: amenity-{item}-{unit}-{date}-{time}. Action: escalate.
 
-## VISITOR POLICY
-- ONLY immediate family members allowed as visitors
-- Guest must send visitor's passport through the chat
-- Family names must match guest's family name
-Collect passport image → escalate for manager verification
-Non-family visitors (friends, colleagues, etc.) = NOT allowed
-Any pushback on this rule → escalate as immediate`,
+### Path D: Unlisted item
+**When**: Item not in on_request_amenities.
+**Do**: Say you'll check. Action: escalate (info_request). Title: amenity-unlisted-{item}-{unit}.
+</paths>
+<rules>
+Always confirm item availability before asking for a time.
+Always receive explicit delivery time before escalating for listed items.
+For unlisted items, always escalate as info_request.
+</rules>
+</sop>`,
 
-  'sop-early-checkin': `Guest asks for early check-in, arriving early, wants to check in before 3pm, or asks if they can come earlier.
+  'sop-maintenance': `<sop name="maintenance" status="all">
+<description>Guest reports something broken or malfunctioning. All maintenance escalates immediately.</description>
+<paths>
+### Path A: Safety issue
+**When**: Gas smell, electrical sparks, major water leak, biting pests, medical concern.
+**Do**: Acknowledge urgency. Escalate immediate. Title: safety-{issue}-{unit}. Note starts with "SAFETY:".
 
-## EARLY CHECK-IN
-Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
-**Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
-**Never confirm early check-in yourself.**`,
+### Path B: Comfort-critical
+**When**: AC not cooling, no hot water, oven/fridge broken, no electricity.
+**Do**: Acknowledge frustration. Escalate immediate. Title: {issue}-{unit}. Include symptom verbatim.
 
-  'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
-Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-**More than 2 days before checkout:** Do NOT escalate. Tell guest: "We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date."
-**Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
-**Never confirm late checkout yourself.**`,
+### Path C: Non-critical
+**When**: Wobbly chair, stain, dim bulb, squeaky hinge, cosmetic.
+**Do**: Acknowledge. Escalate immediate. Title: {issue}-{unit}.
+</paths>
+<rules>
+Always escalate maintenance immediately — never troubleshoot over chat.
+Always include the specific symptom verbatim so the technician has context.
+Safety issues take priority over tone, length, or procedures.
+</rules>
+</sop>`,
 
-  'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
-Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
-- Cleanliness complaints → offer immediate cleaning (waive $20 fee) and escalate as immediate
-- Noise complaints → acknowledge and escalate as immediate
-- Review threats or requests to speak to manager → acknowledge their frustration, escalate as immediate
-- Property-quality complaints (misleading listing, broken promises, not as advertised) → escalate as immediate with full details
-- General dissatisfaction → empathize, ask for specifics, escalate as immediate
-Never offer refunds, discounts, or compensation yourself. Inform the guest you have notified the manager.`,
+  'sop-wifi-doorcode': `<sop name="wifi_doorcode" status="all">
+<description>Guest asks about WiFi or door access. Pre-booking: confirm availability. Post-booking: share credentials. Door issues always immediate.</description>
+<inputs>
+- access_connectivity: {ACCESS_CONNECTIVITY}
+</inputs>
+<paths>
+### Path A: Pre-booking availability
+**When**: Status INQUIRY. Guest asks about WiFi or access.
+**Do**: Confirm WiFi available. Note credentials shared after booking confirmation. Action: reply.
 
-  'sop-booking-inquiry': `BOOKING INQUIRY: Guest is asking about availability, unit options, or making a new reservation. Ask: dates, number of guests, any preferences (bedrooms, floor, view). Check if property/dates are available in your knowledge. If the search tool found matching properties, present them with booking links from the tool results. If no booking links are available, list properties by name and escalate to manager to send links — never promise to send links you don't have. If not available or unsure, escalate as info_request with guest requirements. Never confirm a booking yourself — escalate with all details for manager to finalize. For urgent same-day requests, escalate as immediate.`,
+### Path B: Post-booking credentials request
+**When**: Status CONFIRMED or CHECKED_IN. Guest asks for WiFi/door code.
+**Do**: Share from access_connectivity. Action: reply.
 
-  'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
+### Path C: Door code lockout
+**When**: Guest reports door code not working or locked out.
+**Do**: Acknowledge urgency. Action: escalate (immediate). Title: lockout-{unit}.
 
-  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know or escalate. If the guest asks for instructions for arriving at the compound, tell them to share the apartment number, building number, and their names with the gate security. The property is self check in. `,
+### Path D: WiFi not working, first mention
+**When**: Checked-in, WiFi issue, no prior troubleshooting in conversation history.
+**Do**: Re-share credentials. Ask to restart device. Action: ask. sop_step: wifi_doorcode_checked_in:path_d_troubleshooting.
 
-  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
+### Path E: WiFi still broken after troubleshooting
+**When**: Previous turn was Path D, guest says still not working.
+**Do**: Escalate immediate. Title: wifi-broken-{unit}.
 
-  'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll check with the team. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
+### Path F: WiFi slow
+**When**: WiFi works but slow.
+**Do**: Escalate scheduled. Title: wifi-slow-{unit}.
+</paths>
+<rules>
+Always treat door code issues as immediate emergencies.
+Always attempt one round of WiFi troubleshooting before escalating connectivity issues.
+Pre-booking guests: confirm availability only, never share credentials.
+</rules>
+</sop>`,
 
-  'payment-issues': `PAYMENT ISSUES: Guest has questions about payment methods, failed transactions, receipts, billing disputes, or refund status. NEVER process payments, confirm receipt of payment, or authorize refunds yourself. For payment link issues, escalate as immediate-payment-issue. For receipt requests or invoice, escalate as info_request. For billing disputes or refund requests, acknowledge and escalate as immediate with full details. For deposit return questions, escalate as info_request. And inform the guest that you have notified the manager.`,
+  'sop-visitor-policy': `<sop name="visitor_policy" status="all">
+<description>Guest asks about bringing visitors. Family-only property — only immediate family permitted with passport verification.</description>
+<paths>
+### Path A: Pre-booking policy question
+**When**: Status INQUIRY/PENDING.
+**Do**: State family-only policy clearly. Action: reply.
 
-  'post-stay-issues': `POST-STAY ISSUES: Guest has checked out and contacts about lost items, post-stay complaints, damage deposit questions, or feedback. For lost items: ask for description. Escalate as immediate as post-stay-issue so staff can check. For damage deposit questions, escalate as info_request. For post-stay complaints, acknowledge with empathy and escalate as immediate. Never promise items will be found or deposits returned.`,
+### Path B: Post-booking, immediate family visitor
+**When**: Status CONFIRMED/CHECKED_IN. Visitor is parent, sibling, child, spouse, grandparent.
+**Do**: Explain passport verification required, ask to send visitor passport. Action: ask. sop_step: visitor_policy_post_booking:path_b_awaiting_passport.
 
-  'sop-long-term-rental': `LONG-TERM RENTAL: Guest is inquiring about monthly stays, corporate housing, or stays longer than 3 weeks. Ask: duration needed, move-in date, number of guests, any preferences. Share standard nightly rate if known, but note that monthly rates are different and need manager approval. Escalate as long-term-rental with all details. Tell the guest I will inform the manager for additional discount if there are any. Never quote monthly rates yourself.`,
+### Path C: Passport received
+**When**: Previous turn was Path B, guest sent passport image.
+**Do**: Confirm receipt, escalate scheduled for manager verification. Title: visitor-verification-{unit}.
 
-  'sop-booking-cancellation': `BOOKING CANCELLATION: Guest wants to cancel their reservation or is asking about cancellation policy. Acknowledge the request. NEVER cancel bookings or confirm cancellation yourself. Escalate as booking-cancellation with booking details. For cancellation policy questions, escalate as info_request — policies vary by platform (Airbnb, Booking.com, direct). For refund-after-cancellation questions, also tag with payment-issues.`,
+### Path D: Non-family visitor
+**When**: Friend, colleague, or non-immediate family.
+**Do**: Decline politely. Action: reply.
 
-  'sop-property-viewing': `PROPERTY VIEWING: Guest wants to see the apartment before booking, requests photos/video, or asks about filming/photoshoot permission. First recommend that the photos are available online and comprehensive of the property. If wants videos, escalate to manager, and tell the guest I'll ask the manager if there are videos to provide.`,
+### Path E: Guest pushes back
+**When**: After decline, guest argues or insists.
+**Do**: Escalate immediate. Title: visitor-policy-pushback-{unit}.
+</paths>
+<rules>
+Always require passport verification for any visitor, even immediate family.
+Always decline non-family visitors without exception.
+Always escalate immediately if the guest pushes back.
+</rules>
+</sop>`,
 
-  'property-info': `PROPERTY INFO: Guest is asking about the property — bedrooms, bathrooms, floor level, parking, pool, security, neighborhood, compound, area description, or general property details. Answer from the property description and amenities below.
+  'sop-early-checkin': `<sop name="early_checkin" status="all">
+<description>Guest asks about early check-in (before 3pm). Depends on prior bookings, confirmed within 2 days.</description>
+<inputs>
+- days_until_checkin, is_within_2_days_of_checkin, has_back_to_back_checkin from PRE_COMPUTED_CONTEXT
+</inputs>
+<paths>
+### Path A: Pre-booking inquiry
+**When**: Status INQUIRY/PENDING.
+**Do**: State standard is 3pm, early check-in depends on prior bookings, confirmed close to date. Action: reply.
 
-First check if this property matches the guest's requirements using the description and amenities below. When a guest lists multiple requirements or asks what's available, also call search_available_properties — it scores this property and alternatives together. If this property is the best match, pitch it confidently. Only suggest alternatives if they genuinely offer something this property lacks.
+### Path B: Confirmed, more than 2 days out
+**When**: is_within_2_days_of_checkin is false.
+**Do**: Explain can only confirm 2 days before. Offer bag drop with housekeeping. Action: reply.
 
-If the information is not in your knowledge, say you'll check and escalate as info_request.
+### Path C: Within 2 days, back-to-back detected
+**When**: is_within_2_days_of_checkin is true AND has_back_to_back_checkin is true.
+**Do**: Explain there's a checkout that morning, early check-in not possible. Offer bag drop. Action: reply.
 
-## PROPERTY DESCRIPTION
-{PROPERTY_DESCRIPTION}
+### Path D: Within 2 days, no back-to-back
+**When**: is_within_2_days_of_checkin is true AND has_back_to_back_checkin is false.
+**Do**: Say you'll check with the manager. Action: escalate (info_request). Title: early-checkin-{unit}-{date}.
+</paths>
+<rules>
+Always state the 3pm standard. Always offer bag drop as alternative. Always escalate to manager — never confirm early check-in yourself.
+</rules>
+</sop>`,
 
-## AVAILABLE AMENITIES
-{AVAILABLE_AMENITIES}`,
+  'sop-late-checkout': `<sop name="late_checkout" status="all">
+<description>Guest asks about late checkout (after 11am). Depends on next booking, confirmed within 2 days.</description>
+<inputs>
+- days_until_checkout, is_within_2_days_of_checkout, has_back_to_back_checkout from PRE_COMPUTED_CONTEXT
+</inputs>
+<paths>
+### Path A: Pre-booking inquiry
+**When**: Status INQUIRY/PENDING.
+**Do**: State standard is 11am, late checkout depends on next booking. Action: reply.
 
-  'local-recommendations': `Guest asks about nearby places, local recommendations, or "where is the nearest X?"
-You do NOT have local area knowledge. Do NOT guess locations, distances, or directions.
-Acknowledge the question naturally, then escalate as info_request with what the guest is looking for.
-Common requests: pharmacy (صيدلية), mall (مول), supermarket, restaurant, hospital, ATM, mosque (مسجد).`,
+### Path B: Confirmed pre-arrival
+**When**: Status CONFIRMED and not yet checked in.
+**Do**: Explain will check closer to checkout date. Action: reply.
 
-  'property-description': `## PROPERTY DESCRIPTION
-{PROPERTY_DESCRIPTION} `,
+### Path C: Checked-in, more than 2 days out
+**When**: is_within_2_days_of_checkout is false.
+**Do**: Explain can only confirm 2 days before. Will follow up closer to date. Action: reply.
+
+### Path D: Within 2 days, back-to-back detected
+**When**: is_within_2_days_of_checkout is true AND has_back_to_back_checkout is true.
+**Do**: Explain there's a check-in that day, need unit ready by 11am. Offer bag drop. Action: reply.
+
+### Path E: Within 2 days, no back-to-back
+**When**: is_within_2_days_of_checkout is true AND has_back_to_back_checkout is false.
+**Do**: Say you'll check with the manager. Action: escalate (info_request). Title: late-checkout-{unit}-{date}.
+</paths>
+<rules>
+Always state the 11am standard. Always defer to manager — never confirm late checkout yourself.
+</rules>
+</sop>`,
+
+  'sop-complaint': `<sop name="complaint" status="all">
+<description>Guest expresses dissatisfaction, threatens a review, demands manager, or complains about quality. Empathy first.</description>
+<paths>
+### Path A: Cleanliness on arrival
+**When**: Unit wasn't clean, dirty sheets, bathroom issues on arrival.
+**Do**: Lead with empathy. Offer immediate re-clean at no charge. Action: escalate (immediate). Title: cleanliness-complaint-{unit}.
+
+### Path B: Noise complaint
+**When**: Construction, loud neighbors, street noise.
+**Do**: Acknowledge disruption. Action: escalate (immediate). Title: noise-complaint-{unit}. Note includes noise source.
+
+### Path C: Review threat
+**When**: Guest mentions bad review, TripAdvisor, public post.
+**Do**: Acknowledge without admitting fault. Action: escalate (immediate). Title: review-threat-{unit}. Note: "Guest expressed intent to post public review."
+
+### Path D: Manager demand
+**When**: Guest explicitly asks to speak with manager.
+**Do**: Acknowledge without deflecting. Action: escalate (immediate). Title: manager-requested-{unit}.
+
+### Path E: Specific quality complaint
+**When**: Furniture, décor, layout, specific cleanliness detail.
+**Do**: Empathize. Action: escalate (immediate). Title: quality-complaint-{unit}.
+
+### Path F: Vague dissatisfaction
+**When**: "Not happy", "this isn't great", no specifics.
+**Do**: Empathize, ask what specifically isn't working. Action: ask. sop_step: complaint:path_f_awaiting_specifics. Do not escalate until specifics provided.
+</paths>
+<rules>
+Always lead with empathy — first sentence validates the feeling.
+Always escalate specific complaints immediately.
+Refund and credit decisions are the manager's — acknowledge and escalate.
+Opening phrases: "I'm really sorry you're dealing with this." / "That sounds frustrating. Let me get the manager involved." / "You're right to flag this."
+</rules>
+</sop>`,
+
+  'sop-booking-inquiry': `<sop name="booking_inquiry" status="all">
+<description>Guest wants to book or check availability. Applies to INQUIRY/PENDING status.</description>
+<paths>
+### Path A: Missing info
+**When**: Guest wants to book but hasn't provided dates, guest count, or requirements.
+**Do**: Ask for dates, number of guests, and preferences. Action: ask.
+
+### Path B: Complete info
+**When**: Dates and guest count provided.
+**Do**: Call search_available_properties. Present matching properties with booking links from tool results. Action: reply.
+
+### Path C: No matches
+**When**: search_available_properties returned no results.
+**Do**: Acknowledge. Action: escalate (info_request). Title: booking-search-{dates}.
+
+### Path D: Same-day/urgent
+**When**: Guest wants to book for today or tomorrow.
+**Do**: Search, present results if any. Also escalate immediate. Title: urgent-booking-{dates}.
+</paths>
+<rules>
+Always ask for complete information before searching. Always present booking links from tool results, not made-up URLs. Always refer booking confirmation to the platform — never confirm a booking yourself.
+</rules>
+</sop>`,
+
+  'pricing-negotiation': `<sop name="pricing_negotiation" status="all">
+<description>Guest asks about rates, discounts, or budget concerns.</description>
+<inputs>
+- stay_length_nights, is_long_term_stay from PRE_COMPUTED_CONTEXT
+</inputs>
+<paths>
+### Path A: Long-term stay
+**When**: is_long_term_stay is true and guest asks about pricing.
+**Do**: Frame positively: "For longer stays we have preferred rates." Escalate info_request. Title: long-term-rate-{nights}n.
+
+### Path B: Short stay discount request
+**When**: is_long_term_stay is false and guest asks for discount.
+**Do**: Push back politely. Note interest mentioned to manager. Escalate info_request. Title: discount-request-{unit}-{dates}.
+
+### Path C: Price justification
+**When**: Guest asks what's included or why the rate is what it is.
+**Do**: Explain: full unit, utilities, WiFi, amenities. Rates consistent across guests. Action: reply.
+</paths>
+<rules>
+Always maintain confident, value-focused tone. Always highlight what's included. Refer financial decisions to the manager.
+</rules>
+</sop>`,
+
+  'pre-arrival-logistics': `<sop name="pre_arrival_logistics" status="all">
+<description>Guest needs arrival info: address, gate instructions, self check-in process. For CONFIRMED/CHECKED_IN.</description>
+<paths>
+### Path A: General arrival
+**When**: Guest asks how to arrive, what to tell security.
+**Do**: Share address. Explain self check-in: give security apartment number, building number, name on booking. Action: reply.
+
+### Path B: Specific directions
+**When**: Guest asks for driving directions, airport transfer, transit.
+**Do**: Acknowledge, say you'll check with manager (no local knowledge). Action: escalate (info_request). Title: directions-{topic}.
+</paths>
+<rules>
+Always share address and gate instructions from reservation details. Never invent driving directions or local route info.
+</rules>
+</sop>`,
+
+  'sop-booking-modification': `<sop name="booking_modification" status="all">
+<description>Guest wants to modify booking (not simple date extension — those go to check_extend_availability).</description>
+<inputs>
+- is_within_48h_of_checkin from PRE_COMPUTED_CONTEXT
+</inputs>
+<paths>
+### Path A: Within 48h of check-in
+**When**: is_within_48h_of_checkin is true.
+**Do**: Acknowledge. Action: escalate (immediate). Title: urgent-modification-{unit}.
+
+### Path B: Unit swap
+**When**: Guest wants different unit.
+**Do**: Acknowledge. Action: escalate (info_request). Title: unit-swap-{current}-to-{requested}.
+
+### Path C: Guest count change
+**When**: Adding or removing guests.
+**Do**: Acknowledge. Action: escalate (info_request). Title: guest-count-{old}-to-{new}-{unit}.
+
+### Path D: Other modifications
+**When**: Non-extension date shifts, bed config, etc.
+**Do**: Acknowledge. Action: escalate (info_request). Title: modification-{unit}.
+</paths>
+<rules>
+Always acknowledge before escalating. Never confirm modifications yourself. Never quote price differences.
+</rules>
+</sop>`,
+
+  'sop-booking-confirmation': `<sop name="booking_confirmation" status="all">
+<description>Guest verifying their booking exists or checking details.</description>
+<paths>
+### Path A: Booking in context
+**When**: Reservation details contain the booking.
+**Do**: Confirm dates, unit, guest count from context. Action: reply.
+
+### Path B: Booking not in context
+**When**: Guest claims booking but not in reservation details.
+**Do**: Acknowledge without confirming. Action: escalate (immediate). Title: missing-booking-record-{guest_name}.
+</paths>
+<rules>
+Always confirm from injected reservation details when available. Always treat missing records as urgent.
+</rules>
+</sop>`,
+
+  'payment-issues': `<sop name="payment_issues" status="all">
+<description>Guest reports payment problem, refund request, receipt, or billing dispute.</description>
+<paths>
+### Path A: Payment blocker
+**When**: Can't pay, broken link, card declined.
+**Do**: Acknowledge. Action: escalate (immediate). Title: payment-blocker-{unit}.
+
+### Path B: Refund or dispute
+**When**: Refund request or charge dispute.
+**Do**: Acknowledge. Action: escalate (immediate). Title: billing-dispute-{unit}.
+
+### Path C: Receipt/invoice
+**When**: Wants receipt or invoice.
+**Do**: Acknowledge. Action: escalate (info_request). Title: receipt-request-{unit}.
+
+### Path D: Deposit question
+**When**: Security deposit inquiry.
+**Do**: Acknowledge. Action: escalate (info_request). Title: deposit-inquiry-{unit}.
+</paths>
+<rules>
+Always refer financial decisions to the manager. Tell guest "I've let the manager know and someone will follow up shortly."
+</rules>
+</sop>`,
+
+  'post-stay-issues': `<sop name="post_stay_issues" status="all">
+<description>Guest has checked out — lost item, deposit question, or post-stay complaint.</description>
+<paths>
+### Path A: Lost item, gathering description
+**When**: Guest reports leaving something behind.
+**Do**: Ask for item description and where they last had it. Action: ask. sop_step: post_stay_issues:path_a_awaiting_description.
+
+### Path B: Lost item, escalate
+**When**: Previous turn was Path A and guest described the item.
+**Do**: Thank them. Action: escalate (immediate). Title: lost-item-{unit}. Include full description.
+
+### Path C: Deposit question
+**When**: Security deposit inquiry.
+**Do**: Say you'll check. Action: escalate (info_request). Title: deposit-inquiry-{unit}.
+
+### Path D: Post-stay complaint
+**When**: Complaint about completed stay.
+**Do**: Empathize. Action: escalate (immediate). Title: post-stay-complaint-{unit}.
+</paths>
+<rules>
+Always treat lost items as urgent — the recovery window closes fast. Never promise items will be found. Never promise deposit amounts or timelines.
+</rules>
+</sop>`,
+
+  'sop-long-term-rental': `<sop name="long_term_rental" status="all">
+<description>Guest inquiring about monthly stays, corporate housing, or stays > 3 weeks.</description>
+<paths>
+### Path A: Missing info
+**When**: Guest wants long-term stay but hasn't provided duration, move-in date, guest count.
+**Do**: Ask for details. Action: ask. sop_step: long_term_rental:path_a_gathering_info.
+
+### Path B: Complete info
+**When**: Duration and dates provided.
+**Do**: Frame positively: "For monthly stays we have preferred rates." Share nightly rate if known. Note manager prepares custom quotes. Action: escalate (info_request). Title: long-term-{nights}n.
+</paths>
+<rules>
+Always position monthly rates positively. Never quote a monthly rate yourself. Never imply a discount percentage.
+</rules>
+</sop>`,
+
+  'sop-booking-cancellation': `<sop name="booking_cancellation" status="all">
+<description>Guest wants to cancel or asks about cancellation policy.</description>
+<paths>
+### Path A: Cancellation request
+**When**: Guest wants to cancel.
+**Do**: Acknowledge. Action: escalate (info_request). Title: cancellation-{unit}-{dates}.
+
+### Path B: Policy question
+**When**: Asks about cancellation terms.
+**Do**: Explain policies depend on booking platform. Say you'll check. Action: escalate (info_request). Title: cancellation-policy-{channel}.
+
+### Path C: Refund after cancellation
+**When**: Asks about refund post-cancellation.
+**Do**: Acknowledge. Action: escalate (immediate). Title: refund-after-cancellation-{unit}.
+</paths>
+<rules>
+Always refer cancellations to the manager. Never cancel yourself. Never quote refund amounts.
+</rules>
+</sop>`,
+
+  'sop-property-viewing': `<sop name="property_viewing" status="all">
+<description>Guest wants to see the property — photos, video, or physical tour.</description>
+<paths>
+### Path A: Photos
+**When**: Guest asks for photos.
+**Do**: Direct to listing. Offer to highlight specific rooms. Action: reply.
+
+### Path B: Video
+**When**: Guest asks for video walkthrough.
+**Do**: Say you'll check with manager. Action: escalate (info_request). Title: video-request-{unit}.
+
+### Path C: Physical tour
+**When**: Guest wants to visit the unit.
+**Do**: Ask for preferred time. Action: ask. sop_step: property_viewing:path_c_awaiting_time. Once confirmed, escalate info_request. Title: tour-request-{unit}.
+</paths>
+<rules>
+Always direct photo questions to the listing first. Never promise videos or tours without manager approval.
+</rules>
+</sop>`,
+
+  'property-info': `<sop name="property_info" status="all">
+<description>Guest asks factual question about the property — bedrooms, bathrooms, parking, pool, amenities, address, neighborhood.</description>
+<inputs>
+- property_description: {PROPERTY_DESCRIPTION}
+- available_amenities: {AVAILABLE_AMENITIES}
+</inputs>
+<paths>
+### Path A: Answer in context
+**When**: Question answerable from property_description or available_amenities.
+**Do**: Answer directly from context. Action: reply.
+
+### Path B: Multiple requirements
+**When**: Guest lists multiple requirements or asks what's available.
+**Do**: Call search_available_properties. If this property is best match, pitch confidently. Only suggest alternatives if genuinely missing something. Action: reply.
+
+### Path C: Not in context
+**When**: Information not in property_description or available_amenities.
+**Do**: Say you'll check. Action: escalate (info_request). Title: property-info-{topic}.
+</paths>
+<rules>
+Always answer from injected context when available. Never guess features not in context.
+</rules>
+</sop>`,
+
+  'local-recommendations': `<sop name="local_recommendations" status="all">
+<description>Guest asks about anything outside the property — restaurants, pharmacies, ATMs, attractions, shopping.</description>
+<paths>
+### Path A: Defer to manager
+**When**: Any local area question.
+**Do**: Acknowledge warmly. Say the manager knows the area better. Action: escalate (info_request). Title: local-rec-{category}. Note: "Guest asked about: {specifics}."
+</paths>
+<rules>
+Always defer local questions to the manager. Never suggest locations, distances, names, or prices. Never guess even when it seems obvious.
+</rules>
+</sop>`,
+
+  'property-description': `<sop name="property_description" status="all">
+<description>Guest asks about area vibe, neighborhood character, or general listing narrative.</description>
+<inputs>
+- property_description: {PROPERTY_DESCRIPTION}
+</inputs>
+<paths>
+### Path A: Answer from description
+**When**: Guest asks about vibe, neighborhood, area character.
+**Do**: Answer from property_description. Action: reply.
+</paths>
+<rules>
+Always use the property description. Never invent neighborhood details beyond what's provided.
+</rules>
+</sop>`,
 };
 
 // ── Status-variant overrides for SOPs whose response differs by reservation status ──
@@ -480,127 +892,50 @@ interface StatusVariant {
   content: string;
 }
 
+// v4: SOPs handle status branching internally via path triggers.
+// Status variants point to the same content — the SOP's paths check booking_status from PRE_COMPUTED_CONTEXT.
+// Only override when a status needs truly different content (e.g., empty for inapplicable statuses).
 const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
   'sop-amenity-request': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about available amenities or features. Check the amenities listed in your context (AVAILABLE AMENITIES and ON REQUEST AMENITIES blocks). Confirm what is available. Don't discuss delivery or scheduling — the guest is deciding whether to book.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest asks about amenities for their upcoming stay. Confirm availability and assure the amenity will be ready for their arrival. Don't schedule delivery — they haven't checked in yet.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest requests an amenity to be delivered. Check the ON REQUEST AMENITIES in your context.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n{ON_REQUEST_AMENITIES}\n\n- Item listed → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for guest to confirm time, THEN escalate as "scheduled"\n- Item NOT listed → say "Let me check on that" → escalate as "info_request"`,
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-amenity-request'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-amenity-request'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-amenity-request'] },
   ],
-
   'sop-early-checkin': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asking about early check-in as part of their booking inquiry. Standard check-in is 3:00 PM. Mention this and note that early check-in availability depends on prior bookings.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `## EARLY CHECK-IN                                                                     \n  Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before. \n**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."                                                                         \n  **Within 2 days of check-in:** Check the AVAILABILITY CHECK RESULT section below. If it says back-to-back booking detected, tell the guest early check-in is not available because another guest is checking out the same day. If no back-to-back, tell the guest you'll check with the manager → escalate as "info_request" \n  **Never confirm early check-in yourself.**`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: '',
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-early-checkin'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-early-checkin'] },
+    { status: 'CHECKED_IN', content: '' },
   ],
-
   'sop-late-checkout': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asking about late checkout as part of their booking inquiry. Standard checkout is 11:00 AM. Mention this and note that late checkout may be possible depending on next booking.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest asking about late checkout for their upcoming stay. Standard checkout is 11:00 AM. Can only confirm 2 days before checkout date.`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-late-checkout'],
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-late-checkout'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-late-checkout'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-late-checkout'] },
   ],
-
   'sop-cleaning': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, their booking has not been accepted yet. Reassure cleaning services are available on request.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, guest has not checked in yet. Reassure cleaning services are available on request. `,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate and schedule booking during working hours. `,
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-cleaning'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-cleaning'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-cleaning'] },
   ],
-
   'sop-wifi-doorcode': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about WiFi or access. Confirm WiFi is available at the property. Reassure that access details will be provided after check-in — the guest is not yet booked.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `{ACCESS_CONNECTIVITY}\nConfirm WiFi is available at the property, and its self check-in.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `{ACCESS_CONNECTIVITY}\nIf there is an issue with the Wifi apologies and escalate.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-wifi-doorcode'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-wifi-doorcode'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-wifi-doorcode'] },
   ],
-
   'sop-visitor-policy': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about visitor policy. Family-only property — only immediate family members allowed as visitors. Non-family visitors are not allowed. Share the policy upfront.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-visitor-policy'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-visitor-policy'],
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-visitor-policy'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-visitor-policy'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-visitor-policy'] },
   ],
-
   'sop-booking-modification': [
-    {
-      status: 'INQUIRY',
-      content: `Guest wants to modify their inquiry — change dates, guest count, or unit preference. Acknowledge the change request and escalate to manager with the new details. Never confirm changes yourself.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-booking-modification'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest wants to extend their current stay or change dates. Acknowledge the request. Check if the extend-stay tool is available to check availability and pricing. Escalate to manager with details. Never confirm modifications yourself.`,
-    },
+    { status: 'INQUIRY', content: SEED_SOP_CONTENT['sop-booking-modification'] },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['sop-booking-modification'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['sop-booking-modification'] },
   ],
-
   'pre-arrival-logistics': [
-    {
-      status: 'INQUIRY',
-      content: '',
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['pre-arrival-logistics'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['pre-arrival-logistics'],
-    },
+    { status: 'INQUIRY', content: '' },
+    { status: 'CONFIRMED', content: SEED_SOP_CONTENT['pre-arrival-logistics'] },
+    { status: 'CHECKED_IN', content: SEED_SOP_CONTENT['pre-arrival-logistics'] },
   ],
-
 };
 
 // ════════════════════════════════════════════════════════════════════════════
