@@ -2373,15 +2373,26 @@ export async function generateAndSendAiReply(
             if (!parsed.manager.title) {
               parsed.manager.title = 'awaiting-manager-review';
             }
-            const t = parsed.manager.title || '';
-            const screeningUrgency = (t.startsWith('eligible-') || t.startsWith('violation-') || t === 'awaiting-manager-review')
-              ? 'inquiry_decision' : 'info_request';
-            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, screeningUrgency);
-            traceEscalation({
-              tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.manager.title, escalationUrgency: screeningUrgency,
-              escalationNote: parsed.manager.note,
-            });
+
+            // Skip escalation when awaiting_manager and screening already exists — avoids duplicate private notes
+            const existingScreeningTask = openTasks.some((t: any) =>
+              (t.title || '').startsWith('eligible-') || (t.title || '').startsWith('violation-') || t.title === 'awaiting-manager-review'
+            );
+            const isAwaitingRepeat = parsed.action === 'awaiting_manager' && existingScreeningTask;
+
+            if (!isAwaitingRepeat) {
+              const t = parsed.manager.title || '';
+              const screeningUrgency = (t.startsWith('eligible-') || t.startsWith('violation-') || t === 'awaiting-manager-review')
+                ? 'inquiry_decision' : 'info_request';
+              await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, screeningUrgency);
+              traceEscalation({
+                tenantId, conversationId, agentName: effectiveAgentName,
+                escalationType: parsed.manager.title, escalationUrgency: screeningUrgency,
+                escalationNote: parsed.manager.note,
+              });
+            } else {
+              console.log(`[AI] [${conversationId}] Skipping duplicate screening escalation — existing screening task found, action=awaiting_manager`);
+            }
           }
         } else {
           const parsed = JSON.parse(rawResponse) as {
