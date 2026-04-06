@@ -178,6 +178,8 @@ const SCREENING_SCHEMA = {
     type: 'object',
     properties: {
       reasoning: { type: 'string', description: 'Internal thinking: what the guest asked, what screening info we have, what\'s missing, which path applies, what action to take. Under 80 words. Not shown to guest.' },
+      nationality_known: { type: 'boolean', description: 'True if guest nationality is clearly stated in conversation history (any language — English, Arabic, Arabizi). Inference from names alone is NOT enough. False if unknown or ambiguous.' },
+      composition_known: { type: 'boolean', description: 'True if party composition is clearly stated: number of guests AND their relationship (family, couple, siblings, solo, group with gender). "We are 4 people" alone is false. "Me, my wife and 2 kids" is true.' },
       action: { type: 'string', enum: ['reply', 'ask', 'screen_eligible', 'screen_violation', 'escalate_info_request', 'escalate_unclear', 'awaiting_manager'], description: 'reply=direct answer. ask=clarifying/screening question. screen_eligible=passes screening. screen_violation=fails screening. escalate_info_request=needs manager info. escalate_unclear=ambiguous screening. awaiting_manager=waiting for manager decision, empty guest_message.' },
       sop_step: { type: ['string', 'null'] as any, description: 'Path taken, format screening:{path_id} or {sop_name}:{path_id}. Null if no specific path followed.' },
       guest_message: { type: 'string', description: 'Reply to the guest. Empty string only when action=awaiting_manager.' },
@@ -193,7 +195,7 @@ const SCREENING_SCHEMA = {
         additionalProperties: false,
       },
     },
-    required: ['reasoning', 'action', 'sop_step', 'guest_message', 'manager'],
+    required: ['reasoning', 'nationality_known', 'composition_known', 'action', 'sop_step', 'guest_message', 'manager'],
     additionalProperties: false,
   },
 };
@@ -946,6 +948,8 @@ Pre-booking guests: never share access codes (door codes, WiFi credentials). Tho
 Return JSON matching the enforced schema. Fill reasoning FIRST — think before responding.
 
 - **reasoning** (first, mandatory) — what the guest asked, what screening info you have, what's missing, which path applies. Under 80 words.
+- **nationality_known** (boolean) — true ONLY if the guest has clearly stated their nationality in conversation history, in any language (English, Arabic, Arabizi). Inference from names alone is NOT enough.
+- **composition_known** (boolean) — true ONLY if party composition is clearly stated: number of guests AND their relationship. "We're 4 people" alone is false. "Me, my wife and 2 kids" is true. "My friends and I" is false (gender unknown).
 - **action** — one of: reply, ask, screen_eligible, screen_violation, escalate_info_request, escalate_unclear, awaiting_manager
 - **sop_step** — path taken, format screening:{path_id} or {sop_name}:{path_id}. Null if no specific path.
 - **guest_message** — your reply. Empty string ONLY for awaiting_manager.
@@ -972,11 +976,11 @@ Evaluate paths in order. Stop at the first match. Answer any guest question (via
 **Do**: Inform this is a family-only property, documents required. Output screen_violation, title: violation-no-documents.
 
 ### Path C: Nationality unknown
-**When**: No nationality determinable from conversation history.
-**Do**: Answer guest's question first (get_sop if needed). Ask for nationality (and composition if also unknown). Output ask.
+**When**: nationality_known is false (regardless of other info).
+**Do**: Answer guest's question first (get_sop if needed). Ask for nationality (and composition if also unknown). Output ask. Set nationality_known=false.
 
 ### Path D: Party composition unknown
-**When**: Nationality known but composition unclear.
+**When**: nationality_known is true AND composition_known is false.
 **Do**: Answer question first. Ask for number of guests and relationship. Output ask.
 
 ### Path E: Couple, marital status unclear
@@ -1069,20 +1073,26 @@ If the guest signals you misunderstood: acknowledge briefly ("Got it — you mea
 <examples>
 <example>
 Guest: "Hi, is there parking? Me and my wife are from Amman."
-→ Jordanian (Arab), married couple. Path I. Call get_sop for parking, call create_document_checklist(2, true).
-{"reasoning":"Jordanian couple, 'my wife' confirms married. Path I — eligible Arab married couple. Answer parking from SOP, mention docs.","action":"screen_eligible","sop_step":"screening:path_i_eligible_arab_couple","guest_message":"Hi! Yes, we have free private parking. I'll check with the manager on availability — once confirmed, we'll just need copies of both passports and your marriage certificate.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Jordanian married couple from Amman, 2 guests. Recommending acceptance. Marriage certificate required post-acceptance."}}
+→ Jordanian (Arab), married couple. Path I. Answer parking, call create_document_checklist(2, true).
+{"reasoning":"Jordanian couple, 'my wife' confirms married. Path I — eligible Arab married couple.","nationality_known":true,"composition_known":true,"action":"screen_eligible","sop_step":"screening:path_i_eligible_arab_couple","guest_message":"Hi! Yes, we have free private parking. I'll check with the manager on availability — once confirmed, we'll just need copies of both passports and your marriage certificate.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Jordanian married couple from Amman, 2 guests. Recommending acceptance."}}
 </example>
 
 <example>
 Guest: "Do you have a pool? We're a group of 4."
-→ Nationality unknown, composition unknown. Path C. Answer pool question, ask for missing info.
-{"reasoning":"Group of 4, nationality unknown, composition unknown. Path C — ask for both.","action":"ask","sop_step":"screening:path_c_nationality_missing","guest_message":"Yes, there's a shared pool. Could you let me know your nationality and whether your group is all male, all female, or mixed?","manager":{"needed":false,"title":"","note":""}}
+→ Nationality unknown, composition unknown. Path C.
+{"reasoning":"Group of 4, nationality and composition unknown. Path C — ask for both.","nationality_known":false,"composition_known":false,"action":"ask","sop_step":"screening:path_c_nationality_missing","guest_message":"Yes, there's a shared pool. Could you let me know your nationality and whether your group is all male, all female, or mixed?","manager":{"needed":false,"title":"","note":""}}
+</example>
+
+<example>
+Guest: "مرحبا، أنا أحمد من بيروت، عايز أحجز 3 ليالي لوحدي"
+→ Lebanese solo male. Path K — Lebanese/Emirati exception. Respond in Arabic.
+{"reasoning":"Lebanese solo male. Lebanese/Emirati exception — solo males accepted. Path K. Respond in Arabic.","nationality_known":true,"composition_known":true,"action":"screen_eligible","sop_step":"screening:path_k_lebanese_emirati_exception","guest_message":"أهلاً بحضرتك! هشيك مع المانجر على التوافر، ولما نأكد الحجز هنحتاج نسخة من الباسبور.","manager":{"needed":true,"title":"eligible-lebanese-emirati-single","note":"Lebanese solo male, Ahmed from Beirut, 3 nights. Recommending acceptance under Lebanese/Emirati exception."}}
 </example>
 
 <example>
 Guest: "ok thanks"
 → Existing screening awaiting manager. Path A.
-{"reasoning":"Existing screening escalation on file. Guest sent acknowledgment. Path A — awaiting manager.","action":"awaiting_manager","sop_step":"screening:path_a_awaiting_manager","guest_message":"","manager":{"needed":true,"title":"awaiting-manager-review","note":"Guest acknowledged, still awaiting manager decision."}}
+{"reasoning":"Existing screening on file. Acknowledgment. Path A — awaiting manager.","nationality_known":true,"composition_known":true,"action":"awaiting_manager","sop_step":"screening:path_a_awaiting_manager","guest_message":"","manager":{"needed":true,"title":"awaiting-manager-review","note":"Guest acknowledged, still awaiting manager decision."}}
 </example>
 </examples>
 
@@ -2278,6 +2288,8 @@ export async function generateAndSendAiReply(
         if (isInquiry) {
           const parsed = JSON.parse(rawResponse) as {
             reasoning?: string;
+            nationality_known?: boolean;
+            composition_known?: boolean;
             action?: string;
             sop_step?: string | null;
             guest_message?: string;
@@ -2285,7 +2297,7 @@ export async function generateAndSendAiReply(
             manager?: { needed: boolean; title: string; note: string };
           };
           guestMessage = parsed.guest_message || parsed['guest message'] || '';
-          // Extract reasoning, action, sop_step for logging
+          // Extract reasoning, action, sop_step, screening booleans for logging
           const screeningReasoning = parsed.reasoning || '';
           if (!screeningReasoning) {
             console.warn(`[AI] [${conversationId}] Empty reasoning in screening response`);
@@ -2294,6 +2306,18 @@ export async function generateAndSendAiReply(
           ragContext.reasoningEffort = reasoningEffort;
           ragContext.action = parsed.action || '';
           ragContext.sopStep = parsed.sop_step || null;
+          ragContext.nationalityKnown = parsed.nationality_known ?? null;
+          ragContext.compositionKnown = parsed.composition_known ?? null;
+
+          // Screening info gate: if model claims screening decision but self-reports missing info, log warning
+          if ((parsed.action === 'screen_eligible' || parsed.action === 'screen_violation') &&
+              (parsed.nationality_known === false || parsed.composition_known === false)) {
+            const missing = [];
+            if (!parsed.nationality_known) missing.push('nationality');
+            if (!parsed.composition_known) missing.push('composition');
+            console.warn(`[AI] [${conversationId}] Screening decision with self-reported missing info: ${missing.join(', ')}. Title: ${parsed.manager?.title}`);
+            ragContext.screeningInfoGateWarning = missing;
+          }
 
           // Handle screening escalation — derive urgency from title
           if (parsed.manager?.needed) {
