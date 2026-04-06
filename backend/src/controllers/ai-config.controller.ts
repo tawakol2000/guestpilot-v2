@@ -436,11 +436,12 @@ export function makeAiConfigController(prisma: PrismaClient) {
           const cleaned = stripCodeFences(rawResponse);
           if (isInquiry) {
             const parsed = JSON.parse(cleaned) as {
-              'guest message': string;
+              guest_message?: string;
+              'guest message'?: string;
               manager?: { needed: boolean; title: string; note: string };
             };
             res.json({
-              response: parsed['guest message'] || '',
+              response: parsed.guest_message || parsed['guest message'] || '',
               manager: parsed.manager || null,
               escalation: null,
               toolUsed: ragContext.toolUsed || false,

@@ -528,8 +528,8 @@ export function sandboxRouter(prisma: PrismaClient) {
       try {
         const cleanedResponse = stripCodeFences(rawResponseText);
         if (isInquiry) {
-          const parsed = JSON.parse(cleanedResponse) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
-          responseMessage = parsed['guest message'] ?? rawResponseText;
+          const parsed = JSON.parse(cleanedResponse) as { guest_message?: string; 'guest message'?: string; reasoning?: string; action?: string; sop_step?: string | null; manager?: { needed: boolean; title: string; note: string } };
+          responseMessage = parsed.guest_message || parsed['guest message'] || rawResponseText;
           if (parsed.manager) manager = parsed.manager;
         } else {
           const parsed = JSON.parse(cleanedResponse) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
