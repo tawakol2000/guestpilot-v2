@@ -130,7 +130,7 @@ const SYSTEM_TOOLS: Array<{
       required: ['amenities', 'reason', 'min_capacity'],
       additionalProperties: false,
     },
-    agentScope: 'INQUIRY,PENDING',
+    agentScope: 'CONFIRMED,CHECKED_IN',
   },
   {
     name: 'create_document_checklist',
@@ -255,6 +255,12 @@ export async function seedToolDefinitions(
       data: { agentScope: newScope },
     });
   }
+
+  // Migrate search_available_properties scope from INQUIRY,PENDING to CONFIRMED,CHECKED_IN
+  await prisma.toolDefinition.updateMany({
+    where: { tenantId, name: 'search_available_properties', agentScope: 'INQUIRY,PENDING' },
+    data: { agentScope: 'CONFIRMED,CHECKED_IN' },
+  });
 
   // Migrate get_sop description to latest version
   const latestGetSopDesc = SYSTEM_TOOLS.find(t => t.name === 'get_sop')!.description;

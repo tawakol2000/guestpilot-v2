@@ -942,6 +942,7 @@ function TenantConfigSection({
         customInstructions: local.customInstructions,
         ragEnabled: local.ragEnabled,
         memorySummaryEnabled: local.memorySummaryEnabled,
+        showAiReasoning: local.showAiReasoning,
         reasoningCoordinator: local.reasoningCoordinator,
         reasoningScreening: local.reasoningScreening,
       })
@@ -1160,8 +1161,9 @@ function TenantConfigSection({
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Features</label>
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
+          {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
           <div style={{ borderBottom: 'none' }}>
-            {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
+            {toggleRow('Show AI Reasoning', 'Display the AI reasoning chain below each AI message in the inbox', local.showAiReasoning, 'showAiReasoning')}
           </div>
         </div>
 
@@ -1406,6 +1408,8 @@ const BLOCK_VARIABLES = [
   'OPEN_TASKS',
   'CURRENT_LOCAL_TIME',
   'DOCUMENT_CHECKLIST',
+  'PRE_COMPUTED_CONTEXT',
+  'SCREENING_STATE',
 ]
 
 function ContentBlocksEditor({

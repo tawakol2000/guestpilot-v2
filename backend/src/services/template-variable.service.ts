@@ -100,6 +100,22 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
     propertyBound: true,
     emptyDefault: null, // omit block entirely when no checklist
   },
+  {
+    name: 'PRE_COMPUTED_CONTEXT',
+    description: 'System-computed temporal variables: business hours, days until check-in/out, back-to-back flags, screening context',
+    essential: true,
+    agentScope: ['coordinator', 'screening'],
+    propertyBound: false,
+    emptyDefault: null,
+  },
+  {
+    name: 'SCREENING_STATE',
+    description: 'Deterministic screening phase and hint computed from conversation history and open tasks',
+    essential: false,
+    agentScope: ['screening'],
+    propertyBound: false,
+    emptyDefault: null,
+  },
 ];
 
 const VARIABLE_NAMES = new Set(TEMPLATE_VARIABLES.map(v => v.name));

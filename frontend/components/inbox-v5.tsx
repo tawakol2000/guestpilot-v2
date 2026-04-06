@@ -92,6 +92,7 @@ import {
   type ReservationActionResult,
   type LastActionResult,
   type HostawayConnectStatus,
+  apiGetTenantAiConfig,
 } from '@/lib/api'
 import { socket, connectSocket, disconnectSocket } from '../lib/socket'
 import { ConnectionStatus } from './ui/connection-status'
@@ -153,6 +154,7 @@ interface Message {
   fromSelf?: boolean
   imageUrls?: string[]
   aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  reasoning?: string
 }
 
 interface Guest {
@@ -1445,6 +1447,8 @@ export default function InboxV5() {
   const [correctionLabels, setCorrectionLabels] = useState<string[]>([])
   const [correctionSubmitted, setCorrectionSubmitted] = useState<Record<string, boolean>>({})
   const [imageModalUrl, setImageModalUrl] = useState<string | null>(null)
+  const [showAiReasoning, setShowAiReasoning] = useState(false)
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({})
 
   // Socket.IO connection state
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'delayed' | 'reconnecting' | 'disconnected'>('reconnecting')
@@ -1592,6 +1596,13 @@ export default function InboxV5() {
     load()
     const interval = setInterval(load, 30000)
     return () => clearInterval(interval)
+  }, [])
+
+  // ── Fetch showAiReasoning from tenant config ──
+  useEffect(() => {
+    apiGetTenantAiConfig()
+      .then(cfg => setShowAiReasoning(cfg.showAiReasoning ?? false))
+      .catch(() => {})
   }, [])
 
   // ── Effect 2: Load detail on selection ──
@@ -1767,7 +1778,7 @@ export default function InboxV5() {
         const resolved = msg.channel ? channelFromApi(msg.channel) : undefined
         // 'direct' is the catch-all fallback — treat as no channel so conversation channel is used
         const sseChannel = (resolved && resolved !== 'direct') ? resolved : undefined
-        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel })
+        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel, ...(msg.reasoning ? { reasoning: msg.reasoning } : {}) })
       }
       // Extract visible text for lastMessage preview
       const previewText = newSseMsgs[0]?.text || msg.content
@@ -3867,6 +3878,56 @@ export default function InboxV5() {
                           >
                             {msg.text}
                           </div>
+                          {/* AI reasoning (collapsible) */}
+                          {isAI && showAiReasoning && msg.reasoning && (
+                            <div style={{ marginTop: 3, maxWidth: '100%' }}>
+                              <button
+                                onClick={() => setExpandedReasoning(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '1px 0',
+                                  fontSize: 10,
+                                  fontFamily: T.font.mono,
+                                  color: T.text.tertiary,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                }}
+                              >
+                                <ChevronDown
+                                  size={10}
+                                  style={{
+                                    transform: expandedReasoning[msg.id] ? 'rotate(180deg)' : 'rotate(0deg)',
+                                    transition: 'transform 0.15s ease',
+                                  }}
+                                />
+                                reasoning
+                              </button>
+                              {expandedReasoning[msg.id] && (
+                                <div
+                                  style={{
+                                    marginTop: 2,
+                                    padding: '4px 8px',
+                                    background: T.bg.secondary,
+                                    borderRadius: 4,
+                                    border: `1px solid ${T.border.default}`,
+                                    fontSize: 10,
+                                    fontFamily: T.font.mono,
+                                    color: T.text.secondary,
+                                    lineHeight: 1.5,
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    maxHeight: 120,
+                                    overflow: 'auto',
+                                  }}
+                                >
+                                  {msg.reasoning}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {/* Below bubble: logo + timestamp + rating */}
                           <div
                             style={{

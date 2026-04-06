@@ -395,7 +395,11 @@ Check the property amenities list for available items. Only confirm items explic
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
 Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it and that you informed the manager, and escalate immediately.
-**All maintenance/technical issues → urgency: "immediate"**`,
+
+**Safety triage:**
+- AC/water/electricity failures → urgency: immediate. These affect livability.
+- Cosmetic issues (scratches, minor wear) → urgency: scheduled. Log but not urgent.
+**All other maintenance/technical issues → urgency: "immediate"**`,
 
   'sop-wifi-doorcode': ``,
 
@@ -552,7 +556,7 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CHECKED_IN',
-      content: `{ACCESS_CONNECTIVITY}\nIf there is an issue with the Wifi apologies and escalate.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
+      content: `{ACCESS_CONNECTIVITY}\nIf guest reports WiFi issues, share credentials again from the access details. If still not working, escalate immediately — connectivity issues require prompt resolution.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
     },
   ],
 

@@ -423,6 +423,7 @@ model TenantAiConfig {
   sopOverrides         Json     @default("{}")
   reasoningCoordinator String   @default("auto")  // "none" | "low" | "medium" | "high" | "auto"
   reasoningScreening   String   @default("none")   // "none" | "low" | "medium" | "high"
+  showAiReasoning      Boolean  @default(false)
   systemPromptCoordinator String? @db.Text
   systemPromptScreening   String? @db.Text
   systemPromptVersion     Int     @default(1)

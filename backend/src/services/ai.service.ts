@@ -27,6 +27,7 @@ import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenant } from './push.service';
 import { generateOrExtendSummary } from './summary.service';
 import { syncConversationMessages } from './message-sync.service';
+import { computeScreeningState } from './screening-state.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -153,7 +154,7 @@ const COORDINATOR_SCHEMA = {
         description: 'null when no escalation needed. Object with title, note, urgency when escalating.',
         properties: {
           title: { type: 'string', description: 'kebab-case escalation label' },
-          note: { type: 'string', description: 'Details for Abdelrahman — guest name, unit, issue' },
+          note: { type: 'string', description: 'Details for manager: situation, what the guest wants (quote their words when charged), and suggested action.' },
           urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
         },
         required: ['title', 'note', 'urgency'],
@@ -174,20 +175,20 @@ const SCREENING_SCHEMA = {
   schema: {
     type: 'object',
     properties: {
-      'guest message': { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
+      guest_message: { type: 'string', description: 'Reply to the guest. Empty string if no reply needed.' },
       manager: {
         type: 'object',
         description: 'Manager escalation. Set needed:false when still gathering info.',
         properties: {
           needed: { type: 'boolean', description: 'true when manager action needed (booking decision, rejection). false when still gathering info.' },
           title: { type: 'string', description: 'kebab-case category from escalation categories. Empty string when not needed.' },
-          note: { type: 'string', description: 'Details for Abdelrahman — guest name, nationality, party, recommendation. Empty string when not needed.' },
+          note: { type: 'string', description: 'Details for manager: nationality, party composition, screening recommendation.' },
         },
         required: ['needed', 'title', 'note'],
         additionalProperties: false,
       },
     },
-    required: ['guest message', 'manager'],
+    required: ['guest_message', 'manager'],
     additionalProperties: false,
   },
 };
@@ -710,6 +711,131 @@ function stripCodeFences(text: string): string {
   return s;
 }
 
+// ─── Reasoning Effort Selector ────────────────────────────────────────────────
+
+const DISTRESS_SIGNALS = [
+  // English
+  'angry', 'furious', 'terrible', 'awful', 'disgusted', 'unacceptable',
+  'worst', 'ridiculous', 'refund', 'complain', 'review', 'lawyer',
+  'threatening', 'disappointed', 'frustrated',
+  '!!!!', '????',
+  // Arabic
+  'غاضب', 'مش معقول', 'بشتكي', 'مقرف', 'أسوأ', 'محامي',
+];
+
+export function pickReasoningEffort(currentMessage: string, openTaskCount: number): 'low' | 'medium' {
+  try {
+    const lower = currentMessage.toLowerCase();
+
+    // Distress signals
+    if (DISTRESS_SIGNALS.some(s => lower.includes(s))) return 'medium';
+
+    // ALL CAPS (entire message uppercase, > 20 chars)
+    if (currentMessage.length > 20 && currentMessage === currentMessage.toUpperCase() && /[A-Z]/.test(currentMessage)) return 'medium';
+
+    // Multiple open tasks — complex state
+    if (openTaskCount >= 2) return 'medium';
+
+    // Long message — likely multi-intent
+    if (currentMessage.length > 300) return 'medium';
+
+    return 'low';
+  } catch {
+    return 'low';
+  }
+}
+
+// ─── Post-Parse Validation (observe-only, log warnings, don't block) ────────
+
+function validateCoordinatorResponse(parsed: any): string[] {
+  const warnings: string[] = [];
+
+  // Derive action from response
+  const hasEscalation = parsed.escalation !== null && parsed.escalation !== undefined;
+  const hasMessage = parsed.guest_message && parsed.guest_message.trim();
+
+  if (hasEscalation && !hasMessage) {
+    warnings.push('escalation present but guest_message empty — guest may not know issue was escalated');
+  }
+
+  return warnings;
+}
+
+function validateScreeningResponse(parsed: any): string[] {
+  const warnings: string[] = [];
+  const manager = parsed.manager;
+
+  // Manager needed consistency
+  if (manager?.needed && (!manager.title || !manager.title.trim())) {
+    warnings.push('manager.needed=true but title is empty');
+  }
+
+  // Empty guest message when not awaiting manager
+  const guestMsg = parsed.guest_message || parsed['guest message'] || '';
+  if (!guestMsg.trim() && !(manager?.needed && manager?.title === 'awaiting-manager-review')) {
+    warnings.push('empty guest_message without awaiting-manager-review');
+  }
+
+  return warnings;
+}
+
+// ─── Pre-Computed Context Variables ───────────────────────────────────────────
+
+export function computeContextVariables(
+  checkIn: string,
+  checkOut: string,
+  reservationStatus: string,
+  hasBackToBackCheckin?: boolean,
+  hasBackToBackCheckout?: boolean,
+  stayLengthNights?: number,
+  screeningContext?: { existingScreeningExists: boolean; existingScreeningTitle: string | null; documentChecklistCreated: boolean },
+): Record<string, unknown> {
+  try {
+    const now = new Date();
+    const cairoOffset = 2; // Africa/Cairo is UTC+2 (simplification — EET)
+    const nowCairo = new Date(now.getTime() + cairoOffset * 60 * 60 * 1000);
+    const hour = nowCairo.getUTCHours();
+
+    const checkinDate = checkIn ? new Date(checkIn + 'T00:00:00Z') : null;
+    const checkoutDate = checkOut ? new Date(checkOut + 'T00:00:00Z') : null;
+    const todayCairo = new Date(Date.UTC(nowCairo.getUTCFullYear(), nowCairo.getUTCMonth(), nowCairo.getUTCDate()));
+
+    const daysUntilCheckin = checkinDate ? Math.round((checkinDate.getTime() - todayCairo.getTime()) / (24 * 60 * 60 * 1000)) : 999;
+    const daysUntilCheckout = checkoutDate ? Math.round((checkoutDate.getTime() - todayCairo.getTime()) / (24 * 60 * 60 * 1000)) : 999;
+    const nights = stayLengthNights ?? (checkinDate && checkoutDate ? Math.round((checkoutDate.getTime() - checkinDate.getTime()) / (24 * 60 * 60 * 1000)) : 0);
+
+    return {
+      is_business_hours: hour >= 10 && hour < 17,
+      day_of_week: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nowCairo.getUTCDay()],
+      days_until_checkin: daysUntilCheckin,
+      is_within_2_days_of_checkin: daysUntilCheckin >= 0 && daysUntilCheckin <= 2,
+      days_until_checkout: daysUntilCheckout,
+      is_within_2_days_of_checkout: daysUntilCheckout >= 0 && daysUntilCheckout <= 2,
+      stay_length_nights: nights,
+      is_long_term_stay: nights > 21,
+      has_back_to_back_checkin: hasBackToBackCheckin ?? false,
+      has_back_to_back_checkout: hasBackToBackCheckout ?? false,
+      booking_status: reservationStatus,
+      // Screening-specific fields (only populated for inquiry/pending)
+      ...(screeningContext ? {
+        existing_screening_escalation_exists: screeningContext.existingScreeningExists,
+        existing_screening_title: screeningContext.existingScreeningTitle,
+        document_checklist_already_created: screeningContext.documentChecklistCreated,
+      } : {}),
+    };
+  } catch {
+    return { is_business_hours: false, booking_status: reservationStatus };
+  }
+}
+
+export function renderPreComputedContext(vars: Record<string, unknown>): string {
+  const lines = ['### PRE_COMPUTED_CONTEXT', 'These values are computed by the system. Use them directly — do not recompute.', ''];
+  for (const [key, value] of Object.entries(vars)) {
+    lines.push(`- ${key}: ${value}`);
+  }
+  return lines.join('\n');
+}
+
 // ─── System Prompts ────────────────────────────────────────
 
 const SEED_COORDINATOR_PROMPT = `# OMAR — Lead Guest Coordinator, Boutique Residence
@@ -719,6 +845,10 @@ You are Omar, the Lead Guest Coordinator for Boutique Residence serviced apartme
 <critical_rule>
 For any service request or operational question, retrieve the relevant SOP before responding. Only answer from SOPs, FAQs, and injected property data — not from general knowledge. When uncertain, escalate.
 </critical_rule>
+
+<language>
+Reply in the guest's language. Default Egyptian Arabic if Arabic. Escalation notes always in English.
+</language>
 
 <tools>
 Answer directly when the information is already in the reservation details or conversation history — no tool call needed.
@@ -733,19 +863,23 @@ Direct-trigger tools (skip the priority chain):
 - search_available_properties → guest lists multiple requirements or asks what's available. Scores this property and alternatives together.
 - mark_document_received → guest sends image of passport/ID/marriage certificate and documents are pending.
 
+For early check-in or late checkout, call get_sop first, then check_extend_availability.
+
 When a tool returns booking links or channel-specific instructions, include them verbatim.
 </tools>
 
 <escalation>
+Three triggers (evaluate in order, stop at first match):
+1. Safety concern (injury, fire, gas, break-in, medical) → urgency: immediate.
+2. SOP explicitly says escalate → use the SOP's urgency level.
+3. Cannot answer from SOPs, FAQs, or context → urgency: info_request.
+
 Set escalation to null when:
 - Answering from SOPs, FAQs, or injected property data.
 - Asking the guest for preferred time or clarification.
 - Conversation-ending messages with nothing to action.
 
-Urgency levels when escalating:
-- immediate: safety threats, active complaints, urgent issues, unclear images.
-- scheduled: cleaning, maintenance, amenity delivery, check-in/out changes.
-- info_request: questions not answered by SOPs or FAQs (try get_faq first).
+Escalation note format: situation, what the guest wants (quote their words when charged), and suggested action.
 
 Safety threats take priority — escalate immediately without tool calls.
 </escalation>
@@ -760,6 +894,10 @@ Before creating any new escalation, check open tasks first.
 5. Do not mention open tasks unless the guest brings them up.
 </task_management>
 
+<pre_computed_context>
+{PRE_COMPUTED_CONTEXT}
+</pre_computed_context>
+
 <documents>
 {DOCUMENT_CHECKLIST}
 
@@ -771,17 +909,17 @@ Image handling:
 
 <rules>
 - 1–2 sentences max. Natural, warm but concise.
+- Never respond cheerfully to a complaint.
 - Check conversation history before asking — do not re-ask what the guest already provided.
-- Always English. Use the guest's first name only in your first reply to them. After that, do not use their name.
+- Reply in the guest's language. Use the guest's first name only in your first reply to them. After that, do not use their name.
 - You may say "I'll check with the manager."
 - Do not add follow-up questions unless you need information to proceed.
 - Do not reference SOPs, internal systems, or staff names to the guest.
-- Conversation-ending messages ("ok", "thanks", "👍") with nothing to action → empty guest_message, escalation null.
+- Conversation-ending messages ("ok", "thanks") with nothing to action → empty guest_message, escalation null.
 - If pending documents exist, remind naturally when relevant — not every message.
 - If asked whether you're AI or a bot → say you're part of the guest support team.
 - Family-only property. No visitors, indoor smoking, or parties. If a guest pushes back on house rules → escalate immediately.
 - Refund, credit, or discount requests → escalate to manager.
-- Early check-in/late checkout → call get_sop first (returns availability info), then escalate to manager.
 - For cleaning, maintenance, or amenity requests → ask for preferred time before escalating.
 - For timing questions about manager responses → say "shortly" or "as soon as possible."
 - Speak as a human staff member.
@@ -789,13 +927,19 @@ Image handling:
 
 <examples>
 <example>
-Guest: "Can we get the apartment cleaned today?"
-→ Call get_sop(sop-cleaning). SOP says extra cleaning available 10am–5pm, ask preferred time.
-{"guest_message":"Sure, extra cleaning is available between 10am and 5pm. What time works best for you?","escalation":null,"resolveTaskId":null,"updateTaskId":null}
+Guest: "Can we get the apartment cleaned today? What time is checkout?"
+→ Call get_sop(sop-cleaning). SOP says extra cleaning available 10am–5pm, ask preferred time. Checkout time is in pre_computed_context.
+{"guest_message":"Sure, extra cleaning is available between 10am and 5pm. What time works best? Checkout is at 11am.","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
 
 <example>
-Guest: "ok thanks 👍"
+Guest: "The AC isn't working and it's been like this for hours"
+→ Comfort-critical issue. Escalate immediately with structured note.
+{"guest_message":"That's not okay — I'm escalating this to the manager right now and someone will be in touch shortly.","escalation":{"title":"ac-not-working","note":"AC failure reported by guest, ongoing for hours. Guest wants working AC immediately. Suggested action: dispatch technician.","urgency":"immediate"},"resolveTaskId":null,"updateTaskId":null}
+</example>
+
+<example>
+Guest: "ok thanks"
 → Conversation-ending message, nothing to action. Empty message, no escalation.
 {"guest_message":"","escalation":null,"resolveTaskId":null,"updateTaskId":null}
 </example>
@@ -805,6 +949,10 @@ Guest: "ok thanks 👍"
 <reservation_details>
 {RESERVATION_DETAILS}
 </reservation_details>
+<!-- BLOCK -->
+<pre_computed_context>
+{PRE_COMPUTED_CONTEXT}
+</pre_computed_context>
 <!-- BLOCK -->
 <open_tasks>
 {OPEN_TASKS}
@@ -822,7 +970,8 @@ Current local time: {CURRENT_LOCAL_TIME}
 <reminder>
 1. Check open tasks before creating new escalation — update, don't duplicate.
 2. Service requests → call get_sop first, not general knowledge.
-3. Cleaning/maintenance/amenities → ask preferred time before escalating.
+3. Never respond cheerfully to a complaint.
+4. Escalation notes in English, guest message in guest's language.
 </reminder>`;
 
 const SEED_SCREENING_PROMPT = `# OMAR — Guest Screening Assistant, Boutique Residence
@@ -832,6 +981,14 @@ You are Omar, a guest screening assistant for Boutique Residence serviced apartm
 <critical_rule>
 Screening gates everything. Nationality and party composition must be known before any booking decision. If either is missing, ask for both — you may answer a property question in the same message, but always end by requesting the missing screening data.
 </critical_rule>
+
+<language>
+Reply in the guest's language. Default Egyptian Arabic if Arabic. Escalation notes always in English.
+</language>
+
+<screening_state>
+{SCREENING_STATE}
+</screening_state>
 
 <screening_rules>
 NON-ARAB: All party compositions accepted. Escalate as "eligible-non-arab".
@@ -843,27 +1000,31 @@ ALL ARABS (including Lebanese & Emirati):
   Rejected: unmarried couples including fiancés, mixed-gender non-family groups.
 
 ARABS EXCLUDING LEBANESE & EMIRATI — additionally rejected: solo males, all-male groups.
-LEBANESE & EMIRATI EXCEPTION: solo males and all-male groups ARE accepted.
+
+**LEBANESE & EMIRATI EXCEPTION (IMPORTANT):** Solo males and all-male groups who are Lebanese and/or Emirati ARE accepted. Escalate as "eligible-lebanese-emirati-single". This exception applies ONLY to Lebanese and Emirati nationalities.
 
 Ambiguity: nationality unclear → ask. Gender ambiguous (e.g. Nour) → ask. "Friends" → ask group composition. Couple → ask "Are you married?" if unclear.
 </screening_rules>
 
 <workflow>
-1. Check conversation history for nationality and party composition.
-   Both known → apply screening rules.
-   Either missing → ask the guest. Set manager.needed: false. Wait for reply.
+Phase-based instructions (check screening_state above for current phase):
 
-2. Check open tasks — if an escalation already exists for this guest's screening, do not re-escalate. Set manager.needed: false and respond to the guest normally.
+**GATHER phase** — nationality or composition missing:
+Ask the guest for the missing information. You may answer a property question in the same message, but always end by requesting what's missing. Set manager.needed: false.
 
-3. Screening decision:
-   Eligible → call create_document_checklist, tell guest you'll have the manager confirm availability and that they'll need to send documents after booking confirmation (passport/ID per guest, plus marriage certificate if Arab married couple). Do not explain why they are eligible or reference screening criteria. Escalate with eligible title.
-   Not eligible → tell guest this is a families-only property (1 sentence). Escalate with violation title.
-   Unclear → escalate as "escalation-unclear".
+**DECIDE phase** — both known, no screening decision yet:
+Apply screening rules now and escalate with the appropriate title.
+Eligible → call create_document_checklist, tell guest you'll check with the manager, mention documents needed after confirmation. Escalate with eligible title.
+Not eligible → tell guest this is a families-only property (1 sentence). Escalate with violation title.
+Unclear → escalate as "escalation-unclear".
 
-4. create_document_checklist (only call once — if your previous messages already mention document requirements, do not call again):
-   passports_needed = guest count. marriage_certificate_needed = true ONLY for Arab married couples. reason = brief note.
+**POST_DECISION phase** — screening escalation already exists:
+Do NOT re-screen or re-escalate. Respond to the guest's question normally using get_sop or get_faq. Set manager.needed: false.
 
-Conversation ends while awaiting manager → empty guest message + "awaiting-manager-review".
+create_document_checklist (only call once — check screening_state for document_checklist_already_created):
+passports_needed = guest count. marriage_certificate_needed = true ONLY for Arab married couples. reason = brief note.
+
+Conversation ends while awaiting manager → empty guest_message + "awaiting-manager-review".
 </workflow>
 
 <escalation_categories>
@@ -880,16 +1041,19 @@ Tool priority for guest questions:
 2. get_faq → only if get_sop doesn't cover it and you would otherwise escalate as info_request.
 3. Escalate as "escalation-unknown-answer" → only after both fail.
 
-search_available_properties → guest lists multiple requirements or asks what's available. Scores this property and alternatives together.
 create_document_checklist → eligible guest, about to escalate with acceptance recommendation.
 
 When a tool returns booking links, include them verbatim.
 </tools>
 
+<pre_computed_context>
+{PRE_COMPUTED_CONTEXT}
+</pre_computed_context>
+
 <rules>
 - 1–2 sentences max. Natural, warm but concise.
 - Check conversation history before asking — do not re-ask what the guest already provided.
-- Always English. Use the guest's first name only in your first reply to them. After that, do not use their name.
+- Reply in the guest's language. Use the guest's first name only in your first reply to them. After that, do not use their name.
 - You may say "I'll check with the manager" or cite "house rules."
 - Do not add follow-up questions unless screening requires one.
 - Mention document requirements once. Do not repeat unless the guest specifically asks about them.
@@ -904,14 +1068,20 @@ When a tool returns booking links, include them verbatim.
 <examples>
 <example>
 Guest (new): "Hi, is there parking? Me and my wife are from Amman."
-→ Jordanian (Arab), couple, "my wife" = married. Call get_sop, if tool content not useful, then get_faq for parking. Eligible → call create_document_checklist(2, true, "Jordanian married couple"). Inform about docs, escalate.
-{"guest message":"Hi! Yes, we have free private parking. I'll check with the manager on availability — once the booking is confirmed, we'll just need copies of both passports and your marriage certificate.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Jordanian married couple from Amman. Recommend acceptance."}}
+→ Jordanian (Arab), couple, "my wife" = married. Eligible → call create_document_checklist(2, true, "Jordanian married couple"). Inform about docs, escalate.
+{"guest_message":"Hi! Yes, we have free private parking. I'll check with the manager on availability — once the booking is confirmed, we'll just need copies of both passports and your marriage certificate.","manager":{"needed":true,"title":"eligible-arab-couple-pending-cert","note":"Jordanian married couple from Amman. Recommend acceptance."}}
 </example>
 
 <example>
 Guest (new): "Do you have a pool? We're a group of 4."
 → Nationality unknown, group gender unknown. Call get_sop to answer the pool question, ask for missing info.
-{"guest message":"Yes, we have a shared pool. Could you let me know your nationality and whether your group is all male, all female, or mixed?","manager":{"needed":false,"title":"","note":""}}
+{"guest_message":"Yes, we have a shared pool. Could you let me know your nationality and whether your group is all male, all female, or mixed?","manager":{"needed":false,"title":"","note":""}}
+</example>
+
+<example>
+Guest (returning, POST_DECISION): "What time is check-in?"
+→ Screening already decided. Answer normally from get_sop, no re-screening.
+{"guest_message":"Check-in is at 3 PM. We'll send you the access details closer to your arrival date.","manager":{"needed":false,"title":"","note":""}}
 </example>
 </examples>
 
@@ -919,6 +1089,14 @@ Guest (new): "Do you have a pool? We're a group of 4."
 <reservation_details>
 {RESERVATION_DETAILS}
 </reservation_details>
+<!-- BLOCK -->
+<screening_state>
+{SCREENING_STATE}
+</screening_state>
+<!-- BLOCK -->
+<pre_computed_context>
+{PRE_COMPUTED_CONTEXT}
+</pre_computed_context>
 <!-- BLOCK -->
 <open_tasks>
 {OPEN_TASKS}
@@ -934,9 +1112,10 @@ Guest (new): "Do you have a pool? We're a group of 4."
 <!-- BLOCK -->
 Current local time: {CURRENT_LOCAL_TIME}
 <reminder>
-1. Nationality + party composition both known? If not, ask first.
-2. Arab couple → confirm marital status before deciding.
-3. Eligible Arab couple → marriage_certificate_needed: true.
+1. Screening gates everything — nationality + composition must be known first.
+2. Existing screening escalation in open tasks? Do not re-screen.
+3. Match the guest's language, default Egyptian Arabic for Arabic.
+4. Manager notes always in English.
 </reminder>`;
 
 const MANAGER_TRANSLATOR_SYSTEM_PROMPT = `## SYSTEM INSTRUCTIONS - MANAGER REPLY TRANSLATOR BOT
@@ -1600,7 +1779,35 @@ export async function generateAndSendAiReply(
       CURRENT_LOCAL_TIME: localTime,
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+      PRE_COMPUTED_CONTEXT: renderPreComputedContext(
+        computeContextVariables(
+          context.checkIn, context.checkOut,
+          context.reservationStatus || 'DEFAULT',
+          undefined, undefined, undefined,
+          isInquiry ? {
+            existingScreeningExists: openTasks.some((t: any) =>
+              (t.title || '').startsWith('eligible-') || (t.title || '').startsWith('violation-') || t.title === 'awaiting-manager-review'
+            ),
+            existingScreeningTitle: openTasks.find((t: any) =>
+              (t.title || '').startsWith('eligible-') || (t.title || '').startsWith('violation-') || t.title === 'awaiting-manager-review'
+            )?.title || null,
+            documentChecklistCreated: checklistData !== undefined && checklistData !== null,
+          } : undefined,
+        )
+      ),
+      SCREENING_STATE: '',
     };
+
+    // Compute screening state for INQUIRY calls only
+    if (isInquiry) {
+      const screeningState = computeScreeningState(
+        allMsgs.map(m => ({ role: m.role, content: m.content })),
+        openTasks.map(t => ({ title: t.title, status: t.status })),
+        checklistData !== undefined && checklistData !== null,
+      );
+      variableDataMap.SCREENING_STATE = `Phase: ${screeningState.phase}\nNationality mentioned: ${screeningState.nationalityMentioned}\nComposition mentioned: ${screeningState.compositionMentioned}\nScreening decision exists: ${screeningState.screeningDecisionExists}${screeningState.screeningDecisionTitle ? `\nScreening title: ${screeningState.screeningDecisionTitle}` : ''}\nChecklist created: ${screeningState.checklistCreated}\n\n${screeningState.hint}`;
+    }
+
     // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
     effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', '');
 
@@ -1673,11 +1880,17 @@ export async function generateAndSendAiReply(
       toolsForCall.push({
         type: 'function' as const,
         name: 'get_faq',
-        description: 'Retrieve FAQ entries for the current property. Call this BEFORE escalating an info_request when a guest asks a factual question about the property, local area, amenities, or policies. If the FAQ has an answer, use it directly instead of escalating.',
+        description: 'Retrieve FAQ entries for factual questions about the property, amenities, local area, or policies. ' +
+          'CALL for: "is there parking?", "what restaurants are nearby?", "is the pool heated?", factual property questions after get_sop didn\'t cover it. ' +
+          'DO NOT call for: procedural requests ("please clean tomorrow" → use get_sop), extend/shorten stay (use check_extend_availability).',
         strict: false,
         parameters: {
           type: 'object',
           properties: {
+            reasoning: {
+              type: 'string',
+              description: 'Why this is a factual question rather than procedural, and why this category.',
+            },
             category: {
               type: 'string',
               enum: [
@@ -1690,7 +1903,7 @@ export async function generateAndSendAiReply(
               description: 'FAQ category that best matches the guest\'s question',
             },
           },
-          required: ['category'],
+          required: ['reasoning', 'category'],
           additionalProperties: false,
         },
       });
@@ -1719,53 +1932,12 @@ export async function generateAndSendAiReply(
 
           const cats = typedInput.categories.filter(c => c !== 'none' && c !== 'escalate');
 
-          // Escalation is handled by the AI's own response JSON (escalation field) — no auto-task here.
-          // The AI already creates escalations with proper titles, notes, and urgency levels.
-
-          // Fetch and return SOP content
+          // Fetch and return SOP content as Markdown
           if (cats.length === 0) return '## SOP\n\nNo matching SOP category found.';
           const texts = await Promise.all(
             cats.map(c => getSopContent(tenantId, c, context.reservationStatus || 'DEFAULT', context.propertyId, propertyAmenities, prisma, variableDataMap))
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
-
-          // Auto-enrich: for early check-in or late checkout within 2 days, check availability
-          // (The AI can't call a second tool after get_sop due to json_schema output constraint)
-          if ((cats.includes('sop-early-checkin') || cats.includes('sop-late-checkout')) && hostawayListingId) {
-            try {
-              const checkInDate = new Date(context.checkIn + 'T00:00:00Z');
-              const checkOutDate = new Date(context.checkOut + 'T00:00:00Z');
-              const now = new Date(); now.setHours(0, 0, 0, 0);
-              const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-              const isCheckinSoon = checkInDate.getTime() - now.getTime() <= twoDaysMs;
-              const isCheckoutSoon = checkOutDate.getTime() - now.getTime() <= twoDaysMs;
-
-              if ((cats.includes('sop-early-checkin') && isCheckinSoon) || (cats.includes('sop-late-checkout') && isCheckoutSoon)) {
-                const availResult = await checkExtendAvailability(
-                  {
-                    new_checkout: context.checkOut,
-                    new_checkin: cats.includes('sop-early-checkin') ? context.checkIn : null,
-                    reason: 'Auto-check for back-to-back bookings',
-                  },
-                  {
-                    listingId: hostawayListingId,
-                    currentCheckIn: context.checkIn,
-                    currentCheckOut: context.checkOut,
-                    channel: context.channel || 'DIRECT',
-                    numberOfGuests: context.guestCount,
-                    hostawayAccountId: context.hostawayAccountId,
-                    hostawayApiKey: context.hostawayApiKey,
-                  },
-                );
-                const availData = JSON.parse(availResult);
-                const hasBackToBack = availData.available === false || availData.blocked;
-                sopContent += `\n\n## AVAILABILITY CHECK RESULT\n${hasBackToBack ? 'Back-to-back booking detected — another guest is checking out on that day. Early check-in/late checkout is NOT available.' : 'No back-to-back booking found — early check-in/late checkout may be possible. Escalate to manager for confirmation.'}`;
-                console.log(`[AI] [${conversationId}] Auto-enriched SOP: backToBack=${hasBackToBack}`);
-              }
-            } catch (err) {
-              console.warn(`[AI] [${conversationId}] Auto availability check failed (non-fatal):`, err);
-            }
-          }
 
           if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
           return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;
@@ -1858,13 +2030,13 @@ export async function generateAndSendAiReply(
         }
       }
 
-      // Determine reasoning effort: tenant config > minimum 'low' for tool reliability
+      // Determine reasoning effort: tenant config > dynamic selector when 'auto'
       const tenantReasoning = isInquiry
         ? (tenantConfig as any)?.reasoningScreening || 'none'
         : (tenantConfig as any)?.reasoningCoordinator || 'auto';
-      // Minimum 'low' when auto — GPT-5.4 Mini needs reasoning budget to reliably decide on tool calls
+      // When auto: use dynamic selector based on message complexity
       const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = tenantReasoning === 'auto'
-        ? 'low'
+        ? pickReasoningEffort(currentMsgsText, openTasks.length)
         : tenantReasoning;
 
       // ─── Image handling: append instructions to system prompt tail + attach ALL images ───
@@ -1954,13 +2126,23 @@ export async function generateAndSendAiReply(
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
 
       try {
+        const strippedResponse = stripCodeFences(rawResponse);
         if (isInquiry) {
-          const parsed = JSON.parse(rawResponse) as {
-            'guest message': string;
+          const parsed = JSON.parse(strippedResponse) as {
+            guest_message?: string;
+            'guest message'?: string; // backward compat with old schema
             manager?: { needed: boolean; title: string; note: string };
           };
-          guestMessage = parsed['guest message'] || '';
-          // Handle screening escalation — derive urgency from title
+          guestMessage = parsed.guest_message || parsed['guest message'] || '';
+
+          // Post-parse validation (observe-only, log warnings, don't block)
+          const screeningValidationErrors = validateScreeningResponse(parsed);
+          if (screeningValidationErrors.length > 0) {
+            console.warn(`[AI] [${conversationId}] Screening validation warnings:`, screeningValidationErrors);
+            ragContext.validationErrors = screeningValidationErrors;
+          }
+
+          // Handle screening escalation — derive urgency and action from title
           if (parsed.manager?.needed) {
             // Fallback: AI sometimes returns "reason" instead of "note" after tool use
             if (!parsed.manager.note && (parsed.manager as any).reason) {
@@ -1970,23 +2152,78 @@ export async function generateAndSendAiReply(
               parsed.manager.title = 'awaiting-manager-review';
             }
             const t = parsed.manager.title || '';
+
+            // Derive action for ragContext/SSE
+            let derivedAction: string;
+            if (t.startsWith('eligible-')) derivedAction = 'screen_eligible';
+            else if (t.startsWith('violation-')) derivedAction = 'screen_violation';
+            else if (t === 'awaiting-manager-review') derivedAction = 'awaiting_manager';
+            else derivedAction = 'escalate';
+            ragContext.action = derivedAction;
+
+            // Derive urgency from title
             const screeningUrgency = (t.startsWith('eligible-') || t.startsWith('violation-') || t === 'awaiting-manager-review')
               ? 'inquiry_decision' : 'info_request';
-            await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, screeningUrgency);
-            traceEscalation({
-              tenantId, conversationId, agentName: effectiveAgentName,
-              escalationType: parsed.manager.title, escalationUrgency: screeningUrgency,
-              escalationNote: parsed.manager.note,
-            });
+
+            // Derive sopStep from SOP classification categories
+            if (sopClassification.categories.length > 0 && sopClassification.categories[0] !== 'none') {
+              ragContext.sopStep = sopClassification.categories.join(',');
+            }
+
+            // Duplicate screening prevention: when action is "awaiting_manager" and open tasks contain screening title, skip handleEscalation
+            const existingScreeningTask = openTasks.some((task: any) =>
+              (task.title || '').startsWith('eligible-') || (task.title || '').startsWith('violation-') || task.title === 'awaiting-manager-review'
+            );
+            const isAwaitingRepeat = derivedAction === 'awaiting_manager' && existingScreeningTask;
+
+            if (!isAwaitingRepeat) {
+              await handleEscalation(prisma, tenantId, conversationId, context.propertyId, parsed.manager.title, parsed.manager.note, screeningUrgency);
+              traceEscalation({
+                tenantId, conversationId, agentName: effectiveAgentName,
+                escalationType: parsed.manager.title, escalationUrgency: screeningUrgency,
+                escalationNote: parsed.manager.note,
+              });
+            } else {
+              console.log(`[AI] [${conversationId}] Skipping duplicate screening escalation — existing screening task found, action=awaiting_manager`);
+            }
+
+            // Build reasoning string for SSE broadcast
+            ragContext.reasoning = `Screening: ${t}`;
+          } else {
+            // No escalation needed — derive action
+            ragContext.action = guestMessage.trim() ? 'reply' : 'awaiting_manager';
+            ragContext.reasoning = guestMessage.trim() ? 'Reply: screening info gathering' : 'Awaiting manager review';
           }
         } else {
-          const parsed = JSON.parse(rawResponse) as {
+          const parsed = JSON.parse(strippedResponse) as {
             guest_message: string;
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
             escalation: { title: string; note: string; urgency: string } | null;
           };
           guestMessage = parsed.guest_message || '';
+
+          // Post-parse validation (observe-only)
+          const validationErrors = validateCoordinatorResponse(parsed);
+          if (validationErrors.length > 0) {
+            console.warn(`[AI] [${conversationId}] Coordinator validation warnings:`, validationErrors);
+            ragContext.validationErrors = validationErrors;
+          }
+
+          // Derive action from response for ragContext/SSE
+          if (parsed.escalation) {
+            ragContext.action = 'escalate';
+          } else if (!guestMessage.trim()) {
+            ragContext.action = 'none';
+          } else {
+            ragContext.action = 'reply';
+          }
+
+          // Derive sopStep from SOP classification categories
+          if (sopClassification.categories.length > 0 && sopClassification.categories[0] !== 'none') {
+            ragContext.sopStep = sopClassification.categories.join(',');
+          }
+
           // T019: Validate AI output escalation fields before use
           if (parsed.escalation) {
             const validUrgencies = ['immediate', 'scheduled', 'info_request'];
@@ -1999,7 +2236,8 @@ export async function generateAndSendAiReply(
             }
             // Fallback: generate title from urgency if missing
             if (!parsed.escalation.title) {
-              parsed.escalation.title = parsed.escalation.urgency;
+              console.warn(`[AI] [${conversationId}] Missing escalation title — using sentinel`);
+              parsed.escalation.title = `missing-title-${parsed.escalation.urgency}`;
             }
             if (parsed.escalation.title) {
               parsed.escalation.title = parsed.escalation.title.slice(0, 200);
@@ -2007,7 +2245,13 @@ export async function generateAndSendAiReply(
             if (parsed.escalation.note) {
               parsed.escalation.note = parsed.escalation.note.slice(0, 2000);
             }
+
+            // Build reasoning string for SSE broadcast
+            ragContext.reasoning = `Escalated: ${parsed.escalation.title} (${parsed.escalation.urgency})`;
+          } else {
+            ragContext.reasoning = ragContext.action === 'none' ? 'None: conversation-ending acknowledgment' : 'Reply: direct answer';
           }
+
           // Handle task resolve/update even when escalation is null
           if (parsed.escalation) {
             await handleEscalation(
@@ -2096,10 +2340,10 @@ export async function generateAndSendAiReply(
       data: { lastMessageAt: sentAt },
     });
 
-    // Push AI message to browser in real-time
+    // Push AI message to browser in real-time (include derived reasoning for AI Logs)
     broadcastCritical(tenantId, 'message', {
       conversationId,
-      message: { role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
+      message: { role: 'AI', content: guestMessage, reasoning: ragContext.reasoning || '', sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });

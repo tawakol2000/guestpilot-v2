@@ -52,7 +52,9 @@ interface ChatMessage {
   role: 'guest' | 'host'
   content: string
   timestamp: Date
+  reasoning?: string
   meta?: {
+    action?: string
     escalation?: { title: string; note: string; urgency: string } | null
     manager?: { needed: boolean; title: string; note: string } | null
     toolUsed?: boolean
@@ -102,6 +104,7 @@ export default function SandboxChatV5() {
 
   // UI state
   const [configCollapsed, setConfigCollapsed] = useState(false)
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({})
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -157,7 +160,17 @@ export default function SandboxChatV5() {
         checkIn,
         checkOut,
         guestCount,
-        messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+        messages: updatedMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+          ...(m.role === 'host' && m.meta ? {
+            meta: {
+              action: m.meta.action,
+              manager: m.meta.manager,
+              escalation: m.meta.escalation,
+            },
+          } : {}),
+        })),
       }
 
       // Try streaming first, fall back to non-streaming on error
@@ -179,7 +192,9 @@ export default function SandboxChatV5() {
         role: 'host',
         content: resp.response,
         timestamp: new Date(),
+        reasoning: resp.reasoning,
         meta: {
+          action: resp.action,
           escalation: resp.escalation,
           manager: resp.manager,
           toolUsed: resp.toolUsed,
@@ -529,6 +544,57 @@ export default function SandboxChatV5() {
               }}>
                 {msg.content}
               </div>
+
+              {/* AI reasoning (collapsible) */}
+              {msg.role === 'host' && msg.reasoning && (
+                <div style={{ marginTop: 4, width: '100%' }}>
+                  <button
+                    onClick={() => setExpandedReasoning(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '1px 0',
+                      fontSize: 10,
+                      fontFamily: T.font.mono,
+                      color: T.text.tertiary,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3,
+                    }}
+                  >
+                    <ChevronDown
+                      size={10}
+                      style={{
+                        transform: expandedReasoning[msg.id] ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.15s ease',
+                      }}
+                    />
+                    reasoning
+                  </button>
+                  {expandedReasoning[msg.id] && (
+                    <div
+                      style={{
+                        marginTop: 2,
+                        padding: '4px 8px',
+                        background: T.bg.primary,
+                        borderRadius: 4,
+                        border: `1px solid ${T.border.default}`,
+                        fontSize: 10,
+                        fontFamily: T.font.mono,
+                        color: T.text.secondary,
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        maxHeight: 120,
+                        overflow: 'auto',
+                      }}
+                    >
+                      {msg.reasoning}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Meta badges for AI messages */}
               {msg.role === 'host' && msg.meta && (

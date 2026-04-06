@@ -10,10 +10,11 @@ import { resolveVariables, applyPropertyOverrides } from '../services/template-v
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences, computeContextVariables, renderPreComputedContext, pickReasoningEffort } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 import { getFaqForProperty } from '../services/faq.service';
+import { computeScreeningState } from '../services/screening-state.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -258,6 +259,61 @@ export function sandboxRouter(prisma: PrismaClient) {
       // Apply per-listing variable overrides if configured
       const varOverrides = (kb?.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
 
+      // ── T040: Build OPEN_TASKS from previous AI responses in messages ──────
+      const openTaskEntries: Array<{ title: string; urgency: string; note: string }> = [];
+      for (const m of messages) {
+        if (m.role !== 'host') continue;
+        // Try to parse host messages as AI JSON responses to extract escalation/manager data
+        try {
+          const parsed = JSON.parse(stripCodeFences(m.content));
+          if (parsed.escalation && parsed.escalation.title) {
+            openTaskEntries.push({ title: parsed.escalation.title, urgency: parsed.escalation.urgency || 'info_request', note: parsed.escalation.note || '' });
+          }
+          if (parsed.manager?.needed && parsed.manager.title) {
+            openTaskEntries.push({ title: parsed.manager.title, urgency: 'info_request', note: parsed.manager.note || '' });
+          }
+        } catch {
+          // Not JSON — regular host message, skip
+        }
+      }
+      const openTasksText = openTaskEntries.length > 0
+        ? openTaskEntries.map((t, i) => {
+            const notePreview = t.note ? `\n  → ${t.note}` : '';
+            return `[task-${i + 1}] ${t.title} (${t.urgency})${notePreview}`;
+          }).join('\n')
+        : 'No open tasks.';
+
+      // ── T041: Compute PRE_COMPUTED_CONTEXT ─────────────────────────────────
+      const existingScreeningExists = openTaskEntries.some(t =>
+        t.title.startsWith('eligible-') || t.title.startsWith('violation-') || t.title === 'awaiting-manager-review'
+      );
+      const existingScreeningTitle = openTaskEntries.find(t =>
+        t.title.startsWith('eligible-') || t.title.startsWith('violation-') || t.title === 'awaiting-manager-review'
+      )?.title || null;
+      const preComputedContext = renderPreComputedContext(
+        computeContextVariables(
+          checkIn, checkOut,
+          reservationStatus || 'DEFAULT',
+          undefined, undefined, undefined,
+          isInquiry ? {
+            existingScreeningExists,
+            existingScreeningTitle,
+            documentChecklistCreated: !!sbChecklistData,
+          } : undefined,
+        )
+      );
+
+      // ── T042: Compute SCREENING_STATE for INQUIRY reservations ─────────────
+      let screeningStateText = '';
+      if (isInquiry) {
+        const screeningState = computeScreeningState(
+          messages.map(m => ({ role: m.role === 'guest' ? 'GUEST' : 'HOST', content: m.content })),
+          openTaskEntries.map(t => ({ title: t.title, status: 'open' })),
+          !!sbChecklistData,
+        );
+        screeningStateText = `Phase: ${screeningState.phase}\nNationality mentioned: ${screeningState.nationalityMentioned}\nComposition mentioned: ${screeningState.compositionMentioned}\nScreening decision exists: ${screeningState.screeningDecisionExists}${screeningState.screeningDecisionTitle ? `\nScreening title: ${screeningState.screeningDecisionTitle}` : ''}\nChecklist created: ${screeningState.checklistCreated}\n\n${screeningState.hint}`;
+      }
+
       const variableDataMap: Record<string, string> = {
         CONVERSATION_HISTORY: historyText,
         RESERVATION_DETAILS: applyPropertyOverrides(reservationDetailsWithSignals, varOverrides.RESERVATION_DETAILS),
@@ -272,11 +328,13 @@ export function sandboxRouter(prisma: PrismaClient) {
               `The following amenities are available ON REQUEST ONLY (guest must ask, then confirm delivery time):\n${onRequestAmenityList.map(a => `- ${a}`).join('\n')}`,
               varOverrides.ON_REQUEST_AMENITIES,
             ) : '',
-        OPEN_TASKS: 'No open tasks.',
+        OPEN_TASKS: openTasksText,
         CURRENT_MESSAGES: currentMsgsText,
         CURRENT_LOCAL_TIME: localTime,
         DOCUMENT_CHECKLIST: documentChecklistText
           ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+        PRE_COMPUTED_CONTEXT: preComputedContext,
+        SCREENING_STATE: screeningStateText,
       };
 
       // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
@@ -305,18 +363,22 @@ export function sandboxRouter(prisma: PrismaClient) {
         { role: 'user' as const, content: userMessage },
       ];
 
-      // ── Determine reasoning effort — matches production logic ───────────
+      // ── Determine reasoning effort — matches production logic (T043) ────
       const VALID_EFFORTS = ['none', 'low', 'medium', 'high'];
       let reasoningEffort: 'none' | 'low' | 'medium' | 'high';
       if (requestedReasoning && VALID_EFFORTS.includes(requestedReasoning)) {
         // Sandbox allows explicit override for testing
         reasoningEffort = requestedReasoning as any;
       } else {
-        // Production logic: tenant config > minimum 'low' when 'auto'
+        // Production logic: tenant config > pickReasoningEffort when 'auto'
         const tenantReasoning = isInquiry
           ? (tenantConfig as any)?.reasoningScreening || 'none'
           : (tenantConfig as any)?.reasoningCoordinator || 'auto';
-        reasoningEffort = tenantReasoning === 'auto' ? 'low' : tenantReasoning;
+        if (tenantReasoning === 'auto') {
+          reasoningEffort = pickReasoningEffort(currentMsgsText, openTaskEntries.length);
+        } else {
+          reasoningEffort = tenantReasoning;
+        }
       }
 
       // ── Call OpenAI — identical to production createMessage ──────────────
@@ -515,22 +577,43 @@ export function sandboxRouter(prisma: PrismaClient) {
       const rawResponseText = response.output_text || '';
       const durationMs = Date.now() - startMs;
 
-      // ── Parse JSON response ────────────────────────────────────────────
+      // ── Parse JSON response (T039: guest_message with 'guest message' fallback) ──
       let responseMessage = rawResponseText;
       let escalation: { title: string; note: string; urgency: string } | null = null;
       let manager: { needed: boolean; title: string; note: string } | null = null;
+      let derivedAction = 'reply';
+      let derivedReasoning = '';
+      let derivedSopStep = '';
 
       try {
         const cleanedResponse = stripCodeFences(rawResponseText);
         if (isInquiry) {
-          const parsed = JSON.parse(cleanedResponse) as { 'guest message': string; manager?: { needed: boolean; title: string; note: string } };
-          responseMessage = parsed['guest message'] ?? rawResponseText;
+          const parsed = JSON.parse(cleanedResponse) as Record<string, any>;
+          responseMessage = parsed.guest_message ?? parsed['guest message'] ?? rawResponseText;
           if (parsed.manager) manager = parsed.manager;
+          // Derive action from response structure
+          const hasMessage = responseMessage && responseMessage.trim();
+          const hasManager = manager?.needed && manager.title;
+          if (hasManager && hasMessage) derivedAction = 'reply+escalate';
+          else if (hasManager) derivedAction = 'escalate';
+          else if (hasMessage) derivedAction = 'reply';
+          else derivedAction = 'none';
         } else {
-          const parsed = JSON.parse(cleanedResponse) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
-          responseMessage = parsed.guest_message ?? rawResponseText;
+          const parsed = JSON.parse(cleanedResponse) as Record<string, any>;
+          responseMessage = parsed.guest_message ?? parsed['guest message'] ?? rawResponseText;
           escalation = parsed.escalation || null;
+          // Derive action from response structure
+          const hasMessage = responseMessage && responseMessage.trim();
+          const hasEscalation = escalation !== null;
+          if (hasEscalation && hasMessage) derivedAction = 'reply+escalate';
+          else if (hasEscalation) derivedAction = 'escalate';
+          else if (hasMessage) derivedAction = 'reply';
+          else derivedAction = 'none';
         }
+        // Derive reasoning from SOP classification
+        derivedReasoning = sopClassification.reasoning;
+        // Derive sopStep from SOP categories
+        derivedSopStep = sopClassification.categories.filter(c => c !== 'none' && c !== 'escalate').join(', ') || 'none';
       } catch {
         // If JSON parse fails, use the raw text as the response
         console.warn('[Sandbox] JSON parse failed — using raw response text');
@@ -538,6 +621,9 @@ export function sandboxRouter(prisma: PrismaClient) {
 
       res.json({
         response: responseMessage,
+        action: derivedAction,
+        reasoning: derivedReasoning,
+        sopStep: derivedSopStep,
         escalation,
         manager,
         toolUsed,

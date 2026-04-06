@@ -434,6 +434,7 @@ export interface TenantAiConfig {
   workingHoursTimezone: string
   reasoningCoordinator: string
   reasoningScreening: string
+  showAiReasoning: boolean
   systemPromptCoordinator: string | null
   systemPromptScreening: string | null
   systemPromptVersion: number
@@ -743,15 +744,27 @@ export interface SandboxChatRequest {
   checkOut: string
   guestCount: number
   reasoningEffort?: string
-  messages: Array<{ role: 'guest' | 'host'; content: string }>
+  messages: Array<{
+    role: 'guest' | 'host'
+    content: string
+    meta?: {
+      action?: string
+      manager?: { needed: boolean; title: string; note: string } | null
+      escalation?: { title: string; note: string; urgency: string } | null
+    }
+  }>
 }
 
 export interface SandboxChatResponse {
   response: string
+  reasoning?: string
+  action?: string
+  sopStep?: string | null
   escalation?: { title: string; note: string; urgency: string } | null
   manager?: { needed: boolean; title: string; note: string } | null
   toolUsed?: boolean
   toolName?: string
+  toolNames?: string[]
   toolInput?: any
   toolResults?: any
   toolDurationMs?: number
