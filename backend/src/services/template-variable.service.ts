@@ -37,6 +37,14 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
     emptyDefault: 'No reservation data available.',
   },
   {
+    name: 'PRE_COMPUTED_CONTEXT',
+    description: 'Pre-computed temporal and calendar variables (business hours, days until check-in/out, back-to-back flags, screening state)',
+    essential: true,
+    agentScope: ['coordinator', 'screening'],
+    propertyBound: false,
+    emptyDefault: null,
+  },
+  {
     name: 'ACCESS_CONNECTIVITY',
     description: 'Door code, WiFi name and password (only for confirmed/checked-in guests)',
     essential: false,
