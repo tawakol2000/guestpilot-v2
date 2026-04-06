@@ -1400,6 +1400,7 @@ function joinContentBlocks(systemPrompt: string, blocks: string[]): string {
 const BLOCK_VARIABLES = [
   'CONVERSATION_HISTORY',
   'RESERVATION_DETAILS',
+  'PRE_COMPUTED_CONTEXT',
   'ACCESS_CONNECTIVITY',
   'PROPERTY_DESCRIPTION',
   'AVAILABLE_AMENITIES',
