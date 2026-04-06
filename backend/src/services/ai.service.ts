@@ -1893,7 +1893,9 @@ export async function generateAndSendAiReply(
     // (isInquiry, agentName, personaCfg, effectiveModel defined above in SOP classification block)
     const effectiveTemperature = tenantConfig?.temperature ?? personaCfg.temperature;
     // Reasoning tokens count against max_output_tokens — ensure enough headroom
-    const effectiveMaxTokens = Math.max(tenantConfig?.maxTokens || personaCfg.maxTokens, 2048);
+    // v4 schema has more fields (reasoning, action, sop_step, etc.) and reasoning effort
+    // uses internal reasoning tokens from the same budget. 3072 minimum prevents truncation.
+    const effectiveMaxTokens = Math.max(tenantConfig?.maxTokens || personaCfg.maxTokens, 3072);
     const effectiveAgentName = tenantConfig?.agentName || agentName;
 
     // DB-backed system prompts (editable via Configure AI), fallback to SEED constants
