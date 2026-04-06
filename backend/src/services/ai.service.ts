@@ -1443,7 +1443,7 @@ function validateScreeningResponse(parsed: any): string[] {
 
 // ─── Pre-Computed Context Variables ───────────────────────────────────────────
 
-function computeContextVariables(
+export function computeContextVariables(
   checkIn: string,
   checkOut: string,
   reservationStatus: string,
@@ -1490,7 +1490,7 @@ function computeContextVariables(
   }
 }
 
-function renderPreComputedContext(vars: Record<string, unknown>): string {
+export function renderPreComputedContext(vars: Record<string, unknown>): string {
   const lines = ['### PRE_COMPUTED_CONTEXT', 'These values are computed by the system. Use them directly — do not recompute.', ''];
   for (const [key, value] of Object.entries(vars)) {
     lines.push(`- ${key}: ${value}`);

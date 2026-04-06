@@ -10,7 +10,7 @@ import { resolveVariables, applyPropertyOverrides } from '../services/template-v
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
-import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences, pickReasoningEffort } from '../services/ai.service';
+import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences, pickReasoningEffort, computeContextVariables, renderPreComputedContext } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
 import { callWebhook } from '../services/webhook-tool.service';
 import { getFaqForProperty } from '../services/faq.service';
@@ -60,7 +60,7 @@ export function sandboxRouter(prisma: PrismaClient) {
         checkIn: string;
         checkOut: string;
         guestCount: number;
-        messages: Array<{ role: 'guest' | 'host'; content: string }>;
+        messages: Array<{ role: 'guest' | 'host'; content: string; meta?: { action?: string; manager?: { needed: boolean; title: string; note: string } | null; escalation?: { title: string; note: string; urgency: string } | null } }>;
         reasoningEffort?: string;
       };
 
@@ -272,11 +272,46 @@ export function sandboxRouter(prisma: PrismaClient) {
               `The following amenities are available ON REQUEST ONLY (guest must ask, then confirm delivery time):\n${onRequestAmenityList.map(a => `- ${a}`).join('\n')}`,
               varOverrides.ON_REQUEST_AMENITIES,
             ) : '',
-        OPEN_TASKS: 'No open tasks.',
+        OPEN_TASKS: (() => {
+          // Build OPEN_TASKS from previous AI responses in conversation history
+          const tasks: string[] = [];
+          for (const m of messages) {
+            if (m.role !== 'host' || !m.meta) continue;
+            const { action, manager, escalation } = m.meta;
+            if (manager?.needed && manager.title) {
+              tasks.push(`[sandbox-${tasks.length + 1}] ${manager.title} (${action === 'screen_eligible' || action === 'screen_violation' ? 'inquiry_decision' : 'info_request'})\n  → ${manager.note || ''}`);
+            } else if (escalation?.title) {
+              tasks.push(`[sandbox-${tasks.length + 1}] ${escalation.title} (${escalation.urgency})\n  → ${escalation.note || ''}`);
+            }
+          }
+          return tasks.length > 0 ? tasks.join('\n') : 'No open tasks.';
+        })(),
         CURRENT_MESSAGES: currentMsgsText,
         CURRENT_LOCAL_TIME: localTime,
         DOCUMENT_CHECKLIST: documentChecklistText
           ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+        PRE_COMPUTED_CONTEXT: (() => {
+          // Derive screening context from previous AI responses
+          let existingScreeningExists = false;
+          let existingScreeningTitle: string | null = null;
+          let documentChecklistCreated = false;
+          for (const m of messages) {
+            if (m.role !== 'host' || !m.meta) continue;
+            const { action, manager } = m.meta;
+            if (action === 'screen_eligible' || action === 'screen_violation') {
+              existingScreeningExists = true;
+              existingScreeningTitle = manager?.title || null;
+            }
+            if (manager?.title?.startsWith('eligible-')) documentChecklistCreated = true;
+          }
+          return renderPreComputedContext(
+            computeContextVariables(
+              checkIn, checkOut, reservationStatus,
+              undefined, undefined, undefined,
+              isInquiry ? { existingScreeningExists, existingScreeningTitle, documentChecklistCreated } : undefined,
+            )
+          );
+        })(),
       };
 
       // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)

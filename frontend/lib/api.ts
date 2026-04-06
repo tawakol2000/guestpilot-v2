@@ -744,7 +744,7 @@ export interface SandboxChatRequest {
   checkOut: string
   guestCount: number
   reasoningEffort?: string
-  messages: Array<{ role: 'guest' | 'host'; content: string }>
+  messages: Array<{ role: 'guest' | 'host'; content: string; meta?: { action?: string; manager?: { needed: boolean; title: string; note: string } | null; escalation?: { title: string; note: string; urgency: string } | null } }>
 }
 
 export interface SandboxChatResponse {

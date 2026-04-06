@@ -160,7 +160,11 @@ export default function SandboxChatV5() {
         checkIn,
         checkOut,
         guestCount,
-        messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+        messages: updatedMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+          ...(m.meta ? { meta: { action: m.meta.action, manager: m.meta.manager, escalation: m.meta.escalation } } : {}),
+        })),
       }
 
       // Try streaming first, fall back to non-streaming on error
