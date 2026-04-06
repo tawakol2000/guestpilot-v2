@@ -53,6 +53,9 @@ interface ChatMessage {
   content: string
   timestamp: Date
   meta?: {
+    reasoning?: string
+    action?: string
+    sopStep?: string | null
     escalation?: { title: string; note: string; urgency: string } | null
     manager?: { needed: boolean; title: string; note: string } | null
     toolUsed?: boolean
@@ -180,6 +183,9 @@ export default function SandboxChatV5() {
         content: resp.response,
         timestamp: new Date(),
         meta: {
+          reasoning: resp.reasoning,
+          action: resp.action,
+          sopStep: resp.sopStep,
           escalation: resp.escalation,
           manager: resp.manager,
           toolUsed: resp.toolUsed,
@@ -516,6 +522,26 @@ export default function SandboxChatV5() {
                 alignSelf: msg.role === 'guest' ? 'flex-end' : 'flex-start',
               }}
             >
+              {/* Reasoning (AI only) */}
+              {msg.role === 'host' && msg.meta?.reasoning && (
+                <div style={{
+                  fontSize: 11,
+                  color: T.text.tertiary,
+                  fontStyle: 'italic',
+                  fontFamily: T.font.sans,
+                  padding: '6px 10px',
+                  marginBottom: 4,
+                  background: T.bg.primary,
+                  borderRadius: 8,
+                  border: `1px solid ${T.border.default}`,
+                  lineHeight: 1.4,
+                }}>
+                  <span style={{ fontWeight: 600, fontStyle: 'normal', fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.04em', color: T.text.secondary }}>Reasoning</span>
+                  <br />
+                  {msg.meta.reasoning}
+                </div>
+              )}
+
               {/* Bubble */}
               <div style={{
                 padding: '10px 14px',
@@ -529,6 +555,83 @@ export default function SandboxChatV5() {
               }}>
                 {msg.content}
               </div>
+
+              {/* Action + SOP Step (AI only) */}
+              {msg.role === 'host' && msg.meta && (msg.meta.action || msg.meta.sopStep) && (
+                <div style={{
+                  display: 'flex',
+                  gap: 6,
+                  marginTop: 4,
+                  flexWrap: 'wrap',
+                }}>
+                  {msg.meta.action && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      fontFamily: T.font.mono,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: msg.meta.action.startsWith('screen_') ? '#7C3AED20' : msg.meta.action === 'escalate' ? T.status.red + '20' : T.accent + '20',
+                      color: msg.meta.action.startsWith('screen_') ? '#7C3AED' : msg.meta.action === 'escalate' ? T.status.red : T.accent,
+                    }}>
+                      action: {msg.meta.action}
+                    </span>
+                  )}
+                  {msg.meta.sopStep && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      fontFamily: T.font.mono,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: T.bg.secondary,
+                      color: T.text.secondary,
+                    }}>
+                      {msg.meta.sopStep}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Manager note (screening — show full note) */}
+              {msg.role === 'host' && msg.meta?.manager?.needed && msg.meta.manager.note && (
+                <div style={{
+                  fontSize: 11,
+                  color: T.text.secondary,
+                  fontFamily: T.font.sans,
+                  padding: '6px 10px',
+                  marginTop: 4,
+                  background: T.status.amber + '10',
+                  borderRadius: 6,
+                  border: `1px solid ${T.status.amber}30`,
+                  lineHeight: 1.4,
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.04em', color: T.status.amber }}>Manager Note</span>
+                  <br />
+                  {msg.meta.manager.note}
+                </div>
+              )}
+
+              {/* Escalation note (coordinator — show full note) */}
+              {msg.role === 'host' && msg.meta?.escalation?.note && (
+                <div style={{
+                  fontSize: 11,
+                  color: T.text.secondary,
+                  fontFamily: T.font.sans,
+                  padding: '6px 10px',
+                  marginTop: 4,
+                  background: T.status.red + '10',
+                  borderRadius: 6,
+                  border: `1px solid ${T.status.red}30`,
+                  lineHeight: 1.4,
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase' as const, letterSpacing: '0.04em', color: T.status.red }}>Escalation Note</span>
+                  <br />
+                  {msg.meta.escalation.note}
+                </div>
+              )}
 
               {/* Meta badges for AI messages */}
               {msg.role === 'host' && msg.meta && (

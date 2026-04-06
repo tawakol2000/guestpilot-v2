@@ -524,16 +524,25 @@ export function sandboxRouter(prisma: PrismaClient) {
       let responseMessage = rawResponseText;
       let escalation: { title: string; note: string; urgency: string } | null = null;
       let manager: { needed: boolean; title: string; note: string } | null = null;
+      let reasoning = '';
+      let action = '';
+      let sopStep: string | null = null;
 
       try {
         const cleanedResponse = stripCodeFences(rawResponseText);
         if (isInquiry) {
-          const parsed = JSON.parse(cleanedResponse) as { guest_message?: string; 'guest message'?: string; reasoning?: string; action?: string; sop_step?: string | null; manager?: { needed: boolean; title: string; note: string } };
+          const parsed = JSON.parse(cleanedResponse) as { guest_message?: string; 'guest message'?: string; reasoning?: string; action?: string; sop_step?: string | null; nationality_known?: boolean; composition_known?: boolean; manager?: { needed: boolean; title: string; note: string } };
           responseMessage = parsed.guest_message || parsed['guest message'] || rawResponseText;
+          reasoning = parsed.reasoning || '';
+          action = parsed.action || '';
+          sopStep = parsed.sop_step || null;
           if (parsed.manager) manager = parsed.manager;
         } else {
-          const parsed = JSON.parse(cleanedResponse) as { guest_message: string; escalation: { title: string; note: string; urgency: string } | null };
+          const parsed = JSON.parse(cleanedResponse) as { guest_message: string; reasoning?: string; action?: string; sop_step?: string | null; escalation: { title: string; note: string; urgency: string } | null };
           responseMessage = parsed.guest_message ?? rawResponseText;
+          reasoning = parsed.reasoning || '';
+          action = parsed.action || '';
+          sopStep = parsed.sop_step || null;
           escalation = parsed.escalation || null;
         }
       } catch {
@@ -543,6 +552,9 @@ export function sandboxRouter(prisma: PrismaClient) {
 
       res.json({
         response: responseMessage,
+        reasoning,
+        action,
+        sopStep,
         escalation,
         manager,
         toolUsed,
