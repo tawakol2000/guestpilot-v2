@@ -1569,6 +1569,42 @@ function validateCoordinatorResponse(parsed: any): string[] {
   return errors;
 }
 
+// ─── Screening Response Validation ────────────────────────────────────────────
+
+function validateScreeningResponse(parsed: any): string[] {
+  const errors: string[] = [];
+  const action = parsed.action;
+  const manager = parsed.manager;
+
+  // Action-manager consistency
+  if ((action === 'reply' || action === 'ask') && manager?.needed) {
+    errors.push(`action=${action} must have manager.needed=false`);
+  }
+  if (action !== 'reply' && action !== 'ask' && manager && !manager.needed) {
+    errors.push(`action=${action} must have manager.needed=true`);
+  }
+
+  // awaiting_manager requires empty guest_message
+  if (action === 'awaiting_manager' && parsed.guest_message && parsed.guest_message.trim()) {
+    errors.push('action=awaiting_manager requires empty guest_message');
+  }
+
+  // Non-awaiting actions require non-empty guest_message
+  if (action !== 'awaiting_manager' && (!parsed.guest_message || !parsed.guest_message.trim()) && !parsed['guest message']?.trim()) {
+    errors.push(`action=${action} requires non-empty guest_message`);
+  }
+
+  // Title-action consistency
+  if (action === 'screen_eligible' && manager?.title && !manager.title.startsWith('eligible-')) {
+    errors.push(`action=screen_eligible requires title starting with 'eligible-', got '${manager.title}'`);
+  }
+  if (action === 'screen_violation' && manager?.title && !manager.title.startsWith('violation-')) {
+    errors.push(`action=screen_violation requires title starting with 'violation-', got '${manager.title}'`);
+  }
+
+  return errors;
+}
+
 // ─── Pre-Computed Context Variables ───────────────────────────────────────────
 
 function computeContextVariables(
@@ -2319,6 +2355,13 @@ export async function generateAndSendAiReply(
             ragContext.screeningInfoGateWarning = missing;
           }
 
+          // Post-parse validation for screening
+          const screeningValidationErrors = validateScreeningResponse(parsed);
+          if (screeningValidationErrors.length > 0) {
+            console.warn(`[AI] [${conversationId}] Screening validation errors:`, screeningValidationErrors);
+            ragContext.validationErrors = screeningValidationErrors;
+          }
+
           // Handle screening escalation — derive urgency from title
           if (parsed.manager?.needed) {
             // Fallback: AI sometimes returns "reason" instead of "note" after tool use
@@ -2377,7 +2420,8 @@ export async function generateAndSendAiReply(
             }
             // Fallback: generate title from urgency if missing
             if (!parsed.escalation.title) {
-              parsed.escalation.title = parsed.escalation.urgency;
+              console.warn(`[AI] [${conversationId}] Missing escalation title — using sentinel`);
+              parsed.escalation.title = `missing-title-${parsed.escalation.urgency}`;
             }
             if (parsed.escalation.title) {
               parsed.escalation.title = parsed.escalation.title.slice(0, 200);

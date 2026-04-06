@@ -146,6 +146,10 @@ const SYSTEM_TOOLS: Array<{
     parameters: {
       type: 'object',
       properties: {
+        reasoning: {
+          type: 'string',
+          description: 'Why creating this checklist — screening outcome and party details. E.g. "Eligible Arab married couple, 2 guests, needs passports + marriage cert."',
+        },
         passports_needed: {
           type: 'number',
           description: 'Number of passport/ID documents needed (one per guest in the party)',
@@ -159,7 +163,7 @@ const SYSTEM_TOOLS: Array<{
           description: 'Brief note, e.g. \'Egyptian married couple, 2 guests\'',
         },
       },
-      required: ['passports_needed', 'marriage_certificate_needed', 'reason'],
+      required: ['reasoning', 'passports_needed', 'marriage_certificate_needed', 'reason'],
       additionalProperties: false,
     },
     agentScope: 'INQUIRY,PENDING',
