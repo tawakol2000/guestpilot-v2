@@ -256,6 +256,29 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
     }
   });
 
+  // POST /api/knowledge/sop-definitions/reset — delete all SOPs and re-seed from defaults
+  router.post('/sop-definitions/reset', async (req: any, res) => {
+    try {
+      const tenantId = req.tenantId as string;
+
+      // Delete in order (respecting foreign keys)
+      await prisma.sopPropertyOverride.deleteMany({ where: { sopDefinition: { tenantId } } });
+      await prisma.sopVariant.deleteMany({ where: { sopDefinition: { tenantId } } });
+      await prisma.sopDefinition.deleteMany({ where: { tenantId } });
+
+      // Re-seed from defaults
+      const { seedSopDefinitions } = await import('../services/sop.service');
+      await seedSopDefinitions(tenantId, prisma);
+
+      invalidateSopCache(tenantId);
+      console.log(`[Knowledge] SOPs reset to defaults for tenant ${tenantId}`);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[Knowledge] sop-definitions reset failed:', err);
+      res.status(500).json({ error: 'Failed to reset SOPs' });
+    }
+  });
+
   // GET /api/knowledge/sop-property-overrides?propertyId=xxx — list overrides for a property
   router.get('/sop-property-overrides', async (req: any, res) => {
     try {

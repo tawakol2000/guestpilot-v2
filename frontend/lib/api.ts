@@ -889,6 +889,12 @@ export async function apiGetSopDefinitions(): Promise<SopDefinitionsResponse> {
   return apiFetch<SopDefinitionsResponse>('/api/knowledge/sop-definitions')
 }
 
+export async function apiResetSopDefaults(): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/api/knowledge/sop-definitions/reset', {
+    method: 'POST',
+  })
+}
+
 export async function apiUpdateSopDefinition(id: string, data: { toolDescription?: string; enabled?: boolean }): Promise<SopDefinitionData> {
   return apiFetch<SopDefinitionData>(`/api/knowledge/sop-definitions/${id}`, {
     method: 'PUT',

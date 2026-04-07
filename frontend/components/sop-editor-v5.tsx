@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { BookOpen, RefreshCw, ChevronDown, Search, FileText, Plus, Trash2, X } from 'lucide-react'
 import {
   apiGetSopDefinitions,
+  apiResetSopDefaults,
   apiUpdateSopDefinition,
   apiUpdateSopVariant,
   apiCreateSopVariant,
@@ -891,6 +892,7 @@ export default function SopEditorV5() {
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [overridesLoading, setOverridesLoading] = useState(false)
 
   useEffect(() => { ensureStyles() }, [])
@@ -1112,6 +1114,42 @@ export default function SopEditorV5() {
                 color={refreshing ? T.text.tertiary : T.text.secondary}
                 style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined}
               />
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Reset all SOPs to defaults? This will overwrite any customizations.')) return
+                setResetting(true)
+                try {
+                  await apiResetSopDefaults()
+                  await fetchDefinitions(true)
+                } catch (err) {
+                  console.error('Reset failed:', err)
+                } finally {
+                  setResetting(false)
+                }
+              }}
+              disabled={resetting}
+              title="Reset SOPs to defaults"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 36,
+                padding: '0 12px',
+                background: T.bg.card,
+                border: `1px solid ${T.border.default}`,
+                borderRadius: T.radius.sm,
+                cursor: resetting ? 'not-allowed' : 'pointer',
+                transition: 'border-color 0.15s ease',
+                boxShadow: T.shadow.sm,
+                fontSize: 12,
+                fontWeight: 500,
+                color: T.text.secondary,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border.default }}
+            >
+              {resetting ? 'Resetting...' : 'Reset to Defaults'}
             </button>
           </div>
         </div>
