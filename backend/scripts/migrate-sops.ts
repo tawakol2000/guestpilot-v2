@@ -30,7 +30,7 @@ async function main() {
   console.log('═══════════════════════════════════════════════════\n');
 
   // Get all tenants
-  const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
+  const tenants = await prisma.tenant.findMany({ select: { id: true, email: true } });
   console.log(`Found ${tenants.length} tenant(s)\n`);
 
   let totalUpdated = 0;
@@ -38,7 +38,7 @@ async function main() {
   let totalClean = 0;
 
   for (const tenant of tenants) {
-    console.log(`\n── Tenant: ${tenant.name} (${tenant.id}) ──`);
+    console.log(`\n── Tenant: ${tenant.email} (${tenant.id}) ──`);
 
     const sopDefs = await prisma.sopDefinition.findMany({
       where: { tenantId: tenant.id },
