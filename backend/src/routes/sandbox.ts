@@ -243,13 +243,74 @@ export function sandboxRouter(prisma: PrismaClient) {
         },
       });
 
-      // Look up hostawayListingId for extend-stay tool
+      // Look up hostawayListingId for extend-stay tool + situation computation
       let hostawayListingId = '';
-      if (!isInquiry) {
-        try {
-          const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { hostawayListingId: true } });
-          hostawayListingId = prop?.hostawayListingId || '';
-        } catch { /* fallback: empty */ }
+      try {
+        const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { hostawayListingId: true } });
+        hostawayListingId = prop?.hostawayListingId || '';
+      } catch { /* fallback: empty */ }
+
+      // ── Compute check-in/checkout situation for SOP injection ─────────
+      let checkinSituation = '';
+      let checkoutSituation = '';
+      try {
+        const ciDate = checkIn ? new Date(checkIn + 'T00:00:00Z') : null;
+        const coDate = checkOut ? new Date(checkOut + 'T00:00:00Z') : null;
+        const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
+
+        if (ciDate) {
+          const daysUntil = Math.round((ciDate.getTime() - nowUtc.getTime()) / (24 * 60 * 60 * 1000));
+          if (daysUntil > 2) {
+            checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil} days away. Early check-in can only be confirmed 2 days before the check-in date. Tell the guest this and suggest they can leave bags with housekeeping and grab coffee at O1 Mall (1-minute walk). Do NOT escalate.`;
+          } else {
+            let backToBack: boolean | null = null;
+            if (hostawayListingId) {
+              try {
+                const availResult = await checkExtendAvailability(
+                  { new_checkout: checkOut, new_checkin: checkIn, reason: 'Sandbox auto-check back-to-back for early check-in' },
+                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: tenant!.hostawayAccountId, hostawayApiKey: tenant!.hostawayApiKey },
+                );
+                const availData = JSON.parse(availResult);
+                backToBack = availData.available === false || availData.blocked;
+              } catch { backToBack = null; }
+            }
+            if (backToBack === true) {
+              checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking out that day. Early check-in is NOT available. Tell the guest and suggest O1 Mall cafés (1-minute walk).`;
+            } else if (backToBack === false) {
+              checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. No back-to-back booking — early check-in MAY be possible. Tell the guest you'll check with the manager. Escalate as "info_request".`;
+            } else {
+              checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Availability unknown. Tell the guest you'll check with the manager. Escalate as "info_request".`;
+            }
+          }
+        }
+
+        if (coDate) {
+          const daysUntil = Math.round((coDate.getTime() - nowUtc.getTime()) / (24 * 60 * 60 * 1000));
+          if (daysUntil > 2) {
+            checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil} days away. Late checkout can only be confirmed 2 days before. Quote the tiers (11am-1pm $25, 1-6pm $65, after 6pm $120) and tell the guest you'll confirm closer to the date. Do NOT escalate yet.`;
+          } else {
+            let backToBack: boolean | null = null;
+            if (hostawayListingId) {
+              try {
+                const availResult = await checkExtendAvailability(
+                  { new_checkout: checkOut, new_checkin: null, reason: 'Sandbox auto-check back-to-back for late checkout' },
+                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: tenant!.hostawayAccountId, hostawayApiKey: tenant!.hostawayApiKey },
+                );
+                const availData = JSON.parse(availResult);
+                backToBack = availData.available === false || availData.blocked;
+              } catch { backToBack = null; }
+            }
+            if (backToBack === true) {
+              checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest checking in. Late checkout is NOT available. Checkout must be by 11 AM.`;
+            } else if (backToBack === false) {
+              checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. No back-to-back — late checkout MAY be possible. Quote tiers (11am-1pm $25, 1-6pm $65, after 6pm $120), ask preferred time, escalate as "info_request".`;
+            } else {
+              checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Availability unknown. Quote tiers, ask preferred time, escalate as "info_request".`;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Sandbox] Check-in/checkout situation computation failed:', err);
       }
 
       // ── Build content blocks via template variable system — identical to production ──
@@ -277,6 +338,8 @@ export function sandboxRouter(prisma: PrismaClient) {
         CURRENT_LOCAL_TIME: localTime,
         DOCUMENT_CHECKLIST: documentChecklistText
           ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+        CHECKIN_SITUATION: checkinSituation,
+        CHECKOUT_SITUATION: checkoutSituation,
       };
 
       // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
@@ -376,28 +439,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
 
-          // Auto-enrich: early check-in / late checkout within 2 days → check availability
-          if ((cats.includes('sop-early-checkin') || cats.includes('sop-late-checkout')) && hostawayListingId) {
-            try {
-              const ciDate = new Date(checkIn + 'T00:00:00Z');
-              const coDate = new Date(checkOut + 'T00:00:00Z');
-              const now = new Date(); now.setHours(0, 0, 0, 0);
-              const twoDays = 2 * 24 * 60 * 60 * 1000;
-              const ciSoon = ciDate.getTime() - now.getTime() <= twoDays;
-              const coSoon = coDate.getTime() - now.getTime() <= twoDays;
-              if ((cats.includes('sop-early-checkin') && ciSoon) || (cats.includes('sop-late-checkout') && coSoon)) {
-                const availResult = await checkExtendAvailability(
-                  { new_checkout: checkOut, new_checkin: cats.includes('sop-early-checkin') ? checkIn : null, reason: 'Auto-check back-to-back' },
-                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: safeTenant.hostawayAccountId, hostawayApiKey: safeTenant.hostawayApiKey },
-                );
-                const availData = JSON.parse(availResult);
-                const backToBack = availData.available === false || availData.blocked;
-                sopContent += `\n\n## AVAILABILITY CHECK RESULT\n${backToBack ? 'Back-to-back booking detected — another guest is checking out on that day. Early check-in/late checkout is NOT available.' : 'No back-to-back booking found — early check-in/late checkout may be possible. Escalate to manager for confirmation.'}`;
-              }
-            } catch (err) {
-              console.warn('[Sandbox] Auto availability check failed:', err);
-            }
-          }
+          // Check-in/checkout situation is pre-computed via {CHECKIN_SITUATION}/{CHECKOUT_SITUATION} in variableDataMap
 
           if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
           return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;
