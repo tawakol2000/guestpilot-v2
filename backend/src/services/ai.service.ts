@@ -1579,6 +1579,15 @@ export async function generateAndSendAiReply(
     // Apply per-listing variable overrides if configured
     const varOverrides = (context.customKnowledgeBase?.variableOverrides || {}) as Record<string, { customTitle?: string; notes?: string }>;
 
+    // Look up hostawayListingId for availability checks (used by SOP situation injection + extend-stay tool)
+    let hostawayListingId = '';
+    if (context.propertyId) {
+      try {
+        const prop = await prisma.property.findUnique({ where: { id: context.propertyId }, select: { hostawayListingId: true } });
+        hostawayListingId = prop?.hostawayListingId || '';
+      } catch { /* fallback: empty */ }
+    }
+
     // Build the template variable data map — all dynamic content as named entries
     const agentType = isInquiry ? 'screening' as const : 'coordinator' as const;
     const variableDataMap: Record<string, string> = {
@@ -1600,7 +1609,73 @@ export async function generateAndSendAiReply(
       CURRENT_LOCAL_TIME: localTime,
       DOCUMENT_CHECKLIST: documentChecklistText
         ? applyPropertyOverrides(documentChecklistText, varOverrides.DOCUMENT_CHECKLIST) : '',
+      CHECKIN_SITUATION: '',  // populated below for early check-in SOP
+      CHECKOUT_SITUATION: '', // populated below for late checkout SOP
     };
+
+    // ── Compute check-in/checkout situation for SOP injection ───────────
+    // These get resolved inside SOP content via {CHECKIN_SITUATION} / {CHECKOUT_SITUATION}
+    try {
+      const ciDate = context.checkIn ? new Date(context.checkIn + 'T00:00:00Z') : null;
+      const coDate = context.checkOut ? new Date(context.checkOut + 'T00:00:00Z') : null;
+      const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
+      const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+
+      if (ciDate) {
+        const daysUntil = Math.round((ciDate.getTime() - nowUtc.getTime()) / (24 * 60 * 60 * 1000));
+        if (daysUntil > 2) {
+          variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil} days away. Early check-in can only be confirmed 2 days before the check-in date. Tell the guest this and suggest they can leave bags with housekeeping and grab coffee at O1 Mall (1-minute walk). Do NOT escalate.`;
+        } else {
+          // Within 2 days — try to check back-to-back
+          let backToBack: boolean | null = null;
+          if (hostawayListingId) {
+            try {
+              const availResult = await checkExtendAvailability(
+                { new_checkout: context.checkOut, new_checkin: context.checkIn, reason: 'Auto-check back-to-back for early check-in' },
+                { listingId: hostawayListingId, currentCheckIn: context.checkIn, currentCheckOut: context.checkOut, channel: context.channel || 'DIRECT', numberOfGuests: context.guestCount, hostawayAccountId: context.hostawayAccountId, hostawayApiKey: context.hostawayApiKey },
+              );
+              const availData = JSON.parse(availResult);
+              backToBack = availData.available === false || availData.blocked;
+            } catch { backToBack = null; }
+          }
+          if (backToBack === true) {
+            variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking out that day. Early check-in is NOT available. Tell the guest early check-in is not possible because another guest is checking out. Suggest O1 Mall cafés nearby (1-minute walk) while they wait for the standard 3 PM check-in.`;
+          } else if (backToBack === false) {
+            variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. No back-to-back booking — early check-in MAY be possible. Tell the guest you'll check with the manager. Escalate as "info_request".`;
+          } else {
+            variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Availability unknown — could not check calendar. Tell the guest you'll check with the manager. Escalate as "info_request".`;
+          }
+        }
+      }
+
+      if (coDate) {
+        const daysUntil = Math.round((coDate.getTime() - nowUtc.getTime()) / (24 * 60 * 60 * 1000));
+        if (daysUntil > 2) {
+          variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil} days away. Late checkout can only be confirmed 2 days before. Quote the tiers (11am-1pm $25, 1-6pm $65, after 6pm $120) and tell the guest you'll confirm closer to the date. Do NOT escalate yet.`;
+        } else {
+          let backToBack: boolean | null = null;
+          if (hostawayListingId) {
+            try {
+              const availResult = await checkExtendAvailability(
+                { new_checkout: context.checkOut, new_checkin: null, reason: 'Auto-check back-to-back for late checkout' },
+                { listingId: hostawayListingId, currentCheckIn: context.checkIn, currentCheckOut: context.checkOut, channel: context.channel || 'DIRECT', numberOfGuests: context.guestCount, hostawayAccountId: context.hostawayAccountId, hostawayApiKey: context.hostawayApiKey },
+              );
+              const availData = JSON.parse(availResult);
+              backToBack = availData.available === false || availData.blocked;
+            } catch { backToBack = null; }
+          }
+          if (backToBack === true) {
+            variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking in that day. Late checkout is NOT available. Inform the guest that checkout must be by 11 AM.`;
+          } else if (backToBack === false) {
+            variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. No back-to-back booking — late checkout MAY be possible. Quote tiers (11am-1pm $25, 1-6pm $65, after 6pm $120), ask preferred time, then escalate as "info_request" with time and fee.`;
+          } else {
+            variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Availability unknown. Quote tiers, ask preferred time, escalate as "info_request".`;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[AI] [${conversationId}] Check-in/checkout situation computation failed (non-fatal):`, err);
+    }
     // Strip {DOCUMENT_CHECKLIST} from system prompt (keep it static for caching)
     effectiveSystemPrompt = effectiveSystemPrompt.replace('{DOCUMENT_CHECKLIST}', '');
 
@@ -1696,13 +1771,7 @@ export async function generateAndSendAiReply(
       });
 
       // Look up hostawayListingId for extend-stay tool
-      let hostawayListingId = '';
-      if (!isInquiry && context.propertyId) {
-        try {
-          const prop = await prisma.property.findUnique({ where: { id: context.propertyId }, select: { hostawayListingId: true } });
-          hostawayListingId = prop?.hostawayListingId || '';
-        } catch { /* fallback: empty */ }
-      }
+      // hostawayListingId already looked up above (before variableDataMap)
 
       // System tool handlers — keyed by name, same logic as before
       const systemToolHandlers = new Map<string, ToolHandler>([
@@ -1729,43 +1798,8 @@ export async function generateAndSendAiReply(
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
 
-          // Auto-enrich: for early check-in or late checkout within 2 days, check availability
-          // (The AI can't call a second tool after get_sop due to json_schema output constraint)
-          if ((cats.includes('sop-early-checkin') || cats.includes('sop-late-checkout')) && hostawayListingId) {
-            try {
-              const checkInDate = new Date(context.checkIn + 'T00:00:00Z');
-              const checkOutDate = new Date(context.checkOut + 'T00:00:00Z');
-              const now = new Date(); now.setHours(0, 0, 0, 0);
-              const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
-              const isCheckinSoon = checkInDate.getTime() - now.getTime() <= twoDaysMs;
-              const isCheckoutSoon = checkOutDate.getTime() - now.getTime() <= twoDaysMs;
-
-              if ((cats.includes('sop-early-checkin') && isCheckinSoon) || (cats.includes('sop-late-checkout') && isCheckoutSoon)) {
-                const availResult = await checkExtendAvailability(
-                  {
-                    new_checkout: context.checkOut,
-                    new_checkin: cats.includes('sop-early-checkin') ? context.checkIn : null,
-                    reason: 'Auto-check for back-to-back bookings',
-                  },
-                  {
-                    listingId: hostawayListingId,
-                    currentCheckIn: context.checkIn,
-                    currentCheckOut: context.checkOut,
-                    channel: context.channel || 'DIRECT',
-                    numberOfGuests: context.guestCount,
-                    hostawayAccountId: context.hostawayAccountId,
-                    hostawayApiKey: context.hostawayApiKey,
-                  },
-                );
-                const availData = JSON.parse(availResult);
-                const hasBackToBack = availData.available === false || availData.blocked;
-                sopContent += `\n\n## AVAILABILITY CHECK RESULT\n${hasBackToBack ? 'Back-to-back booking detected — another guest is checking out on that day. Early check-in/late checkout is NOT available.' : 'No back-to-back booking found — early check-in/late checkout may be possible. Escalate to manager for confirmation.'}`;
-                console.log(`[AI] [${conversationId}] Auto-enriched SOP: backToBack=${hasBackToBack}`);
-              }
-            } catch (err) {
-              console.warn(`[AI] [${conversationId}] Auto availability check failed (non-fatal):`, err);
-            }
-          }
+          // Check-in/checkout situation is now pre-computed via {CHECKIN_SITUATION}/{CHECKOUT_SITUATION}
+          // template variables in the SOP content — no auto-enrich needed here.
 
           if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
           return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;

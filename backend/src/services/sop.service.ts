@@ -503,7 +503,7 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CONFIRMED',
-      content: `## EARLY CHECK-IN                                                                     \n  Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before. \n**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."                                                                         \n  **Within 2 days of check-in:** Check the AVAILABILITY CHECK RESULT section below. If it says back-to-back booking detected, tell the guest early check-in is not available because another guest is checking out the same day. If no back-to-back, tell the guest you'll check with the manager → escalate as "info_request" \n  **Never confirm early check-in yourself.**`,
+      content: `## EARLY CHECK-IN\nStandard check-in: 3:00 PM. Never confirm early check-in yourself.\n\n{CHECKIN_SITUATION}`,
     },
     {
       status: 'CHECKED_IN',
@@ -518,11 +518,11 @@ const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
     },
     {
       status: 'CONFIRMED',
-      content: `Guest asking about late checkout for their upcoming stay. Standard checkout is 11:00 AM. Can only confirm 2 days before checkout date.`,
+      content: `## LATE CHECKOUT\nStandard checkout: 11:00 AM. Never confirm late checkout yourself.\nTiers: 11am-1pm $25, 1-6pm $65, after 6pm $120.\n\n{CHECKOUT_SITUATION}`,
     },
     {
       status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-late-checkout'],
+      content: `## LATE CHECKOUT\nStandard checkout: 11:00 AM. Never confirm late checkout yourself.\nTiers: 11am-1pm $25, 1-6pm $65, after 6pm $120.\n\n{CHECKOUT_SITUATION}`,
     },
   ],
 
