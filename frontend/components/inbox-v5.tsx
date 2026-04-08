@@ -4903,13 +4903,11 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {navTab === 'sandbox' && (
+      <div style={{ flex: 1, overflow: 'hidden', display: navTab === 'sandbox' ? 'flex' : 'none' }}>
         <ErrorBoundary>
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
           <SandboxChatV5 />
-        </div>
         </ErrorBoundary>
-      )}
+      </div>
       {/* OPUS tab render removed — 014-openai-migration */}
       {navTab === 'listings' && (
         <ErrorBoundary>
