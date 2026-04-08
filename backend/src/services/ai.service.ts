@@ -1621,11 +1621,21 @@ export async function generateAndSendAiReply(
       const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
       const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
 
-      // Helper: check Hostaway calendar for a specific date to detect other reservations
-      async function hasOtherReservationOnDate(date: string): Promise<boolean | null> {
+      // Helper: check Hostaway calendar for back-to-back bookings
+      // For early check-in: check the day BEFORE check-in (previous guest's last night)
+      //   — Hostaway marks checkout day as "available" so checking check-in day misses it
+      // For late checkout: check the checkout day itself (next guest's first night shows as "reserved")
+      async function hasBackToBackOnDate(date: string, mode: 'checkin' | 'checkout'): Promise<boolean | null> {
         if (!hostawayListingId) return null;
         try {
-          const cal = await hostawayService.getListingCalendar(context.hostawayAccountId, context.hostawayApiKey, hostawayListingId, date, date);
+          let checkDate = date;
+          if (mode === 'checkin') {
+            // Check day before check-in — if reserved, someone is still there
+            const d = new Date(date + 'T00:00:00Z');
+            d.setDate(d.getDate() - 1);
+            checkDate = d.toISOString().split('T')[0];
+          }
+          const cal = await hostawayService.getListingCalendar(context.hostawayAccountId, context.hostawayApiKey, hostawayListingId, checkDate, checkDate);
           const days = cal.result || [];
           if (days.length === 0) return null;
           const day = days[0];
@@ -1638,8 +1648,8 @@ export async function generateAndSendAiReply(
         if (daysUntil > 2) {
           variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil} days away. Early check-in can only be confirmed 2 days before the check-in date. Tell the guest this and suggest they can leave bags with housekeeping and grab coffee at O1 Mall (1-minute walk). Do NOT escalate.`;
         } else {
-          // Within 2 days — check calendar for back-to-back (another reservation on check-in day)
-          const backToBack = await hasOtherReservationOnDate(context.checkIn);
+          // Within 2 days — check day before check-in for back-to-back
+          const backToBack = await hasBackToBackOnDate(context.checkIn, 'checkin');
           if (backToBack === true) {
             variableDataMap.CHECKIN_SITUATION = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking out that day. Early check-in is NOT available. Tell the guest early check-in is not possible because another guest is checking out. Suggest O1 Mall cafés nearby (1-minute walk) while they wait for the standard 3 PM check-in.`;
           } else if (backToBack === false) {
@@ -1655,8 +1665,8 @@ export async function generateAndSendAiReply(
         if (daysUntil > 2) {
           variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil} days away. Late checkout can only be confirmed 2 days before. Quote the tiers (11am-1pm $25, 1-6pm $65, after 6pm $120) and tell the guest you'll confirm closer to the date. Do NOT escalate yet.`;
         } else {
-          // Within 2 days — check calendar for back-to-back (another reservation on checkout day)
-          const backToBack = await hasOtherReservationOnDate(context.checkOut);
+          // Within 2 days — check checkout day for back-to-back (next guest arriving)
+          const backToBack = await hasBackToBackOnDate(context.checkOut, 'checkout');
           if (backToBack === true) {
             variableDataMap.CHECKOUT_SITUATION = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking in that day. Late checkout is NOT available. Inform the guest that checkout must be by 11 AM.`;
           } else if (backToBack === false) {

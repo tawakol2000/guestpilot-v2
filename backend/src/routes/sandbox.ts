@@ -259,11 +259,19 @@ export function sandboxRouter(prisma: PrismaClient) {
         const coDate = checkOut ? new Date(checkOut + 'T00:00:00Z') : null;
         const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
 
-        // Helper: check Hostaway calendar for a date to detect other reservations
-        async function hasOtherReservationOnDate(date: string): Promise<boolean | null> {
+        // Helper: check Hostaway calendar for back-to-back bookings
+        // Early check-in: check day BEFORE check-in (Hostaway marks checkout day as "available")
+        // Late checkout: check the checkout day itself (next guest's first night shows "reserved")
+        async function hasBackToBackOnDate(date: string, mode: 'checkin' | 'checkout'): Promise<boolean | null> {
           if (!hostawayListingId) return null;
           try {
-            const cal = await hostawayService.getListingCalendar(tenant!.hostawayAccountId, tenant!.hostawayApiKey, hostawayListingId, date, date);
+            let checkDate = date;
+            if (mode === 'checkin') {
+              const d = new Date(date + 'T00:00:00Z');
+              d.setDate(d.getDate() - 1);
+              checkDate = d.toISOString().split('T')[0];
+            }
+            const cal = await hostawayService.getListingCalendar(tenant!.hostawayAccountId, tenant!.hostawayApiKey, hostawayListingId, checkDate, checkDate);
             const days = cal.result || [];
             if (days.length === 0) return null;
             const day = days[0] as any;
@@ -276,7 +284,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           if (daysUntil > 2) {
             checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil} days away. Early check-in can only be confirmed 2 days before the check-in date. Tell the guest this and suggest they can leave bags with housekeeping and grab coffee at O1 Mall (1-minute walk). Do NOT escalate.`;
           } else {
-            const backToBack = await hasOtherReservationOnDate(checkIn);
+            const backToBack = await hasBackToBackOnDate(checkIn, 'checkin');
             if (backToBack === true) {
               checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking out that day. Early check-in is NOT available. Tell the guest and suggest O1 Mall cafés (1-minute walk).`;
             } else if (backToBack === false) {
@@ -292,7 +300,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           if (daysUntil > 2) {
             checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil} days away. Late checkout can only be confirmed 2 days before. Quote the tiers (11am-1pm $25, 1-6pm $65, after 6pm $120) and tell the guest you'll confirm closer to the date. Do NOT escalate yet.`;
           } else {
-            const backToBack = await hasOtherReservationOnDate(checkOut);
+            const backToBack = await hasBackToBackOnDate(checkOut, 'checkout');
             if (backToBack === true) {
               checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest checking in. Late checkout is NOT available. Checkout must be by 11 AM.`;
             } else if (backToBack === false) {
