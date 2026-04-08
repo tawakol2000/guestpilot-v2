@@ -9,6 +9,7 @@ import { detectEscalationSignals } from '../services/escalation-enrichment.servi
 import { resolveVariables, applyPropertyOverrides } from '../services/template-variable.service';
 import { searchAvailableProperties } from '../services/property-search.service';
 import { checkExtendAvailability } from '../services/extend-stay.service';
+import * as hostawayService from '../services/hostaway.service';
 import { createChecklist, updateChecklist, getChecklist, hasPendingItems, type DocumentChecklist } from '../services/document-checklist.service';
 import { COORDINATOR_SCHEMA, SCREENING_SCHEMA, SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT, buildPropertyInfo, classifyAmenities, stripCodeFences } from '../services/ai.service';
 import { getToolDefinitions } from '../services/tool-definition.service';
@@ -258,22 +259,24 @@ export function sandboxRouter(prisma: PrismaClient) {
         const coDate = checkOut ? new Date(checkOut + 'T00:00:00Z') : null;
         const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
 
+        // Helper: check Hostaway calendar for a date to detect other reservations
+        async function hasOtherReservationOnDate(date: string): Promise<boolean | null> {
+          if (!hostawayListingId) return null;
+          try {
+            const cal = await hostawayService.getListingCalendar(tenant!.hostawayAccountId, tenant!.hostawayApiKey, hostawayListingId, date, date);
+            const days = cal.result || [];
+            if (days.length === 0) return null;
+            const day = days[0] as any;
+            return (day.reservations || []).length > 0 || day.isBlocked === 1 || day.isBlocked === true || day.status === 'booked' || day.status === 'reserved';
+          } catch { return null; }
+        }
+
         if (ciDate) {
           const daysUntil = Math.round((ciDate.getTime() - nowUtc.getTime()) / (24 * 60 * 60 * 1000));
           if (daysUntil > 2) {
             checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil} days away. Early check-in can only be confirmed 2 days before the check-in date. Tell the guest this and suggest they can leave bags with housekeeping and grab coffee at O1 Mall (1-minute walk). Do NOT escalate.`;
           } else {
-            let backToBack: boolean | null = null;
-            if (hostawayListingId) {
-              try {
-                const availResult = await checkExtendAvailability(
-                  { new_checkout: checkOut, new_checkin: checkIn, reason: 'Sandbox auto-check back-to-back for early check-in' },
-                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: tenant!.hostawayAccountId, hostawayApiKey: tenant!.hostawayApiKey },
-                );
-                const availData = JSON.parse(availResult);
-                backToBack = availData.available === false || availData.blocked;
-              } catch { backToBack = null; }
-            }
+            const backToBack = await hasOtherReservationOnDate(checkIn);
             if (backToBack === true) {
               checkinSituation = `YOUR SITUATION: Check-in is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest is checking out that day. Early check-in is NOT available. Tell the guest and suggest O1 Mall cafés (1-minute walk).`;
             } else if (backToBack === false) {
@@ -289,17 +292,7 @@ export function sandboxRouter(prisma: PrismaClient) {
           if (daysUntil > 2) {
             checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil} days away. Late checkout can only be confirmed 2 days before. Quote the tiers (11am-1pm $25, 1-6pm $65, after 6pm $120) and tell the guest you'll confirm closer to the date. Do NOT escalate yet.`;
           } else {
-            let backToBack: boolean | null = null;
-            if (hostawayListingId) {
-              try {
-                const availResult = await checkExtendAvailability(
-                  { new_checkout: checkOut, new_checkin: null, reason: 'Sandbox auto-check back-to-back for late checkout' },
-                  { listingId: hostawayListingId, currentCheckIn: checkIn, currentCheckOut: checkOut, channel: channel || 'DIRECT', numberOfGuests: guestCount || 1, hostawayAccountId: tenant!.hostawayAccountId, hostawayApiKey: tenant!.hostawayApiKey },
-                );
-                const availData = JSON.parse(availResult);
-                backToBack = availData.available === false || availData.blocked;
-              } catch { backToBack = null; }
-            }
+            const backToBack = await hasOtherReservationOnDate(checkOut);
             if (backToBack === true) {
               checkoutSituation = `YOUR SITUATION: Checkout is ${daysUntil <= 0 ? 'today' : 'tomorrow'}. Back-to-back booking DETECTED — another guest checking in. Late checkout is NOT available. Checkout must be by 11 AM.`;
             } else if (backToBack === false) {
