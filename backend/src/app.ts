@@ -22,11 +22,14 @@ import { webhookLogsRouter } from './routes/webhook-logs';
 import { reservationsRouter } from './routes/reservations';
 import { alterationsRouter } from './routes/alterations';
 import { hostawayConnectRouter } from './routes/hostaway-connect';
+import { shadowPreviewRouter } from './routes/shadow-preview';
+import { tuningSuggestionRouter } from './routes/tuning-suggestion';
 import { makeKnowledgeController } from './controllers/knowledge.controller';
 import { errorMiddleware } from './middleware/error';
 import { getAiApiLog } from './services/ai.service';
 import { authMiddleware } from './middleware/auth';
 import { getMessageSyncStats } from './services/message-sync.service';
+import { setTuningAnalyzerPrisma } from './services/tuning-analyzer.service';
 
 export function createApp(prisma: PrismaClient) {
   const app = express();
@@ -80,6 +83,10 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/reservations', reservationsRouter(prisma));
   app.use('/api/reservations', alterationsRouter(prisma));
   app.use('/api/hostaway-connect', hostawayConnectRouter(prisma));
+  // Feature 040: Copilot Shadow Mode routes
+  app.use('/api/shadow-previews', shadowPreviewRouter(prisma));
+  app.use('/api/tuning-suggestions', tuningSuggestionRouter(prisma));
+  setTuningAnalyzerPrisma(prisma);
 
   // Message rating endpoint
   const knowledgeCtrl = makeKnowledgeController(prisma);

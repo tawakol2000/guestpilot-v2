@@ -27,6 +27,7 @@ import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenant } from './push.service';
 import { generateOrExtendSummary } from './summary.service';
 import { syncConversationMessages } from './message-sync.service';
+import { lockOlderPreviews } from './shadow-preview.service';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -2098,6 +2099,83 @@ export async function generateAndSendAiReply(
 
     // Copilot mode: hold suggestion for host approval
     if (context.aiMode === 'copilot') {
+      // ─── Feature 040: Shadow Mode preview flow ──────────────────────────
+      // When the tenant has shadowModeEnabled, copilot replies render as
+      // in-chat preview bubbles instead of the legacy suggestion-card UI.
+      // Autopilot is never touched — this branch is inside the copilot guard.
+      if (tenantConfig?.shadowModeEnabled) {
+        const lastGuestMsgShadow = allMsgs.filter(m => m.role === 'GUEST').at(-1);
+        const previewChannel = lastGuestMsgShadow?.channel ?? Channel.OTHER;
+        const previewCommType = previewChannel === Channel.WHATSAPP ? 'whatsapp' : 'channel';
+        const previewSentAt = new Date();
+
+        // Lock any existing unsent previews on this conversation before creating the new one.
+        const lockedIds = await lockOlderPreviews(prisma, tenantId, conversationId).catch(err => {
+          console.warn(`[ShadowMode] [${conversationId}] lockOlderPreviews failed:`, err);
+          return [] as string[];
+        });
+
+        // Best-effort lookup of the AiApiLog id for this generation turn so the tuning
+        // analyzer (US3) can pull full context. Fire-and-forget AiApiLog writes may not
+        // yet be committed — fall back to null if not found.
+        const recentLog = await prisma.aiApiLog
+          .findFirst({
+            where: { tenantId, conversationId },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          })
+          .catch(() => null);
+        const aiApiLogId = recentLog?.id ?? null;
+
+        const previewMessage = await prisma.message.create({
+          data: {
+            conversationId,
+            tenantId,
+            role: MessageRole.AI,
+            content: guestMessage,
+            sentAt: previewSentAt,
+            channel: previewChannel,
+            communicationType: previewCommType,
+            hostawayMessageId: '',
+            previewState: 'PREVIEW_PENDING',
+            originalAiText: guestMessage,
+            aiApiLogId,
+          },
+        });
+
+        // Update conversation lastMessageAt so the inbox list re-sorts to top.
+        await prisma.conversation
+          .update({ where: { id: conversationId }, data: { lastMessageAt: previewSentAt } })
+          .catch(err => console.warn(`[ShadowMode] [${conversationId}] conversation update failed:`, err));
+
+        if (lockedIds.length > 0) {
+          broadcastCritical(tenantId, 'shadow_preview_locked', {
+            conversationId,
+            lockedMessageIds: lockedIds,
+          });
+        }
+
+        broadcastCritical(tenantId, 'message', {
+          conversationId,
+          message: {
+            id: previewMessage.id,
+            role: 'AI',
+            content: guestMessage,
+            sentAt: previewSentAt.toISOString(),
+            channel: String(previewChannel),
+            imageUrls: [],
+            previewState: 'PREVIEW_PENDING',
+            originalAiText: guestMessage,
+          },
+          lastMessageRole: 'AI',
+          lastMessageAt: previewSentAt.toISOString(),
+        });
+
+        console.log(`[AI] [${conversationId}] Shadow Mode — preview ${previewMessage.id} created (locked ${lockedIds.length} older)`);
+        return;
+      }
+
+      // ─── Legacy copilot flow (unchanged) ─────────────────────────────────
       await prisma.pendingAiReply.update({
         where: { conversationId },
         data: { suggestion: guestMessage },
@@ -2136,7 +2214,7 @@ export async function generateAndSendAiReply(
     // Push AI message to browser in real-time
     broadcastCritical(tenantId, 'message', {
       conversationId,
-      message: { role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
+      message: { id: savedMessage.id, role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });

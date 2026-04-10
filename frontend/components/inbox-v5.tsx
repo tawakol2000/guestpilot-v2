@@ -78,6 +78,7 @@ import {
   apiGetAlteration,
   apiAcceptAlteration,
   apiRejectAlteration,
+  apiSendShadowPreview,
   type BookingAlteration,
   ApiError,
   mapChannel,
@@ -107,6 +108,7 @@ import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import ListingsV5 from '@/components/listings-v5'
 import CalendarV5 from '@/components/calendar-v5'
 import FaqV5 from '@/components/faq-v5'
+import { TuningReviewV5 } from '@/components/tuning-review-v5'
 import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
@@ -141,7 +143,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs'
+type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs' | 'tuning'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today' | 'expired'
 
 interface Message {
@@ -153,6 +155,10 @@ interface Message {
   fromSelf?: boolean
   imageUrls?: string[]
   aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  // Feature 040: Copilot Shadow Mode preview fields (nullable — only present on shadow-mode previews)
+  previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING'
+  originalAiText?: string
+  editedByUserId?: string
 }
 
 interface Guest {
@@ -1484,6 +1490,11 @@ export default function InboxV5() {
   const [lastActions, setLastActions] = useState<Record<string, LastActionResult>>({})
   const [hostawayConnectStatus, setHostawayConnectStatus] = useState<HostawayConnectStatus | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ type: 'reject' | 'cancel'; reservationId: string; conversationId?: string } | null>(null)
+  // Feature 040: Shadow Mode — in-progress preview edit state
+  const [editingPreviewId, setEditingPreviewId] = useState<string | null>(null)
+  const [previewEditBuffer, setPreviewEditBuffer] = useState<string>('')
+  const [sendingPreviewId, setSendingPreviewId] = useState<string | null>(null)
+  const [shadowToast, setShadowToast] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -1760,14 +1771,26 @@ export default function InboxV5() {
       }
 
       const newSseMsgs: Message[] = []
+      // Prefer the real Message.id from the backend when present — enables Send/Edit targeting for shadow previews.
+      const realMsgId: string = msg.id || `sse-${Date.now()}`
       if (sender === 'private') {
         const fromSelf = msg.role === 'AI_PRIVATE' || msg.role === 'MANAGER_PRIVATE'
-        newSseMsgs.push({ id: `sse-${Date.now()}`, sender: 'private', text: msg.content, time: formatTimestamp(msg.sentAt), fromSelf })
+        newSseMsgs.push({ id: realMsgId, sender: 'private', text: msg.content, time: formatTimestamp(msg.sentAt), fromSelf })
       } else {
         const resolved = msg.channel ? channelFromApi(msg.channel) : undefined
         // 'direct' is the catch-all fallback — treat as no channel so conversation channel is used
         const sseChannel = (resolved && resolved !== 'direct') ? resolved : undefined
-        newSseMsgs.push({ id: `sse-${Date.now()}`, sender, text: msg.content, time: formatTimestamp(msg.sentAt), channel: sseChannel })
+        newSseMsgs.push({
+          id: realMsgId,
+          sender,
+          text: msg.content,
+          time: formatTimestamp(msg.sentAt),
+          channel: sseChannel,
+          // Shadow Mode preview fields — passed through from the extended 'message' payload
+          previewState: msg.previewState,
+          originalAiText: msg.originalAiText,
+          editedByUserId: msg.editedByUserId,
+        })
       }
       // Extract visible text for lastMessage preview
       const previewText = newSseMsgs[0]?.text || msg.content
@@ -1809,6 +1832,38 @@ export default function InboxV5() {
         setAiTyping(false)
         setAiSuggestion(data.suggestion)
       }
+      if (typeof ack === 'function') ack()
+    })
+
+    // Feature 040: Shadow Mode — older unsent previews just got locked by a newer preview
+    socket.on('shadow_preview_locked', (data: any, ack?: () => void) => {
+      const convId = data?.conversationId
+      const lockedIds: string[] = Array.isArray(data?.lockedMessageIds) ? data.lockedMessageIds : []
+      if (!convId || lockedIds.length === 0) { if (typeof ack === 'function') ack(); return }
+      setConversations(prev =>
+        prev.map(c => {
+          if (c.id !== convId) return c
+          return {
+            ...c,
+            messages: c.messages.map(m =>
+              lockedIds.includes(m.id) && m.previewState === 'PREVIEW_PENDING'
+                ? { ...m, previewState: 'PREVIEW_LOCKED' as const }
+                : m
+            ),
+          }
+        })
+      )
+      // FR-011a: if the admin has an in-progress edit on one of the now-locked previews,
+      // discard the edit buffer and surface a toast.
+      setEditingPreviewId(prev => {
+        if (prev && lockedIds.includes(prev)) {
+          setPreviewEditBuffer('')
+          setShadowToast('A newer preview replaced the one you were editing.')
+          setTimeout(() => setShadowToast(null), 3500)
+          return null
+        }
+        return prev
+      })
       if (typeof ack === 'function') ack()
     })
 
@@ -1958,6 +2013,7 @@ export default function InboxV5() {
       socket.off('connect_error')
       socket.off('message')
       socket.off('ai_suggestion')
+      socket.off('shadow_preview_locked')
       socket.off('ai_typing_clear')
       socket.off('ai_typing_text')
       socket.off('reservation_created')
@@ -2734,6 +2790,7 @@ export default function InboxV5() {
             /* OPUS tab removed — 014-openai-migration */
             { id: 'listings', label: 'Listings' },
             { id: 'faqs', label: 'FAQs' },
+            { id: 'tuning', label: 'Tuning' }, // Feature 040: Copilot Shadow Mode review surface
             /* SOP Monitor tab removed */
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3598,6 +3655,15 @@ export default function InboxV5() {
                   Back online — messages synced
                 </div>
               )}
+              {/* Feature 040: Shadow Mode toast */}
+              {shadowToast && (
+                <div style={{
+                  background: T.status.amber, color: 'white', padding: '6px 16px',
+                  fontSize: 13, fontWeight: 500, textAlign: 'center' as const,
+                }}>
+                  {shadowToast}
+                </div>
+              )}
 
               {/* FAQ suggestion banner */}
               <div style={{
@@ -3672,7 +3738,18 @@ export default function InboxV5() {
                 {loadingDetail && selectedConv.messages.length === 0 ? (
                   <MessagesSkeleton />
                 ) : (
-                  selectedConv.messages
+                  (() => {
+                    // Feature 040: compute the id of the latest PREVIEW_PENDING message in the
+                    // current conversation — only this message gets Send/Edit action buttons.
+                    const latestPendingPreviewId = (() => {
+                      for (let i = selectedConv.messages.length - 1; i >= 0; i--) {
+                        if (selectedConv.messages[i].previewState === 'PREVIEW_PENDING') {
+                          return selectedConv.messages[i].id
+                        }
+                      }
+                      return null
+                    })()
+                    return selectedConv.messages
                   .filter(msg => {
                     // Hide alteration system messages from thread (shown in right panel instead)
                     const t = (msg.text || '').toLowerCase()
@@ -3691,16 +3768,23 @@ export default function InboxV5() {
                     const isHost = msg.sender === 'host'
                     const isPrivate = msg.sender === 'private'
                     const isLeft = isGuest
+                    // Feature 040: Shadow Mode preview bubble detection
+                    const isPreview = isAI && (msg.previewState === 'PREVIEW_PENDING' || msg.previewState === 'PREVIEW_LOCKED' || msg.previewState === 'PREVIEW_SENDING')
+                    const isLockedPreview = msg.previewState === 'PREVIEW_LOCKED'
 
                     const bubbleBg = isGuest
                       ? T.bg.secondary
+                      : isPreview
+                      ? T.status.amber + '14' // amber tint for preview bubbles
                       : isAI
                       ? T.accent + '0D'
                       : isPrivate
                       ? T.status.amber + '1F'
                       : T.accent + '0D'
 
-                    const bubbleBorder = isPrivate
+                    const bubbleBorder = isPreview
+                      ? T.status.amber + '80'
+                      : isPrivate
                       ? T.status.amber + '60'
                       : T.border.default
 
@@ -3863,8 +3947,30 @@ export default function InboxV5() {
                               lineHeight: 1.5,
                               whiteSpace: 'pre-wrap',
                               wordBreak: 'break-word',
+                              opacity: isLockedPreview ? 0.6 : 1,
                             }}
                           >
+                            {/* Feature 040: "Not sent to guest" pill for shadow-mode previews */}
+                            {isPreview && (
+                              <div
+                                style={{
+                                  display: 'inline-block',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: 0.3,
+                                  color: T.status.amber,
+                                  background: T.status.amber + '1F',
+                                  border: `1px solid ${T.status.amber + '60'}`,
+                                  borderRadius: 4,
+                                  padding: '1px 6px',
+                                  marginBottom: 4,
+                                }}
+                              >
+                                {isLockedPreview ? 'Superseded — not sent' : 'Not sent to guest'}
+                              </div>
+                            )}
+                            {isPreview && <br />}
                             {msg.text}
                           </div>
                           {/* Below bubble: logo + timestamp + rating */}
@@ -4084,10 +4190,149 @@ export default function InboxV5() {
                               </div>
                             )}
                           </div>
+                          {/* Feature 040: Shadow Mode Send/Edit actions — only on the latest PENDING preview */}
+                          {isPreview && msg.previewState === 'PREVIEW_PENDING' && msg.id === latestPendingPreviewId && (
+                            <div style={{ marginTop: 6 }}>
+                              {editingPreviewId === msg.id ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  <textarea
+                                    value={previewEditBuffer}
+                                    onChange={e => setPreviewEditBuffer(e.target.value)}
+                                    rows={4}
+                                    style={{
+                                      width: '100%',
+                                      padding: '6px 8px',
+                                      fontSize: 13,
+                                      fontFamily: T.font.sans,
+                                      color: T.text.primary,
+                                      background: T.bg.primary,
+                                      border: `1px solid ${T.border.default}`,
+                                      borderRadius: 6,
+                                      outline: 'none',
+                                      resize: 'vertical',
+                                      boxSizing: 'border-box',
+                                    }}
+                                  />
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                      disabled={sendingPreviewId === msg.id}
+                                      onClick={async () => {
+                                        const finalText = previewEditBuffer.trim()
+                                        if (!finalText) return
+                                        setSendingPreviewId(msg.id)
+                                        try {
+                                          await apiSendShadowPreview(msg.id, finalText !== msg.text ? finalText : undefined)
+                                          setEditingPreviewId(null)
+                                          setPreviewEditBuffer('')
+                                        } catch (err: any) {
+                                          const detail = err?.body?.error || err?.message || 'Send failed'
+                                          if (detail === 'PREVIEW_NOT_PENDING') {
+                                            setShadowToast('This preview has already been superseded.')
+                                          } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {
+                                            setShadowToast('Send failed — guest channel rejected the message.')
+                                          } else {
+                                            setShadowToast('Send failed.')
+                                          }
+                                          setTimeout(() => setShadowToast(null), 3500)
+                                        } finally {
+                                          setSendingPreviewId(null)
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '4px 12px',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        color: '#fff',
+                                        background: sendingPreviewId === msg.id ? T.bg.tertiary : T.accent,
+                                        border: 'none',
+                                        borderRadius: 5,
+                                        cursor: sendingPreviewId === msg.id ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {sendingPreviewId === msg.id ? 'Sending…' : 'Send edited'}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setEditingPreviewId(null)
+                                        setPreviewEditBuffer('')
+                                      }}
+                                      style={{
+                                        padding: '4px 12px',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        color: T.text.secondary,
+                                        background: 'transparent',
+                                        border: `1px solid ${T.border.default}`,
+                                        borderRadius: 5,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button
+                                    disabled={sendingPreviewId === msg.id}
+                                    onClick={async () => {
+                                      setSendingPreviewId(msg.id)
+                                      try {
+                                        await apiSendShadowPreview(msg.id)
+                                      } catch (err: any) {
+                                        const detail = err?.body?.error || err?.message || 'Send failed'
+                                        if (detail === 'PREVIEW_NOT_PENDING') {
+                                          setShadowToast('This preview has already been superseded.')
+                                        } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {
+                                          setShadowToast('Send failed — guest channel rejected the message.')
+                                        } else {
+                                          setShadowToast('Send failed.')
+                                        }
+                                        setTimeout(() => setShadowToast(null), 3500)
+                                      } finally {
+                                        setSendingPreviewId(null)
+                                      }
+                                    }}
+                                    style={{
+                                      padding: '4px 14px',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: '#fff',
+                                      background: sendingPreviewId === msg.id ? T.bg.tertiary : T.accent,
+                                      border: 'none',
+                                      borderRadius: 5,
+                                      cursor: sendingPreviewId === msg.id ? 'not-allowed' : 'pointer',
+                                    }}
+                                  >
+                                    {sendingPreviewId === msg.id ? 'Sending…' : 'Send'}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setEditingPreviewId(msg.id)
+                                      setPreviewEditBuffer(msg.text)
+                                    }}
+                                    style={{
+                                      padding: '4px 14px',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      color: T.text.primary,
+                                      background: T.bg.secondary,
+                                      border: `1px solid ${T.border.default}`,
+                                      borderRadius: 5,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
                   })
+                  })()
                 )}
 
                 {/* Streaming AI text bubble — shows progressive text while AI generates */}
@@ -4921,6 +5166,14 @@ export default function InboxV5() {
         <ErrorBoundary>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           <FaqV5 />
+        </div>
+        </ErrorBoundary>
+      )}
+      {/* Feature 040: Copilot Shadow Mode — Tuning tab */}
+      {navTab === 'tuning' && (
+        <ErrorBoundary>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <TuningReviewV5 />
         </div>
         </ErrorBoundary>
       )}

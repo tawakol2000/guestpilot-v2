@@ -437,6 +437,7 @@ export interface TenantAiConfig {
   systemPromptCoordinator: string | null
   systemPromptScreening: string | null
   systemPromptVersion: number
+  shadowModeEnabled: boolean // Feature 040: Copilot Shadow Mode
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
@@ -452,6 +453,103 @@ export async function apiUpdateTenantAiConfig(updates: Partial<Omit<TenantAiConf
 
 export async function apiResetSystemPrompts(): Promise<TenantAiConfig> {
   return apiFetch<TenantAiConfig>('/api/tenant-config/reset-prompts', { method: 'POST' })
+}
+
+// ─── Feature 040: Copilot Shadow Mode ─────────────────────────────────────────
+
+export interface ShadowPreviewSendResponse {
+  ok: boolean
+  message: {
+    id: string
+    content: string
+    previewState: null
+    originalAiText: string | null
+    editedByUserId: string | null
+    hostawayMessageId: string
+    sentAt: string
+  }
+  analyzerQueued: boolean
+}
+
+export async function apiSendShadowPreview(
+  messageId: string,
+  editedText?: string
+): Promise<ShadowPreviewSendResponse> {
+  return apiFetch<ShadowPreviewSendResponse>(`/api/shadow-previews/${messageId}/send`, {
+    method: 'POST',
+    body: JSON.stringify(editedText !== undefined ? { editedText } : {}),
+  })
+}
+
+export type TuningActionType =
+  | 'EDIT_SYSTEM_PROMPT'
+  | 'EDIT_SOP_CONTENT'
+  | 'EDIT_SOP_ROUTING'
+  | 'EDIT_FAQ'
+  | 'CREATE_SOP'
+  | 'CREATE_FAQ'
+
+export type TuningSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
+
+export interface TuningSuggestion {
+  id: string
+  status: TuningSuggestionStatus
+  actionType: TuningActionType
+  rationale: string
+  beforeText: string | null
+  proposedText: string | null
+  systemPromptVariant: string | null
+  sopCategory: string | null
+  sopStatus: string | null
+  sopPropertyId: string | null
+  sopToolDescription: string | null
+  faqEntryId: string | null
+  faqCategory: string | null
+  faqScope: string | null
+  faqPropertyId: string | null
+  faqQuestion: string | null
+  faqAnswer: string | null
+  sourceMessageId: string
+  sourceConversationId: string | null
+  createdAt: string
+}
+
+export async function apiListTuningSuggestions(
+  params: { status?: TuningSuggestionStatus | 'ALL'; limit?: number; cursor?: string } = {}
+): Promise<{ suggestions: TuningSuggestion[]; nextCursor: string | null }> {
+  const query = new URLSearchParams()
+  if (params.status) query.set('status', params.status)
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.cursor) query.set('cursor', params.cursor)
+  const qs = query.toString()
+  return apiFetch(`/api/tuning-suggestions${qs ? `?${qs}` : ''}`)
+}
+
+export interface TuningAcceptBody {
+  editedText?: string
+  editedContent?: string
+  editedToolDescription?: string
+  editedQuestion?: string
+  editedAnswer?: string
+}
+
+export async function apiAcceptTuningSuggestion(
+  id: string,
+  body: TuningAcceptBody = {}
+): Promise<{ ok: boolean; suggestion: TuningSuggestion & { appliedAt: string; appliedPayload: unknown }; targetUpdated: { kind: string; id: string } }> {
+  return apiFetch(`/api/tuning-suggestions/${id}/accept`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function apiRejectTuningSuggestion(
+  id: string
+): Promise<{ ok: boolean; suggestion: TuningSuggestion }> {
+  return apiFetch(`/api/tuning-suggestions/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }
 
 export async function apiResyncProperty(propertyId: string): Promise<{ ok: boolean; chunks: number; property: ApiProperty }> {

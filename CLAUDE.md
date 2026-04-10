@@ -52,6 +52,8 @@ frontend/
 | push.service.ts | Web Push notifications (VAPID) |
 | webhook-tool.service.ts | Custom webhook invocation for user-defined tools |
 | queue.service.ts | BullMQ wrapper (graceful fallback to polling if no Redis) |
+| shadow-preview.service.ts | Feature 040 — lockOlderPreviews helper for Shadow Mode preview lifecycle |
+| tuning-analyzer.service.ts | Feature 040 — fire-and-forget analyzer for edited shadow previews (gpt-5.4-mini, reasoning: high) |
 
 ## AI Pipeline Flow
 ```
@@ -163,6 +165,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL + Prisma ORM — 2 new models (BookingAlteration, AlterationActionLog), 2 new enums (030-booking-alterations)
 - TypeScript 5.x on Node.js 18+ + Express 4.x, OpenAI SDK (Responses API), Prisma ORM, axios (031-ai-property-search)
 - PostgreSQL (existing Property model with `customKnowledgeBase` JSON field, `listingDescription` text field) (031-ai-property-search)
+- TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, OpenAI SDK (Responses API), Socket.IO, BullMQ (optional); React 19, Tailwind 4, shadcn/ui (040-autopilot-shadow-mode)
+- PostgreSQL via Prisma. Schema changes applied with `npx prisma db push` per constitution §Development Workflow. (040-autopilot-shadow-mode)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui

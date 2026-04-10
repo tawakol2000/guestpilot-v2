@@ -944,6 +944,7 @@ function TenantConfigSection({
         memorySummaryEnabled: local.memorySummaryEnabled,
         reasoningCoordinator: local.reasoningCoordinator,
         reasoningScreening: local.reasoningScreening,
+        shadowModeEnabled: local.shadowModeEnabled,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -1162,6 +1163,19 @@ function TenantConfigSection({
           {toggleRow('RAG Knowledge Search', 'Retrieve relevant property knowledge before each reply', local.ragEnabled, 'ragEnabled')}
           <div style={{ borderBottom: 'none' }}>
             {toggleRow('Conversation Memory Summaries', 'Summarise older messages to reduce token usage', local.memorySummaryEnabled, 'memorySummaryEnabled')}
+          </div>
+        </div>
+
+        {/* Feature 040: Copilot Shadow Mode — tuning section */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Tuning</label>
+          <div style={{ borderBottom: 'none' }}>
+            {toggleRow(
+              'Shadow Mode (Copilot)',
+              'Render copilot AI replies as in-chat preview bubbles (instead of the legacy suggestion card) and fire the tuning analyzer on edited sends. Does not affect autopilot. For tuning sessions only — turn off when done.',
+              Boolean(local.shadowModeEnabled),
+              'shadowModeEnabled'
+            )}
           </div>
         </div>
 

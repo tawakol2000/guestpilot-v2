@@ -39,6 +39,7 @@ model Tenant {
   inquiryActionLogs       InquiryActionLog[]
   bookingAlterations      BookingAlteration[]
   alterationActionLogs    AlterationActionLog[]
+  tuningSuggestions       TuningSuggestion[]    // Feature 040: Copilot Shadow Mode
 
   // Dashboard connection (platform.hostaway.com internal API)
   dashboardJwt            String?           @db.Text
@@ -163,14 +164,21 @@ model Message {
   sentAt              DateTime      @default(now())
   hostawayMessageId   String        @default("")
   imageUrls           String[]      @default([])
+  // ─── Feature 040: Copilot Shadow Mode (nullable; safe to drop on retirement) ───
+  previewState        PreviewState? // null for normal messages; set for shadow-mode previews
+  originalAiText      String?       @db.Text // AI's original generated text (present for previews and kept after Send for audit)
+  editedByUserId      String?       // Populated on Send if the admin edited before sending
+  aiApiLogId          String?       // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
   conversation        Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
+  tuningSuggestions   TuningSuggestion[] @relation("SourcePreview")
 
   // Partial unique index exists in DB: CREATE UNIQUE INDEX "Message_conv_hostaway_msg_unique" ON "Message" ("conversationId", "hostawayMessageId") WHERE "hostawayMessageId" != ''
   // Applied via prisma/migrations/add_audit_constraints.sql — Prisma 5.x does not support partial indexes in schema
   @@index([conversationId])
   @@index([tenantId])
+  @@index([conversationId, previewState])
 }
 
 model PendingAiReply {
@@ -428,6 +436,8 @@ model TenantAiConfig {
   systemPromptVersion     Int     @default(1)
   imageHandlingInstructions String? @db.Text // Appended to system prompt when guest sends an image
   systemPromptHistory     Json    @default("[]") // Array of {version, timestamp, coordinator?, screening?, note?}
+  // ─── Feature 040: Copilot Shadow Mode (safe to drop on retirement) ───
+  shadowModeEnabled    Boolean  @default(false) // When true, copilot replies render as in-chat preview bubbles + fire tuning analyzer on edited sends. Autopilot unaffected.
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -639,4 +649,72 @@ enum AlterationActionStatus {
   PENDING
   SUCCESS
   FAILED
+}
+
+// ─── Feature 040: Copilot Shadow Mode for AI Tuning ─────────────────────────
+// All models/enums in this section are additive and nullable-compatible so the
+// feature can be retired cleanly by dropping them.
+
+enum PreviewState {
+  PREVIEW_PENDING  // Unsent preview; actionable IFF it is the latest preview on the conversation
+  PREVIEW_LOCKED   // Unsent preview superseded by a newer preview
+  PREVIEW_SENDING  // Brief transition state during Send endpoint; prevents double-send
+}
+
+enum TuningActionType {
+  EDIT_SYSTEM_PROMPT
+  EDIT_SOP_CONTENT
+  EDIT_SOP_ROUTING
+  EDIT_FAQ
+  CREATE_SOP
+  CREATE_FAQ
+}
+
+enum TuningSuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model TuningSuggestion {
+  id                   String                 @id @default(cuid())
+  tenantId             String
+  sourceMessageId      String                 // Preview Message that triggered the analyzer run
+  sourceAiApiLogId     String?                // Mirrors sourceMessage.aiApiLogId at creation time (convenience)
+  actionType           TuningActionType
+  status               TuningSuggestionStatus @default(PENDING)
+  rationale            String                 @db.Text
+
+  // EDIT action payload (nullable; populated per actionType)
+  beforeText           String?                @db.Text
+  proposedText         String?                @db.Text
+
+  // Target reference fields
+  systemPromptVariant  String?                // 'coordinator' | 'screening'                 (EDIT_SYSTEM_PROMPT)
+  sopCategory          String?                // e.g. 'sop-checkin'                          (EDIT_SOP_CONTENT / EDIT_SOP_ROUTING / CREATE_SOP)
+  sopStatus            String?                // 'DEFAULT'|'INQUIRY'|'CONFIRMED'|'CHECKED_IN' (EDIT_SOP_CONTENT / CREATE_SOP)
+  sopPropertyId        String?                // Set only when AI consulted a property override (EDIT_SOP_CONTENT)
+  sopToolDescription   String?                // New classifier description                  (EDIT_SOP_ROUTING / CREATE_SOP)
+  faqEntryId           String?                // Existing FAQ entry id                       (EDIT_FAQ)
+
+  // CREATE_FAQ payload
+  faqCategory          String?
+  faqScope             String?                // 'GLOBAL' | 'PROPERTY'
+  faqPropertyId        String?
+  faqQuestion          String?                @db.Text
+  faqAnswer            String?                @db.Text
+
+  // Final applied payload (normalized per action type; see data-model.md §3)
+  appliedPayload       Json?                  // e.g. { text } or { question, answer } or { content, toolDescription }
+  appliedAt            DateTime?
+  appliedByUserId      String?
+
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceMessage        Message                @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([sourceMessageId])
 }
