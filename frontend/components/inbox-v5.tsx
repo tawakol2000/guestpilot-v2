@@ -357,7 +357,20 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
           const fromSelf = m.role === 'AI_PRIVATE' || m.role === 'MANAGER_PRIVATE'
           return [{ id: m.id, sender: 'private', text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', fromSelf, imageUrls: imgs }]
         }
-        return [{ id: m.id, sender, text: m.content, time: m.sentAt ? formatTimestamp(m.sentAt) : '', channel: msgChannel, imageUrls: imgs, ...(m.aiMeta ? { aiMeta: m.aiMeta } : {}) }]
+        return [{
+          id: m.id,
+          sender,
+          text: m.content,
+          time: m.sentAt ? formatTimestamp(m.sentAt) : '',
+          channel: msgChannel,
+          imageUrls: imgs,
+          ...(m.aiMeta ? { aiMeta: m.aiMeta } : {}),
+          // Feature 040: propagate Shadow Mode preview state so Send/Edit buttons
+          // persist across refresh and initial page loads (not just SSE-pushed messages).
+          ...(m.previewState ? { previewState: m.previewState } : {}),
+          ...(m.originalAiText ? { originalAiText: m.originalAiText } : {}),
+          ...(m.editedByUserId ? { editedByUserId: m.editedByUserId } : {}),
+        }]
       })
       // Preserve SSE-appended messages not yet in the API response (e.g., arrived during the fetch window).
       // Deduped by trimmed text to avoid duplicates once the API catches up.
@@ -1737,10 +1750,11 @@ export default function InboxV5() {
       const convId = data.conversationId
       if (!convId || !data.message) { if (typeof ack === 'function') ack(); return }
 
-      // Dedup check
-      const msgId = data.message?.id || `sse-${Date.now()}`
-      if (seenMessageIds.current.has(msgId)) { if (typeof ack === 'function') ack(); return }
-      seenMessageIds.current.add(msgId)
+      // Feature 040: Shadow Mode broadcasts the SAME message id twice — once when
+      // the preview is created (previewState=PREVIEW_PENDING) and again when the
+      // admin hits Send (previewState cleared). A pure "skip if seen" dedup would
+      // drop the second broadcast and leave the preview bubble stuck. Instead,
+      // we always let the event through and merge-by-id inside setConversations.
 
       const msg = data.message
       const sender = senderFromRole(data.lastMessageRole || msg.role)
@@ -1806,10 +1820,29 @@ export default function InboxV5() {
           }
 
           const msgsWithChannel = newSseMsgs.map(m => m.channel === undefined ? { ...m, channel: c.channel } : m)
-          const updatedMsgs = [...c.messages, ...msgsWithChannel]
+          // Merge-by-id: if the incoming message already exists (e.g. a shadow
+          // preview being transitioned from PENDING → sent), update it in place
+          // instead of appending a duplicate.
+          const existingIds = new Set(c.messages.map(m => m.id))
+          const updatedMsgs = c.messages.map(m => {
+            const incoming = msgsWithChannel.find(n => n.id === m.id)
+            if (!incoming) return m
+            return {
+              ...m,
+              ...incoming,
+              // Explicit previewState handling: the send broadcast omits
+              // previewState entirely (meaning "cleared"), so we must set it to
+              // undefined rather than letting the spread preserve the old value.
+              previewState: incoming.previewState,
+              originalAiText: incoming.originalAiText ?? m.originalAiText,
+              editedByUserId: incoming.editedByUserId ?? m.editedByUserId,
+            }
+          })
+          const appendNew = msgsWithChannel.filter(m => !existingIds.has(m.id))
+          const allMsgs = [...updatedMsgs, ...appendNew]
           return {
             ...c,
-            messages: updatedMsgs,
+            messages: allMsgs,
             lastMessage: previewText,
             lastMessageSender: sender,
             timestamp: formatTimestamp(data.lastMessageAt || msg.sentAt),

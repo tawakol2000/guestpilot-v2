@@ -163,6 +163,12 @@ export function makeConversationsController(prisma: PrismaClient) {
             channel: m.channel,
             sentAt: m.sentAt,
             imageUrls: m.imageUrls,
+            // Feature 040: Copilot Shadow Mode preview fields — without these the
+            // frontend renders preview bubbles as normal sent messages and the
+            // Send/Edit buttons never appear after a page refresh.
+            previewState: m.previewState,
+            originalAiText: m.originalAiText,
+            editedByUserId: m.editedByUserId,
             ...(aiMetaMap.has(m.id) ? { aiMeta: aiMetaMap.get(m.id) } : {}),
           })),
         });

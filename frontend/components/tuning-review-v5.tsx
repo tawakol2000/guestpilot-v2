@@ -21,7 +21,7 @@ import {
   type TuningSuggestionStatus,
   type TuningAcceptBody,
 } from '@/lib/api'
-import { socket, connectSocket } from '../lib/socket'
+import { socket } from '../lib/socket'
 
 const T = {
   bg: { primary: '#FAFAF9', secondary: '#F5F5F4', tertiary: '#E7E5E4' },
@@ -114,10 +114,10 @@ export function TuningReviewV5(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
 
-  // Socket subscriptions for live updates
+  // Socket subscriptions for live updates.
+  // The socket is already connected by inbox-v5.tsx (the parent page); we only
+  // attach listeners here — no need to call connectSocket() a second time.
   useEffect(() => {
-    connectSocket()
-
     const onCreated = (data: any): void => {
       if (filter !== 'PENDING' && filter !== 'ALL') return
       // Simple approach: refetch. The response is small.

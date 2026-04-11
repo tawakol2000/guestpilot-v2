@@ -40,7 +40,26 @@ const TUNING_ANALYZER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['actionType', 'rationale'],
+        // OpenAI strict mode requires every property listed in `properties` to
+        // also appear in `required`. Nullable fields carry `type: [T, 'null']`
+        // so the model can emit null when a field doesn't apply to the action type.
+        required: [
+          'actionType',
+          'rationale',
+          'beforeText',
+          'proposedText',
+          'systemPromptVariant',
+          'sopCategory',
+          'sopStatus',
+          'sopPropertyId',
+          'sopToolDescription',
+          'faqEntryId',
+          'faqCategory',
+          'faqScope',
+          'faqPropertyId',
+          'faqQuestion',
+          'faqAnswer',
+        ],
         properties: {
           actionType: {
             type: 'string',
@@ -301,6 +320,12 @@ Diagnose the root cause(s) and return suggestions per the schema.`;
 
     console.log(`[tuning-analyzer] [${messageId}] created ${created.length} suggestion(s)`);
   } catch (err) {
-    console.warn(`[tuning-analyzer] [${messageId}] analyzer run failed:`, err instanceof Error ? err.message : err);
+    // Fire-and-forget: never rethrow. Log with full detail so bugs like
+    // strict-schema violations surface in Railway logs instead of vanishing.
+    const asErr = err instanceof Error ? err : new Error(String(err));
+    console.error(
+      `[tuning-analyzer] [${messageId}] analyzer run failed: ${asErr.message}`,
+      { name: asErr.name, stack: asErr.stack?.split('\n').slice(0, 6).join('\n') }
+    );
   }
 }

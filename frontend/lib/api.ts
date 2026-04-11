@@ -139,6 +139,10 @@ export interface ApiMessage {
   sentAt: string
   imageUrls?: string[]
   aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  // Feature 040: Copilot Shadow Mode preview state (null for normal sent messages)
+  previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING' | null
+  originalAiText?: string | null
+  editedByUserId?: string | null
 }
 
 export interface ApiConversationDetail {
