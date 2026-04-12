@@ -1508,6 +1508,7 @@ export default function InboxV5() {
   const [previewEditBuffer, setPreviewEditBuffer] = useState<string>('')
   const [sendingPreviewId, setSendingPreviewId] = useState<string | null>(null)
   const [shadowToast, setShadowToast] = useState<string | null>(null)
+  const [syncingChat, setSyncingChat] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -1660,8 +1661,9 @@ export default function InboxV5() {
     // Initial load
     loadDetail()
 
-    // On-open sync: also trigger Hostaway sync (fire-and-forget)
-    apiSyncConversation(selectedId).then(res => {
+    // On-open sync: force=true to bypass 30s cooldown — the user explicitly
+    // opened this conversation and expects fresh messages from Hostaway.
+    apiSyncConversation(selectedId, true).then(res => {
       // If sync found new messages, refresh immediately
       if (res.newMessages && res.newMessages > 0) loadDetail()
     }).catch(() => {})
@@ -3580,8 +3582,45 @@ export default function InboxV5() {
                     {statusConfig[selectedConv.checkInStatus].label}
                   </span>
                 </div>
-                {/* Right: Connection + Star + Archive + Translate + AI ON */}
+                {/* Right: Refresh + Connection + Star + Archive + Translate + AI ON */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {/* Refresh chat — force-sync from Hostaway */}
+                  <button
+                    disabled={syncingChat}
+                    onClick={async () => {
+                      setSyncingChat(true)
+                      try {
+                        const res = await apiSyncConversation(selectedConv.id, true)
+                        if (res.newMessages && res.newMessages > 0) {
+                          const detail = await apiGetConversation(selectedConv.id)
+                          if (detail) {
+                            setConversations(prev => prev.map(c => c.id === selectedConv.id ? mergeDetail(c, detail) : c))
+                            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+                          }
+                        }
+                      } catch {}
+                      setSyncingChat(false)
+                    }}
+                    title="Refresh chat"
+                    style={{
+                      width: 30, height: 30,
+                      borderRadius: 8,
+                      border: `1px solid ${T.border.default}`,
+                      cursor: syncingChat ? 'not-allowed' : 'pointer',
+                      background: 'transparent',
+                      color: T.text.secondary,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: syncingChat ? 'spin 1s linear infinite' : 'none' }}>
+                      <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                    </svg>
+                  </button>
                   {/* Connection status */}
                   <ConnectionStatus status={connectionStatus} />
                   {/* Star */}
