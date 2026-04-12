@@ -1878,8 +1878,13 @@ export default function InboxV5() {
           if (c.id !== convId) return c
           return {
             ...c,
+            // Unconditional transition: backend already confirmed these ids are
+            // locked. Guarding on the current client previewState meant that
+            // a stale or pre-fix client session (where previewState was missing)
+            // would silently drop the event and leave the bubble stuck at
+            // full opacity with no faded indication.
             messages: c.messages.map(m =>
-              lockedIds.includes(m.id) && m.previewState === 'PREVIEW_PENDING'
+              lockedIds.includes(m.id)
                 ? { ...m, previewState: 'PREVIEW_LOCKED' as const }
                 : m
             ),
@@ -3807,15 +3812,19 @@ export default function InboxV5() {
 
                     const bubbleBg = isGuest
                       ? T.bg.secondary
+                      : isLockedPreview
+                      ? T.bg.tertiary // muted gray for superseded previews — visually "done"
                       : isPreview
-                      ? T.status.amber + '14' // amber tint for preview bubbles
+                      ? T.status.amber + '14' // amber tint for active preview bubbles
                       : isAI
                       ? T.accent + '0D'
                       : isPrivate
                       ? T.status.amber + '1F'
                       : T.accent + '0D'
 
-                    const bubbleBorder = isPreview
+                    const bubbleBorder = isLockedPreview
+                      ? T.border.default // neutral border for locked previews
+                      : isPreview
                       ? T.status.amber + '80'
                       : isPrivate
                       ? T.status.amber + '60'
