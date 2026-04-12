@@ -1,35 +1,69 @@
 /**
  * Feature 040: Copilot Shadow Mode — Tuning Analyzer Service.
  *
- * Fire-and-forget analyzer that runs after an edited preview is sent.
- * Diagnoses the root cause(s) of the gap between the AI's original draft and
- * the admin's final text, then produces zero or more TuningSuggestion rows
- * with concrete EDIT or CREATE actions across system prompts, SOPs, SOP
- * routing, and FAQs.
+ * Two-step fire-and-forget analyzer that runs after an edited preview is sent.
+ *
+ * Step 1 (Classification — gpt-5-nano): Receives the edit diff plus lightweight
+ *   summaries (SOP category names + tool descriptions, FAQ category names, system
+ *   prompt variant names). Classifies which artifact(s) need examination.
+ *
+ * Step 2 (Suggestion — gpt-5.4-mini reasoning:high): Loads ONLY the specific
+ *   content identified in Step 1 and generates concrete EDIT/CREATE suggestions.
+ *
+ * This avoids the previous approach of dumping all FAQs + full system prompts
+ * into a single call (~12K tokens). The two-step pipeline typically runs at
+ * ~2-5K total tokens.
  *
  * Per constitution §I Graceful Degradation, analyzer failures MUST NOT block
  * the Send response — the top-level call site always wraps this in .catch().
- *
- * Implementation lives behind a single exported `analyzePreview` function so
- * the controller can import a stable contract regardless of the analyzer's
- * internal complexity.
  */
 import OpenAI from 'openai';
 import { PrismaClient, TuningActionType } from '@prisma/client';
 import { broadcastCritical } from './socket.service';
+import { FAQ_CATEGORIES, FAQ_CATEGORY_LABELS } from '../config/faq-categories';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Model pinned per research.md Decision 4: "something smart" == main-pipeline
-// model with reasoning effort high. If this turns out insufficient during the
-// tuning period, bump to full gpt-5.4 by changing this constant.
+// ─── Models ─────────────────────────────────────────────────────────────────────
+const CLASSIFIER_MODEL = 'gpt-5-nano';
 const ANALYZER_MODEL = 'gpt-5.4-mini-2026-03-17';
 const ANALYZER_REASONING_EFFORT = 'high' as const;
 
-// ─── JSON schema for analyzer output (strict discriminated union) ────────────
-// Matches the TuningActionType enum exactly. Every suggestion carries a
-// rationale + action-type-specific payload fields. The OpenAI Responses API
-// enforces this at generation time via `strict: true`.
+// ─── Step 1 schema: classify which artifacts to examine ─────────────────────────
+const CLASSIFICATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['targets'],
+  properties: {
+    targets: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 'systemPromptVariant', 'sopCategory', 'sopStatus', 'faqCategory'],
+        properties: {
+          type: {
+            type: 'string',
+            enum: [
+              'system_prompt',   // load the full system prompt for this variant
+              'sop_content',     // load the SOP variant content for this category+status
+              'sop_routing',     // load the SOP tool description for this category
+              'faq_category',    // load FAQ entries for this category
+              'create_sop',      // no content to load — suggest creating a new SOP
+              'create_faq',      // no content to load — suggest creating a new FAQ
+            ],
+          },
+          systemPromptVariant: { type: ['string', 'null'] },
+          sopCategory: { type: ['string', 'null'] },
+          sopStatus: { type: ['string', 'null'] },
+          faqCategory: { type: ['string', 'null'] },
+        },
+      },
+    },
+  },
+} as const;
+
+// ─── Step 2 schema: generate concrete suggestions ───────────────────────────────
 const TUNING_ANALYZER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -40,9 +74,6 @@ const TUNING_ANALYZER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        // OpenAI strict mode requires every property listed in `properties` to
-        // also appear in `required`. Nullable fields carry `type: [T, 'null']`
-        // so the model can emit null when a field doesn't apply to the action type.
         required: [
           'actionType',
           'rationale',
@@ -75,14 +106,14 @@ const TUNING_ANALYZER_SCHEMA = {
           rationale: { type: 'string' },
           beforeText: { type: ['string', 'null'] },
           proposedText: { type: ['string', 'null'] },
-          systemPromptVariant: { type: ['string', 'null'], enum: ['coordinator', 'screening', null] },
+          systemPromptVariant: { type: ['string', 'null'] },
           sopCategory: { type: ['string', 'null'] },
-          sopStatus: { type: ['string', 'null'], enum: ['DEFAULT', 'INQUIRY', 'CONFIRMED', 'CHECKED_IN', null] },
+          sopStatus: { type: ['string', 'null'] },
           sopPropertyId: { type: ['string', 'null'] },
           sopToolDescription: { type: ['string', 'null'] },
           faqEntryId: { type: ['string', 'null'] },
           faqCategory: { type: ['string', 'null'] },
-          faqScope: { type: ['string', 'null'], enum: ['GLOBAL', 'PROPERTY', null] },
+          faqScope: { type: ['string', 'null'] },
           faqPropertyId: { type: ['string', 'null'] },
           faqQuestion: { type: ['string', 'null'] },
           faqAnswer: { type: ['string', 'null'] },
@@ -92,21 +123,36 @@ const TUNING_ANALYZER_SCHEMA = {
   },
 } as const;
 
-// Module-level Prisma reference — set by the caller once at app bootstrap.
-// Keeping a stable reference here lets the fire-and-forget path run without
-// needing the caller to plumb Prisma through every invocation.
+// Module-level Prisma reference.
 let _prismaRef: PrismaClient | null = null;
 export function setTuningAnalyzerPrisma(prisma: PrismaClient): void {
   _prismaRef = prisma;
 }
 
-/**
- * Analyze a sent shadow preview and produce tuning suggestions.
- *
- * Fire-and-forget contract: the caller invokes this with .catch(() => {}) so
- * any failure here MUST NOT propagate. Callers never await for success —
- * they only rely on the promise chain for error logging.
- */
+// ─── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Parse JSON from a Responses API response, trying output_text then output array. */
+function extractResponseJson<T>(response: any): T | null {
+  const outputText: string | undefined = response?.output_text;
+  if (outputText) {
+    try { return JSON.parse(outputText); } catch {}
+  }
+  if (Array.isArray(response?.output)) {
+    for (const item of response.output) {
+      if (item?.type === 'message' && Array.isArray(item.content)) {
+        for (const block of item.content) {
+          if (block?.type === 'output_text' && typeof block.text === 'string') {
+            try { return JSON.parse(block.text); } catch {}
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// ─── Main entry point ───────────────────────────────────────────────────────────
+
 export async function analyzePreview(messageId: string): Promise<void> {
   if (!_prismaRef) {
     console.warn('[tuning-analyzer] prisma not set — skipping');
@@ -121,7 +167,7 @@ export async function analyzePreview(messageId: string): Promise<void> {
         conversation: {
           include: {
             property: true,
-            messages: { orderBy: { sentAt: 'desc' }, take: 40 },
+            messages: { orderBy: { sentAt: 'desc' }, take: 10 },
           },
         },
       },
@@ -133,91 +179,216 @@ export async function analyzePreview(messageId: string): Promise<void> {
     }
 
     if (!message.originalAiText || message.originalAiText === message.content) {
-      // Unedited send — nothing to learn from.
       return;
     }
 
-    // Load the AiApiLog row for this generation turn (if linked) for full context.
+    // ─── Load lightweight context for classification ─────────────────────
+
+    // SOP categories: name + tool description (no content)
+    const sopDefs = await prisma.sopDefinition.findMany({
+      where: { tenantId: message.tenantId },
+      select: { category: true, toolDescription: true },
+    });
+    const sopSummary = sopDefs
+      .map(d => `- ${d.category}: ${d.toolDescription.substring(0, 120)}`)
+      .join('\n');
+
+    // FAQ categories: just the fixed category names
+    const faqCategorySummary = FAQ_CATEGORIES
+      .map(c => `- ${c}: ${FAQ_CATEGORY_LABELS[c]}`)
+      .join('\n');
+
+    // Conversation history (last 10, oldest first)
+    const conversationHistory = message.conversation.messages
+      .slice()
+      .reverse()
+      .map(m => `[${m.role}] ${m.content.substring(0, 200)}`)
+      .join('\n');
+
+    // Tool trace from AiApiLog (if available)
     const aiApiLog = message.aiApiLogId
       ? await prisma.aiApiLog.findUnique({ where: { id: message.aiApiLogId } }).catch(() => null)
       : null;
-
-    // Load all FAQ entries reachable for the conversation's property.
-    const faqEntries = await prisma.faqEntry.findMany({
-      where: {
-        tenantId: message.tenantId,
-        status: 'ACTIVE',
-        OR: [
-          { scope: 'GLOBAL' },
-          ...(message.conversation.propertyId ? [{ propertyId: message.conversation.propertyId }] : []),
-        ],
-      },
-      take: 200,
-    });
-
-    // Build the analyzer prompt.
-    const conversationHistory = message.conversation.messages
-      .reverse() // oldest first
-      .map(m => `[${m.role}] ${m.content}`)
-      .join('\n');
-
-    const systemPromptUsed = (aiApiLog?.systemPrompt || '').toString();
     const ragContext = (aiApiLog?.ragContext as any) || {};
-    const toolCallTrace = Array.isArray(ragContext?.tools)
-      ? JSON.stringify(ragContext.tools, null, 2).substring(0, 4000)
-      : 'no tool trace available';
-    const sopContextSummary = ragContext?.sopClassification
-      ? JSON.stringify(ragContext.sopClassification, null, 2).substring(0, 2000)
-      : 'no SOP classification recorded';
-    const faqSummary = faqEntries
-      .map(f => `- [${f.id}] (${f.category}) Q: ${f.question} | A: ${f.answer.substring(0, 200)}`)
-      .join('\n')
-      .substring(0, 8000);
+    const toolTrace = ragContext?.toolNames || ragContext?.toolName
+      ? `Tools used: ${(ragContext.toolNames || [ragContext.toolName]).join(', ')}`
+      : 'no tools used';
+    const sopClassification = ragContext?.sopCategories
+      ? `SOP classified as: ${ragContext.sopCategories.join(', ')}`
+      : '';
 
-    const analyzerSystemPrompt = `You are a Tuning Analyzer for an AI guest-services platform.
+    // ─── Step 1: Classification (cheap, gpt-5-nano) ─────────────────────
 
-Your job: when a human operator edits an AI-generated reply before sending it to a guest, diagnose WHY the AI's original draft fell short, then propose concrete changes to the AI flow (system prompts, SOPs, SOP classifier routing, and FAQ entries) so the AI would have produced output closer to the operator's edit next time.
+    const classificationPrompt = `You are a root-cause classifier for an AI guest-services platform.
 
-Possible root causes:
-- System prompt guidance is unclear or missing
-- The wrong SOP was selected by the classifier (routing issue)
-- The selected SOP's content is incomplete or incorrect
-- An FAQ entry is unclear, wrong, or unreachable by the classifier
-- A needed SOP or FAQ entry does not exist at all
+A human operator edited an AI-generated reply before sending it. Your job is to classify which AI artifacts (system prompts, SOPs, FAQ entries) are likely the root cause, so we can load ONLY the relevant content for deeper analysis.
 
-Output 0-6 suggestions in the response schema. A single edit may produce multiple suggestions if several root causes are at play. Every suggestion MUST include a concise rationale. For EDIT_* actions, include beforeText (current content) and proposedText (your replacement). For CREATE_* actions, include the new-artifact fields (faqQuestion/faqAnswer for CREATE_FAQ; sopCategory/sopStatus/sopToolDescription/proposedText for CREATE_SOP).
-
-If the edit was purely cosmetic (whitespace, punctuation, emoji) and does not reflect a meaningful improvement, return an empty suggestions array.`;
-
-    const analyzerUserPrompt = `## Original AI draft (what the AI produced)
+## Edit diff
+ORIGINAL AI DRAFT:
 ${message.originalAiText}
 
-## Final sent text (operator's edit)
+OPERATOR'S FINAL TEXT:
 ${message.content}
 
-## Conversation history (oldest first, last 40 messages)
+## Recent conversation (last 10 messages)
 ${conversationHistory}
 
-## System prompt used for this generation
-${systemPromptUsed.substring(0, 10000)}
+## AI generation context
+${toolTrace}
+${sopClassification}
 
-## SOPs consulted during generation
-${sopContextSummary}
+## Available SOP categories (name: description)
+${sopSummary || 'no SOPs configured'}
 
-## Tool-call trace
-${toolCallTrace}
+## Available FAQ categories
+${faqCategorySummary}
 
-## Available FAQ entries (id, category, question, answer preview)
-${faqSummary || 'no FAQ entries available for this property'}
+## System prompt variants
+- coordinator: Main agent prompt for confirmed/checked-in guests
+- screening: Screening agent prompt for inquiry/pending guests
 
-Diagnose the root cause(s) and return suggestions per the schema.`;
+Based on the edit, identify 1-3 targets to examine. For each target, specify which type and the relevant category/variant.
+- If the AI's tone or approach was wrong → system_prompt
+- If the AI used wrong SOP content → sop_content (specify category + status)
+- If the AI routed to the wrong SOP → sop_routing (specify category)
+- If the AI gave wrong factual info that should be in FAQ → faq_category (specify category)
+- If a needed SOP doesn't exist → create_sop
+- If a needed FAQ doesn't exist → create_faq
+- If the edit was purely cosmetic (whitespace, emoji, minor rewording), return an empty targets array.`;
 
-    const response = await (openai as any).responses.create({
+    const classifyResponse = await (openai as any).responses.create({
+      model: CLASSIFIER_MODEL,
+      input: [{ role: 'user', content: classificationPrompt }],
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'tuning_classification',
+          strict: true,
+          schema: CLASSIFICATION_SCHEMA,
+        },
+      },
+    });
+
+    const classification = extractResponseJson<{ targets: Array<Record<string, unknown>> }>(classifyResponse);
+    if (!classification || !Array.isArray(classification.targets) || classification.targets.length === 0) {
+      console.log(`[tuning-analyzer] [${messageId}] classifier returned no targets — edit likely cosmetic`);
+      return;
+    }
+
+    console.log(`[tuning-analyzer] [${messageId}] classified ${classification.targets.length} target(s):`,
+      classification.targets.map(t => `${t.type}${t.sopCategory ? ':' + t.sopCategory : ''}${t.faqCategory ? ':' + t.faqCategory : ''}${t.systemPromptVariant ? ':' + t.systemPromptVariant : ''}`).join(', ')
+    );
+
+    // ─── Step 2: Load targeted content ──────────────────────────────────
+
+    const contextSections: string[] = [];
+
+    for (const target of classification.targets) {
+      switch (target.type) {
+        case 'system_prompt': {
+          const variant = target.systemPromptVariant as string || 'coordinator';
+          const config = await prisma.tenantAiConfig.findUnique({
+            where: { tenantId: message.tenantId },
+            select: { systemPromptCoordinator: true, systemPromptScreening: true },
+          });
+          const prompt = variant === 'screening'
+            ? config?.systemPromptScreening
+            : config?.systemPromptCoordinator;
+          if (prompt) {
+            contextSections.push(`## System prompt (${variant})\n${prompt.substring(0, 6000)}`);
+          }
+          break;
+        }
+        case 'sop_content': {
+          const cat = target.sopCategory as string;
+          const status = target.sopStatus as string || 'DEFAULT';
+          if (!cat) break;
+          const sopDef = await prisma.sopDefinition.findFirst({
+            where: { tenantId: message.tenantId, category: cat },
+            include: { variants: { where: { status } } },
+          });
+          if (sopDef?.variants?.[0]) {
+            contextSections.push(`## SOP content: ${cat} @ ${status}\n${sopDef.variants[0].content.substring(0, 3000)}`);
+          }
+          // Also check property override if conversation has a property
+          if (sopDef && message.conversation.propertyId) {
+            const override = await prisma.sopPropertyOverride.findFirst({
+              where: { sopDefinitionId: sopDef.id, propertyId: message.conversation.propertyId, status },
+            });
+            if (override) {
+              contextSections.push(`## SOP property override: ${cat} @ ${status} (property ${message.conversation.propertyId})\n${override.content.substring(0, 2000)}`);
+            }
+          }
+          break;
+        }
+        case 'sop_routing': {
+          const cat = target.sopCategory as string;
+          if (!cat) break;
+          const sopDef = await prisma.sopDefinition.findFirst({
+            where: { tenantId: message.tenantId, category: cat },
+            select: { toolDescription: true, category: true },
+          });
+          if (sopDef) {
+            contextSections.push(`## SOP routing: ${cat}\nTool description: ${sopDef.toolDescription}`);
+          }
+          break;
+        }
+        case 'faq_category': {
+          const cat = target.faqCategory as string;
+          if (!cat) break;
+          const entries = await prisma.faqEntry.findMany({
+            where: {
+              tenantId: message.tenantId,
+              category: cat,
+              status: 'ACTIVE',
+              OR: [
+                { scope: 'GLOBAL' },
+                ...(message.conversation.propertyId ? [{ propertyId: message.conversation.propertyId }] : []),
+              ],
+            },
+            take: 30,
+          });
+          if (entries.length > 0) {
+            const faqText = entries
+              .map(f => `- [${f.id}] Q: ${f.question}\n  A: ${f.answer.substring(0, 200)}`)
+              .join('\n');
+            contextSections.push(`## FAQ entries: ${cat} (${entries.length} entries)\n${faqText}`);
+          }
+          break;
+        }
+        // create_sop and create_faq don't need to load existing content
+      }
+    }
+
+    // ─── Step 2: Generate suggestions (smart, reasoning:high) ───────────
+
+    const suggestionSystemPrompt = `You are a Tuning Analyzer for an AI guest-services platform.
+
+A human operator edited an AI-generated reply before sending it to a guest. Based on the classification step, we loaded the specific artifacts that are likely the root cause.
+
+Produce 0-6 concrete suggestions. For EDIT_* actions, include beforeText (current content) and proposedText (your replacement). For CREATE_* actions, include the new-artifact fields. Every suggestion MUST include a concise rationale.
+
+If the loaded content looks correct and the edit was minor/cosmetic, return an empty suggestions array.`;
+
+    const suggestionUserPrompt = `## Original AI draft
+${message.originalAiText}
+
+## Operator's final text
+${message.content}
+
+## Classified root causes
+${classification.targets.map(t => `- ${t.type}${t.sopCategory ? ' (' + t.sopCategory + ')' : ''}${t.faqCategory ? ' (' + t.faqCategory + ')' : ''}${t.systemPromptVariant ? ' (' + t.systemPromptVariant + ')' : ''}`).join('\n')}
+
+${contextSections.length > 0 ? '## Loaded artifact content\n' + contextSections.join('\n\n') : '## No artifact content loaded — suggest CREATE actions if appropriate.'}
+
+Generate suggestions per the schema.`;
+
+    const suggestResponse = await (openai as any).responses.create({
       model: ANALYZER_MODEL,
       reasoning: { effort: ANALYZER_REASONING_EFFORT },
       input: [
-        { role: 'system', content: analyzerSystemPrompt },
-        { role: 'user', content: analyzerUserPrompt },
+        { role: 'system', content: suggestionSystemPrompt },
+        { role: 'user', content: suggestionUserPrompt },
       ],
       text: {
         format: {
@@ -229,40 +400,15 @@ Diagnose the root cause(s) and return suggestions per the schema.`;
       },
     });
 
-    // Extract the JSON payload from the Responses API output.
-    let parsed: { suggestions: Array<Record<string, unknown>> } | null = null;
-    const outputText: string | undefined = (response as any)?.output_text;
-    if (outputText) {
-      try {
-        parsed = JSON.parse(outputText);
-      } catch (err) {
-        console.warn(`[tuning-analyzer] [${messageId}] failed to parse output_text:`, err);
-      }
-    }
-    if (!parsed && Array.isArray((response as any)?.output)) {
-      for (const item of (response as any).output) {
-        if (item?.type === 'message' && Array.isArray(item.content)) {
-          for (const block of item.content) {
-            if (block?.type === 'output_text' && typeof block.text === 'string') {
-              try {
-                parsed = JSON.parse(block.text);
-                break;
-              } catch {
-                // continue
-              }
-            }
-          }
-        }
-        if (parsed) break;
-      }
-    }
+    const parsed = extractResponseJson<{ suggestions: Array<Record<string, unknown>> }>(suggestResponse);
 
     if (!parsed || !Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) {
       console.log(`[tuning-analyzer] [${messageId}] no suggestions produced`);
       return;
     }
 
-    // Validate + insert suggestions.
+    // ─── Validate + insert suggestions ──────────────────────────────────
+
     const created: { id: string }[] = [];
     await prisma.$transaction(async tx => {
       for (const raw of parsed!.suggestions) {
@@ -311,7 +457,6 @@ Diagnose the root cause(s) and return suggestions per the schema.`;
       return;
     }
 
-    // Broadcast so the Tuning tab can live-update.
     broadcastCritical(message.tenantId, 'tuning_suggestion_created', {
       sourceMessageId: message.id,
       suggestionIds: created.map(c => c.id),
@@ -320,8 +465,6 @@ Diagnose the root cause(s) and return suggestions per the schema.`;
 
     console.log(`[tuning-analyzer] [${messageId}] created ${created.length} suggestion(s)`);
   } catch (err) {
-    // Fire-and-forget: never rethrow. Log with full detail so bugs like
-    // strict-schema violations surface in Railway logs instead of vanishing.
     const asErr = err instanceof Error ? err : new Error(String(err));
     console.error(
       `[tuning-analyzer] [${messageId}] analyzer run failed: ${asErr.message}`,
