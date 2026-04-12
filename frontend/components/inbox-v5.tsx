@@ -2642,7 +2642,7 @@ export default function InboxV5() {
             <TasksBox key={selectedConv.id} conversationId={selectedConv.id} dragHandle={dragHandle} />
             {/* Document Checklist — below tasks */}
             {selectedConv.documentChecklist && (
-              <div style={{ marginTop: 8, padding: '8px 12px', background: T.bg.secondary, borderRadius: 8, border: `1px solid ${T.border.default}` }}>
+              <div style={{ marginTop: 16, padding: '8px 12px', background: T.bg.secondary, borderRadius: 8, border: `1px solid ${T.border.default}` }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <FileText size={12} strokeWidth={2.5} />
                   DOCUMENTS
