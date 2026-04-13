@@ -102,10 +102,10 @@ export async function apiSignup(
   })
 }
 
-export async function apiChangePassword(newPassword: string): Promise<{ ok: boolean }> {
+export async function apiChangePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
   return apiFetch('/auth/change-password', {
     method: 'POST',
-    body: JSON.stringify({ newPassword }),
+    body: JSON.stringify({ currentPassword, newPassword }),
   })
 }
 

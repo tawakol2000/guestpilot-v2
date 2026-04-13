@@ -618,16 +618,18 @@ function AIToggleSection({ onImportComplete }: { onImportComplete: () => void })
 
 // ─── Section F: Change Password ───────────────────────────────────────────────
 function ChangePasswordSection(): React.ReactElement {
+  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
   const mismatch = confirm.length > 0 && newPassword !== confirm
   const tooShort = newPassword.length > 0 && newPassword.length < 8
-  const canSubmit = newPassword.length >= 8 && newPassword === confirm && !loading
+  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirm && !loading
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -635,8 +637,9 @@ function ChangePasswordSection(): React.ReactElement {
     setLoading(true)
     setMsg(null)
     try {
-      await apiChangePassword(newPassword)
+      await apiChangePassword(currentPassword, newPassword)
       setMsg({ text: 'Password updated successfully', ok: true })
+      setCurrentPassword('')
       setNewPassword('')
       setConfirm('')
     } catch (err: any) {
@@ -667,6 +670,14 @@ function ChangePasswordSection(): React.ReactElement {
       <div style={cardHeaderStyle}>Change Password</div>
       <div style={cardBodyStyle}>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 340 }}>
+          <PasswordField
+            label="Current password"
+            value={currentPassword}
+            onChange={setCurrentPassword}
+            show={showCurrent}
+            onToggleShow={() => setShowCurrent(v => !v)}
+            inputStyle={inputStyle}
+          />
           <PasswordField
             label="New password"
             value={newPassword}
