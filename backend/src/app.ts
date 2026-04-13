@@ -26,6 +26,7 @@ import { shadowPreviewRouter } from './routes/shadow-preview';
 import { tuningSuggestionRouter } from './routes/tuning-suggestion';
 import { messagesRouter } from './routes/messages';
 import { aiLogsRouter } from './routes/ai-logs';
+import { meRouter } from './routes/me';
 import { errorMiddleware } from './middleware/error';
 import { getMessageSyncStats } from './services/message-sync.service';
 import { setTuningAnalyzerPrisma } from './services/tuning-analyzer.service';
@@ -90,6 +91,7 @@ export function createApp(prisma: PrismaClient) {
   // Route files for previously-inlined endpoints
   app.use('/api/messages', messagesRouter(prisma));
   app.use('/api/ai-logs', aiLogsRouter(prisma));
+  app.use('/api/me', meRouter(prisma));
 
   // ── 404 catch-all (log unknown routes to help debug webhook config) ──────
   app.use((req, res) => {

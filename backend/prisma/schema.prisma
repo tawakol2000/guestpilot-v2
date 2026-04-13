@@ -10,6 +10,7 @@ datasource db {
 model Tenant {
   id                    String                @id @default(cuid())
   email                 String                @unique
+  name                  String?
   passwordHash          String
   hostawayApiKey        String
   hostawayAccountId     String
@@ -119,6 +120,8 @@ model Reservation {
   @@unique([tenantId, hostawayReservationId])
   @@index([tenantId])
   @@index([propertyId])
+  @@index([tenantId, checkIn])
+  @@index([tenantId, checkOut])
 }
 
 model Conversation {
