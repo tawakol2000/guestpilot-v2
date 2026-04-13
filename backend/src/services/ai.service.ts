@@ -1266,6 +1266,7 @@ async function handleEscalation(
           sentAt: new Date(),
           channel: 'OTHER',
           communicationType: 'internal',
+          source: 'ai',
         },
       });
       broadcastCritical(tenantId, 'message', {
@@ -2140,6 +2141,7 @@ export async function generateAndSendAiReply(
             previewState: 'PREVIEW_PENDING',
             originalAiText: guestMessage,
             aiApiLogId,
+            source: 'ai',
           },
         });
 
@@ -2202,6 +2204,8 @@ export async function generateAndSendAiReply(
         channel: lastMsgChannel,
         communicationType,
         hostawayMessageId: '',
+        source: 'ai',
+        deliveryStatus: 'pending',
       },
     });
 
@@ -2226,17 +2230,26 @@ export async function generateAndSendAiReply(
       );
       console.log(`[AI] [${conversationId}] Sent reply via Hostaway`);
 
-      // Update DB record with Hostaway message ID if returned
+      // Update DB record with Hostaway message ID + delivery status
       const hostawayMsgId = (sendResult as any)?.result?.id;
-      if (hostawayMsgId) {
-        await prisma.message.update({
-          where: { id: savedMessage.id },
-          data: { hostawayMessageId: String(hostawayMsgId) },
-        }).catch(err => console.warn(`[AI] [${conversationId}] Failed to update hostawayMessageId:`, err));
-      }
+      await prisma.message.update({
+        where: { id: savedMessage.id },
+        data: {
+          ...(hostawayMsgId ? { hostawayMessageId: String(hostawayMsgId) } : {}),
+          deliveryStatus: 'sent',
+          deliveredAt: new Date(),
+        },
+      }).catch(err => console.warn(`[AI] [${conversationId}] Failed to update delivery status:`, err));
     } catch (sendErr) {
       // T033: Message is saved in DB but not delivered — escalate to manager
       console.error(`[AI] [${conversationId}] Hostaway send failed:`, sendErr);
+      await prisma.message.update({
+        where: { id: savedMessage.id },
+        data: {
+          deliveryStatus: 'failed',
+          deliveryError: sendErr instanceof Error ? sendErr.message : String(sendErr),
+        },
+      }).catch(err => console.warn(`[AI] [${conversationId}] Failed to update delivery failure:`, err));
       await handleEscalation(
         prisma, tenantId, conversationId, context.propertyId,
         'message-delivery-failure',
