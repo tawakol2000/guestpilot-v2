@@ -16,7 +16,7 @@ export function taskController(prisma: PrismaClient) {
         if (propertyId) where.propertyId = propertyId;
         const tasks = await prisma.task.findMany({
           where,
-          orderBy: [{ status: 'asc' }, { urgency: 'asc' }, { createdAt: 'desc' }],
+          orderBy: [{ status: 'desc' }, { urgency: 'asc' }, { createdAt: 'desc' }],
           include: {
             conversation: { include: { guest: true, property: true } },
             property: true,
@@ -108,14 +108,34 @@ export function taskController(prisma: PrismaClient) {
       try {
         const tenantId = (req as any).tenantId;
         const { id } = req.params;
-        const { status, dueDate, assignee } = req.body;
+        const { status, dueDate, assignee, title, note, urgency } = req.body;
         const data: Record<string, unknown> = {};
         if (status !== undefined) {
           data.status = status;
           if (status === 'completed') data.completedAt = new Date();
+          if (status === 'open') data.completedAt = null;
         }
         if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
         if (assignee !== undefined) data.assignee = assignee || null;
+        if (title !== undefined) {
+          if (typeof title !== 'string' || title.length < 1 || title.length > 200) {
+            res.status(400).json({ error: 'title must be 1-200 characters' }); return;
+          }
+          data.title = title;
+        }
+        if (note !== undefined) {
+          if (note !== null && typeof note === 'string' && note.length > 2000) {
+            res.status(400).json({ error: 'note must be at most 2000 characters' }); return;
+          }
+          data.note = note || null;
+        }
+        if (urgency !== undefined) {
+          const validUrgencies = ['info_request', 'scheduled', 'urgent', 'modification_request', 'complaint'];
+          if (!validUrgencies.includes(urgency)) {
+            res.status(400).json({ error: `urgency must be one of: ${validUrgencies.join(', ')}` }); return;
+          }
+          data.urgency = urgency;
+        }
         const existing = await prisma.task.findFirst({ where: { id, tenantId } });
         if (!existing) { res.status(404).json({ error: 'Task not found' }); return; }
         const task = await prisma.task.update({ where: { id }, data });
