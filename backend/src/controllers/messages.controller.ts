@@ -11,7 +11,7 @@ import { processFaqSuggestion } from '../services/faq-suggest.service';
 
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
-  channel: z.string().optional(),
+  channel: z.string().nullable().optional().transform(v => v ?? undefined),
 });
 
 export function makeMessagesController(prisma: PrismaClient) {
@@ -43,6 +43,8 @@ export function makeMessagesController(prisma: PrismaClient) {
         const rawSource = req.headers['x-client-source'] as string | undefined;
         const clientSource = rawSource && ['web', 'ios'].includes(rawSource) ? rawSource : null;
 
+        console.log(`[DEBUG-SEND] conversationId=${id}, content="${content?.substring(0, 50)}", channel="${channel}", source="${clientSource}", rawBody.channel=${JSON.stringify(req.body?.channel)}`);
+
         let hostawayMsgId = '';
         let deliveryStatus: string = 'pending';
         let deliveryError: string | null = null;
@@ -53,6 +55,7 @@ export function makeMessagesController(prisma: PrismaClient) {
           const communicationType = channel === 'whatsapp' ? 'whatsapp'
             : channel === 'email' ? 'email'
             : 'channel';
+          console.log(`[DEBUG-SEND] About to call Hostaway: hwConvId=${conversation.hostawayConversationId}, communicationType=${communicationType}`);
           try {
             const hwResult = await hostawayService.sendMessageToConversation(
               conversation.tenant.hostawayAccountId,
@@ -72,8 +75,11 @@ export function makeMessagesController(prisma: PrismaClient) {
           }
         } else {
           // No Hostaway conversation ID — message saved locally only
+          console.log(`[DEBUG-SEND] No hostawayConversationId for conv ${id} — skipping Hostaway send`);
           deliveryStatus = 'pending';
         }
+
+        console.log(`[DEBUG-SEND] Result: deliveryStatus=${deliveryStatus}, error=${deliveryError}, hwMsgId=${hostawayMsgId}`);
 
         const hostCommType = channel === 'whatsapp' ? 'whatsapp'
           : channel === 'email' ? 'email'
