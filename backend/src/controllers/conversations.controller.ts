@@ -91,6 +91,7 @@ export function makeConversationsController(prisma: PrismaClient) {
         }
 
         await prisma.conversation.updateMany({ where: { id, tenantId }, data: { unreadCount: 0 } });
+        broadcastToTenant(tenantId, 'unread_count_changed', { conversationId: id, unreadCount: 0 });
 
         // Fetch AI logs for this conversation to attach SOP/tool metadata to AI messages
         const aiLogs = await prisma.aiApiLog.findMany({
@@ -130,6 +131,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           id: conversation.id,
           status: conversation.status,
           channel: conversation.channel,
+          starred: conversation.starred,
           lastMessageAt: conversation.lastMessageAt,
           hostawayConversationId: conversation.hostawayConversationId,
           guest: {
@@ -278,7 +280,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { aiEnabled, aiMode: aiEnabled ? aiMode : 'autopilot' },
         });
 
-        broadcastToTenant(tenantId, 'property_ai_changed', { propertyId, aiMode: aiEnabled ? aiMode : 'autopilot' });
+        broadcastToTenant(tenantId, 'property_ai_changed', { propertyId, aiMode: aiEnabled ? aiMode : 'autopilot', aiEnabled });
 
         res.json({ ok: true, propertyId, aiMode, updated: result.count });
       } catch (err) {
@@ -708,7 +710,7 @@ export function makeConversationsController(prisma: PrismaClient) {
         if (result.skipped) {
           res.json({ ok: true, skipped: true, reason: result.reason, lastSyncedAt: result.lastSyncedAt });
         } else {
-          res.json({ ok: true, newMessages: result.newMessages, backfilled: result.backfilled, syncedAt: result.syncedAt });
+          res.json({ ok: true, newMessages: result.newMessages, updatedMessages: result.updatedMessages, backfilled: result.backfilled, syncedAt: result.syncedAt });
         }
       } catch (err) {
         console.error('[Conversations] syncConversation error:', err);
