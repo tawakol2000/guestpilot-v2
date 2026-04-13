@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient, ReservationStatus } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { reservationActionLimiter } from '../middleware/rate-limit';
+import { broadcastToTenant } from '../services/socket.service';
 import { AuthenticatedRequest, JwtPayload } from '../types';
 import { decrypt } from '../lib/encryption';
 import {
@@ -238,6 +239,13 @@ export function reservationsRouter(prisma: PrismaClient) {
           where: { id: log.id },
           data: { status: 'SUCCESS', hostawayResponse: result.data as any },
         });
+        // Broadcast for multi-device sync
+        const conv = await prisma.conversation.findFirst({ where: { reservationId, tenantId }, select: { id: true } });
+        broadcastToTenant(tenantId, 'reservation_updated', {
+          reservationId,
+          conversationIds: conv ? [conv.id] : [],
+          status: 'CONFIRMED',
+        });
         res.json({ success: true, action: 'approve', reservationId: reservation.hostawayReservationId, previousStatus: reservation.status });
         return;
       }
@@ -314,6 +322,13 @@ export function reservationsRouter(prisma: PrismaClient) {
         await prisma.inquiryActionLog.update({
           where: { id: log.id },
           data: { status: 'SUCCESS', hostawayResponse: result.data as any },
+        });
+        // Broadcast for multi-device sync
+        const conv = await prisma.conversation.findFirst({ where: { reservationId, tenantId }, select: { id: true } });
+        broadcastToTenant(tenantId, 'reservation_updated', {
+          reservationId,
+          conversationIds: conv ? [conv.id] : [],
+          status: 'CANCELLED',
         });
         res.json({ success: true, data: result.data });
         return;

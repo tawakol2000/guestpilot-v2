@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient, AlterationStatus, AlterationActionType, AlterationActionStatus, MessageRole, Channel } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { broadcastToTenant } from '../services/socket.service';
 import { AuthenticatedRequest } from '../types';
 import { decrypt } from '../lib/encryption';
 import {
@@ -156,6 +157,13 @@ export function alterationsRouter(prisma: PrismaClient) {
           console.warn('[Alterations] Failed to insert accept context message:', err),
         );
 
+        // Broadcast for multi-device sync
+        const convAccept = await prisma.conversation.findFirst({ where: { reservationId, tenantId }, select: { id: true } });
+        broadcastToTenant(tenantId, 'reservation_updated', {
+          reservationId,
+          conversationIds: convAccept ? [convAccept.id] : [],
+        });
+
         res.json({ success: true, action: 'accept', reservationId: reservation.hostawayReservationId });
         return;
       }
@@ -257,6 +265,13 @@ export function alterationsRouter(prisma: PrismaClient) {
         insertAlterationOutcomeMessage(prisma, tenantId, reservationId, alteration, 'rejected', userEmail).catch(err =>
           console.warn('[Alterations] Failed to insert reject context message:', err),
         );
+
+        // Broadcast for multi-device sync
+        const convReject = await prisma.conversation.findFirst({ where: { reservationId, tenantId }, select: { id: true } });
+        broadcastToTenant(tenantId, 'reservation_updated', {
+          reservationId,
+          conversationIds: convReject ? [convReject.id] : [],
+        });
 
         res.json({ success: true, action: 'reject', reservationId: reservation.hostawayReservationId });
         return;
