@@ -143,12 +143,18 @@ export interface ApiMessage {
   previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING' | null
   originalAiText?: string | null
   editedByUserId?: string | null
+  // Delivery tracking (HOST/AI messages only, null for inbound)
+  deliveryStatus?: 'sent' | 'pending' | 'failed' | null
+  deliveryError?: string | null
+  deliveredAt?: string | null
+  source?: 'web' | 'ios' | 'ai' | 'system' | null
 }
 
 export interface ApiConversationDetail {
   id: string
   status: string
   channel: string
+  starred?: boolean
   lastMessageAt: string
   hostawayConversationId: string
   guest: {
