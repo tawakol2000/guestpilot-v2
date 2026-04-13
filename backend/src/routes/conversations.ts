@@ -1,6 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { messageSendLimiter } from '../middleware/rate-limit';
 import { makeConversationsController } from '../controllers/conversations.controller';
 import { makeMessagesController } from '../controllers/messages.controller';
 import { AuthenticatedRequest } from '../types';
@@ -21,15 +22,15 @@ export function conversationsRouter(prisma: PrismaClient): Router {
   router.patch('/:id/star', ((req, res) => convCtrl.toggleStar(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/resolve', ((req, res) => convCtrl.resolve(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/ai-toggle', ((req, res) => convCtrl.aiToggle(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/:id/messages', ((req, res) => msgCtrl.send(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/:id/notes', ((req, res) => msgCtrl.sendNote(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/:id/messages/translate', ((req, res) => msgCtrl.translateAndSend(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/:id/messages', messageSendLimiter as any, ((req, res) => msgCtrl.send(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/:id/notes', messageSendLimiter as any, ((req, res) => msgCtrl.sendNote(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/:id/messages/translate', messageSendLimiter as any, ((req, res) => msgCtrl.translateAndSend(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/translate-message', ((req, res) => msgCtrl.translateMessage(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/inquiry-action', ((req, res) => convCtrl.inquiryAction(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/cancel-ai', ((req, res) => convCtrl.cancelPendingAi(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/send-ai-now', ((req, res) => convCtrl.sendAiNow(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.patch('/:id/ai-mode', ((req, res) => convCtrl.setAiMode(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/:id/approve-suggestion', ((req, res) => convCtrl.approveSuggestion(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/:id/approve-suggestion', messageSendLimiter as any, ((req, res) => convCtrl.approveSuggestion(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/sync', ((req, res) => convCtrl.syncConversation(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   return router;

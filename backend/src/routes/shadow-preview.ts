@@ -5,6 +5,7 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { messageSendLimiter } from '../middleware/rate-limit';
 import { makeShadowPreviewController } from '../controllers/shadow-preview.controller';
 
 export function shadowPreviewRouter(prisma: PrismaClient): Router {
@@ -13,7 +14,7 @@ export function shadowPreviewRouter(prisma: PrismaClient): Router {
 
   const ctrl = makeShadowPreviewController(prisma);
 
-  router.post('/:messageId/send', (req: any, res) => ctrl.send(req, res));
+  router.post('/:messageId/send', messageSendLimiter as any, (req: any, res) => ctrl.send(req, res));
 
   return router;
 }

@@ -53,3 +53,27 @@ export const webhookLimiter = rateLimit({
   store: createRedisStore('rl:webhook:'),
   passOnStoreError: true,
 });
+
+// 10 outbound message sends per minute per tenant (covers messages, notes, translate, approve, shadow send)
+export const messageSendLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded. Try again in a minute.' },
+  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  store: createRedisStore('rl:msg-send:'),
+  passOnStoreError: true,
+});
+
+// 5 reservation actions (approve/reject) per minute per tenant
+export const reservationActionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded. Try again in a minute.' },
+  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  store: createRedisStore('rl:res-action:'),
+  passOnStoreError: true,
+});

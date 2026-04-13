@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient, ReservationStatus } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { reservationActionLimiter } from '../middleware/rate-limit';
 import { AuthenticatedRequest, JwtPayload } from '../types';
 import { decrypt } from '../lib/encryption';
 import {
@@ -195,7 +196,7 @@ export function reservationsRouter(prisma: PrismaClient) {
 
   // ── POST /api/reservations/:reservationId/approve ─────────────────
 
-  router.post('/:reservationId/approve', async (req: any, res) => {
+  router.post('/:reservationId/approve', reservationActionLimiter as any, async (req: any, res) => {
     try {
       const { tenantId } = req as AuthenticatedRequest;
       const { reservationId } = req.params;
@@ -276,7 +277,7 @@ export function reservationsRouter(prisma: PrismaClient) {
 
   // ── POST /api/reservations/:reservationId/reject ──────────────────
 
-  router.post('/:reservationId/reject', async (req: any, res) => {
+  router.post('/:reservationId/reject', reservationActionLimiter as any, async (req: any, res) => {
     try {
       const { tenantId } = req as AuthenticatedRequest;
       const { reservationId } = req.params;
