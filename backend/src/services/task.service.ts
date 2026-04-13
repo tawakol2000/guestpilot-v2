@@ -46,6 +46,11 @@ export async function updateTask(prisma: PrismaClient, id: string, tenantId: str
 export async function deleteTask(prisma: PrismaClient, id: string, tenantId: string) {
   // Verify ownership
   const task = await prisma.task.findFirst({ where: { id, tenantId } });
-  if (!task) throw new Error('Task not found');
-  return prisma.task.delete({ where: { id } });
+  if (!task) {
+    const err: any = new Error('Task not found');
+    err.status = 404;
+    throw err;
+  }
+  await prisma.task.delete({ where: { id } });
+  return task; // Return the deleted task for broadcast payload
 }

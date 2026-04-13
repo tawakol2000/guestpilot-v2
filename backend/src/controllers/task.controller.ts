@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import * as taskService from '../services/task.service';
+import { broadcastToTenant } from '../services/socket.service';
 import { AuthenticatedRequest } from '../types';
 
 export function taskController(prisma: PrismaClient) {
@@ -58,6 +59,7 @@ export function taskController(prisma: PrismaClient) {
         const task = await taskService.createTask(prisma, {
           tenantId, conversationId, title, note, urgency: urgency || 'info_request', type, source: 'manual',
         });
+        broadcastToTenant(tenantId, 'new_task', { conversationId, task });
         res.status(201).json(task);
       } catch (err) { next(err); }
     },
@@ -81,7 +83,7 @@ export function taskController(prisma: PrismaClient) {
           },
           include: { property: true },
         });
-        res.status(201).json({
+        const mapped = {
           id: task.id,
           title: task.title,
           note: task.note,
@@ -96,7 +98,9 @@ export function taskController(prisma: PrismaClient) {
           propertyId: task.propertyId,
           propertyName: task.property?.name || null,
           guestName: null,
-        });
+        };
+        broadcastToTenant(tenantId, 'new_task', { conversationId: null, task: mapped });
+        res.status(201).json(mapped);
       } catch (err) { next(err); }
     },
 
@@ -115,6 +119,7 @@ export function taskController(prisma: PrismaClient) {
         const existing = await prisma.task.findFirst({ where: { id, tenantId } });
         if (!existing) { res.status(404).json({ error: 'Task not found' }); return; }
         const task = await prisma.task.update({ where: { id }, data });
+        broadcastToTenant(tenantId, 'task_updated', { conversationId: task.conversationId, task });
         res.json(task);
       } catch (err) { next(err); }
     },
@@ -123,7 +128,8 @@ export function taskController(prisma: PrismaClient) {
       try {
         const tenantId = (req as any).tenantId;
         const { id } = req.params;
-        await taskService.deleteTask(prisma, id, tenantId);
+        const deleted = await taskService.deleteTask(prisma, id, tenantId);
+        broadcastToTenant(tenantId, 'task_deleted', { taskId: id, conversationId: deleted.conversationId });
         res.json({ ok: true });
       } catch (err) { next(err); }
     },
