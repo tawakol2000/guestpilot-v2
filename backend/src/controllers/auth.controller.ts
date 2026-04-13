@@ -109,9 +109,25 @@ export function makeAuthController(prisma: PrismaClient) {
           return;
         }
 
-        const { newPassword } = req.body as { newPassword?: string };
+        const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+        if (!currentPassword) {
+          res.status(400).json({ error: 'Current password is required' });
+          return;
+        }
         if (!newPassword || newPassword.length < 8) {
-          res.status(400).json({ error: 'Password must be at least 8 characters' });
+          res.status(400).json({ error: 'New password must be at least 8 characters' });
+          return;
+        }
+
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        if (!tenant) {
+          res.status(404).json({ error: 'Tenant not found' });
+          return;
+        }
+
+        const valid = await bcrypt.compare(currentPassword, tenant.passwordHash);
+        if (!valid) {
+          res.status(401).json({ error: 'Current password incorrect' });
           return;
         }
 
