@@ -45,6 +45,7 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
 
       let synced = 0;
       let totalNew = 0;
+      let totalUpdated = 0;
       let skipped = 0;
 
       for (const conv of conversations) {
@@ -70,6 +71,7 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
           if (!result.skipped) {
             synced++;
             totalNew += result.newMessages;
+            totalUpdated += result.updatedMessages;
           }
         } catch (err: any) {
           console.warn(`[MessageSync] Failed for conv=${conv.id}: ${err.message}`);
@@ -77,8 +79,8 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
         }
       }
 
-      if (synced > 0 || totalNew > 0) {
-        console.log(`[MessageSync] Cycle: synced=${synced} new=${totalNew} skipped=${skipped}`);
+      if (synced > 0 || totalNew > 0 || totalUpdated > 0) {
+        console.log(`[MessageSync] Cycle: synced=${synced} new=${totalNew} updated=${totalUpdated} skipped=${skipped}`);
       }
     } catch (err: any) {
       console.error('[MessageSync] Job cycle failed:', err.message);

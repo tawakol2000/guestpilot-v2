@@ -8,7 +8,8 @@
  *
  * Core principles:
  *   - Never modify or remove local messages (AI, private notes)
- *   - Deduplicate by hostawayMessageId (Set-based in-memory diff)
+ *   - Deduplicate by hostawayMessageId (Map-based in-memory diff)
+ *   - Detect and update edited messages (content comparison)
  *   - Fuzzy AI match for outgoing messages (±60s, first 100 chars)
  *   - Graceful failure — never block the AI from responding
  *   - Idempotent — running twice produces the same result
@@ -60,6 +61,7 @@ export interface SyncOptions {
 
 export interface SyncResult {
   newMessages: number;
+  updatedMessages: number;
   backfilled: number;
   skipped: boolean;
   reason?: string;
@@ -84,7 +86,7 @@ export async function syncConversationMessages(
     // Skip if no Hostaway conversation ID
     if (!hostawayConversationId) {
       _skipCount++;
-      return { newMessages: 0, backfilled: 0, skipped: true, reason: 'no-hostaway-conversation-id', hostRespondedAfterGuest: false };
+      return { newMessages: 0, updatedMessages: 0, backfilled: 0, skipped: true, reason: 'no-hostaway-conversation-id', hostRespondedAfterGuest: false };
     }
 
     // Cooldown check: skip if synced within last 30 seconds (unless force)
@@ -100,7 +102,7 @@ export async function syncConversationMessages(
           const durationMs = Date.now() - startMs;
           _totalDurationMs += durationMs;
           return {
-            newMessages: 0, backfilled: 0, skipped: true,
+            newMessages: 0, updatedMessages: 0, backfilled: 0, skipped: true,
             reason: 'recently-synced', hostRespondedAfterGuest: false,
             lastSyncedAt: conversation.lastSyncedAt.toISOString(),
           };
@@ -117,7 +119,7 @@ export async function syncConversationMessages(
       await prisma.conversation.update({ where: { id: conversationId }, data: { lastSyncedAt: new Date() } });
       const durationMs = Date.now() - startMs;
       _totalDurationMs += durationMs;
-      return { newMessages: 0, backfilled: 0, skipped: false, hostRespondedAfterGuest: false, syncedAt: new Date().toISOString() };
+      return { newMessages: 0, updatedMessages: 0, backfilled: 0, skipped: false, hostRespondedAfterGuest: false, syncedAt: new Date().toISOString() };
     }
 
     // Load local messages for diff
@@ -126,11 +128,11 @@ export async function syncConversationMessages(
       select: { id: true, hostawayMessageId: true, role: true, content: true, sentAt: true },
     });
 
-    // Build Set of local hostawayMessageIds for O(1) lookup
-    const localIdSet = new Set<string>();
+    // Build Map of local hostawayMessageIds → {id, content} for O(1) lookup + edit detection
+    const localIdMap = new Map<string, { id: string; content: string }>();
     for (const msg of localMessages) {
       if (msg.hostawayMessageId && msg.hostawayMessageId !== '') {
-        localIdSet.add(msg.hostawayMessageId);
+        localIdMap.set(msg.hostawayMessageId, { id: msg.id, content: msg.content });
       }
     }
 
@@ -147,6 +149,7 @@ export async function syncConversationMessages(
     const defaultChannel = convWithReservation?.channel || Channel.OTHER;
 
     let newMessages = 0;
+    let updatedMessages = 0;
     let newGuestMessages = 0;
     let backfilled = 0;
     let latestSyncedSentAt: Date | null = null;
@@ -159,8 +162,38 @@ export async function syncConversationMessages(
       const hostawayMsgId = String(hwMsg.id);
       if (!hostawayMsgId || hostawayMsgId === '') continue;
 
-      // Already have this message
-      if (localIdSet.has(hostawayMsgId)) continue;
+      // Already have this message — check if content was edited
+      const existingLocal = localIdMap.get(hostawayMsgId);
+      if (existingLocal) {
+        const newBody = hwMsg.body || '';
+        if (existingLocal.content !== newBody) {
+          // Content changed — guest edited the message on Airbnb/Booking
+          await prisma.message.update({
+            where: { id: existingLocal.id },
+            data: { content: newBody },
+          });
+          updatedMessages++;
+          console.log(`[Sync] Updated edited message ${existingLocal.id} (hostawayMsgId=${hostawayMsgId})`);
+          // Broadcast so open inboxes update in real-time
+          const editedRole = hwMsg.isIncoming === 1 ? 'GUEST' : 'HOST';
+          const editedChannel = ((hwMsg as Record<string, unknown>).communicationType as string | undefined)?.toLowerCase() === 'whatsapp'
+            ? Channel.WHATSAPP : defaultChannel;
+          broadcastCritical(tenantId, 'message', {
+            conversationId,
+            message: {
+              id: existingLocal.id,
+              role: editedRole,
+              content: newBody,
+              sentAt: parseHostawayDate(hwMsg.insertedOn ?? hwMsg.createdAt ?? (hwMsg as Record<string, unknown>)['date']).toISOString(),
+              channel: String(editedChannel),
+              imageUrls: (hwMsg.imagesUrls as string[] | undefined) || [],
+            },
+            lastMessageRole: editedRole,
+            lastMessageAt: new Date().toISOString(),
+          });
+        }
+        continue;
+      }
 
       const isIncoming = hwMsg.isIncoming === 1;
       const sentAt = parseHostawayDate(
@@ -190,7 +223,7 @@ export async function syncConversationMessages(
           // Remove from fuzzy match pool so it's not matched again
           const idx = localAiMessages.indexOf(matchingAi);
           if (idx >= 0) localAiMessages.splice(idx, 1);
-          localIdSet.add(hostawayMsgId);
+          localIdMap.set(hostawayMsgId, { id: '', content: '' });
           continue;
         }
 
@@ -218,7 +251,7 @@ export async function syncConversationMessages(
 
         newMessages++;
         if (role === MessageRole.GUEST) newGuestMessages++;
-        localIdSet.add(hostawayMsgId);
+        localIdMap.set(hostawayMsgId, { id: '', content: '' });
 
         // Track latest synced message timestamp
         if (!latestSyncedSentAt || sentAt > latestSyncedSentAt) {
@@ -242,7 +275,7 @@ export async function syncConversationMessages(
       } catch (err: any) {
         // P2002 = unique constraint violation (race with webhook) — skip
         if (err?.code === 'P2002') {
-          localIdSet.add(hostawayMsgId);
+          localIdMap.set(hostawayMsgId, { id: '', content: '' });
           continue;
         }
         throw err;
@@ -315,7 +348,7 @@ export async function syncConversationMessages(
     }
 
     return {
-      newMessages, backfilled, skipped: false,
+      newMessages, updatedMessages, backfilled, skipped: false,
       hostRespondedAfterGuest,
       syncedAt: new Date().toISOString(),
     };
@@ -330,6 +363,6 @@ export async function syncConversationMessages(
       } catch {}
     }
     console.warn(`[MessageSync] Failed (non-fatal) conv=${conversationId}: ${err.message}`);
-    return { newMessages: 0, backfilled: 0, skipped: true, reason: 'sync-error', hostRespondedAfterGuest: false };
+    return { newMessages: 0, updatedMessages: 0, backfilled: 0, skipped: true, reason: 'sync-error', hostRespondedAfterGuest: false };
   }
 }
