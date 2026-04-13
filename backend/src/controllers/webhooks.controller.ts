@@ -188,6 +188,7 @@ async function processWebhook(
   try {
     switch (eventType) {
       case 'message.received':
+      case 'message.updated':
         await handleNewMessage(tenantId, data, prisma);
         break;
       case 'reservation.created':
@@ -466,7 +467,7 @@ async function handleNewMessage(
     // Broadcast the raw message immediately for real-time UI
     broadcastCritical(tenantId, 'message', {
       conversationId: conversation.id,
-      message: { role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: conversation.channel, imageUrls: [] },
+      message: { ...(savedMsg?.id ? { id: savedMsg.id } : {}), role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: String(conversation.channel), imageUrls: [] },
       lastMessageRole: 'GUEST', lastMessageAt: new Date().toISOString(),
     });
     sendPushToTenant(tenantId, {
@@ -585,6 +586,7 @@ async function handleNewMessage(
 
   // Deduplicate via create + P2002 catch (atomic, no race window)
   const msgImageUrls: string[] = (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean);
+  let savedMessageId: string | undefined;
   try {
     const savedMessage = await prisma.message.create({
       data: {
@@ -600,6 +602,8 @@ async function handleNewMessage(
       },
     });
 
+    savedMessageId = savedMessage.id;
+
     // Fire-and-forget: caption images so conversation history shows "[Image: description]"
     if (msgImageUrls.length > 0) {
       captionMessageImages(savedMessage.id, msgImageUrls, data.body || '', prisma)
@@ -608,7 +612,36 @@ async function handleNewMessage(
   } catch (err: any) {
     // P2002 = unique constraint violation — message already exists (inserted by sync or duplicate webhook)
     if (err?.code === 'P2002') {
-      console.log(`[Webhook] Duplicate message ${hostawayMsgId} — checking if AI still needs to be triggered`);
+      console.log(`[Webhook] Duplicate message ${hostawayMsgId} — checking for content edit + AI trigger`);
+
+      // Check if this is a message edit (same hostawayMessageId, different content)
+      const newBody = data.body || '';
+      const existing = await prisma.message.findFirst({
+        where: { conversationId: conversation.id, hostawayMessageId: hostawayMsgId },
+        select: { id: true, content: true },
+      });
+      if (existing && existing.content !== newBody) {
+        await prisma.message.update({
+          where: { id: existing.id },
+          data: { content: newBody },
+        });
+        console.log(`[Webhook] [${tenantId}] Updated edited message ${existing.id} (hostawayMsgId=${hostawayMsgId})`);
+        // Broadcast the updated content so open inboxes refresh in real-time
+        broadcastCritical(tenantId, 'message', {
+          conversationId: conversation.id,
+          message: {
+            id: existing.id,
+            role: isGuest ? 'GUEST' : 'HOST',
+            content: newBody,
+            sentAt: data.date ? parseHostawayDate(data.date).toISOString() : new Date().toISOString(),
+            channel: String(msgChannel),
+            imageUrls: (data.attachments || []).map((a: { url: string }) => a.url).filter(Boolean),
+          },
+          lastMessageRole: isGuest ? 'GUEST' : 'HOST',
+          lastMessageAt: new Date().toISOString(),
+        });
+      }
+
       // Message exists, but AI may not have been triggered yet (sync doesn't trigger AI).
       // Only schedule AI if no PendingAiReply exists or was recently fired for this conversation.
       if (isGuest && conversation.reservation.aiEnabled && conversation.reservation.aiMode !== 'off') {
@@ -675,6 +708,7 @@ async function handleNewMessage(
   broadcastCritical(tenantId, 'message', {
     conversationId: conversation.id,
     message: {
+      ...(savedMessageId ? { id: savedMessageId } : {}),
       role: roleStr,
       content: msgContent,
       sentAt: msgSentAt,
