@@ -169,6 +169,11 @@ model Message {
   originalAiText      String?       @db.Text // AI's original generated text (present for previews and kept after Send for audit)
   editedByUserId      String?       // Populated on Send if the admin edited before sending
   aiApiLogId          String?       // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
+  // ─── iOS readiness: delivery tracking + client source audit trail ───
+  deliveryStatus      String?       // 'sent' | 'pending' | 'failed' | null (null for inbound/guest messages)
+  deliveryError       String?       // Error message when deliveryStatus = 'failed'
+  deliveredAt         DateTime?     // Timestamp of successful Hostaway delivery
+  source              String?       // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
   conversation        Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
