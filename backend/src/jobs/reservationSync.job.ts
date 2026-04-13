@@ -102,6 +102,22 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
               });
 
               try {
+                // Inherit AI mode from property's most recent reservation (so property-level toggle persists)
+                let inheritedAiMode = 'copilot';
+                let inheritedAiEnabled = true;
+                try {
+                  const recentRes = await prisma.reservation.findFirst({
+                    where: { tenantId: tenant.id, propertyId: property.id },
+                    orderBy: { createdAt: 'desc' },
+                    select: { aiMode: true, aiEnabled: true },
+                  });
+                  if (recentRes) {
+                    inheritedAiMode = recentRes.aiMode;
+                    inheritedAiEnabled = recentRes.aiEnabled;
+                    console.log(`[ReservationSync] Inherited aiMode=${inheritedAiMode} aiEnabled=${inheritedAiEnabled} from prior reservation for property ${property.id}`);
+                  }
+                } catch { /* fall back to defaults */ }
+
                 const reservation = await prisma.reservation.create({
                   data: {
                     tenantId: tenant.id, propertyId: property.id, guestId: guest.id,
@@ -111,8 +127,8 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     guestCount: res.numberOfGuests || 1,
                     channel: mapChannel(res.channelName),
                     status,
-                    aiEnabled: true,
-                    aiMode: 'copilot',
+                    aiEnabled: inheritedAiEnabled,
+                    aiMode: inheritedAiMode,
                     totalPrice: res.totalPrice != null ? Number(res.totalPrice) : undefined,
                     hostPayout: res.hostPayout != null ? Number(res.hostPayout) : undefined,
                     cleaningFee: res.cleaningFee != null ? Number(res.cleaningFee) : undefined,
