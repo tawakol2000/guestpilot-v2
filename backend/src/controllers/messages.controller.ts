@@ -10,7 +10,7 @@ import { createMessage, stripCodeFences } from '../services/ai.service';
 import { processFaqSuggestion } from '../services/faq-suggest.service';
 
 const sendMessageSchema = z.object({
-  content: z.string().min(1),
+  content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
   channel: z.string().optional(),
 });
 
@@ -39,7 +39,15 @@ export function makeMessagesController(prisma: PrismaClient) {
 
         const { content, channel } = parsed.data;
 
+        // Read optional client source header for audit trail
+        const rawSource = req.headers['x-client-source'] as string | undefined;
+        const clientSource = rawSource && ['web', 'ios'].includes(rawSource) ? rawSource : null;
+
         let hostawayMsgId = '';
+        let deliveryStatus: string = 'pending';
+        let deliveryError: string | null = null;
+        let deliveredAt: Date | null = null;
+
         if (conversation.hostawayConversationId) {
           // Map frontend channel keys to Hostaway communicationType
           const communicationType = channel === 'whatsapp' ? 'whatsapp'
@@ -55,9 +63,16 @@ export function makeMessagesController(prisma: PrismaClient) {
             );
             // Capture Hostaway message ID to prevent duplicates when webhook echoes back
             hostawayMsgId = String((hwResult as any)?.result?.id || '');
+            deliveryStatus = 'sent';
+            deliveredAt = new Date();
           } catch (err: any) {
             console.warn(`[Messages] Hostaway send failed (message still saved locally): ${err.message}`);
+            deliveryStatus = 'failed';
+            deliveryError = err.message || 'Hostaway send failed';
           }
+        } else {
+          // No Hostaway conversation ID — message saved locally only
+          deliveryStatus = 'pending';
         }
 
         const hostCommType = channel === 'whatsapp' ? 'whatsapp'
@@ -73,6 +88,10 @@ export function makeMessagesController(prisma: PrismaClient) {
             communicationType: hostCommType,
             sentAt: new Date(),
             hostawayMessageId: hostawayMsgId,
+            deliveryStatus,
+            deliveryError,
+            deliveredAt,
+            source: clientSource,
           },
         });
 
@@ -82,6 +101,17 @@ export function makeMessagesController(prisma: PrismaClient) {
         });
 
         await cancelPendingAiReply(id, prisma);
+
+        // Broadcast delivery status if failed so other devices/tabs see the failure
+        if (deliveryStatus === 'failed') {
+          const { broadcastToTenant } = await import('../services/socket.service');
+          broadcastToTenant(tenantId, 'message_delivery_status', {
+            messageId: message.id,
+            conversationId: id,
+            status: 'failed',
+            error: deliveryError,
+          });
+        }
 
         // Auto-suggest FAQ: if conversation has an open info_request task, classify the reply
         try {
@@ -119,6 +149,9 @@ export function makeMessagesController(prisma: PrismaClient) {
           role: message.role,
           content: message.content,
           sentAt: message.sentAt,
+          deliveryStatus: message.deliveryStatus,
+          deliveryError: message.deliveryError,
+          source: message.source,
         });
       } catch (err) {
         console.error('[Messages] send error:', err);
@@ -177,18 +210,33 @@ export function makeMessagesController(prisma: PrismaClient) {
           return;
         }
 
+        const rawSource = req.headers['x-client-source'] as string | undefined;
+        const clientSource = rawSource && ['web', 'ios'].includes(rawSource) ? rawSource : null;
+
+        let deliveryStatus: string = 'pending';
+        let deliveryError: string | null = null;
+        let deliveredAt: Date | null = null;
+
         // Send translated message to Hostaway — respect the chosen channel
         if (conversation.hostawayConversationId) {
           const communicationType = channel === 'whatsapp' ? 'whatsapp'
             : channel === 'email' ? 'email'
             : 'channel';
-          await hostawayService.sendMessageToConversation(
-            conversation.tenant.hostawayAccountId,
-            conversation.tenant.hostawayApiKey,
-            conversation.hostawayConversationId,
-            translatedContent,
-            communicationType
-          );
+          try {
+            await hostawayService.sendMessageToConversation(
+              conversation.tenant.hostawayAccountId,
+              conversation.tenant.hostawayApiKey,
+              conversation.hostawayConversationId,
+              translatedContent,
+              communicationType
+            );
+            deliveryStatus = 'sent';
+            deliveredAt = new Date();
+          } catch (err: any) {
+            console.warn(`[Messages] Hostaway translate+send failed: ${err.message}`);
+            deliveryStatus = 'failed';
+            deliveryError = err.message || 'Hostaway send failed';
+          }
         }
 
         const translateCommType = channel === 'whatsapp' ? 'whatsapp'
@@ -203,6 +251,10 @@ export function makeMessagesController(prisma: PrismaClient) {
             channel: conversation.channel,
             communicationType: translateCommType,
             sentAt: new Date(),
+            deliveryStatus,
+            deliveryError,
+            deliveredAt,
+            source: clientSource,
           },
         });
 
@@ -213,11 +265,24 @@ export function makeMessagesController(prisma: PrismaClient) {
 
         await cancelPendingAiReply(id, prisma);
 
+        if (deliveryStatus === 'failed') {
+          const { broadcastToTenant } = await import('../services/socket.service');
+          broadcastToTenant(tenantId, 'message_delivery_status', {
+            messageId: message.id,
+            conversationId: id,
+            status: 'failed',
+            error: deliveryError,
+          });
+        }
+
         res.status(201).json({
           id: message.id,
           role: message.role,
           content: message.content,
           sentAt: message.sentAt,
+          deliveryStatus: message.deliveryStatus,
+          deliveryError: message.deliveryError,
+          source: message.source,
         });
       } catch (err) {
         console.error('[Messages] translateAndSend error:', err);
@@ -247,6 +312,9 @@ export function makeMessagesController(prisma: PrismaClient) {
 
         const { content } = parsed.data;
 
+        const rawSource = req.headers['x-client-source'] as string | undefined;
+        const clientSource = rawSource && ['web', 'ios'].includes(rawSource) ? rawSource : null;
+
         const message = await prisma.message.create({
           data: {
             conversationId: id,
@@ -256,6 +324,7 @@ export function makeMessagesController(prisma: PrismaClient) {
             channel: conversation.channel,
             communicationType: 'internal',
             sentAt: new Date(),
+            source: clientSource,
           },
         });
 
