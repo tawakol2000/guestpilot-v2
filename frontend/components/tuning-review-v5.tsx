@@ -148,7 +148,7 @@ export function TuningReviewV5(): React.ReactElement {
       setSuggestions(prev => prev.map(x => (x.id === s.id ? { ...x, status: 'ACCEPTED' } : x)))
     } catch (err: any) {
       console.error('[TuningReview] accept failed:', err)
-      showToast('error', err?.body?.error || 'Accept failed')
+      showToast('error', err?.data?.detail || err?.data?.error || err?.message || 'Accept failed')
     } finally {
       setBusyId(null)
     }

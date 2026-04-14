@@ -4306,7 +4306,7 @@ export default function InboxV5() {
                                           setEditingPreviewId(null)
                                           setPreviewEditBuffer('')
                                         } catch (err: any) {
-                                          const detail = err?.body?.error || err?.message || 'Send failed'
+                                          const detail = err?.data?.error || err?.message || 'Send failed'
                                           if (detail === 'PREVIEW_NOT_PENDING') {
                                             setShadowToast('This preview has already been superseded.')
                                           } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {
@@ -4361,7 +4361,7 @@ export default function InboxV5() {
                                       try {
                                         await apiSendShadowPreview(msg.id)
                                       } catch (err: any) {
-                                        const detail = err?.body?.error || err?.message || 'Send failed'
+                                        const detail = err?.data?.error || err?.message || 'Send failed'
                                         if (detail === 'PREVIEW_NOT_PENDING') {
                                           setShadowToast('This preview has already been superseded.')
                                         } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {

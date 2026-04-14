@@ -425,6 +425,33 @@ Generate suggestions per the schema.`;
         if (actionType === 'CREATE_SOP' && (!raw.sopCategory || !raw.sopStatus || !raw.sopToolDescription || !raw.proposedText)) continue;
         if (actionType === 'CREATE_FAQ' && (!raw.faqCategory || !raw.faqScope || !raw.faqQuestion || !raw.faqAnswer)) continue;
 
+        // Verify model-supplied faqEntryId actually exists for this tenant. If the
+        // model hallucinated or mangled the cuid, try to recover by matching on
+        // question text (beforeText or faqQuestion) before giving up.
+        let resolvedFaqEntryId = raw.faqEntryId as string | null;
+        if (actionType === 'EDIT_FAQ' && resolvedFaqEntryId) {
+          const exists = await tx.faqEntry.findFirst({
+            where: { id: resolvedFaqEntryId, tenantId: message.tenantId },
+            select: { id: true },
+          });
+          if (!exists) {
+            const probeQuestion = typeof raw.beforeText === 'string'
+              ? raw.beforeText.replace(/^Q:\s*/i, '').split('\n')[0].trim()
+              : typeof raw.faqQuestion === 'string' ? raw.faqQuestion.trim() : '';
+            const recovered = probeQuestion
+              ? await tx.faqEntry.findFirst({
+                  where: { tenantId: message.tenantId, question: probeQuestion },
+                  select: { id: true },
+                })
+              : null;
+            if (!recovered) {
+              console.warn(`[tuning-analyzer] [${message.id}] dropping EDIT_FAQ with unresolved faqEntryId=${resolvedFaqEntryId}`);
+              continue;
+            }
+            resolvedFaqEntryId = recovered.id;
+          }
+        }
+
         const row = await tx.tuningSuggestion.create({
           data: {
             tenantId: message.tenantId,
@@ -439,7 +466,7 @@ Generate suggestions per the schema.`;
             sopStatus: (raw.sopStatus as string | null) ?? null,
             sopPropertyId: (raw.sopPropertyId as string | null) ?? null,
             sopToolDescription: (raw.sopToolDescription as string | null) ?? null,
-            faqEntryId: (raw.faqEntryId as string | null) ?? null,
+            faqEntryId: resolvedFaqEntryId ?? null,
             faqCategory: (raw.faqCategory as string | null) ?? null,
             faqScope: (raw.faqScope as string | null) ?? null,
             faqPropertyId: (raw.faqPropertyId as string | null) ?? null,

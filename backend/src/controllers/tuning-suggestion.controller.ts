@@ -228,11 +228,27 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
               return;
             }
-            const faq = await prisma.faqEntry.findFirst({
+            let faq = await prisma.faqEntry.findFirst({
               where: { id: suggestion.faqEntryId, tenantId },
             });
+            // Fallback: analyzer may have persisted a hallucinated/stale cuid.
+            // Recover by matching on question text from beforeText or faqQuestion.
             if (!faq) {
-              res.status(404).json({ error: 'FAQ_NOT_FOUND' });
+              const probeQuestion = (suggestion.beforeText || '')
+                .replace(/^Q:\s*/i, '')
+                .split('\n')[0]
+                .trim() || (suggestion.faqQuestion || '').trim();
+              if (probeQuestion) {
+                faq = await prisma.faqEntry.findFirst({
+                  where: { tenantId, question: probeQuestion },
+                });
+              }
+            }
+            if (!faq) {
+              res.status(404).json({
+                error: 'FAQ_NOT_FOUND',
+                detail: `FAQ entry ${suggestion.faqEntryId} no longer exists for this tenant.`,
+              });
               return;
             }
             // Default to replacing the answer; if beforeText matched the question, replace the question.
