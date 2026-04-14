@@ -9,6 +9,7 @@ import { initSocketIO } from './services/socket.service';
 import { startAiReplyWorker } from './workers/aiReply.worker';
 import { closeQueue } from './services/queue.service';
 import { flushObservability } from './services/observability.service';
+import { shutdownApns } from './services/apns.service';
 import { setPropertySearchPrisma } from './services/property-search.service';
 import { startFaqMaintenanceJob } from './jobs/faqMaintenance.job';
 import { startReservationSyncJob } from './jobs/reservationSync.job';
@@ -76,6 +77,7 @@ async function main() {
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();
+    await shutdownApns();
     httpServer.close(async () => {
       await prisma.$disconnect();
       console.log('[Server] Shutdown complete');
