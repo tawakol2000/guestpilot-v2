@@ -1344,8 +1344,10 @@ export default function ListingsV5(): React.ReactElement {
           dirty: true,
         },
       }))
-    } catch (err) {
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.data?.error || err?.message || 'Unknown error'
       console.error('Summarize failed:', err)
+      window.alert(`Summarize failed: ${detail}`)
     } finally {
       setSummarizingIds(prev => {
         const next = new Set(prev)
@@ -1362,8 +1364,10 @@ export default function ListingsV5(): React.ReactElement {
       await apiSummarizeAll()
       // Reload to get updated descriptions
       await loadProperties()
-    } catch (err) {
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.data?.error || err?.message || 'Unknown error'
       console.error('Summarize all failed:', err)
+      window.alert(`Summarize all failed: ${detail}`)
     } finally {
       setSummarizingAll(false)
     }

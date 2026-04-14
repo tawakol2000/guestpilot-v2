@@ -34,15 +34,21 @@ async function summarizeProperty(
 
   const response = await (openai.responses as any).create({
     model: 'gpt-5-nano',
-    max_output_tokens: 300,
+    max_output_tokens: 600,
     instructions: SUMMARIZE_INSTRUCTIONS,
     input: description,
-    reasoning: { effort: 'none' },
+    reasoning: { effort: 'minimal' },
     store: true,
   });
 
-  const summary: string = response.output_text || '';
-  if (!summary) return null;
+  const summary: string = (response.output_text || '').trim();
+  if (!summary) {
+    console.warn(
+      `[Properties] Empty summary from OpenAI for ${property.name} (${propertyId}). ` +
+      `status=${response.status} usage=${JSON.stringify(response.usage)}`
+    );
+    return null;
+  }
 
   // Read existing KB to merge (don't overwrite other fields)
   const existingKb = (property.customKnowledgeBase as Record<string, unknown>) || {};
@@ -173,14 +179,18 @@ export function propertiesRouter(prisma: PrismaClient): Router {
 
       const result = await summarizeProperty(prisma, propertyId, tenantId);
       if (!result) {
-        res.status(500).json({ error: 'Summarization returned no result' });
+        res.status(502).json({
+          error: 'SUMMARY_EMPTY',
+          detail: 'OpenAI returned no summary text (check server logs for status/usage).',
+        });
         return;
       }
 
       res.json({ summary: result.summary });
     } catch (err) {
-      console.error('[Properties] Summarize failed:', err);
-      res.status(500).json({ error: 'Summarization failed' });
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('[Properties] Summarize failed:', detail, err);
+      res.status(502).json({ error: 'SUMMARIZATION_FAILED', detail });
     }
   }) as RequestHandler);
 
