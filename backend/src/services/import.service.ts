@@ -130,12 +130,15 @@ export async function runImport(
     return h < 12 ? `${h}:00 AM` : `${h - 12}:00 PM`;
   }
 
-  // ── 0. Delete existing data for clean slate (skip for conversationsOnly) ──
-  if (!conversationsOnly) {
-    report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
-    await deleteAllData(tenantId, prisma);
-  } else {
-    // For conversations-only: delete conversations/messages but preserve properties, reservations, guests, and RAG
+  // ── 0. Delete existing data for clean slate ──
+  // Full sync: wipe everything and rebuild.
+  // listingsOnly: DO NOT wipe — property.upsert is idempotent and conversations/messages
+  //   must be preserved (pre-fix bug: this branch destroyed all messages when only
+  //   listings were requested).
+  // conversationsOnly: wipe only conversations/messages/tasks, preserve properties+reservations+guests+RAG.
+  if (listingsOnly) {
+    report({ phase: 'deleting', completed: 0, total: 0, message: 'Preparing listings sync (no data cleared)…' });
+  } else if (conversationsOnly) {
     report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing conversations…' });
     await prisma.pendingAiReply.deleteMany({ where: { tenantId } });
     const msgIds = await prisma.message.findMany({ where: { tenantId }, select: { id: true } });
@@ -145,6 +148,9 @@ export async function runImport(
     await prisma.message.deleteMany({ where: { tenantId } });
     await prisma.task.deleteMany({ where: { tenantId } });
     await prisma.conversation.deleteMany({ where: { tenantId } });
+  } else {
+    report({ phase: 'deleting', completed: 0, total: 0, message: 'Clearing previous data…' });
+    await deleteAllData(tenantId, prisma);
   }
 
   // ── 1. Import listings → properties (skip for conversationsOnly) ──────────
