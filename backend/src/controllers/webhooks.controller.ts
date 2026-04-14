@@ -11,7 +11,7 @@ import { PrismaClient, MessageRole, Channel, ReservationStatus, AlterationStatus
 import { scheduleAiReply, cancelPendingAiReply } from '../services/debounce.service';
 import { broadcastToTenant, broadcastCritical } from '../services/socket.service';
 import { getReservation } from '../services/hostaway.service';
-import { sendPushToTenant } from '../services/push.service';
+import { sendPushToTenantAll } from '../services/push.service';
 import { fetchAlteration } from '../services/hostaway-alterations.service';
 import { captionMessageImages } from '../services/image-caption.service';
 import { decrypt } from '../lib/encryption';
@@ -401,13 +401,13 @@ async function handleNewMessage(
             const resyncGuestName = conversation.guest?.name || 'Guest';
             const resyncPropertyName = conversation.property?.name || 'Property';
             if (updates.status === ReservationStatus.CANCELLED) {
-              sendPushToTenant(tenantId, {
+              sendPushToTenantAll(tenantId, {
                 title: 'Booking Cancelled',
                 body: `${resyncGuestName} — ${resyncPropertyName}`,
                 data: { type: 'reservation' },
               }, prisma).catch(err => console.warn('[Push] Resync cancel notification failed:', err));
             } else {
-              sendPushToTenant(tenantId, {
+              sendPushToTenantAll(tenantId, {
                 title: 'Booking Modified',
                 body: `${resyncGuestName} — ${resyncPropertyName}`,
                 data: { type: 'reservation' },
@@ -470,7 +470,7 @@ async function handleNewMessage(
       message: { ...(savedMsg?.id ? { id: savedMsg.id } : {}), role: 'GUEST', content: data.body || '', sentAt: new Date().toISOString(), channel: String(conversation.channel), imageUrls: [] },
       lastMessageRole: 'GUEST', lastMessageAt: new Date().toISOString(),
     });
-    sendPushToTenant(tenantId, {
+    sendPushToTenantAll(tenantId, {
       title: 'Alteration Request',
       body: `${guestName} (${propertyName}) submitted a booking modification.`,
       data: { conversationId: conversation.id, taskId: task.id, type: 'task' },
@@ -684,7 +684,7 @@ async function handleNewMessage(
     const guestName = conversation.guest?.name || 'Guest';
     const propertyName = conversation.property?.name || 'Property';
     const messageBody = data.body || '';
-    sendPushToTenant(tenantId, {
+    sendPushToTenantAll(tenantId, {
       title: `${guestName} — ${propertyName}`,
       body: messageBody.substring(0, 200),
       data: { conversationId: conversation.id, type: 'message' },
@@ -907,7 +907,7 @@ async function handleNewReservation(
   // Web Push notification for new bookings — fire-and-forget
   const checkInStr = data.arrivalDate || 'TBD';
   const checkOutStr = data.departureDate || 'TBD';
-  sendPushToTenant(tenantId, {
+  sendPushToTenantAll(tenantId, {
     title: 'New Booking',
     body: `${guestName} — ${property.name}, ${checkInStr} to ${checkOutStr}`,
     data: { type: 'reservation' },
@@ -1027,7 +1027,7 @@ async function handleReservationUpdated(
     const displayPropertyName = resProperty?.name || 'Property';
 
     if (newStatus === ReservationStatus.CANCELLED) {
-      sendPushToTenant(tenantId, {
+      sendPushToTenantAll(tenantId, {
         title: 'Booking Cancelled',
         body: `${displayGuestName} — ${displayPropertyName}`,
         data: { type: 'reservation' },
@@ -1035,7 +1035,7 @@ async function handleReservationUpdated(
     } else {
       const checkInStr = data.arrivalDate || 'TBD';
       const checkOutStr = data.departureDate || 'TBD';
-      sendPushToTenant(tenantId, {
+      sendPushToTenantAll(tenantId, {
         title: 'Booking Modified',
         body: `${displayGuestName} — ${displayPropertyName}, ${checkInStr} to ${checkOutStr}`,
         data: { type: 'reservation' },

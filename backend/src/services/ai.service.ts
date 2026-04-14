@@ -24,7 +24,7 @@ import { createChecklist, updateChecklist, hasPendingItems, type DocumentCheckli
 import { getToolDefinitions } from './tool-definition.service';
 import { resolveVariables, applyPropertyOverrides } from './template-variable.service';
 import { callWebhook } from './webhook-tool.service';
-import { sendPushToTenant } from './push.service';
+import { sendPushToTenantAll } from './push.service';
 import { generateOrExtendSummary } from './summary.service';
 import { syncConversationMessages } from './message-sync.service';
 import { lockOlderPreviews } from './shadow-preview.service';
@@ -1230,7 +1230,7 @@ async function handleEscalation(
         broadcastToTenant(tenantId, 'new_task', { conversationId, task });
 
         // Web Push notification for new tasks — fire-and-forget
-        sendPushToTenant(tenantId, {
+        sendPushToTenantAll(tenantId, {
           title: `New Task: ${urgency}`,
           body: `${title} — ${note?.substring(0, 150) || ''}`,
           data: { conversationId, taskId: task.id, type: 'task' },

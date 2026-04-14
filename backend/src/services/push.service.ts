@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { PrismaClient } from '@prisma/client';
+import { sendApnsToTenant } from './apns.service';
 
 // Initialize VAPID — silently disabled if env vars missing
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
@@ -74,6 +75,49 @@ export async function sendPushToTenant(
   } catch (err) {
     console.warn('[Push] sendPushToTenant failed (non-fatal):', err);
   }
+}
+
+// Fan-out wrapper: fires to both Web Push and APNs in parallel. Each
+// channel already swallows its own errors, so this never throws.
+//
+// TODO: silent push for ai_suggestion and reservation_updated status-only
+// events (Batch E.2 on iOS side must be ready to handle content-available
+// before we flip any call sites to { silent: true }).
+export async function sendPushToTenantAll(
+  tenantId: string,
+  payload: PushPayload,
+  prisma: PrismaClient
+): Promise<void> {
+  const badge = await getUnreadBadgeCount(tenantId, prisma).catch(() => undefined);
+
+  const stringifiedData: Record<string, string> = {};
+  if (payload.data) {
+    for (const [k, v] of Object.entries(payload.data)) {
+      if (v !== null && v !== undefined) stringifiedData[k] = String(v);
+    }
+  }
+
+  await Promise.allSettled([
+    sendPushToTenant(tenantId, payload, prisma),
+    sendApnsToTenant(
+      tenantId,
+      {
+        title: payload.title,
+        body: payload.body,
+        data: stringifiedData,
+        badge,
+      },
+      prisma
+    ),
+  ]);
+}
+
+async function getUnreadBadgeCount(tenantId: string, prisma: PrismaClient): Promise<number> {
+  const result = await prisma.conversation.aggregate({
+    where: { tenantId, status: 'OPEN' },
+    _sum: { unreadCount: true },
+  });
+  return result._sum.unreadCount ?? 0;
 }
 
 export async function subscribe(
