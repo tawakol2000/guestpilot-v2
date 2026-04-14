@@ -294,10 +294,17 @@ export async function runImport(
   // Only import reservations for properties we imported, and skip cancelled/past ones
   const importedListingIds = new Set(listingsToImport.map(l => String(l.id)));
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Skip dead states: cancelled, already-checked-out, and expired/denied/timed-out inquiries.
+  // These exist in Hostaway forever and should not create inbox entries on re-sync.
+  const DEAD_STATUSES = new Set([
+    'cancelled', 'canceled', 'declined', 'expired', 'ownerstay',
+    'checkedout', 'checked_out',
+    'inquirytimedout', 'inquirynotpossible', 'inquirydenied', 'inquiryexpired',
+  ]);
   const filteredReservations = reservations.filter(r => {
     if (!importedListingIds.has(String(r.listingMapId))) return false;
     const status = (r.status || '').toLowerCase();
-    if (status === 'cancelled' || status === 'canceled') return false;
+    if (DEAD_STATUSES.has(status)) return false;
     // Skip past reservations (checkout already happened)
     if (r.departureDate && new Date(r.departureDate) < today) return false;
     return true;
@@ -434,6 +441,16 @@ async function importConversationMessages(
     // No Hostaway conversation yet — that's fine
   }
 
+  // Do not create empty conversation shells. If Hostaway has no thread for this
+  // reservation, skip — the conversation will materialize via webhook when the
+  // first message arrives. (Previously, every synced reservation got an empty
+  // "Checked Out" inbox row even when no messages existed.)
+  if (!hostawayConvId) {
+    if (!conversation) return;
+    // Existing conversation with no Hostaway link — nothing new to fetch.
+    return;
+  }
+
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
@@ -445,18 +462,15 @@ async function importConversationMessages(
         hostawayConversationId: hostawayConvId,
         status: 'OPEN',
         unreadCount: 0,
-        lastMessageAt: reservation.checkIn,  // sort by arrival when no messages
+        lastMessageAt: reservation.checkIn,
       },
     });
-  } else if (hostawayConvId && !conversation.hostawayConversationId) {
-    // Update with the Hostaway conversation ID if we now have it
+  } else if (!conversation.hostawayConversationId) {
     conversation = await prisma.conversation.update({
       where: { id: conversation.id },
       data: { hostawayConversationId: hostawayConvId },
     });
   }
-
-  if (!hostawayConvId) return;
 
   // Fetch and import messages
   const msgsRes = await hostawayService.listConversationMessages(
