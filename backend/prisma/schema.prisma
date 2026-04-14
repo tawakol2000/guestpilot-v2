@@ -37,6 +37,7 @@ model Tenant {
   sopDefinitions          SopDefinition[]
   toolDefinitions         ToolDefinition[]
   pushSubscriptions       PushSubscription[]
+  iosPushTokens           IosPushToken[]
   inquiryActionLogs       InquiryActionLog[]
   bookingAlterations      BookingAlteration[]
   alterationActionLogs    AlterationActionLog[]
@@ -557,6 +558,22 @@ model PushSubscription {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, endpoint])
+  @@index([tenantId])
+}
+
+// ─── iOS Push Tokens (APNs) ────────────────────────────────────────────────
+
+model IosPushToken {
+  id          String   @id @default(cuid())
+  tenantId    String
+  deviceToken String
+  deviceId    String?
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, deviceToken])
   @@index([tenantId])
 }
 
