@@ -501,6 +501,28 @@ export type TuningActionType =
 
 export type TuningSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
 
+// Feature 041 sprint 02 taxonomy; nullable on legacy rows written by live `main`.
+export type TuningDiagnosticCategory =
+  | 'SOP_CONTENT'
+  | 'SOP_ROUTING'
+  | 'FAQ'
+  | 'SYSTEM_PROMPT'
+  | 'TOOL_CONFIG'
+  | 'MISSING_CAPABILITY'
+  | 'PROPERTY_OVERRIDE'
+  | 'NO_FIX'
+
+export type TuningTriggerType =
+  | 'MANUAL'
+  | 'EDIT_TRIGGERED'
+  | 'REJECT_TRIGGERED'
+  | 'COMPLAINT_TRIGGERED'
+  | 'THUMBS_DOWN_TRIGGERED'
+  | 'CLUSTER_TRIGGERED'
+  | 'ESCALATION_TRIGGERED'
+
+export type TuningApplyMode = 'IMMEDIATE' | 'QUEUED'
+
 export interface TuningSuggestion {
   id: string
   status: TuningSuggestionStatus
@@ -522,6 +544,13 @@ export interface TuningSuggestion {
   sourceMessageId: string
   sourceConversationId: string | null
   createdAt: string
+  // Feature 041 sprint 02/03 extensions — null on legacy rows.
+  diagnosticCategory: TuningDiagnosticCategory | null
+  diagnosticSubLabel: string | null
+  confidence: number | null
+  triggerType: TuningTriggerType | null
+  evidenceBundleId: string | null
+  applyMode: TuningApplyMode | null
 }
 
 export async function apiListTuningSuggestions(
@@ -541,6 +570,12 @@ export interface TuningAcceptBody {
   editedToolDescription?: string
   editedQuestion?: string
   editedAnswer?: string
+  // Feature 041 sprint 03: manager-supplied fields the diagnostic doesn't know.
+  sopStatus?: string         // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  sopPropertyId?: string     // optional; empty string or undefined = global variant
+  applyMode?: TuningApplyMode
+  // Preference-pair capture (D2 pre-wire): when the manager edits then accepts.
+  editedFromOriginal?: boolean
 }
 
 export async function apiAcceptTuningSuggestion(
@@ -553,13 +588,150 @@ export async function apiAcceptTuningSuggestion(
   })
 }
 
+// Feature 041 sprint 03: TOOL_CONFIG accept path — distinct endpoint because the
+// legacy accept has no TOOL_CONFIG handler.
+export interface TuningAcceptToolConfigBody {
+  toolDefinitionId: string
+  editedDescription?: string
+  applyMode?: TuningApplyMode
+  editedFromOriginal?: boolean
+}
+
+export async function apiAcceptToolConfigSuggestion(
+  id: string,
+  body: TuningAcceptToolConfigBody
+): Promise<{
+  ok: boolean
+  suggestion: TuningSuggestion & { appliedAt: string; appliedPayload: unknown }
+  targetUpdated: { kind: string; id: string }
+}> {
+  return apiFetch(`/api/tuning-suggestions/${id}/accept-tool-config`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function apiRejectTuningSuggestion(
-  id: string
+  id: string,
+  reason?: string
 ): Promise<{ ok: boolean; suggestion: TuningSuggestion }> {
   return apiFetch(`/api/tuning-suggestions/${id}/reject`, {
     method: 'POST',
-    body: JSON.stringify({}),
+    body: JSON.stringify(reason ? { reason } : {}),
   })
+}
+
+// ─── Feature 041 sprint 03: dashboards + backlog + history ───────────────────
+
+export interface TuningCategoryStatsRow {
+  category: TuningDiagnosticCategory
+  acceptRateEma: number
+  acceptCount: number
+  rejectCount: number
+  lastUpdatedAt: string
+}
+
+export async function apiTuningCategoryStats(): Promise<{ stats: TuningCategoryStatsRow[] }> {
+  return apiFetch('/api/tuning/category-stats')
+}
+
+export interface TuningCoverage {
+  windowDays: number
+  totalSent: number
+  unedited: number
+  coverage: number // 0..1
+  previousCoverage: number | null
+}
+
+export async function apiTuningCoverage(): Promise<TuningCoverage> {
+  return apiFetch('/api/tuning/coverage')
+}
+
+export interface TuningGraduationMetrics {
+  windowDays: number
+  editRate: number            // 0..1 — copilot previews edited before send
+  editMagnitude: number       // 0..1 — avg classifyEditMagnitude score (0/0.33/0.66/1)
+  escalationRate: number      // 0..1
+  acceptanceRate: number      // 0..1 — composite across categories
+  sampleSize: number
+}
+
+export async function apiTuningGraduationMetrics(): Promise<TuningGraduationMetrics> {
+  return apiFetch('/api/tuning/graduation-metrics')
+}
+
+export type CapabilityRequestStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'WONT_FIX'
+
+export interface CapabilityRequest {
+  id: string
+  title: string
+  description: string
+  rationale: string | null
+  sourceConversationId: string | null
+  status: CapabilityRequestStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export async function apiListCapabilityRequests(): Promise<{ requests: CapabilityRequest[] }> {
+  return apiFetch('/api/capability-requests')
+}
+
+export async function apiUpdateCapabilityRequest(
+  id: string,
+  status: CapabilityRequestStatus
+): Promise<{ ok: boolean; request: CapabilityRequest }> {
+  return apiFetch(`/api/capability-requests/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export type VersionArtifactType = 'SYSTEM_PROMPT' | 'SOP_VARIANT' | 'FAQ_ENTRY' | 'TOOL_DEFINITION'
+
+export interface VersionHistoryEntry {
+  id: string
+  artifactType: VersionArtifactType
+  artifactId: string
+  artifactLabel: string       // e.g. "coordinator prompt" / "sop-checkin (CONFIRMED)" / "Parking FAQ"
+  version: number | null
+  authorUserId: string | null
+  note: string | null
+  sourceSuggestionId: string | null
+  diffPreview: { before: string | null; after: string | null } | null
+  createdAt: string
+}
+
+export async function apiListTuningHistory(limit = 50): Promise<{ entries: VersionHistoryEntry[] }> {
+  const q = new URLSearchParams({ limit: String(limit) }).toString()
+  return apiFetch(`/api/tuning/history?${q}`)
+}
+
+export async function apiRollbackVersion(
+  artifactType: VersionArtifactType,
+  versionId: string
+): Promise<{ ok: boolean; newVersion: number | null }> {
+  return apiFetch(`/api/tuning/history/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ artifactType, versionId }),
+  })
+}
+
+// ─── Tool definitions list (used by TOOL_CONFIG dispatch) ────────────────────
+
+export interface ToolDefinitionSummary {
+  id: string
+  name: string
+  displayName: string
+  description: string
+  defaultDescription: string
+  agentScope: string
+  type: string // 'system' | 'custom'
+  enabled: boolean
+}
+
+export async function apiListToolDefinitions(): Promise<ToolDefinitionSummary[]> {
+  return apiFetch('/api/tools')
 }
 
 export async function apiResyncProperty(propertyId: string): Promise<{ ok: boolean; chunks: number; property: ApiProperty }> {
