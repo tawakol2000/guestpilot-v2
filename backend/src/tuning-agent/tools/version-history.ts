@@ -15,6 +15,10 @@ import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { Prisma } from '@prisma/client';
 import { startAiSpan } from '../../services/observability.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
+import {
+  snapshotFaqEntry,
+  snapshotSopVariant,
+} from '../../services/tuning/artifact-history.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 type ArtifactType = 'SYSTEM_PROMPT' | 'SOP_VARIANT' | 'FAQ_ENTRY' | 'TOOL_DEFINITION';
@@ -84,45 +88,63 @@ export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => 
           }
         }
 
-        // SOP_VARIANT and FAQ_ENTRY: read-only — rollback not supported in V1.
+        // SOP_VARIANT — snapshot rows from sprint 05 §2 are rollback targets.
         if (!args.artifactType || args.artifactType === 'SOP_VARIANT') {
-          const variants = await c.prisma.sopVariant.findMany({
+          const sopHistory = await c.prisma.sopVariantHistory.findMany({
             where: {
-              sopDefinition: { tenantId: c.tenantId },
-              ...(args.artifactId ? { id: args.artifactId } : {}),
+              tenantId: c.tenantId,
+              ...(args.artifactId ? { targetId: args.artifactId } : {}),
             },
-            include: { sopDefinition: { select: { category: true } } },
-            orderBy: { updatedAt: 'desc' },
+            orderBy: { editedAt: 'desc' },
             take,
           });
-          for (const v of variants) {
+          const sopDefIds = Array.from(
+            new Set(
+              sopHistory
+                .map(h => (h.previousContent as any)?.sopDefinitionId as string | undefined)
+                .filter((x): x is string => !!x)
+            )
+          );
+          const defs = sopDefIds.length
+            ? await c.prisma.sopDefinition.findMany({
+                where: { tenantId: c.tenantId, id: { in: sopDefIds } },
+                select: { id: true, category: true },
+              })
+            : [];
+          const defById = new Map(defs.map(d => [d.id, d.category]));
+          for (const h of sopHistory) {
+            const pc = h.previousContent as any;
+            const category = defById.get(pc?.sopDefinitionId) ?? 'unknown';
             entries.push({
               artifactType: 'SOP_VARIANT',
-              artifactId: v.id,
-              artifactLabel: `${v.sopDefinition.category} (${v.status})`,
-              versionId: `sop:${v.id}:${v.updatedAt.toISOString()}`,
-              timestamp: v.updatedAt.toISOString(),
-              rollbackSupported: false,
+              artifactId: h.targetId,
+              artifactLabel: `${category} (${pc?.status ?? '?'})${pc?.kind === 'override' ? ' override' : ''}`,
+              versionId: `svh:${h.id}`,
+              timestamp: h.editedAt.toISOString(),
+              note: pc?.kind === 'override' ? 'property override snapshot' : 'variant snapshot',
+              rollbackSupported: true,
             });
           }
         }
         if (!args.artifactType || args.artifactType === 'FAQ_ENTRY') {
-          const faqs = await c.prisma.faqEntry.findMany({
+          const faqHistory = await c.prisma.faqEntryHistory.findMany({
             where: {
               tenantId: c.tenantId,
-              ...(args.artifactId ? { id: args.artifactId } : {}),
+              ...(args.artifactId ? { targetId: args.artifactId } : {}),
             },
-            orderBy: { updatedAt: 'desc' },
+            orderBy: { editedAt: 'desc' },
             take,
           });
-          for (const f of faqs) {
+          for (const h of faqHistory) {
+            const pc = h.previousContent as any;
+            const q = typeof pc?.question === 'string' ? pc.question : '(unknown)';
             entries.push({
               artifactType: 'FAQ_ENTRY',
-              artifactId: f.id,
-              artifactLabel: f.question.slice(0, 80),
-              versionId: `faq:${f.id}:${f.updatedAt.toISOString()}`,
-              timestamp: f.updatedAt.toISOString(),
-              rollbackSupported: false,
+              artifactId: h.targetId,
+              artifactLabel: q.slice(0, 80),
+              versionId: `feh:${h.id}`,
+              timestamp: h.editedAt.toISOString(),
+              rollbackSupported: true,
             });
           }
         }
@@ -142,7 +164,7 @@ export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => 
 export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'rollback',
-    "Revert an artifact to a previous version. Supported: SYSTEM_PROMPT (creates a new history entry pointing at the prior content), TOOL_DEFINITION (resets to defaultDescription). SOP_VARIANT and FAQ_ENTRY return NOT_SUPPORTED — no content snapshot layer exists in V1. Always explain what you're rolling back and why before calling.",
+    "Revert an artifact to a previous version. Supported: SYSTEM_PROMPT (creates a new history entry pointing at the prior content), TOOL_DEFINITION (resets to defaultDescription), SOP_VARIANT (restores from SopVariantHistory snapshot — sprint 05 §2), FAQ_ENTRY (restores from FaqEntryHistory snapshot — sprint 05 §2). Always explain what you're rolling back and why before calling.",
     {
       artifactType: z.enum(['SYSTEM_PROMPT', 'SOP_VARIANT', 'FAQ_ENTRY', 'TOOL_DEFINITION']),
       versionId: z.string().min(1),
@@ -151,11 +173,149 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
       const c = ctx();
       const span = startAiSpan('tuning-agent.rollback', args);
       try {
-        if (args.artifactType === 'SOP_VARIANT' || args.artifactType === 'FAQ_ENTRY') {
-          span.end({ error: 'NOT_SUPPORTED' });
-          return asError(
-            `rollback NOT_SUPPORTED for ${args.artifactType} — V1 has no content snapshot layer. Deferred.`
-          );
+        if (args.artifactType === 'SOP_VARIANT') {
+          const historyId = args.versionId.startsWith('svh:') ? args.versionId.slice(4) : args.versionId;
+          const snap = await c.prisma.sopVariantHistory.findFirst({
+            where: { id: historyId, tenantId: c.tenantId },
+          });
+          if (!snap) {
+            span.end({ error: 'VERSION_NOT_FOUND' });
+            return asError(`rollback: SOP variant snapshot ${historyId} not found.`);
+          }
+          const pc = snap.previousContent as any;
+          const sopDefinitionId = pc?.sopDefinitionId as string | undefined;
+          const status = pc?.status as string | undefined;
+          const content = pc?.content as string | undefined;
+          const propertyId = pc?.propertyId as string | undefined;
+          const kind: 'variant' | 'override' = pc?.kind === 'override' ? 'override' : 'variant';
+          if (!sopDefinitionId || !status || typeof content !== 'string') {
+            span.end({ error: 'SNAPSHOT_INCOMPLETE' });
+            return asError('rollback: SOP snapshot is missing required fields.');
+          }
+          if (kind === 'override') {
+            if (!propertyId) {
+              span.end({ error: 'SNAPSHOT_INCOMPLETE' });
+              return asError('rollback: override snapshot missing propertyId.');
+            }
+            const current = await c.prisma.sopPropertyOverride.findUnique({
+              where: { sopDefinitionId_propertyId_status: { sopDefinitionId, propertyId, status } },
+              select: { id: true, content: true },
+            });
+            if (current) {
+              await snapshotSopVariant(c.prisma, {
+                tenantId: c.tenantId,
+                targetId: current.id,
+                kind: 'override',
+                sopDefinitionId,
+                status,
+                content: current.content,
+                propertyId,
+                editedByUserId: c.userId ?? null,
+                triggeringSuggestionId: snap.triggeringSuggestionId ?? null,
+                metadata: { rolledBackFrom: snap.id },
+              });
+            }
+            const restored = await c.prisma.sopPropertyOverride.upsert({
+              where: { sopDefinitionId_propertyId_status: { sopDefinitionId, propertyId, status } },
+              update: { content },
+              create: { sopDefinitionId, propertyId, status, content },
+              select: { id: true },
+            });
+            const payload = { ok: true, artifactType: 'SOP_VARIANT', kind, targetId: restored.id };
+            span.end(payload);
+            return asCallToolResult(payload);
+          }
+          const current = await c.prisma.sopVariant.findUnique({
+            where: { sopDefinitionId_status: { sopDefinitionId, status } },
+            select: { id: true, content: true },
+          });
+          if (current) {
+            await snapshotSopVariant(c.prisma, {
+              tenantId: c.tenantId,
+              targetId: current.id,
+              kind: 'variant',
+              sopDefinitionId,
+              status,
+              content: current.content,
+              editedByUserId: c.userId ?? null,
+              triggeringSuggestionId: snap.triggeringSuggestionId ?? null,
+              metadata: { rolledBackFrom: snap.id },
+            });
+          }
+          const restored = await c.prisma.sopVariant.upsert({
+            where: { sopDefinitionId_status: { sopDefinitionId, status } },
+            update: { content },
+            create: { sopDefinitionId, status, content },
+            select: { id: true },
+          });
+          const payload = { ok: true, artifactType: 'SOP_VARIANT', kind, targetId: restored.id };
+          span.end(payload);
+          return asCallToolResult(payload);
+        }
+
+        if (args.artifactType === 'FAQ_ENTRY') {
+          const historyId = args.versionId.startsWith('feh:') ? args.versionId.slice(4) : args.versionId;
+          const snap = await c.prisma.faqEntryHistory.findFirst({
+            where: { id: historyId, tenantId: c.tenantId },
+          });
+          if (!snap) {
+            span.end({ error: 'VERSION_NOT_FOUND' });
+            return asError(`rollback: FAQ snapshot ${historyId} not found.`);
+          }
+          const pc = snap.previousContent as any;
+          if (typeof pc?.question !== 'string' || typeof pc?.answer !== 'string' || typeof pc?.category !== 'string') {
+            span.end({ error: 'SNAPSHOT_INCOMPLETE' });
+            return asError('rollback: FAQ snapshot is missing required fields.');
+          }
+          const current = await c.prisma.faqEntry.findFirst({
+            where: { id: snap.targetId, tenantId: c.tenantId },
+          });
+          if (current) {
+            await snapshotFaqEntry(c.prisma, {
+              tenantId: c.tenantId,
+              targetId: current.id,
+              question: current.question,
+              answer: current.answer,
+              category: current.category,
+              scope: String(current.scope),
+              propertyId: current.propertyId ?? null,
+              status: String(current.status),
+              editedByUserId: c.userId ?? null,
+              triggeringSuggestionId: snap.triggeringSuggestionId ?? null,
+              metadata: { rolledBackFrom: snap.id },
+            });
+            await c.prisma.faqEntry.update({
+              where: { id: current.id },
+              data: {
+                question: pc.question,
+                answer: pc.answer,
+                category: pc.category,
+                ...(pc.scope ? { scope: pc.scope as any } : {}),
+                ...(pc.status ? { status: pc.status as any } : {}),
+                propertyId: pc.propertyId ?? null,
+              },
+            });
+            const payload = { ok: true, artifactType: 'FAQ_ENTRY', targetId: current.id };
+            span.end(payload);
+            return asCallToolResult(payload);
+          }
+          // Row was deleted — recreate from snapshot.
+          const recreated = await c.prisma.faqEntry.create({
+            data: {
+              tenantId: c.tenantId,
+              question: pc.question,
+              answer: pc.answer,
+              category: pc.category,
+              scope: pc.scope ?? 'PROPERTY',
+              status: pc.status ?? 'ACTIVE',
+              propertyId: pc.propertyId ?? null,
+              source: 'MANUAL',
+            },
+            select: { id: true },
+          });
+          const payload = { ok: true, artifactType: 'FAQ_ENTRY', targetId: recreated.id, recreated: true };
+          span.end(payload);
+          return asCallToolResult(payload);
         }
 
         if (args.artifactType === 'SYSTEM_PROMPT') {
