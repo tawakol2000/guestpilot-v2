@@ -23,6 +23,7 @@ import {
   updateCategoryStatsOnAccept,
   updateCategoryStatsOnReject,
 } from '../services/tuning/category-stats.service';
+import { recordPreferencePair } from '../services/tuning/preference-pair.service';
 
 export function makeTuningSuggestionController(prisma: PrismaClient) {
   return {
@@ -79,6 +80,13 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             appliedPayload: s.appliedPayload,
             appliedAt: s.appliedAt,
             createdAt: s.createdAt,
+            // ─── Feature 041 sprint 02/03 extensions (nullable on legacy rows) ───
+            diagnosticCategory: s.diagnosticCategory,
+            diagnosticSubLabel: s.diagnosticSubLabel,
+            confidence: s.confidence,
+            triggerType: s.triggerType,
+            evidenceBundleId: s.evidenceBundleId,
+            applyMode: s.applyMode,
           })),
           nextCursor: hasMore ? page[page.length - 1].id : null,
         });
@@ -150,7 +158,16 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           case TuningActionType.EDIT_SOP_CONTENT: {
             const finalText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.proposedText;
-            if (!finalText || !suggestion.sopCategory || !suggestion.sopStatus) {
+            // Feature 041 sprint 03: sprint-02 diagnostic leaves sopStatus /
+            // sopPropertyId null for new-pipeline rows. Accept body can supply
+            // them from the manager's dispatch dialog; fall back to persisted.
+            const effectiveSopStatus: string | null =
+              (typeof body.sopStatus === 'string' && body.sopStatus) ? body.sopStatus : suggestion.sopStatus;
+            const effectiveSopPropertyId: string | null =
+              typeof body.sopPropertyId === 'string' && body.sopPropertyId
+                ? body.sopPropertyId
+                : suggestion.sopPropertyId;
+            if (!finalText || !suggestion.sopCategory || !effectiveSopStatus) {
               res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
               return;
             }
@@ -163,41 +180,54 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               res.status(404).json({ error: 'SOP_DEFINITION_NOT_FOUND' });
               return;
             }
-            if (suggestion.sopPropertyId) {
+            if (effectiveSopPropertyId) {
               // Update or create the property override at (sopDefinitionId, propertyId, status).
               const override = await prisma.sopPropertyOverride.upsert({
                 where: {
                   sopDefinitionId_propertyId_status: {
                     sopDefinitionId: sopDef.id,
-                    propertyId: suggestion.sopPropertyId,
-                    status: suggestion.sopStatus,
+                    propertyId: effectiveSopPropertyId,
+                    status: effectiveSopStatus,
                   },
                 },
                 update: { content: finalText },
                 create: {
                   sopDefinitionId: sopDef.id,
-                  propertyId: suggestion.sopPropertyId,
-                  status: suggestion.sopStatus,
+                  propertyId: effectiveSopPropertyId,
+                  status: effectiveSopStatus,
                   content: finalText,
                 },
               });
               targetUpdated = { kind: 'sop_property_override', id: override.id };
             } else {
               const variant = await prisma.sopVariant.findFirst({
-                where: { sopDefinitionId: sopDef.id, status: suggestion.sopStatus },
+                where: { sopDefinitionId: sopDef.id, status: effectiveSopStatus },
                 select: { id: true },
               });
               if (!variant) {
-                res.status(404).json({ error: 'SOP_VARIANT_NOT_FOUND' });
-                return;
+                // Create on demand — preserves the create-SOP-variant affordance
+                // when the manager picks a status that doesn't have a variant yet.
+                const created = await prisma.sopVariant.create({
+                  data: {
+                    sopDefinitionId: sopDef.id,
+                    status: effectiveSopStatus,
+                    content: finalText,
+                  },
+                });
+                targetUpdated = { kind: 'sop_variant', id: created.id };
+              } else {
+                await prisma.sopVariant.update({
+                  where: { id: variant.id },
+                  data: { content: finalText },
+                });
+                targetUpdated = { kind: 'sop_variant', id: variant.id };
               }
-              await prisma.sopVariant.update({
-                where: { id: variant.id },
-                data: { content: finalText },
-              });
-              targetUpdated = { kind: 'sop_variant', id: variant.id };
             }
-            appliedPayload = { text: finalText };
+            appliedPayload = {
+              text: finalText,
+              sopStatus: effectiveSopStatus,
+              sopPropertyId: effectiveSopPropertyId ?? null,
+            };
             break;
           }
 
@@ -363,6 +393,12 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           }
         }
 
+        // Feature 041 sprint 03: honor applyMode from the UI. IMMEDIATE (default)
+        // means the accept happened now; QUEUED means the manager marked it for
+        // later batching (we still apply, but the flag informs future workflow).
+        const applyMode: 'IMMEDIATE' | 'QUEUED' =
+          body.applyMode === 'QUEUED' ? 'QUEUED' : 'IMMEDIATE';
+
         const updated = await prisma.tuningSuggestion.update({
           where: { id: suggestion.id },
           data: {
@@ -370,6 +406,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             appliedAt: new Date(),
             appliedPayload: appliedPayload as any,
             appliedByUserId: userId,
+            applyMode,
           },
         });
 
@@ -377,10 +414,31 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
         // Old-branch suggestions (no diagnosticCategory) are skipped silently.
         await updateCategoryStatsOnAccept(prisma, tenantId, updated.diagnosticCategory);
 
+        // Feature 041 sprint 03 — D2 pre-wire: when the manager edits then
+        // accepts, persist the (context, rejected, preferred) triple to the
+        // PreferencePair table. First caller of this table; additive.
+        if (body.editedFromOriginal === true && suggestion.proposedText) {
+          const finalWritten =
+            typeof body.editedText === 'string' && body.editedText.length > 0
+              ? body.editedText
+              : (appliedPayload as any)?.text;
+          if (finalWritten && finalWritten !== suggestion.proposedText) {
+            await recordPreferencePair(prisma, {
+              tenantId,
+              suggestionId: suggestion.id,
+              category: updated.diagnosticCategory,
+              before: suggestion.beforeText ?? null,
+              rejectedProposal: suggestion.proposedText,
+              preferredFinal: finalWritten,
+            }).catch((err) => console.error('[preference-pair] write failed:', err));
+          }
+        }
+
         broadcastCritical(tenantId, 'tuning_suggestion_updated', {
           suggestionId: updated.id,
           status: 'ACCEPTED',
           appliedByUserId: userId,
+          applyMode,
         });
 
         res.json({ ok: true, suggestion: updated, targetUpdated });
@@ -406,9 +464,19 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
           return;
         }
+        // Feature 041 sprint 03: optional one-line reason. Stored in
+        // appliedPayload for reject (free-form JSON) so no schema change is needed.
+        const body = req.body || {};
+        const reason: string | null =
+          typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null;
+
         const updated = await prisma.tuningSuggestion.update({
           where: { id: suggestion.id },
-          data: { status: 'REJECTED', appliedByUserId: userId },
+          data: {
+            status: 'REJECTED',
+            appliedByUserId: userId,
+            ...(reason ? { appliedPayload: { rejectReason: reason } as any } : {}),
+          },
         });
 
         // Feature 041 sprint 02 §6: EMA update on reject too.

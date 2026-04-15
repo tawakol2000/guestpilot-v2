@@ -25,6 +25,12 @@ import { hostawayConnectRouter } from './routes/hostaway-connect';
 import { shadowPreviewRouter } from './routes/shadow-preview';
 import { tuningSuggestionRouter } from './routes/tuning-suggestion';
 import { tuningComplaintRouter } from './routes/tuning-complaint';
+import {
+  tuningDashboardsRouter,
+  tuningHistoryRouter,
+  evidenceBundleRouter,
+  capabilityRequestsRouter,
+} from './routes/tuning-surface';
 import { messagesRouter } from './routes/messages';
 import { aiLogsRouter } from './routes/ai-logs';
 import { meRouter } from './routes/me';
@@ -91,6 +97,11 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/tuning-suggestions', tuningSuggestionRouter(prisma));
   // Feature 041 sprint 02
   app.use('/api/tuning', tuningComplaintRouter(prisma));
+  // Feature 041 sprint 03 (additive — all read endpoints + rollback POST)
+  app.use('/api/tuning', tuningDashboardsRouter(prisma));
+  app.use('/api/tuning', tuningHistoryRouter(prisma));
+  app.use('/api/evidence-bundles', evidenceBundleRouter(prisma));
+  app.use('/api/capability-requests', capabilityRequestsRouter(prisma));
 
   // Route files for previously-inlined endpoints
   app.use('/api/messages', messagesRouter(prisma));
