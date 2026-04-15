@@ -15,11 +15,11 @@
  * manager's review table.
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
-export function buildProposeSuggestionTool(ctx: () => ToolContext) {
+export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'propose_suggestion',
     'Stage a proposed artifact change as a client-side preview the manager can inspect. Does not write to the database. The manager confirms with a chat turn; you then call suggestion_action to persist + apply (or reject). Emits a data-suggestion-preview part.',

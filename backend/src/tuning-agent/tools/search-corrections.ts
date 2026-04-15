@@ -7,11 +7,11 @@
  * recent first, capped.
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
-export function buildSearchCorrectionsTool(ctx: () => ToolContext) {
+export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'search_corrections',
     'Search prior TuningSuggestion rows. Use to answer "have we seen this pattern before?" or to decide whether a specific fix has been tried already. Concise returns id/category/subLabel/confidence/status; detailed adds rationale, proposedText excerpt, and timestamps.',

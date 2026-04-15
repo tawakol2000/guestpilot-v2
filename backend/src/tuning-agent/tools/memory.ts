@@ -9,7 +9,7 @@
  * `decisions/*`, `rejections/*`).
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import {
   viewMemory,
@@ -20,7 +20,7 @@ import {
 } from '../memory/service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
-export function buildMemoryTool(ctx: () => ToolContext) {
+export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'memory',
     "Durable tenant-scoped memory for the agent. Ops: 'view' reads a key; 'list' lists keys by prefix (preferences/, facts/, decisions/, rejections/); 'create' writes a new key (fails if exists); 'update' upserts; 'delete' removes. Keep values small and structured. Use preferences/ for durable rules, decisions/ for stamped choices, facts/ for learned tenant context.",

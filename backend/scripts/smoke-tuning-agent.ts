@@ -95,7 +95,7 @@ async function main() {
     pick(`static prefix is byte-identical (${prefix1.length} bytes) — caches across turns`, null);
 
     // ─── 3. MCP server + 8 tools register without error ────────────────
-    const mcp = buildTuningAgentMcpServer(() => ({
+    const mcp = await buildTuningAgentMcpServer(() => ({
       prisma,
       tenantId,
       conversationId: null,

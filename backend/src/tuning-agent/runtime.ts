@@ -14,7 +14,6 @@
  * Degrades silently when ANTHROPIC_API_KEY is missing (returns a data-error
  * part and finishes the stream; UI renders a calm "chat disabled" card).
  */
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { PrismaClient } from '@prisma/client';
 import type { UIMessageStreamWriter } from 'ai';
 import { assembleSystemPrompt, type SystemPromptContext } from './system-prompt';
@@ -25,6 +24,8 @@ import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import { listMemoryByPrefix } from './memory/service';
 import { isTuningAgentEnabled, tuningAgentDisabledReason, resolveTuningAgentModel } from './config';
 import { runWithAiTrace, startAiSpan } from '../services/observability.service';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
 
 export interface RunTurnInput {
   prisma: PrismaClient;
@@ -182,11 +183,12 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     compliance,
   };
 
-  const mcpServer = buildTuningAgentMcpServer(() => {
+  const mcpServer = await buildTuningAgentMcpServer(() => {
     toolCtx.lastUserSanctionedApply = compliance.lastUserSanctionedApply;
     return toolCtx;
   });
   const hooks = buildTuningAgentHooks(() => hookCtx);
+  const { query } = await loadAgentSdk();
 
   // ─── Query execution ───────────────────────────────────────────────────
   const state = makeBridgeState(input.assistantMessageId);

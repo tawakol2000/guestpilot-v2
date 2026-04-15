@@ -15,7 +15,7 @@
  * allowed the call. If the hook blocked, we never get here.
  */
 import { z } from 'zod/v4';
-import { tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory, SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import {
   Prisma,
   TuningActionType,
@@ -39,7 +39,10 @@ const CATEGORY_TO_ACTION_TYPE: Record<string, TuningActionType> = {
   MISSING_CAPABILITY: 'EDIT_SYSTEM_PROMPT', // placeholder; handled separately
 };
 
-export function buildSuggestionActionTool(ctx: () => ToolContext): SdkMcpToolDefinition<any> {
+export function buildSuggestionActionTool(
+  tool: typeof ToolFactory,
+  ctx: () => ToolContext
+): SdkMcpToolDefinition<any> {
   return tool(
     'suggestion_action',
     "Persist + act on a tuning suggestion. Actions: 'apply' writes the artifact immediately; 'queue' persists as PENDING for manager review; 'reject' marks REJECTED (logs + captures preference pair); 'edit_then_apply' applies the manager-edited text and captures a preference pair. Cooldown / oscillation / compliance are enforced by PreToolUse hook. Pass `draft` if no PENDING row exists yet (lets you persist + act in one call).",

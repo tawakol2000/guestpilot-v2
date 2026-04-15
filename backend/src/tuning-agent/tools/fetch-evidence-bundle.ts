@@ -6,7 +6,7 @@
  * can show a compact summary inline with the agent's reply.
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { assembleEvidenceBundle } from '../../services/evidence-bundle.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
@@ -24,7 +24,7 @@ function clip(val: unknown, max: number): unknown {
   return val;
 }
 
-export function buildFetchEvidenceBundleTool(ctx: () => ToolContext) {
+export function buildFetchEvidenceBundleTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'fetch_evidence_bundle',
     "Fetch the main AI's evidence bundle for a triggering message. Provide either bundleId (prefer) or messageId (on-demand assembly). The bundle has disputed message, 20-message context, Hostaway entity metadata, main-AI ragContext, SOPs in effect, and Langfuse trace if available. Concise returns summary keys; detailed returns the full payload (capped at ~16kb).",

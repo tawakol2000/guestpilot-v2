@@ -4,11 +4,11 @@
  * a compact recent-activity view.
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
-export function buildGetContextTool(ctx: () => ToolContext) {
+export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'get_context',
     'Current tuning conversation context: anchor message (if any), selected suggestion (if any), pending queue summary, last accepted suggestion. Call this first when a conversation opens. Verbosity "detailed" expands the recent-activity timeline.',

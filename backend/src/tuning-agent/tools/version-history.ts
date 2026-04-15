@@ -11,7 +11,7 @@
  * from its tool layer without needing an Express context.
  */
 import { z } from 'zod/v4';
-import { tool } from '@anthropic-ai/claude-agent-sdk';
+import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { Prisma } from '@prisma/client';
 import { startAiSpan } from '../../services/observability.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
@@ -19,7 +19,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 
 type ArtifactType = 'SYSTEM_PROMPT' | 'SOP_VARIANT' | 'FAQ_ENTRY' | 'TOOL_DEFINITION';
 
-export function buildGetVersionHistoryTool(ctx: () => ToolContext) {
+export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'get_version_history',
     'Recent artifact edits. Optionally filter by artifactType (SYSTEM_PROMPT / SOP_VARIANT / FAQ_ENTRY / TOOL_DEFINITION) or by artifactId. Returns the most recent `limit` entries across the tenant. Use to decide whether a rollback is the right move, and to spot oscillation.',
@@ -139,7 +139,7 @@ export function buildGetVersionHistoryTool(ctx: () => ToolContext) {
   );
 }
 
-export function buildRollbackTool(ctx: () => ToolContext) {
+export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'rollback',
     "Revert an artifact to a previous version. Supported: SYSTEM_PROMPT (creates a new history entry pointing at the prior content), TOOL_DEFINITION (resets to defaultDescription). SOP_VARIANT and FAQ_ENTRY return NOT_SUPPORTED — no content snapshot layer exists in V1. Always explain what you're rolling back and why before calling.",
