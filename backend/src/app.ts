@@ -24,6 +24,7 @@ import { alterationsRouter } from './routes/alterations';
 import { hostawayConnectRouter } from './routes/hostaway-connect';
 import { shadowPreviewRouter } from './routes/shadow-preview';
 import { tuningSuggestionRouter } from './routes/tuning-suggestion';
+import { tuningComplaintRouter } from './routes/tuning-complaint';
 import { messagesRouter } from './routes/messages';
 import { aiLogsRouter } from './routes/ai-logs';
 import { meRouter } from './routes/me';
@@ -88,6 +89,8 @@ export function createApp(prisma: PrismaClient) {
   // Feature 040: Copilot Shadow Mode routes
   app.use('/api/shadow-previews', shadowPreviewRouter(prisma));
   app.use('/api/tuning-suggestions', tuningSuggestionRouter(prisma));
+  // Feature 041 sprint 02
+  app.use('/api/tuning', tuningComplaintRouter(prisma));
 
   // Route files for previously-inlined endpoints
   app.use('/api/messages', messagesRouter(prisma));
