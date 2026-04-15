@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   try {
     log('Instantiating app...');
     const app = createApp(prisma);
-    ok('createApp(prisma) succeeded — all imports resolved + setTuningAnalyzerPrisma called');
+    ok('createApp(prisma) succeeded — all imports resolved');
 
     const routes = collectRoutes(app);
     log(`Discovered ${routes.length} route entries on the mounted router stack`);
@@ -94,10 +94,9 @@ async function main(): Promise<void> {
     ok('POST /api/tuning-suggestions/:id/accept registered');
     ok('POST /api/tuning-suggestions/:id/reject registered');
 
-    // Verify tuning-analyzer service loads + its Prisma ref is set
-    const { setTuningAnalyzerPrisma } = await import('../src/services/tuning-analyzer.service');
-    if (typeof setTuningAnalyzerPrisma !== 'function') fail('setTuningAnalyzerPrisma not exported');
-    ok('tuning-analyzer.service loads and setTuningAnalyzerPrisma is exported');
+    // Feature 041 sprint 01: the two-step tuning-analyzer.service was removed.
+    // This check is therefore no longer performed. Sprint 02's new diagnostic
+    // pipeline will get its own verification script.
 
     // Verify the shadow-preview service helper
     const { lockOlderPreviews } = await import('../src/services/shadow-preview.service');

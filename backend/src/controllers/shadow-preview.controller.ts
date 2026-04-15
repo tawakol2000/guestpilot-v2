@@ -17,7 +17,9 @@ import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { broadcastCritical } from '../services/socket.service';
-import { analyzePreview } from '../services/tuning-analyzer.service';
+// Feature 041 sprint 01: the fire-and-forget two-step analyzer call was
+// removed here. Sprint 02 will wire the new diagnostic pipeline (evidence
+// bundle assembler + taxonomy-aware analyzer) into the same trigger point.
 
 export function makeShadowPreviewController(prisma: PrismaClient) {
   return {
@@ -128,13 +130,13 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
 
           const analyzerQueued = Boolean(updated.originalAiText && updated.originalAiText !== finalContent);
 
-          // Fire-and-forget tuning analyzer when the text was edited (§I Graceful Degradation).
-          // The analyzer runs in US3 — if it's not yet imported, this is a no-op stub.
-          if (analyzerQueued) {
-            analyzePreview(messageId).catch(err =>
-              console.warn('[tuning-analyzer] failed:', err?.message || err)
-            );
-          }
+          // TODO sprint-02: trigger new diagnostic pipeline here.
+          // The former fire-and-forget `analyzePreview()` call was removed
+          // as part of the feature 041 sprint 01 teardown of the two-step
+          // analyzer. The new diagnostic pipeline (evidence bundle assembler
+          // + taxonomy-aware single-call diagnostic) wires in here. Until
+          // then, edited previews produce no TuningSuggestion records from
+          // this code path; old records in the DB remain untouched.
 
           res.json({
             ok: true,

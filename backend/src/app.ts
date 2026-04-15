@@ -29,7 +29,9 @@ import { aiLogsRouter } from './routes/ai-logs';
 import { meRouter } from './routes/me';
 import { errorMiddleware } from './middleware/error';
 import { getMessageSyncStats } from './services/message-sync.service';
-import { setTuningAnalyzerPrisma } from './services/tuning-analyzer.service';
+// Feature 041 sprint 01 teardown: tuning-analyzer.service and its
+// setTuningAnalyzerPrisma bootstrap hook have been removed. The new
+// diagnostic pipeline (sprint 02) will replace them.
 
 export function createApp(prisma: PrismaClient) {
   const app = express();
@@ -86,7 +88,6 @@ export function createApp(prisma: PrismaClient) {
   // Feature 040: Copilot Shadow Mode routes
   app.use('/api/shadow-previews', shadowPreviewRouter(prisma));
   app.use('/api/tuning-suggestions', tuningSuggestionRouter(prisma));
-  setTuningAnalyzerPrisma(prisma);
 
   // Route files for previously-inlined endpoints
   app.use('/api/messages', messagesRouter(prisma));
