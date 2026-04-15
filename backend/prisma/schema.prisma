@@ -47,6 +47,7 @@ model Tenant {
   evidenceBundles      EvidenceBundle[] // Feature 041
   capabilityRequests   CapabilityRequest[] // Feature 041
   preferencePairs      PreferencePair[] // Feature 041
+  tuningCategoryStats  TuningCategoryStats[] // Feature 041 sprint 02
 
   // Dashboard connection (platform.hostaway.com internal API)
   dashboardJwt          String?   @db.Text
@@ -748,16 +749,27 @@ model TuningSuggestion {
   appliedAndRetained7d Boolean? // tri-state: null=unknown/too-soon, true/false once checked
   editEmbedding        Unsupported("vector(1536)")? // D1 pre-wire; unused in V1. pgvector 0.8.2 confirmed installed.
 
+  // ─── Feature 041 sprint 02: taxonomy + diagnostic pipeline (all nullable) ───
+  // Old-branch code inserts TuningSuggestion rows without these four fields;
+  // those rows keep NULL here and remain fully readable/writable by both branches.
+  diagnosticCategory TuningDiagnosticCategory? // 8-category taxonomy output
+  diagnosticSubLabel String? // Free-form model-generated sub-label within the category
+  triggerType        TuningConversationTriggerType? // Originating trigger event (reuses sprint 01 enum)
+  evidenceBundleId   String? // FK → EvidenceBundle (SetNull on delete)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceMessage Message             @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
-  conversation  TuningConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceMessage  Message             @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  conversation   TuningConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  evidenceBundle EvidenceBundle?     @relation(fields: [evidenceBundleId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, createdAt(sort: Desc)])
   @@index([sourceMessageId])
   @@index([conversationId])
+  @@index([evidenceBundleId])
+  @@index([tenantId, diagnosticCategory])
 }
 
 // ─── Feature 041: Conversational Tuning Agent ────────────────────────────────
@@ -833,8 +845,9 @@ model EvidenceBundle {
   payload     Json // Assembled bundle (see evidence-bundle.service.ts → EvidenceBundle type)
   createdAt   DateTime                      @default(now())
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message     Message?           @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  suggestions TuningSuggestion[] // sprint 02: suggestions derived from this bundle
 
   @@index([messageId])
   @@index([tenantId, createdAt(sort: Desc)])
@@ -869,4 +882,39 @@ model PreferencePair {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt(sort: Desc)])
+}
+
+// ─── Feature 041 sprint 02: taxonomy + diagnostic pipeline ──────────────────
+// 8-category diagnostic taxonomy produced by the single-call LLM diagnostic
+// service. This is a NEW enum and must remain independent of the existing
+// `TuningActionType` (which the old `main` branch still uses). Sub-labels are
+// free-form strings alongside this enum; do not try to close them.
+enum TuningDiagnosticCategory {
+  SOP_CONTENT
+  SOP_ROUTING
+  FAQ
+  SYSTEM_PROMPT
+  TOOL_CONFIG
+  MISSING_CAPABILITY
+  PROPERTY_OVERRIDE
+  NO_FIX
+}
+
+// Per-tenant, per-category acceptance-rate EMA + counts. Updated on every
+// accept/reject of a suggestion that carries a `diagnosticCategory`. Old-branch
+// code never queries or writes this table.
+model TuningCategoryStats {
+  id            String                   @id @default(cuid())
+  tenantId      String
+  category      TuningDiagnosticCategory
+  acceptRateEma Float                    @default(0.0)
+  acceptCount   Int                      @default(0)
+  rejectCount   Int                      @default(0)
+  lastUpdatedAt DateTime                 @updatedAt
+  createdAt     DateTime                 @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, category])
+  @@index([tenantId])
 }
