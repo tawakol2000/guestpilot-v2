@@ -25,6 +25,8 @@ export function tuningDashboardsRouter(prisma: PrismaClient): Router {
   const ctrl = makeTuningDashboardsController(prisma);
   router.get('/coverage', (req: any, res) => ctrl.coverage(req, res));
   router.get('/graduation-metrics', (req: any, res) => ctrl.graduationMetrics(req, res));
+  // Sprint 05 §4: % of last-14d accepts retained at 7d.
+  router.get('/retention-summary', (req: any, res) => ctrl.retentionSummary(req, res));
   return router;
 }
 

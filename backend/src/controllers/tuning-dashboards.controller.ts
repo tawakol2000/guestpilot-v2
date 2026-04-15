@@ -80,6 +80,45 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
       }
     },
 
+    /**
+     * Sprint 05 §4: simple % of accepted suggestions in the last 14d that are
+     * still retained at 7d. Counts only suggestions accepted ≥7d ago (so the
+     * retention flag has had a chance to be set by the daily job). Surfaces
+     * an explicit "still warming up" path when no accepts qualify yet.
+     */
+    async retentionSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const now = Date.now();
+        const since = new Date(now - 14 * DAY_MS);
+        const upper = new Date(now - 7 * DAY_MS);
+
+        const accepts = await prisma.tuningSuggestion.findMany({
+          where: {
+            tenantId,
+            status: 'ACCEPTED',
+            appliedAt: { gte: since, lte: upper },
+          },
+          select: { appliedAndRetained7d: true },
+        });
+        const total = accepts.length;
+        const evaluated = accepts.filter((a) => a.appliedAndRetained7d !== null).length;
+        const retained = accepts.filter((a) => a.appliedAndRetained7d === true).length;
+
+        res.json({
+          windowDays: 14,
+          retentionWindow: '7d',
+          eligibleAccepts: total,
+          evaluatedAccepts: evaluated,
+          retainedAccepts: retained,
+          retentionRate: evaluated === 0 ? null : retained / evaluated,
+        });
+      } catch (err) {
+        console.error('[tuning-dashboards] retention-summary failed:', err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+      }
+    },
+
     async graduationMetrics(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;

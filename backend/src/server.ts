@@ -12,6 +12,7 @@ import { flushObservability } from './services/observability.service';
 import { shutdownApns } from './services/apns.service';
 import { setPropertySearchPrisma } from './services/property-search.service';
 import { startFaqMaintenanceJob } from './jobs/faqMaintenance.job';
+import { startTuningRetentionJob } from './jobs/tuningRetention.job';
 import { startReservationSyncJob } from './jobs/reservationSync.job';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -59,6 +60,10 @@ async function main() {
   // Start FAQ maintenance job (daily staleness + suggestion expiry)
   const faqJobTimer = startFaqMaintenanceJob(prisma);
 
+  // Feature 041 sprint 05 §4: daily retention sweep for accepted suggestions
+  // 7d after acceptance — populates TuningSuggestion.appliedAndRetained7d.
+  const tuningRetentionTimer = startTuningRetentionJob(prisma);
+
   // Start BullMQ worker (graceful no-op if REDIS_URL missing)
   const aiReplyWorker = startAiReplyWorker(prisma);
 
@@ -74,6 +79,7 @@ async function main() {
     clearInterval(syncJobTimer);
     clearInterval(resSyncTimer);
     clearInterval(faqJobTimer);
+    clearInterval(tuningRetentionTimer);
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();
