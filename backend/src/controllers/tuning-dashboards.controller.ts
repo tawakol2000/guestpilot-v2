@@ -18,11 +18,13 @@ function windowStart(): Date {
   return new Date(Date.now() - WINDOW_DAYS * DAY_MS);
 }
 
-// Rough magnitude proxy: ratio of characters changed (Levenshtein via
-// per-character-length diff). Sprint 02's classifyEditMagnitude is the
-// authoritative implementation but its inputs aren't persisted; this proxy is
-// deliberately cheap and documented in the report as an approximation.
-function magnitudeProxy(a: string, b: string): number {
+// Sprint 05 §3 (C19): magnitude is now sourced authoritatively from
+// `Message.editMagnitudeScore`, populated at trigger time by the diagnostic
+// pipeline. The character-position-equality proxy below is kept ONLY as a
+// fallback for legacy edited messages that were sent before sprint 05 (where
+// editMagnitudeScore is null). When no scored rows exist in the window, the
+// fallback prevents the dashboard from collapsing to zero.
+function legacyMagnitudeProxy(a: string, b: string): number {
   if (!a && !b) return 0;
   if (!a) return 1;
   if (!b) return 1;
@@ -85,18 +87,35 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
 
         const msgs = await prisma.message.findMany({
           where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
-          select: { editedByUserId: true, originalAiText: true, content: true },
+          select: {
+            editedByUserId: true,
+            originalAiText: true,
+            content: true,
+            editMagnitudeScore: true,
+          },
         });
         const total = msgs.length;
         const edited = msgs.filter((m) => !!m.editedByUserId).length;
         const editRate = total === 0 ? 0 : edited / total;
 
+        // Sprint 05 §3 (C19): prefer the persisted authoritative score from
+        // sprint 02's classifyEditMagnitude pipeline. Old rows (pre sprint-05)
+        // have null editMagnitudeScore and fall back to the proxy so the
+        // dashboard stays meaningful on the first 14 days post-deploy.
         let magSum = 0;
         let magCount = 0;
+        let scoredCount = 0;
+        let proxyCount = 0;
         for (const m of msgs) {
-          if (m.editedByUserId && m.originalAiText && m.content) {
-            magSum += magnitudeProxy(m.originalAiText, m.content);
+          if (!m.editedByUserId) continue;
+          if (typeof m.editMagnitudeScore === 'number') {
+            magSum += m.editMagnitudeScore;
             magCount++;
+            scoredCount++;
+          } else if (m.originalAiText && m.content) {
+            magSum += legacyMagnitudeProxy(m.originalAiText, m.content);
+            magCount++;
+            proxyCount++;
           }
         }
         const editMagnitude = magCount === 0 ? 0 : magSum / magCount;
@@ -128,6 +147,10 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
           windowDays: WINDOW_DAYS,
           editRate,
           editMagnitude,
+          editMagnitudeSource: {
+            scoredCount, // edited messages with editMagnitudeScore set
+            proxyCount, // edited messages still on the legacy proxy
+          },
           escalationRate,
           acceptanceRate,
           sampleSize: total,
