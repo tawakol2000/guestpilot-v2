@@ -13,14 +13,17 @@ WORKDIR /app
 
 # Copy files (context is backend/ directory)
 COPY package*.json ./
+COPY .npmrc ./
 COPY prisma ./prisma/
 COPY src ./src/
 COPY scripts ./scripts/
 COPY config ./config/
 COPY tsconfig.json ./
 
-# Install Node packages
-RUN npm install
+# Install Node packages (.npmrc sets legacy-peer-deps=true for the zod v3/v4
+# split introduced by @anthropic-ai/claude-agent-sdk; flag passed explicitly
+# here too so a stale image without .npmrc still resolves cleanly).
+RUN npm install --legacy-peer-deps
 
 # Generate Prisma client
 RUN npx prisma generate
