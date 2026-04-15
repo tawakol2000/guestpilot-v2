@@ -48,6 +48,8 @@ model Tenant {
   capabilityRequests   CapabilityRequest[] // Feature 041
   preferencePairs      PreferencePair[] // Feature 041
   tuningCategoryStats  TuningCategoryStats[] // Feature 041 sprint 02
+  sopVariantHistory    SopVariantHistory[] // Feature 041 sprint 05
+  faqEntryHistory      FaqEntryHistory[] // Feature 041 sprint 05
 
   // Dashboard connection (platform.hostaway.com internal API)
   dashboardJwt          String?   @db.Text
@@ -917,4 +919,51 @@ model TuningCategoryStats {
 
   @@unique([tenantId, category])
   @@index([tenantId])
+}
+
+// ─── Feature 041 sprint 05: SOP + FAQ version history snapshots ─────────────
+//
+// Pre-existing SystemPrompt edits live in TenantAiConfig.systemPromptHistory
+// (a JSON array). Tool definitions roll back to defaultDescription. SOP
+// variants and FAQ entries had no snapshot layer until sprint 05, so the
+// rollback path returned 501 NOT_SUPPORTED for those types (concern C17).
+// Two additive history tables close the gap. Each capture happens BEFORE the
+// mutating write; rollback creates a new history row for the just-overwritten
+// state, then writes the snapshot back — same pattern as AiConfigVersion.
+//
+// targetId is the SopVariant.id / SopPropertyOverride.id / FaqEntry.id at
+// snapshot time; previousContent is the JSON snapshot (kind-tagged so SOP
+// variants and overrides can share the table); previousMetadata holds the
+// classifier/categorical fields so a rollback can restore them too.
+
+model SopVariantHistory {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  targetId               String // SopVariant.id or SopPropertyOverride.id
+  previousContent        Json // { kind: 'variant'|'override', sopDefinitionId, status, content, propertyId? }
+  previousMetadata       Json?
+  editedByUserId         String?
+  editedAt               DateTime @default(now())
+  triggeringSuggestionId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, editedAt])
+  @@index([targetId])
+}
+
+model FaqEntryHistory {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  targetId               String // FaqEntry.id
+  previousContent        Json // { question, answer, category, scope, propertyId, status }
+  previousMetadata       Json?
+  editedByUserId         String?
+  editedAt               DateTime @default(now())
+  triggeringSuggestionId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, editedAt])
+  @@index([targetId])
 }

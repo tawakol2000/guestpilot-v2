@@ -24,6 +24,10 @@ import {
   updateCategoryStatsOnReject,
 } from '../services/tuning/category-stats.service';
 import { recordPreferencePair } from '../services/tuning/preference-pair.service';
+import {
+  snapshotFaqEntry,
+  snapshotSopVariant,
+} from '../services/tuning/artifact-history.service';
 
 export function makeTuningSuggestionController(prisma: PrismaClient) {
   return {
@@ -181,6 +185,30 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               return;
             }
             if (effectiveSopPropertyId) {
+              // Snapshot the prior content so a rollback can restore it (sprint 05 §2 / C17).
+              const prior = await prisma.sopPropertyOverride.findUnique({
+                where: {
+                  sopDefinitionId_propertyId_status: {
+                    sopDefinitionId: sopDef.id,
+                    propertyId: effectiveSopPropertyId,
+                    status: effectiveSopStatus,
+                  },
+                },
+                select: { id: true, content: true },
+              });
+              if (prior) {
+                await snapshotSopVariant(prisma, {
+                  tenantId,
+                  targetId: prior.id,
+                  kind: 'override',
+                  sopDefinitionId: sopDef.id,
+                  status: effectiveSopStatus,
+                  content: prior.content,
+                  propertyId: effectiveSopPropertyId,
+                  editedByUserId: userId,
+                  triggeringSuggestionId: suggestion.id,
+                });
+              }
               // Update or create the property override at (sopDefinitionId, propertyId, status).
               const override = await prisma.sopPropertyOverride.upsert({
                 where: {
@@ -202,7 +230,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             } else {
               const variant = await prisma.sopVariant.findFirst({
                 where: { sopDefinitionId: sopDef.id, status: effectiveSopStatus },
-                select: { id: true },
+                select: { id: true, content: true },
               });
               if (!variant) {
                 // Create on demand — preserves the create-SOP-variant affordance
@@ -216,6 +244,16 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
                 });
                 targetUpdated = { kind: 'sop_variant', id: created.id };
               } else {
+                await snapshotSopVariant(prisma, {
+                  tenantId,
+                  targetId: variant.id,
+                  kind: 'variant',
+                  sopDefinitionId: sopDef.id,
+                  status: effectiveSopStatus,
+                  content: variant.content,
+                  editedByUserId: userId,
+                  triggeringSuggestionId: suggestion.id,
+                });
                 await prisma.sopVariant.update({
                   where: { id: variant.id },
                   data: { content: finalText },
@@ -285,6 +323,19 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               });
               return;
             }
+            // Snapshot the prior FAQ row so a rollback can restore it (sprint 05 §2 / C17).
+            await snapshotFaqEntry(prisma, {
+              tenantId,
+              targetId: faq.id,
+              question: faq.question,
+              answer: faq.answer,
+              category: faq.category,
+              scope: String(faq.scope),
+              propertyId: faq.propertyId ?? null,
+              status: String(faq.status),
+              editedByUserId: userId,
+              triggeringSuggestionId: suggestion.id,
+            });
             // Default to replacing the answer; if beforeText matched the question, replace the question.
             const editQuestion =
               suggestion.beforeText && suggestion.beforeText.trim() === faq.question.trim();
@@ -327,6 +378,28 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
                 toolDescription: finalToolDesc,
               },
             });
+            // Snapshot the existing variant if any before upsert (sprint 05 §2 / C17).
+            const priorVariant = await prisma.sopVariant.findUnique({
+              where: {
+                sopDefinitionId_status: {
+                  sopDefinitionId: sopDef.id,
+                  status: suggestion.sopStatus,
+                },
+              },
+              select: { id: true, content: true },
+            });
+            if (priorVariant) {
+              await snapshotSopVariant(prisma, {
+                tenantId,
+                targetId: priorVariant.id,
+                kind: 'variant',
+                sopDefinitionId: sopDef.id,
+                status: suggestion.sopStatus,
+                content: priorVariant.content,
+                editedByUserId: userId,
+                triggeringSuggestionId: suggestion.id,
+              });
+            }
             // Upsert SopVariant by (sopDefinitionId, status).
             const variant = await prisma.sopVariant.upsert({
               where: {
@@ -343,6 +416,29 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               },
             });
             if (suggestion.sopPropertyId) {
+              const priorOverride = await prisma.sopPropertyOverride.findUnique({
+                where: {
+                  sopDefinitionId_propertyId_status: {
+                    sopDefinitionId: sopDef.id,
+                    propertyId: suggestion.sopPropertyId,
+                    status: suggestion.sopStatus,
+                  },
+                },
+                select: { id: true, content: true },
+              });
+              if (priorOverride) {
+                await snapshotSopVariant(prisma, {
+                  tenantId,
+                  targetId: priorOverride.id,
+                  kind: 'override',
+                  sopDefinitionId: sopDef.id,
+                  status: suggestion.sopStatus,
+                  content: priorOverride.content,
+                  propertyId: suggestion.sopPropertyId,
+                  editedByUserId: userId,
+                  triggeringSuggestionId: suggestion.id,
+                });
+              }
               await prisma.sopPropertyOverride.upsert({
                 where: {
                   sopDefinitionId_propertyId_status: {

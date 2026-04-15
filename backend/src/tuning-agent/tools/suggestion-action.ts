@@ -25,6 +25,10 @@ import {
 import { startAiSpan } from '../../services/observability.service';
 import { updateCategoryStatsOnAccept, updateCategoryStatsOnReject } from '../../services/tuning/category-stats.service';
 import { recordPreferencePair } from '../../services/tuning/preference-pair.service';
+import {
+  snapshotFaqEntry,
+  snapshotSopVariant,
+} from '../../services/tuning/artifact-history.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
@@ -348,6 +352,29 @@ async function applyArtifactWrite(
       });
       if (!sopDef) return { ok: false, error: 'SOP_DEFINITION_NOT_FOUND' };
       if (suggestion.sopPropertyId) {
+        const priorOverride = await c.prisma.sopPropertyOverride.findUnique({
+          where: {
+            sopDefinitionId_propertyId_status: {
+              sopDefinitionId: sopDef.id,
+              propertyId: suggestion.sopPropertyId,
+              status: suggestion.sopStatus,
+            },
+          },
+          select: { id: true, content: true },
+        });
+        if (priorOverride) {
+          await snapshotSopVariant(c.prisma, {
+            tenantId: c.tenantId,
+            targetId: priorOverride.id,
+            kind: 'override',
+            sopDefinitionId: sopDef.id,
+            status: suggestion.sopStatus,
+            content: priorOverride.content,
+            propertyId: suggestion.sopPropertyId,
+            editedByUserId: c.userId ?? null,
+            triggeringSuggestionId: suggestion.id,
+          });
+        }
         const override = await c.prisma.sopPropertyOverride.upsert({
           where: {
             sopDefinitionId_propertyId_status: {
@@ -372,22 +399,39 @@ async function applyArtifactWrite(
       }
       const variant = await c.prisma.sopVariant.findFirst({
         where: { sopDefinitionId: sopDef.id, status: suggestion.sopStatus },
-        select: { id: true },
+        select: { id: true, content: true },
       });
-      const targetId = variant
-        ? (await c.prisma.sopVariant.update({
+      let targetId: string;
+      if (variant) {
+        await snapshotSopVariant(c.prisma, {
+          tenantId: c.tenantId,
+          targetId: variant.id,
+          kind: 'variant',
+          sopDefinitionId: sopDef.id,
+          status: suggestion.sopStatus,
+          content: variant.content,
+          editedByUserId: c.userId ?? null,
+          triggeringSuggestionId: suggestion.id,
+        });
+        targetId = (
+          await c.prisma.sopVariant.update({
             where: { id: variant.id },
             data: { content: finalText },
             select: { id: true },
-          })).id
-        : (await c.prisma.sopVariant.create({
+          })
+        ).id;
+      } else {
+        targetId = (
+          await c.prisma.sopVariant.create({
             data: {
               sopDefinitionId: sopDef.id,
               status: suggestion.sopStatus,
               content: finalText,
             },
             select: { id: true },
-          })).id;
+          })
+        ).id;
+      }
       return {
         ok: true,
         target: { kind: 'sop_variant', id: targetId },
@@ -419,6 +463,18 @@ async function applyArtifactWrite(
         where: { id: suggestion.faqEntryId, tenantId: c.tenantId },
       });
       if (!faq) return { ok: false, error: 'FAQ_ENTRY_NOT_FOUND' };
+      await snapshotFaqEntry(c.prisma, {
+        tenantId: c.tenantId,
+        targetId: faq.id,
+        question: faq.question,
+        answer: faq.answer,
+        category: faq.category,
+        scope: String(faq.scope),
+        propertyId: faq.propertyId ?? null,
+        status: String(faq.status),
+        editedByUserId: c.userId ?? null,
+        triggeringSuggestionId: suggestion.id,
+      });
       const editQuestion =
         !!suggestion.beforeText && suggestion.beforeText.trim() === faq.question.trim();
       if (editQuestion) {
