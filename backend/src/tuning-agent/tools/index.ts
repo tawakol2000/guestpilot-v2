@@ -17,8 +17,9 @@ import { buildProposeSuggestionTool } from './propose-suggestion';
 import { buildSuggestionActionTool } from './suggestion-action';
 import { buildMemoryTool } from './memory';
 import { buildGetVersionHistoryTool, buildRollbackTool } from './version-history';
+import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 
-export const TUNING_AGENT_SERVER_NAME = 'tuning-agent';
+export { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES };
 
 export function buildTuningAgentMcpServer(getCtx: () => ToolContext) {
   return createSdkMcpServer({
@@ -36,20 +37,5 @@ export function buildTuningAgentMcpServer(getCtx: () => ToolContext) {
     ],
   });
 }
-
-/**
- * Fully-qualified tool names used by hook matchers. The SDK prefixes SDK MCP
- * tools with `mcp__<server>__<tool>`.
- */
-export const TUNING_AGENT_TOOL_NAMES = {
-  get_context: `mcp__${TUNING_AGENT_SERVER_NAME}__get_context`,
-  search_corrections: `mcp__${TUNING_AGENT_SERVER_NAME}__search_corrections`,
-  fetch_evidence_bundle: `mcp__${TUNING_AGENT_SERVER_NAME}__fetch_evidence_bundle`,
-  propose_suggestion: `mcp__${TUNING_AGENT_SERVER_NAME}__propose_suggestion`,
-  suggestion_action: `mcp__${TUNING_AGENT_SERVER_NAME}__suggestion_action`,
-  memory: `mcp__${TUNING_AGENT_SERVER_NAME}__memory`,
-  get_version_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_version_history`,
-  rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__rollback`,
-} as const;
 
 export type { ToolContext } from './types';

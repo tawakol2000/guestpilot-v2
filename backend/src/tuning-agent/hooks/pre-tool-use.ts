@@ -16,7 +16,7 @@ import type {
   HookJSONOutput,
   PreToolUseHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
-import { TUNING_AGENT_TOOL_NAMES } from '../tools';
+import { TUNING_AGENT_TOOL_NAMES } from '../tools/names';
 import {
   COOLDOWN_WINDOW_MS,
   OSCILLATION_WINDOW_MS,

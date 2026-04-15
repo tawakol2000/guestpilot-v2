@@ -18,7 +18,8 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { PrismaClient } from '@prisma/client';
 import type { UIMessageStreamWriter } from 'ai';
 import { assembleSystemPrompt, type SystemPromptContext } from './system-prompt';
-import { buildTuningAgentMcpServer, TUNING_AGENT_SERVER_NAME, type ToolContext } from './tools';
+import { buildTuningAgentMcpServer, type ToolContext } from './tools';
+import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './tools/names';
 import { buildTuningAgentHooks, type HookContext } from './hooks';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import { listMemoryByPrefix } from './memory/service';
@@ -217,9 +218,7 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
                 [TUNING_AGENT_SERVER_NAME]: mcpServer,
               },
               // Always allow our in-process MCP tools without prompting.
-              allowedTools: Object.values(
-                (await import('./tools')).TUNING_AGENT_TOOL_NAMES
-              ),
+              allowedTools: Object.values(TUNING_AGENT_TOOL_NAMES),
               // Disable built-in CLI tools — agent should only use our 8.
               tools: [],
               hooks,
