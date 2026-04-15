@@ -17,9 +17,13 @@ import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
 import { broadcastCritical } from '../services/socket.service';
-// Feature 041 sprint 01: the fire-and-forget two-step analyzer call was
-// removed here. Sprint 02 will wire the new diagnostic pipeline (evidence
-// bundle assembler + taxonomy-aware analyzer) into the same trigger point.
+// Feature 041 sprint 02: new taxonomy-aware diagnostic pipeline replaces the
+// two-step analyzer removed in sprint 01. Edited preview sends fire
+// runDiagnostic + writeSuggestionFromDiagnostic as a fire-and-forget.
+import { runDiagnostic } from '../services/tuning/diagnostic.service';
+import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
+import { semanticSimilarity } from '../services/tuning/diff.service';
+import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 
 export function makeShadowPreviewController(prisma: PrismaClient) {
   return {
@@ -128,15 +132,46 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
             lastMessageAt: sentAt.toISOString(),
           });
 
-          const analyzerQueued = Boolean(updated.originalAiText && updated.originalAiText !== finalContent);
+          // Feature 041 sprint 02: fire the new diagnostic pipeline when the
+          // send was edited (original text differs from final text). EDIT vs
+          // REJECT is decided by lexical similarity — wholesale replacements
+          // (< 0.3) are stronger "the AI got this fundamentally wrong" signals
+          // per sprint brief §5 trigger 2.
+          const wasEdited = Boolean(updated.originalAiText && updated.originalAiText !== finalContent);
+          let analyzerQueued = false;
+          if (wasEdited) {
+            const similarity = semanticSimilarity(updated.originalAiText ?? '', finalContent);
+            const triggerType: 'EDIT_TRIGGERED' | 'REJECT_TRIGGERED' =
+              similarity < 0.3 ? 'REJECT_TRIGGERED' : 'EDIT_TRIGGERED';
 
-          // TODO sprint-02: trigger new diagnostic pipeline here.
-          // The former fire-and-forget `analyzePreview()` call was removed
-          // as part of the feature 041 sprint 01 teardown of the two-step
-          // analyzer. The new diagnostic pipeline (evidence bundle assembler
-          // + taxonomy-aware single-call diagnostic) wires in here. Until
-          // then, edited previews produce no TuningSuggestion records from
-          // this code path; old records in the DB remain untouched.
+            if (shouldProcessTrigger(triggerType, messageId)) {
+              analyzerQueued = true;
+              // Fire-and-forget. Never blocks the HTTP response. All errors
+              // swallowed — CLAUDE.md critical rule #2.
+              void (async () => {
+                try {
+                  const result = await runDiagnostic(
+                    {
+                      triggerType,
+                      tenantId,
+                      messageId,
+                      note: triggerType === 'REJECT_TRIGGERED'
+                        ? 'Manager replaced the AI draft wholesale (similarity < 0.3).'
+                        : 'Manager edited the AI draft before sending.',
+                    },
+                    prisma
+                  );
+                  if (result) {
+                    await writeSuggestionFromDiagnostic(result, {}, prisma);
+                  }
+                } catch (diagErr) {
+                  console.error(`[ShadowPreview] [${messageId}] diagnostic fire-and-forget failed:`, diagErr);
+                }
+              })();
+            } else {
+              console.log(`[ShadowPreview] [${messageId}] diagnostic deduped (60s window).`);
+            }
+          }
 
           res.json({
             ok: true,
