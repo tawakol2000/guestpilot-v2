@@ -66,6 +66,7 @@ import {
   apiUpdateConversationChecklist,
   apiUpdateTask,
   apiRateMessage,
+  apiCreateTuningConversation,
   apiToggleStar,
   apiResolveConversation,
   apiSyncConversation,
@@ -4188,6 +4189,36 @@ export default function InboxV5() {
                                     correction saved
                                   </span>
                                 )}
+                                {/* Feature 041 sprint 04 — anchor this message into a tuning conversation */}
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const { conversation } = await apiCreateTuningConversation({
+                                        anchorMessageId: msg.id,
+                                        triggerType: 'MANUAL',
+                                      })
+                                      router.push(`/tuning?conversationId=${conversation.id}`)
+                                    } catch (err) {
+                                      console.error('[DiscussInTuning] failed:', err)
+                                    }
+                                  }}
+                                  title="Open a tuning chat anchored to this message"
+                                  aria-label="Discuss this message in tuning"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: '1px 4px',
+                                    marginLeft: 2,
+                                    color: T.text.tertiary + 'AA',
+                                    fontSize: 9,
+                                    fontFamily: T.font.mono,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.08em',
+                                  }}
+                                >
+                                  discuss in tuning
+                                </button>
                               </span>
                             )}
                             {/* Correction popover — appears below thumbs-down for AI messages */}

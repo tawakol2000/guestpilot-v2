@@ -65,6 +65,9 @@ export function makeTuningChatController(prisma: PrismaClient) {
       const conversationId: string | undefined =
         body.conversationId ?? body.body?.conversationId;
       const suggestionId: string | undefined = body.suggestionId ?? body.body?.suggestionId;
+      const isOpener: boolean = Boolean(
+        (body as any).isOpener ?? (body as any).body?.isOpener
+      );
 
       if (!conversationId) {
         res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
@@ -86,19 +89,23 @@ export function makeTuningChatController(prisma: PrismaClient) {
         return;
       }
 
-      // Persist incoming user message.
-      try {
-        await prisma.tuningMessage.create({
-          data: {
-            conversationId,
-            role: 'user',
-            parts: [
-              { type: 'text', text: userText },
-            ] as unknown as Prisma.InputJsonValue,
-          },
-        });
-      } catch (err) {
-        console.warn('[tuning-chat] user message persist failed:', err);
+      // Persist incoming user message (unless this is a proactive opener
+      // trigger — the manager didn't type it, we don't want it to
+      // rehydrate on reload or show up as a user turn in the transcript).
+      if (!isOpener) {
+        try {
+          await prisma.tuningMessage.create({
+            data: {
+              conversationId,
+              role: 'user',
+              parts: [
+                { type: 'text', text: userText },
+              ] as unknown as Prisma.InputJsonValue,
+            },
+          });
+        } catch (err) {
+          console.warn('[tuning-chat] user message persist failed:', err);
+        }
       }
 
       const assistantMessageId = `asst:${crypto.randomBytes(8).toString('hex')}`;

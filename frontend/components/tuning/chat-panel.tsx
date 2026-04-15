@@ -110,6 +110,7 @@ function ChatPanelInner({
   // Build the transport once, memoed on conversationId so changing
   // conversations creates a fresh transport (auth header reads the token
   // lazily via the header factory so expired tokens refresh cleanly).
+  const openerRef = useRef(false)
   const transport = useMemo(() => {
     return new DefaultChatTransport<UIMessage>({
       api: tuningChatEndpoint(),
@@ -118,7 +119,16 @@ function ChatPanelInner({
         const token = getToken()
         return token ? { Authorization: `Bearer ${token}` } : {}
       },
-      body: () => ({ conversationId, suggestionId }),
+      body: () => {
+        const payload: Record<string, unknown> = { conversationId, suggestionId }
+        // Flag the first turn of an empty conversation so the backend skips
+        // persisting the trigger prompt as a visible user turn.
+        if (openerRef.current) {
+          payload.isOpener = true
+          openerRef.current = false
+        }
+        return payload
+      },
     })
   }, [conversationId, suggestionId])
 
@@ -173,6 +183,7 @@ function ChatPanelInner({
     if (initialMessages.length > 0) return
     if (messages.length > 0) return
     proactiveRequested.current = true
+    openerRef.current = true
     const openerPrompt = anchor
       ? `I just opened this conversation to discuss a specific main-AI message (id=${anchor.id}). Please summarize what the main AI did on that message using fetch_evidence_bundle, and tell me what stands out. Keep it tight.`
       : `Greet me and summarize the pending suggestion queue. If there's one obvious place to start, say so.`
@@ -207,13 +218,24 @@ function ChatPanelInner({
           </div>
         ) : null}
         <div className="space-y-4">
-          {messages.map((m) => (
-            <MessageRow
-              key={m.id}
-              message={m}
-              onSuggestionAction={sendCannedSanction}
-            />
-          ))}
+          {messages.map((m, idx) => {
+            // Hide the first-ever user turn when it was the proactive-opener
+            // trigger. The backend didn't persist it; on reload it's gone.
+            const isFirstUserTrigger =
+              idx === 0 &&
+              m.role === 'user' &&
+              messages.length > 0 &&
+              initialMessages.length === 0 &&
+              isOpenerTriggerText(((m as any).parts ?? []) as Array<{ type?: string; text?: string }>)
+            if (isFirstUserTrigger) return null
+            return (
+              <MessageRow
+                key={m.id}
+                message={m}
+                onSuggestionAction={sendCannedSanction}
+              />
+            )
+          })}
         </div>
         {error ? (
           <div
@@ -343,6 +365,24 @@ function PartView({
     return <AgentDisabledCard reason={part.data?.reason ?? 'disabled'} />
   }
   return null
+}
+
+/**
+ * Detect the client-originated proactive-opener trigger text. The backend
+ * does not persist this turn, so on reload the user's transcript shows
+ * only the agent's greeting. This check hides the single-session trigger
+ * from the visible message list on the first turn.
+ */
+function isOpenerTriggerText(parts: Array<{ type?: string; text?: string }>): boolean {
+  const text = parts
+    .filter((p) => p.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text!)
+    .join('\n')
+  if (!text) return false
+  return (
+    text.startsWith('I just opened this conversation to discuss a specific main-AI message') ||
+    text.startsWith('Greet me and summarize the pending suggestion queue.')
+  )
 }
 
 /**
