@@ -13,9 +13,12 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.109",
+    "@anthropic-ai/sdk": "^0.89.0",
     "@parse/node-apn": "^7.1.0",
     "@prisma/client": "^5.20.0",
     "@socket.io/redis-adapter": "^8.3.0",
+    "ai": "^6.0.162",
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.71.0",
