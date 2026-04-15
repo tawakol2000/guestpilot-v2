@@ -19,6 +19,7 @@ import { DetailPanel } from '@/components/tuning/detail-panel'
 import { DashboardsPanel } from '@/components/tuning/dashboards'
 import { ConversationList } from '@/components/tuning/conversation-list'
 import { ChatPanel } from '@/components/tuning/chat-panel'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 function DashboardsToggleWrapper({
   children,
@@ -172,36 +173,66 @@ function TuningPageInner() {
     }, 0)
   }, [refresh, selectedId, setSelected])
 
+  // Sprint 05 §6 (C18): mobile drawer for left rail below 768px. Same content
+  // as the desktop aside; trigger lives in the top nav. Auto-close on select
+  // so a tap-through doesn't leave the drawer open over the detail panel.
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const leftRailContent = (
+    <>
+      <div className="border-b border-[#E7E5E4] px-4 py-3">
+        <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
+          Pending suggestions
+        </div>
+        <div className="mt-0.5 font-mono text-[11px] text-[#A8A29E]">
+          {loading ? '…' : `${suggestions.length} open`}
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto">
+        <TuningQueue
+          suggestions={suggestions}
+          loading={loading}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelected(id)
+            setDrawerOpen(false)
+          }}
+        />
+      </div>
+      <div className="border-t border-[#E7E5E4]">
+        <ConversationList
+          selectedId={conversationId}
+          onSelect={(id) => {
+            setConversation(id)
+            setDrawerOpen(false)
+          }}
+          onCreated={(id) => {
+            setConversation(id)
+            setDrawerOpen(false)
+          }}
+        />
+      </div>
+    </>
+  )
+
   return (
     <div className="flex min-h-dvh flex-col">
-      <TuningTopNav />
+      <TuningTopNav onOpenDrawer={() => setDrawerOpen(true)} />
+      {/* Mobile drawer — visible only below md (handled by the trigger
+          rendering md:hidden in TuningTopNav). Sheet portals to body so the
+          aside flex layout below is unaffected. */}
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent
+          side="top"
+          className="flex h-[85vh] w-full max-w-full flex-col overflow-hidden bg-[#FAFAF9] p-0"
+        >
+          <SheetTitle className="sr-only">Pending suggestions</SheetTitle>
+          {leftRailContent}
+        </SheetContent>
+      </Sheet>
       <div className="flex flex-1 overflow-hidden">
-        {/* Left rail — queue + reserved chat seam */}
+        {/* Left rail — queue + reserved chat seam (desktop only) */}
         <aside className="hidden w-[300px] shrink-0 flex-col border-r border-[#E7E5E4] bg-[#FAFAF9] md:flex">
-          <div className="border-b border-[#E7E5E4] px-4 py-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-              Pending suggestions
-            </div>
-            <div className="mt-0.5 font-mono text-[11px] text-[#A8A29E]">
-              {loading ? '…' : `${suggestions.length} open`}
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto">
-            <TuningQueue
-              suggestions={suggestions}
-              loading={loading}
-              selectedId={selectedId}
-              onSelect={setSelected}
-            />
-          </div>
-          {/* Sprint 04 — chat history browser */}
-          <div className="border-t border-[#E7E5E4]">
-            <ConversationList
-              selectedId={conversationId}
-              onSelect={setConversation}
-              onCreated={setConversation}
-            />
-          </div>
+          {leftRailContent}
         </aside>
 
         {/* Center — detail panel, or chat when a conversation is selected */}
