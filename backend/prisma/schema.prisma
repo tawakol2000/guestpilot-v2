@@ -8,46 +8,51 @@ datasource db {
 }
 
 model Tenant {
-  id                    String                @id @default(cuid())
-  email                 String                @unique
-  name                  String?
-  passwordHash          String
-  hostawayApiKey        String
-  hostawayAccountId     String
-  webhookSecret         String                @default("")
-  plan                  Plan                  @default(FREE)
-  propertyCount         Int                   @default(0)
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  lastSyncedAt          DateTime?
-  conversations         Conversation[]
-  guests                Guest[]
-  messages              Message[]
-  pendingReplies        PendingAiReply[]
-  properties            Property[]
-  reservations          Reservation[]
-  tasks                 Task[]
-  faqEntries            FaqEntry[]
-  webhookLogs           WebhookLog[]
-  messageTemplates      MessageTemplate[]
-  knowledgeSuggestions  KnowledgeSuggestion[]
-  aiApiLogs             AiApiLog[]
-  aiConfigVersions      AiConfigVersion[]
-  tenantAiConfig          TenantAiConfig?
-  sopDefinitions          SopDefinition[]
-  toolDefinitions         ToolDefinition[]
-  pushSubscriptions       PushSubscription[]
-  iosPushTokens           IosPushToken[]
-  inquiryActionLogs       InquiryActionLog[]
-  bookingAlterations      BookingAlteration[]
-  alterationActionLogs    AlterationActionLog[]
-  tuningSuggestions       TuningSuggestion[]    // Feature 040: Copilot Shadow Mode
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  name                 String?
+  passwordHash         String
+  hostawayApiKey       String
+  hostawayAccountId    String
+  webhookSecret        String                @default("")
+  plan                 Plan                  @default(FREE)
+  propertyCount        Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  lastSyncedAt         DateTime?
+  conversations        Conversation[]
+  guests               Guest[]
+  messages             Message[]
+  pendingReplies       PendingAiReply[]
+  properties           Property[]
+  reservations         Reservation[]
+  tasks                Task[]
+  faqEntries           FaqEntry[]
+  webhookLogs          WebhookLog[]
+  messageTemplates     MessageTemplate[]
+  knowledgeSuggestions KnowledgeSuggestion[]
+  aiApiLogs            AiApiLog[]
+  aiConfigVersions     AiConfigVersion[]
+  tenantAiConfig       TenantAiConfig?
+  sopDefinitions       SopDefinition[]
+  toolDefinitions      ToolDefinition[]
+  pushSubscriptions    PushSubscription[]
+  iosPushTokens        IosPushToken[]
+  inquiryActionLogs    InquiryActionLog[]
+  bookingAlterations   BookingAlteration[]
+  alterationActionLogs AlterationActionLog[]
+  tuningSuggestions    TuningSuggestion[] // Feature 040: Copilot Shadow Mode
+  tuningConversations  TuningConversation[] // Feature 041: Conversational Tuning
+  agentMemories        AgentMemory[] // Feature 041
+  evidenceBundles      EvidenceBundle[] // Feature 041
+  capabilityRequests   CapabilityRequest[] // Feature 041
+  preferencePairs      PreferencePair[] // Feature 041
 
   // Dashboard connection (platform.hostaway.com internal API)
-  dashboardJwt            String?           @db.Text
-  dashboardJwtIssuedAt    DateTime?
-  dashboardJwtExpiresAt   DateTime?
-  dashboardConnectedBy    String?
+  dashboardJwt          String?   @db.Text
+  dashboardJwtIssuedAt  DateTime?
+  dashboardJwtExpiresAt DateTime?
+  dashboardConnectedBy  String?
 }
 
 model Property {
@@ -64,9 +69,9 @@ model Property {
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservations         Reservation[]
   tasks                Task[]
-  faqEntries              FaqEntry[]
-  knowledgeSuggestions    KnowledgeSuggestion[]
-  sopPropertyOverrides    SopPropertyOverride[]
+  faqEntries           FaqEntry[]
+  knowledgeSuggestions KnowledgeSuggestion[]
+  sopPropertyOverrides SopPropertyOverride[]
 
   @@unique([tenantId, hostawayListingId])
   @@index([tenantId])
@@ -114,9 +119,9 @@ model Reservation {
   property              Property          @relation(fields: [propertyId], references: [id])
   tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  inquiryActionLogs     InquiryActionLog[]
-  alteration            BookingAlteration?
-  alterationActionLogs  AlterationActionLog[]
+  inquiryActionLogs    InquiryActionLog[]
+  alteration           BookingAlteration?
+  alterationActionLogs AlterationActionLog[]
 
   @@unique([tenantId, hostawayReservationId])
   @@index([tenantId])
@@ -158,30 +163,32 @@ model Conversation {
 }
 
 model Message {
-  id                  String        @id @default(cuid())
+  id                  String               @id @default(cuid())
   conversationId      String
   tenantId            String
   role                MessageRole
   content             String
-  channel             Channel       @default(OTHER)
-  communicationType   String        @default("")
-  sentAt              DateTime      @default(now())
-  hostawayMessageId   String        @default("")
-  imageUrls           String[]      @default([])
+  channel             Channel              @default(OTHER)
+  communicationType   String               @default("")
+  sentAt              DateTime             @default(now())
+  hostawayMessageId   String               @default("")
+  imageUrls           String[]             @default([])
   // ─── Feature 040: Copilot Shadow Mode (nullable; safe to drop on retirement) ───
   previewState        PreviewState? // null for normal messages; set for shadow-mode previews
-  originalAiText      String?       @db.Text // AI's original generated text (present for previews and kept after Send for audit)
-  editedByUserId      String?       // Populated on Send if the admin edited before sending
-  aiApiLogId          String?       // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
+  originalAiText      String?              @db.Text // AI's original generated text (present for previews and kept after Send for audit)
+  editedByUserId      String? // Populated on Send if the admin edited before sending
+  aiApiLogId          String? // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
   // ─── iOS readiness: delivery tracking + client source audit trail ───
-  deliveryStatus      String?       // 'sent' | 'pending' | 'failed' | null (null for inbound/guest messages)
-  deliveryError       String?       // Error message when deliveryStatus = 'failed'
-  deliveredAt         DateTime?     // Timestamp of successful Hostaway delivery
-  source              String?       // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
-  conversation        Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveryStatus      String? // 'sent' | 'pending' | 'failed' | null (null for inbound/guest messages)
+  deliveryError       String? // Error message when deliveryStatus = 'failed'
+  deliveredAt         DateTime? // Timestamp of successful Hostaway delivery
+  source              String? // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
+  conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
-  tuningSuggestions   TuningSuggestion[] @relation("SourcePreview")
+  tuningSuggestions   TuningSuggestion[]   @relation("SourcePreview")
+  tuningConversations TuningConversation[] @relation("AnchorMessage") // Feature 041
+  evidenceBundles     EvidenceBundle[] // Feature 041
 
   // Partial unique index exists in DB: CREATE UNIQUE INDEX "Message_conv_hostaway_msg_unique" ON "Message" ("conversationId", "hostawayMessageId") WHERE "hostawayMessageId" != ''
   // Applied via prisma/migrations/add_audit_constraints.sql — Prisma 5.x does not support partial indexes in schema
@@ -206,24 +213,24 @@ model PendingAiReply {
 }
 
 model Task {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   tenantId       String
   conversationId String?
   propertyId     String?
   title          String
   note           String?
   urgency        String
-  type           String       @default("other")
-  status         String       @default("open")
-  source         String       @default("ai")
+  type           String        @default("other")
+  status         String        @default("open")
+  source         String        @default("ai")
   dueDate        DateTime?
   assignee       String?
   completedAt    DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
-  property       Property?    @relation(fields: [propertyId], references: [id])
-  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property       Property?     @relation(fields: [propertyId], references: [id])
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -250,19 +257,19 @@ model MessageTemplate {
 }
 
 model KnowledgeSuggestion {
-  id             String        @id @default(cuid())
+  id             String   @id @default(cuid())
   tenantId       String
   propertyId     String?
   conversationId String?
-  question       String        @db.Text
-  answer         String        @db.Text
-  status         String        @default("pending")
-  source         String        @default("ai")
+  question       String   @db.Text
+  answer         String   @db.Text
+  status         String   @default("pending")
+  source         String   @default("ai")
   category       String?
-  usageCount     Int           @default(0)
+  usageCount     Int      @default(0)
   avgConfidence  Float?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   property     Property?     @relation(fields: [propertyId], references: [id])
@@ -319,22 +326,22 @@ enum MessageRole {
 // ─── FAQ Knowledge System ────────────────────────────────────────────────────
 
 model FaqEntry {
-  id                     String    @id @default(cuid())
-  tenantId               String
-  propertyId             String?
-  question               String
-  answer                 String    @db.Text
-  category               String
-  scope                  FaqScope  @default(PROPERTY)
-  status                 FaqStatus @default(SUGGESTED)
-  source                 FaqSource @default(MANUAL)
-  usageCount             Int       @default(0)
-  lastUsedAt             DateTime?
-  sourceConversationId   String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property               Property? @relation(fields: [propertyId], references: [id])
+  id                   String    @id @default(cuid())
+  tenantId             String
+  propertyId           String?
+  question             String
+  answer               String    @db.Text
+  category             String
+  scope                FaqScope  @default(PROPERTY)
+  status               FaqStatus @default(SUGGESTED)
+  source               FaqSource @default(MANUAL)
+  usageCount           Int       @default(0)
+  lastUsedAt           DateTime?
+  sourceConversationId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property             Property? @relation(fields: [propertyId], references: [id])
 
   @@unique([tenantId, propertyId, question])
   @@index([tenantId, propertyId, status])
@@ -361,20 +368,19 @@ enum FaqSource {
 
 // ─── Automated Messages ──────────────────────────────────────────────────────
 
-
 // ─── Webhook Logs ────────────────────────────────────────────────────────────
 
 model WebhookLog {
-  id             String   @id @default(cuid())
-  tenantId       String
-  event          String
-  hostawayId     String?
-  status         String   @default("processed")
-  payload        Json?
-  error          String?
-  durationMs     Int      @default(0)
-  createdAt      DateTime @default(now())
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  tenantId   String
+  event      String
+  hostawayId String?
+  status     String   @default("processed")
+  payload    Json?
+  error      String?
+  durationMs Int      @default(0)
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([tenantId, event])
@@ -411,66 +417,67 @@ model AiApiLog {
 // ─── Per-Tenant AI Configuration ─────────────────────────────────────────────
 
 model TenantAiConfig {
-  id                   String   @id @default(cuid())
-  tenantId             String   @unique
-  agentName            String   @default("Omar")
-  agentPersonality     String   @db.Text @default("")
-  customInstructions   String   @db.Text @default("")
-  model                String   @default("gpt-5.4-mini-2026-03-17")
-  temperature          Float    @default(0.25)
-  maxTokens            Int      @default(1024)
-  debounceDelayMs      Int      @default(30000)
-  adaptiveDebounce     Boolean  @default(true)
-  aiEnabled            Boolean  @default(true)
-  screeningEnabled     Boolean  @default(true)
-  memorySummaryEnabled Boolean  @default(true)
-  judgeThreshold       Float    @default(0.75)
-  autoFixThreshold     Float    @default(0.70)
-  tier2Threshold              Float @default(0.75)
-  highConfidenceThreshold     Float @default(0.85)
-  lowConfidenceThreshold      Float @default(0.55)
-  tier1Mode                   String @default("active")  // "active" | "ghost" | "off"
-  tier2Mode                   String @default("active")  // "active" | "ghost" | "off"
-  tier3Mode                   String @default("active")  // "active" | "ghost" | "off"
-  workingHoursEnabled  Boolean  @default(false)
-  workingHoursStart    String   @default("08:00")
-  workingHoursEnd      String   @default("01:00")
-  workingHoursTimezone String   @default("UTC")
-  judgeMode            String   @default("evaluate_all")
-  sopOverrides         Json     @default("{}")
-  reasoningCoordinator String   @default("auto")  // "none" | "low" | "medium" | "high" | "auto"
-  reasoningScreening   String   @default("none")   // "none" | "low" | "medium" | "high"
-  systemPromptCoordinator String? @db.Text
-  systemPromptScreening   String? @db.Text
-  systemPromptVersion     Int     @default(1)
-  imageHandlingInstructions String? @db.Text // Appended to system prompt when guest sends an image
-  systemPromptHistory     Json    @default("[]") // Array of {version, timestamp, coordinator?, screening?, note?}
+  id                        String   @id @default(cuid())
+  tenantId                  String   @unique
+  agentName                 String   @default("Omar")
+  agentPersonality          String   @default("") @db.Text
+  customInstructions        String   @default("") @db.Text
+  model                     String   @default("gpt-5.4-mini-2026-03-17")
+  temperature               Float    @default(0.25)
+  maxTokens                 Int      @default(1024)
+  debounceDelayMs           Int      @default(30000)
+  adaptiveDebounce          Boolean  @default(true)
+  aiEnabled                 Boolean  @default(true)
+  screeningEnabled          Boolean  @default(true)
+  memorySummaryEnabled      Boolean  @default(true)
+  judgeThreshold            Float    @default(0.75)
+  autoFixThreshold          Float    @default(0.70)
+  tier2Threshold            Float    @default(0.75)
+  highConfidenceThreshold   Float    @default(0.85)
+  lowConfidenceThreshold    Float    @default(0.55)
+  tier1Mode                 String   @default("active") // "active" | "ghost" | "off"
+  tier2Mode                 String   @default("active") // "active" | "ghost" | "off"
+  tier3Mode                 String   @default("active") // "active" | "ghost" | "off"
+  workingHoursEnabled       Boolean  @default(false)
+  workingHoursStart         String   @default("08:00")
+  workingHoursEnd           String   @default("01:00")
+  workingHoursTimezone      String   @default("UTC")
+  judgeMode                 String   @default("evaluate_all")
+  sopOverrides              Json     @default("{}")
+  reasoningCoordinator      String   @default("auto") // "none" | "low" | "medium" | "high" | "auto"
+  reasoningScreening        String   @default("none") // "none" | "low" | "medium" | "high"
+  systemPromptCoordinator   String?  @db.Text
+  systemPromptScreening     String?  @db.Text
+  systemPromptVersion       Int      @default(1)
+  imageHandlingInstructions String?  @db.Text // Appended to system prompt when guest sends an image
+  systemPromptHistory       Json     @default("[]") // Array of {version, timestamp, coordinator?, screening?, note?}
   // ─── Feature 040: Copilot Shadow Mode (safe to drop on retirement) ───
-  shadowModeEnabled    Boolean  @default(false) // When true, copilot replies render as in-chat preview bubbles + fire tuning analyzer on edited sends. Autopilot unaffected.
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  shadowModeEnabled         Boolean  @default(false) // When true, copilot replies render as in-chat preview bubbles + fire tuning analyzer on edited sends. Autopilot unaffected.
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 // ─── OPUS Audit Reports ─────────────────────────────────────────────────────
 
-
 // ─── AI Config Version History ───────────────────────────────────────────────
 
 model AiConfigVersion {
-  id        String   @id @default(cuid())
-  tenantId  String
-  version   Int
-  config    Json
-  note      String?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  version        Int
+  config         Json
+  note           String?
+  createdAt      DateTime @default(now())
+  // ─── Feature 041 pre-wire (D4 A/B testing); unused in V1 ───
+  experimentId   String?
+  trafficPercent Int?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, version(sort: Desc)])
 }
-
 
 // ─── Tool Definitions (per-tenant, system + custom) ─────────────────────────
 
@@ -482,8 +489,8 @@ model ToolDefinition {
   description        String   @db.Text
   defaultDescription String   @db.Text
   parameters         Json
-  agentScope         String   // "screening" | "coordinator" | "both"
-  type               String   // "system" | "custom"
+  agentScope         String // "screening" | "coordinator" | "both"
+  type               String // "system" | "custom"
   enabled            Boolean  @default(true)
   webhookUrl         String?
   webhookTimeout     Int      @default(10000)
@@ -498,15 +505,15 @@ model ToolDefinition {
 // ─── SOP Definitions (per-tenant, editable by operators) ────────────────────
 
 model SopDefinition {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   tenantId        String
-  category        String    // e.g., "sop-amenity-request"
-  toolDescription String    @db.Text  // lean description for AI classification
-  enabled         Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  category        String // e.g., "sop-amenity-request"
+  toolDescription String   @db.Text // lean description for AI classification
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   variants          SopVariant[]
   propertyOverrides SopPropertyOverride[]
 
@@ -515,31 +522,31 @@ model SopDefinition {
 }
 
 model SopVariant {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   sopDefinitionId String
-  status          String    // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
-  content         String    @db.Text
-  enabled         Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content         String   @db.Text
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  sopDefinition   SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
+  sopDefinition SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, status])
 }
 
 model SopPropertyOverride {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   sopDefinitionId String
   propertyId      String
-  status          String    // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
-  content         String    @db.Text
-  enabled         Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content         String   @db.Text
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  sopDefinition   SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
-  property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  sopDefinition SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
+  property      Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, propertyId, status])
 }
@@ -580,15 +587,15 @@ model IosPushToken {
 // ─── Inquiry Action Log (approve/reject/cancel) ────────────────────────────
 
 model InquiryActionLog {
-  id              String              @id @default(cuid())
-  tenantId        String
-  reservationId   String
-  actionType      InquiryActionType
-  status          InquiryActionStatus @default(PENDING)
-  initiatedBy     String
-  errorMessage    String?
+  id               String              @id @default(cuid())
+  tenantId         String
+  reservationId    String
+  actionType       InquiryActionType
+  status           InquiryActionStatus @default(PENDING)
+  initiatedBy      String
+  errorMessage     String?
   hostawayResponse Json?
-  createdAt       DateTime            @default(now())
+  createdAt        DateTime            @default(now())
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
@@ -611,29 +618,29 @@ enum InquiryActionStatus {
 // ─── Booking Alteration (accept/reject guest modification requests) ───────────
 
 model BookingAlteration {
-  id                   String           @id @default(cuid())
+  id                   String @id @default(cuid())
   tenantId             String
-  reservationId        String           @unique
-  hostawayAlterationId String           @default("")
+  reservationId        String @unique
+  hostawayAlterationId String @default("")
 
   // Original booking values (before alteration)
-  originalCheckIn      DateTime?
-  originalCheckOut     DateTime?
-  originalGuestCount   Int?
+  originalCheckIn    DateTime?
+  originalCheckOut   DateTime?
+  originalGuestCount Int?
 
   // Proposed new values from the guest
-  proposedCheckIn      DateTime?
-  proposedCheckOut     DateTime?
-  proposedGuestCount   Int?
+  proposedCheckIn    DateTime?
+  proposedCheckOut   DateTime?
+  proposedGuestCount Int?
 
-  status               AlterationStatus @default(PENDING)
-  fetchError           String?          // set if Hostaway detail fetch failed
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  status     AlterationStatus @default(PENDING)
+  fetchError String? // set if Hostaway detail fetch failed
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
-  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  reservation          Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  actionLogs           AlterationActionLog[]
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation           @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  actionLogs  AlterationActionLog[]
 
   @@index([tenantId])
   @@index([tenantId, reservationId])
@@ -681,9 +688,9 @@ enum AlterationActionStatus {
 // feature can be retired cleanly by dropping them.
 
 enum PreviewState {
-  PREVIEW_PENDING  // Unsent preview; actionable IFF it is the latest preview on the conversation
-  PREVIEW_LOCKED   // Unsent preview superseded by a newer preview
-  PREVIEW_SENDING  // Brief transition state during Send endpoint; prevents double-send
+  PREVIEW_PENDING // Unsent preview; actionable IFF it is the latest preview on the conversation
+  PREVIEW_LOCKED // Unsent preview superseded by a newer preview
+  PREVIEW_SENDING // Brief transition state during Send endpoint; prevents double-send
 }
 
 enum TuningActionType {
@@ -702,44 +709,164 @@ enum TuningSuggestionStatus {
 }
 
 model TuningSuggestion {
-  id                   String                 @id @default(cuid())
-  tenantId             String
-  sourceMessageId      String                 // Preview Message that triggered the analyzer run
-  sourceAiApiLogId     String?                // Mirrors sourceMessage.aiApiLogId at creation time (convenience)
-  actionType           TuningActionType
-  status               TuningSuggestionStatus @default(PENDING)
-  rationale            String                 @db.Text
+  id               String                 @id @default(cuid())
+  tenantId         String
+  sourceMessageId  String // Preview Message that triggered the analyzer run
+  sourceAiApiLogId String? // Mirrors sourceMessage.aiApiLogId at creation time (convenience)
+  actionType       TuningActionType
+  status           TuningSuggestionStatus @default(PENDING)
+  rationale        String                 @db.Text
 
   // EDIT action payload (nullable; populated per actionType)
-  beforeText           String?                @db.Text
-  proposedText         String?                @db.Text
+  beforeText   String? @db.Text
+  proposedText String? @db.Text
 
   // Target reference fields
-  systemPromptVariant  String?                // 'coordinator' | 'screening'                 (EDIT_SYSTEM_PROMPT)
-  sopCategory          String?                // e.g. 'sop-checkin'                          (EDIT_SOP_CONTENT / EDIT_SOP_ROUTING / CREATE_SOP)
-  sopStatus            String?                // 'DEFAULT'|'INQUIRY'|'CONFIRMED'|'CHECKED_IN' (EDIT_SOP_CONTENT / CREATE_SOP)
-  sopPropertyId        String?                // Set only when AI consulted a property override (EDIT_SOP_CONTENT)
-  sopToolDescription   String?                // New classifier description                  (EDIT_SOP_ROUTING / CREATE_SOP)
-  faqEntryId           String?                // Existing FAQ entry id                       (EDIT_FAQ)
+  systemPromptVariant String? // 'coordinator' | 'screening'                 (EDIT_SYSTEM_PROMPT)
+  sopCategory         String? // e.g. 'sop-checkin'                          (EDIT_SOP_CONTENT / EDIT_SOP_ROUTING / CREATE_SOP)
+  sopStatus           String? // 'DEFAULT'|'INQUIRY'|'CONFIRMED'|'CHECKED_IN' (EDIT_SOP_CONTENT / CREATE_SOP)
+  sopPropertyId       String? // Set only when AI consulted a property override (EDIT_SOP_CONTENT)
+  sopToolDescription  String? // New classifier description                  (EDIT_SOP_ROUTING / CREATE_SOP)
+  faqEntryId          String? // Existing FAQ entry id                       (EDIT_FAQ)
 
   // CREATE_FAQ payload
-  faqCategory          String?
-  faqScope             String?                // 'GLOBAL' | 'PROPERTY'
-  faqPropertyId        String?
-  faqQuestion          String?                @db.Text
-  faqAnswer            String?                @db.Text
+  faqCategory   String?
+  faqScope      String? // 'GLOBAL' | 'PROPERTY'
+  faqPropertyId String?
+  faqQuestion   String? @db.Text
+  faqAnswer     String? @db.Text
 
   // Final applied payload (normalized per action type; see data-model.md §3)
-  appliedPayload       Json?                  // e.g. { text } or { question, answer } or { content, toolDescription }
-  appliedAt            DateTime?
-  appliedByUserId      String?
+  appliedPayload  Json? // e.g. { text } or { question, answer } or { content, toolDescription }
+  appliedAt       DateTime?
+  appliedByUserId String?
 
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  // ─── Feature 041 extensions (all nullable; old-branch code still inserts without these) ───
+  applyMode            String? // 'IMMEDIATE' | 'QUEUED' (string, not enum, to allow future values)
+  conversationId       String? // FK to TuningConversation (nullable, SetNull on delete)
+  confidence           Float? // 0.0–1.0 verbalized confidence
+  appliedAndRetained7d Boolean? // tri-state: null=unknown/too-soon, true/false once checked
+  editEmbedding        Unsupported("vector(1536)")? // D1 pre-wire; unused in V1. pgvector 0.8.2 confirmed installed.
 
-  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceMessage        Message                @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceMessage Message             @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  conversation  TuningConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, createdAt(sort: Desc)])
   @@index([sourceMessageId])
+  @@index([conversationId])
+}
+
+// ─── Feature 041: Conversational Tuning Agent ────────────────────────────────
+// All entities are additive. New tables are safe for coexistence with the live
+// `main` branch: it never queries them and its Prisma client is unaffected by
+// their presence. See specs/041-conversational-tuning/operational-rules.md.
+
+// Trigger types for TuningConversation + EvidenceBundle. Includes pre-wired
+// values (CLUSTER_TRIGGERED, ESCALATION_TRIGGERED) that are not produced by
+// V1 code but must exist in the enum so V2 can flip them on without a migration.
+enum TuningConversationTriggerType {
+  MANUAL
+  EDIT_TRIGGERED
+  REJECT_TRIGGERED
+  COMPLAINT_TRIGGERED
+  THUMBS_DOWN_TRIGGERED
+  CLUSTER_TRIGGERED // D5 pre-wire; unused in V1
+  ESCALATION_TRIGGERED // D6 pre-wire; unused in V1
+}
+
+model TuningConversation {
+  id              String                        @id @default(cuid())
+  tenantId        String
+  userId          String? // Pre-wire for agent-initiated conversations (D5) and multi-user (D15). No FK to User: existing project does not have a User model; populated from AuthenticatedRequest.userId.
+  title           String?
+  triggerType     TuningConversationTriggerType
+  anchorMessageId String? // The specific main-AI Message the conversation is anchored to, if any.
+  sdkSessionId    String? // Claude Agent SDK persist_session id; populated in sprint 04.
+  status          String                        @default("OPEN") // Plain string (not enum) to allow future values without migration.
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  anchorMessage Message?           @relation("AnchorMessage", fields: [anchorMessageId], references: [id], onDelete: SetNull)
+  messages      TuningMessage[]
+  suggestions   TuningSuggestion[]
+
+  @@index([tenantId])
+  @@index([anchorMessageId])
+}
+
+model TuningMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String // 'user' | 'assistant' | 'tool' | 'system'
+  parts          Json // Vercel AI SDK parts[] (text, tool-call, tool-result, reasoning, data-*)
+  createdAt      DateTime @default(now())
+
+  conversation TuningConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String // e.g. 'preferences/tone', 'facts/luxury-properties'
+  value     Json
+  source    String? // Which tuning conversation / suggestion produced this memory
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+model EvidenceBundle {
+  id          String                        @id @default(cuid())
+  tenantId    String
+  messageId   String? // Main-AI Message that produced this bundle. Nullable so future non-message-triggered bundles are possible.
+  triggerType TuningConversationTriggerType
+  payload     Json // Assembled bundle (see evidence-bundle.service.ts → EvidenceBundle type)
+  createdAt   DateTime                      @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([tenantId, createdAt(sort: Desc)])
+}
+
+model CapabilityRequest {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  title                String
+  description          String   @db.Text
+  rationale            String?  @db.Text
+  sourceConversationId String? // TuningConversation id. Plain string, no FK: request should survive conversation deletion.
+  status               String   @default("OPEN")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+// D2 pre-wire: DPO training pairs. V1 does not write to this table.
+model PreferencePair {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  context            Json
+  rejectedSuggestion Json
+  preferredFinal     Json
+  category           String?
+  createdAt          DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
 }
