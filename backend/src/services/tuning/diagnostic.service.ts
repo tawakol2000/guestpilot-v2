@@ -32,6 +32,7 @@ import {
 } from '../evidence-bundle.service';
 import {
   classifyEditMagnitude,
+  computeEditMagnitudeScore,
   computeMyersDiff,
   semanticSimilarity,
   type EditMagnitude,
@@ -315,7 +316,22 @@ export async function runDiagnostic(
     const finalText = bundle.disputedMessage?.content ?? '';
     const similarity = semanticSimilarity(originalText, finalText);
     const magnitude = classifyEditMagnitude(originalText, finalText);
+    const magnitudeScore = computeEditMagnitudeScore(originalText, finalText);
     const diff = computeMyersDiff(originalText, finalText);
+
+    // Sprint 05 §3 (C19): persist the authoritative numeric edit-magnitude on
+    // the Message row so the graduation dashboard can average actual scores
+    // instead of a character-position proxy. Best-effort — never throw.
+    if (input.messageId) {
+      try {
+        await prisma.message.update({
+          where: { id: input.messageId },
+          data: { editMagnitudeScore: magnitudeScore },
+        });
+      } catch (err) {
+        console.warn('[Diagnostic] persisting editMagnitudeScore failed (non-fatal):', err);
+      }
+    }
 
     const openai = getOpenAI();
     if (!openai) {

@@ -98,6 +98,26 @@ function shingles(s: string, k: number): Set<string> {
   return out;
 }
 
+// ─── Numerical edit-magnitude score (sprint 05 §3 / C19) ────────────────────
+//
+// Authoritative numeric edit magnitude. Returns a fraction in [0, 1] where 0
+// means no semantic change and 1 means a complete rewrite. Computed as
+// 1 - semanticSimilarity, so the categorical classifier (MINOR/MODERATE/...)
+// and the numeric score are derived from the same signal.
+//
+// Persisted on Message.editMagnitudeScore at trigger time so the graduation
+// dashboard can average actual edit magnitudes instead of the pre-sprint-05
+// character-position-equality proxy.
+
+export function computeEditMagnitudeScore(original: string, final: string): number {
+  const sim = semanticSimilarity(original, final);
+  const score = 1 - sim;
+  // Defensive clamp — JavaScript floating point can produce -0 or marginal
+  // overshoots from the Jaccard arithmetic.
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(1, score));
+}
+
 // ─── Edit magnitude classification ───────────────────────────────────────────
 
 export type EditMagnitude = 'MINOR' | 'MODERATE' | 'MAJOR' | 'WHOLESALE';

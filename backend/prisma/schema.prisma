@@ -186,6 +186,12 @@ model Message {
   deliveryError       String? // Error message when deliveryStatus = 'failed'
   deliveredAt         DateTime? // Timestamp of successful Hostaway delivery
   source              String? // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
+  // ─── Feature 041 sprint 05 §3 (C19): authoritative edit-magnitude score ───
+  // Persisted at trigger time (manager-edited copilot send) by the diagnostic
+  // pipeline. Float in [0,1] = 1 - semanticSimilarity(original, final). Old
+  // rows (pre sprint-05) stay null; the graduation dashboard averages only
+  // non-null values, so legacy rows are excluded cleanly.
+  editMagnitudeScore  Float?
   conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
