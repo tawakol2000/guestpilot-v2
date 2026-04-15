@@ -6,10 +6,12 @@ import {
   apiGetProperties,
   apiListToolDefinitions,
   apiListTuningSuggestions,
+  getToken,
   type ApiProperty,
   type TuningSuggestion,
   type ToolDefinitionSummary,
 } from '@/lib/api'
+import { connectSocket, socket } from '@/lib/socket'
 import { TuningAuthGate } from '@/components/tuning/auth-gate'
 import { TuningTopNav } from '@/components/tuning/top-nav'
 import { TuningQueue } from '@/components/tuning/queue'
@@ -75,6 +77,37 @@ function TuningPageInner() {
 
   useEffect(() => {
     refresh()
+  }, [refresh])
+
+  // Sprint 05 §5 (C20): live queue refresh. Backend broadcasts
+  // `tuning_suggestion_updated` to the tenant room on every accept/reject/
+  // tool-config edit. We subscribe and refetch — debounced to ≤1/s so a burst
+  // of accepts in another tab doesn't hammer the list endpoint.
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    connectSocket(token)
+    let lastRefetch = 0
+    let pending: ReturnType<typeof setTimeout> | null = null
+    const onUpdate = () => {
+      const now = Date.now()
+      const since = now - lastRefetch
+      if (since >= 1000) {
+        lastRefetch = now
+        refresh()
+      } else if (!pending) {
+        pending = setTimeout(() => {
+          lastRefetch = Date.now()
+          pending = null
+          refresh()
+        }, 1000 - since)
+      }
+    }
+    socket.on('tuning_suggestion_updated', onUpdate)
+    return () => {
+      socket.off('tuning_suggestion_updated', onUpdate)
+      if (pending) clearTimeout(pending)
+    }
   }, [refresh])
 
   // Properties + tools are needed for the dispatch dialogs. Both endpoints
