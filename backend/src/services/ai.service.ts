@@ -11,7 +11,13 @@ import * as hostawayService from './hostaway.service';
 import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
 import { broadcastToTenant, broadcastCritical } from './socket.service';
-import { traceAiCall, traceEscalation } from './observability.service';
+import {
+  traceAiCall,
+  traceEscalation,
+  runWithAiTrace,
+  stampAiTrace,
+  startAiSpan,
+} from './observability.service';
 import { searchAvailableProperties } from './property-search.service';
 import { checkExtendAvailability } from './extend-stay.service';
 import { getSopContent, buildToolDefinition } from './sop.service';
@@ -343,19 +349,31 @@ async function createMessage(
       for (const fnCall of fnCalls) {
         const handler = options.toolHandlers.get(fnCall.name);
         const toolStartMs = Date.now();
+        let parsedToolInput: unknown = null;
+        try { parsedToolInput = JSON.parse(fnCall.arguments); } catch { parsedToolInput = fnCall.arguments; }
+        // Feature 041 §1: per-tool-call span on the active AI trace (no-op
+        // when tracing is disabled or when there's no active trace).
+        const toolSpan = startAiSpan(`tool:${fnCall.name}`, parsedToolInput, {
+          toolName: fnCall.name,
+          round: toolRound,
+        });
         let toolResultContent: string;
+        let toolSpanError: string | null = null;
         try {
-          const toolInput = JSON.parse(fnCall.arguments);
           if (handler) {
-            toolResultContent = await handler(toolInput, options.toolContext);
+            toolResultContent = await handler(parsedToolInput as any, options.toolContext);
           } else {
             toolResultContent = JSON.stringify({ error: `Unknown tool: ${fnCall.name}`, found: false, properties: [] });
           }
         } catch (toolErr) {
           console.error(`[AI] Tool handler error for ${fnCall.name}:`, toolErr);
+          toolSpanError = toolErr instanceof Error ? toolErr.message : String(toolErr);
           toolResultContent = JSON.stringify({ error: 'Tool execution failed. Please escalate to the property manager.', found: false, properties: [], should_escalate: true });
         }
         const toolDurationMs = Date.now() - toolStartMs;
+        let parsedResults: any;
+        try { parsedResults = JSON.parse(toolResultContent); } catch { parsedResults = toolResultContent; }
+        toolSpan.end(parsedResults, { durationMs: toolDurationMs, error: toolSpanError });
 
         // Log tools to ragContext
         if (options?.ragContext) {
@@ -364,20 +382,16 @@ async function createMessage(
           options.ragContext.toolNames.push(fnCall.name);
           // Per-tool details array for AI Logs
           if (!options.ragContext.tools) options.ragContext.tools = [];
-          let parsedInput: any;
-          try { parsedInput = JSON.parse(fnCall.arguments); } catch { parsedInput = fnCall.arguments; }
-          let parsedResults: any;
-          try { parsedResults = JSON.parse(toolResultContent); } catch { parsedResults = toolResultContent; }
           options.ragContext.tools.push({
             name: fnCall.name,
-            input: parsedInput,
+            input: parsedToolInput,
             results: parsedResults,
             durationMs: toolDurationMs,
           });
           // Keep first tool in toolName for backward compat
           if (!options.ragContext.toolName) {
             options.ragContext.toolName = fnCall.name;
-            options.ragContext.toolInput = parsedInput;
+            options.ragContext.toolInput = parsedToolInput;
             options.ragContext.toolResults = parsedResults;
             options.ragContext.toolDurationMs = toolDurationMs;
           }
@@ -1328,8 +1342,20 @@ export async function generateAndSendAiReply(
   console.log(`[AI] [${conversationId}] Generating AI reply...`);
 
   try {
+    // Feature 041 §1: one Langfuse trace per generateAndSendAiReply invocation.
+    // agentName / systemPromptVersion / messageId are stamped onto the trace
+    // once they become known inside the body via `stampAiTrace(...)`.
+    await runWithAiTrace(
+      {
+        tenantId,
+        conversationId,
+        reservationId: (context as any).reservationId ?? null,
+        mode: (context.aiMode === 'copilot' ? 'copilot' : 'autopilot') as 'autopilot' | 'copilot',
+      },
+      async () => {
     // Upgrade 6d: Fetch per-tenant AI configuration (cached, 5min TTL)
     const tenantConfig = await getTenantAiConfig(tenantId, prisma).catch(() => null);
+    stampAiTrace({ systemPromptVersion: tenantConfig?.systemPromptVersion ?? null });
 
     // Pre-response sync: fetch latest messages + reservation status from Hostaway
     if (hostawayConversationId && hostawayAccountId && hostawayApiKey) {
@@ -1466,6 +1492,7 @@ export async function generateAndSendAiReply(
     // AI classifies the message, we retrieve the matching SOP content.
     const isInquiry = context.reservationStatus === 'INQUIRY' || context.reservationStatus === 'PENDING';
     const agentName = isInquiry ? 'screeningAI' : 'guestCoordinator';
+    stampAiTrace({ agentName });
     const personaCfg = isInquiry ? aiCfg.screeningAI : aiCfg.guestCoordinator;
     // Migrate legacy model names to GPT-5.4 Mini (tenants may have old values in DB)
     const rawModel = tenantConfig?.model || personaCfg.model;
@@ -2144,6 +2171,7 @@ export async function generateAndSendAiReply(
             source: 'ai',
           },
         });
+        stampAiTrace({ messageId: previewMessage.id, mode: 'shadow-preview' });
 
         // Update conversation lastMessageAt so the inbox list re-sorts to top.
         await prisma.conversation
@@ -2208,6 +2236,7 @@ export async function generateAndSendAiReply(
         deliveryStatus: 'pending',
       },
     });
+    stampAiTrace({ messageId: savedMessage.id });
 
     // Update conversation lastMessageAt
     await prisma.conversation.update({
@@ -2265,6 +2294,8 @@ export async function generateAndSendAiReply(
     }
 
     console.log(`[AI] [${conversationId}] Done`);
+      }
+    );
   } catch (err) {
     console.error(`[AI] [${conversationId}] Error:`, err);
     throw err;
