@@ -5252,7 +5252,8 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {/* Feature 041 sprint 01: legacy Tuning Review UI removed. New surface lands in sprint 03. */}
+      {/* Feature 041 sprint 03: tuning surface lives at /tuning. The inbox tab
+          link redirects there so the existing nav stays intact. */}
       {navTab === 'tuning' && (
         <ErrorBoundary>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 24 }}>
@@ -5261,13 +5262,20 @@ export default function InboxV5() {
             border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 12,
             background: 'var(--color-surface, #fff)',
           }}>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Tuning is being rebuilt</h2>
-            <p style={{ margin: 0, color: 'var(--color-text-muted, #6b7280)', lineHeight: 1.5 }}>
-              The conversational tuning surface (feature 041) is under construction.
-              The legacy v5 review queue has been removed on this branch. Existing
-              pending suggestions are still accessible via the backend APIs and
-              will be re-surfaced in the new UI.
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Tuning</h2>
+            <p style={{ margin: '0 0 16px', color: 'var(--color-text-muted, #6b7280)', lineHeight: 1.5 }}>
+              The conversational tuning surface is its own page now.
             </p>
+            <a
+              href="/tuning"
+              style={{
+                display: 'inline-block', padding: '8px 14px', borderRadius: 8,
+                background: '#1E3A8A', color: '#fff', textDecoration: 'none',
+                fontSize: 14, fontWeight: 500,
+              }}
+            >
+              Open /tuning →
+            </a>
           </div>
         </div>
         </ErrorBoundary>
