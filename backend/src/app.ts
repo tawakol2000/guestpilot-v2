@@ -25,6 +25,7 @@ import { hostawayConnectRouter } from './routes/hostaway-connect';
 import { shadowPreviewRouter } from './routes/shadow-preview';
 import { tuningSuggestionRouter } from './routes/tuning-suggestion';
 import { tuningComplaintRouter } from './routes/tuning-complaint';
+import { tuningChatRouter } from './routes/tuning-chat';
 import {
   tuningDashboardsRouter,
   tuningHistoryRouter,
@@ -100,6 +101,8 @@ export function createApp(prisma: PrismaClient) {
   // Feature 041 sprint 03 (additive — all read endpoints + rollback POST)
   app.use('/api/tuning', tuningDashboardsRouter(prisma));
   app.use('/api/tuning', tuningHistoryRouter(prisma));
+  // Feature 041 sprint 04: conversational agent (SSE chat + conversation CRUD)
+  app.use('/api/tuning', tuningChatRouter(prisma));
   app.use('/api/evidence-bundles', evidenceBundleRouter(prisma));
   app.use('/api/capability-requests', capabilityRequestsRouter(prisma));
 
