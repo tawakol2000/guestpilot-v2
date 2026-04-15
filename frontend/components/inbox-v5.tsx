@@ -108,7 +108,9 @@ import SandboxChatV5 from '@/components/sandbox-chat-v5'
 import ListingsV5 from '@/components/listings-v5'
 import CalendarV5 from '@/components/calendar-v5'
 import FaqV5 from '@/components/faq-v5'
-import { TuningReviewV5 } from '@/components/tuning-review-v5'
+// Feature 041 sprint 01 teardown: the v5 Tuning Review UI has been removed.
+// The new /tuning surface ships in sprint 03. Until then the tab renders a
+// placeholder below.
 import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 
@@ -5250,11 +5252,23 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {/* Feature 040: Copilot Shadow Mode — Tuning tab */}
+      {/* Feature 041 sprint 01: legacy Tuning Review UI removed. New surface lands in sprint 03. */}
       {navTab === 'tuning' && (
         <ErrorBoundary>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <TuningReviewV5 />
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 24 }}>
+          <div style={{
+            maxWidth: 560, margin: '48px auto', padding: 24,
+            border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 12,
+            background: 'var(--color-surface, #fff)',
+          }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Tuning is being rebuilt</h2>
+            <p style={{ margin: 0, color: 'var(--color-text-muted, #6b7280)', lineHeight: 1.5 }}>
+              The conversational tuning surface (feature 041) is under construction.
+              The legacy v5 review queue has been removed on this branch. Existing
+              pending suggestions are still accessible via the backend APIs and
+              will be re-surfaced in the new UI.
+            </p>
+          </div>
         </div>
         </ErrorBoundary>
       )}
