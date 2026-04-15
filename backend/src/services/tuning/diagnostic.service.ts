@@ -6,8 +6,9 @@
  *   2. Persist the bundle to `EvidenceBundle` and capture the row id.
  *   3. Compute Myers diff + magnitude on original vs final text.
  *   4. Single OpenAI Responses-API call with structured JSON output enforced
- *      by a json_schema. Model: gpt-5.4-mini-2026-03-17 (matches main
- *      pipeline). Reasoning effort: high.
+ *      by a json_schema. Model: TUNING_DIAGNOSTIC_MODEL env (default the
+ *      gpt-5.4 full flagship, fallback gpt-5.4-mini if the env-configured
+ *      model is not resolvable at runtime). Reasoning effort: high.
  *   5. Return a typed DiagnosticResult the suggestion-writer consumes.
  *
  * This replaces the two-step analyzer (nano classifier + mini analyzer) the
@@ -18,6 +19,9 @@
  * rule #2: returns null, caller must handle it. Tracing emits a nested span
  * under the active root trace when one exists (sprint 01's AsyncLocalStorage
  * scope), otherwise spans no-op.
+ *
+ * Sprint 05 §1: model upgrade lever. Set TUNING_DIAGNOSTIC_MODEL to roll back
+ * to mini if quality regresses or cost spikes.
  */
 import OpenAI from 'openai';
 import { PrismaClient, TuningConversationTriggerType } from '@prisma/client';
@@ -85,6 +89,57 @@ function getOpenAI(): OpenAI | null {
   if (!process.env.OPENAI_API_KEY) return null;
   _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return _openai;
+}
+
+// ─── Model selection (sprint 05 §1) ──────────────────────────────────────────
+//
+// Default to the gpt-5.4 full flagship — the diagnostic is the highest-value
+// LLM call in the tuning loop and we want maximum classification accuracy.
+// Set TUNING_DIAGNOSTIC_MODEL to override (e.g. roll back to mini if quality
+// regresses or cost spikes). Fallback path: if the configured model returns
+// model_not_found at runtime, fall back to mini for the rest of this process
+// and log once.
+
+// `gpt-5.4` is the undated alias for the full 5.4 flagship. The dated
+// identifier `gpt-5.4-2026-03-17` is referenced in tenant-config.service.ts's
+// allowed-models list but returns model_not_found from OpenAI as of sprint
+// 05 — the alias is the closest GA model. Override via TUNING_DIAGNOSTIC_MODEL
+// once a dated GA snapshot ships.
+const DEFAULT_DIAGNOSTIC_MODEL = 'gpt-5.4';
+const FALLBACK_DIAGNOSTIC_MODEL = 'gpt-5.4-mini-2026-03-17';
+
+let _resolvedModel: string | null = null;
+let _fallbackLogged = false;
+
+function getDiagnosticModel(): string {
+  if (_resolvedModel) return _resolvedModel;
+  _resolvedModel = (process.env.TUNING_DIAGNOSTIC_MODEL || DEFAULT_DIAGNOSTIC_MODEL).trim();
+  return _resolvedModel;
+}
+
+function isModelNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { status?: number; code?: string; message?: string };
+  if (e.status === 404) return true;
+  if (typeof e.code === 'string' && /model_not_found|invalid_model/i.test(e.code)) return true;
+  if (typeof e.message === 'string' && /model.*(not.*found|does not exist|invalid)/i.test(e.message)) return true;
+  return false;
+}
+
+function fallBackToMini(reason: string): void {
+  if (!_fallbackLogged) {
+    console.warn(
+      `[Diagnostic] Falling back from ${_resolvedModel ?? DEFAULT_DIAGNOSTIC_MODEL} to ${FALLBACK_DIAGNOSTIC_MODEL} for the rest of this process. Reason: ${reason}`
+    );
+    _fallbackLogged = true;
+  }
+  _resolvedModel = FALLBACK_DIAGNOSTIC_MODEL;
+}
+
+/** Test-only reset helper — exposed for unit tests, not for callers. */
+export function __resetDiagnosticModelCacheForTests(): void {
+  _resolvedModel = null;
+  _fallbackLogged = false;
 }
 
 // ─── Taxonomy definitions (stable, hoisted so caching works cleanly) ─────────
@@ -278,24 +333,30 @@ export async function runDiagnostic(
     });
 
     const start = Date.now();
+    const reasoningEffort: 'high' = 'high';
     let result: DiagnosticResult | null = null;
+    let modelUsed = getDiagnosticModel();
     try {
-      const response: any = await (openai as any).responses.create({
-        model: 'gpt-5.4-mini-2026-03-17',
-        instructions: DIAGNOSTIC_SYSTEM_PROMPT,
-        input: [{ role: 'user', content: llmInput }],
-        reasoning: { effort: 'high' },
-        max_output_tokens: 1500,
-        text: { format: DIAGNOSTIC_SCHEMA },
-        store: true,
-        prompt_cache_key: `tuning-diagnostic-${input.tenantId}`,
-        prompt_cache_retention: '24h',
-      });
+      let response: any;
+      try {
+        response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
+      } catch (err) {
+        if (isModelNotFoundError(err) && modelUsed !== FALLBACK_DIAGNOSTIC_MODEL) {
+          fallBackToMini(`model_not_found for ${modelUsed}`);
+          modelUsed = FALLBACK_DIAGNOSTIC_MODEL;
+          response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
+        } else {
+          throw err;
+        }
+      }
 
       const rawText = extractOutputText(response);
+      const usage = extractUsage(response);
       if (!rawText) {
-        console.warn('[Diagnostic] Empty model output — abstaining.');
-        span.end({ error: 'EMPTY_OUTPUT', durationMs: Date.now() - start });
+        console.warn(
+          `[Diagnostic] Empty model output — abstaining. model=${modelUsed} reasoning=${reasoningEffort} input_tokens=${usage.inputTokens} output_tokens=${usage.outputTokens}`
+        );
+        span.end({ error: 'EMPTY_OUTPUT', durationMs: Date.now() - start, model: modelUsed, ...usage });
         return null;
       }
 
@@ -307,18 +368,35 @@ export async function runDiagnostic(
         sourceMessageId: input.messageId ?? null,
         diagMeta: { similarity, magnitude, originalText, finalText, diff },
       });
+      // Sprint 05 §1: one-line per-call log so cost + model + reasoning effort
+      // are visible in stdout/Railway logs without hunting through Langfuse.
+      console.log(
+        `[Diagnostic] model=${modelUsed} reasoning=${reasoningEffort} input_tokens=${usage.inputTokens} output_tokens=${usage.outputTokens} category=${result.category} confidence=${result.confidence.toFixed(2)} duration_ms=${Date.now() - start}`
+      );
       span.end(
         {
           category: result.category,
           subLabel: result.subLabel,
           confidence: result.confidence,
         },
-        { durationMs: Date.now() - start, magnitude, similarity }
+        {
+          durationMs: Date.now() - start,
+          magnitude,
+          similarity,
+          model: modelUsed,
+          reasoningEffort,
+          ...usage,
+        }
       );
       return result;
     } catch (err) {
       console.error('[Diagnostic] OpenAI call failed (non-fatal):', err);
-      span.end({ error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - start });
+      span.end({
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - start,
+        model: modelUsed,
+        reasoningEffort,
+      });
       return null;
     }
   } catch (outerErr) {
@@ -464,6 +542,44 @@ function safeTruncate(s: string, max: number): string {
 function safeTruncateList(items: string[], max: number): string {
   const joined = items.map((x) => JSON.stringify(x)).join(', ');
   return safeTruncate(joined, max);
+}
+
+// ─── OpenAI call (extracted so we can retry with a fallback model) ───────────
+
+async function callDiagnosticModel(
+  openai: OpenAI,
+  model: string,
+  reasoningEffort: 'high',
+  llmInput: string,
+  tenantId: string
+): Promise<any> {
+  return await (openai as any).responses.create({
+    model,
+    instructions: DIAGNOSTIC_SYSTEM_PROMPT,
+    input: [{ role: 'user', content: llmInput }],
+    reasoning: { effort: reasoningEffort },
+    // Sprint 05 §1: bumped from 1500 to 4000. The full gpt-5.4 with
+    // reasoning effort high spends a meaningful chunk of output tokens on
+    // hidden reasoning before producing the structured JSON. 1500 starves
+    // the model and produces empty output on real (non-NO_FIX) edits.
+    max_output_tokens: 4000,
+    text: { format: DIAGNOSTIC_SCHEMA },
+    store: true,
+    prompt_cache_key: `tuning-diagnostic-${tenantId}`,
+    prompt_cache_retention: '24h',
+  });
+}
+
+function extractUsage(response: any): { inputTokens: number; outputTokens: number; cachedInputTokens: number } {
+  const u = response?.usage ?? {};
+  return {
+    inputTokens: typeof u.input_tokens === 'number' ? u.input_tokens : 0,
+    outputTokens: typeof u.output_tokens === 'number' ? u.output_tokens : 0,
+    cachedInputTokens:
+      typeof u.input_tokens_details?.cached_tokens === 'number'
+        ? u.input_tokens_details.cached_tokens
+        : 0,
+  };
 }
 
 // ─── Response parsing ────────────────────────────────────────────────────────
