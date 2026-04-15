@@ -19,6 +19,10 @@ import { PrismaClient, TuningActionType, TuningSuggestionStatus } from '@prisma/
 import { AuthenticatedRequest } from '../types';
 import { broadcastCritical } from '../services/socket.service';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
+import {
+  updateCategoryStatsOnAccept,
+  updateCategoryStatsOnReject,
+} from '../services/tuning/category-stats.service';
 
 export function makeTuningSuggestionController(prisma: PrismaClient) {
   return {
@@ -369,6 +373,10 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           },
         });
 
+        // Feature 041 sprint 02 §6: per-category EMA acceptance-rate tracking.
+        // Old-branch suggestions (no diagnosticCategory) are skipped silently.
+        await updateCategoryStatsOnAccept(prisma, tenantId, updated.diagnosticCategory);
+
         broadcastCritical(tenantId, 'tuning_suggestion_updated', {
           suggestionId: updated.id,
           status: 'ACCEPTED',
@@ -402,6 +410,10 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           where: { id: suggestion.id },
           data: { status: 'REJECTED', appliedByUserId: userId },
         });
+
+        // Feature 041 sprint 02 §6: EMA update on reject too.
+        await updateCategoryStatsOnReject(prisma, tenantId, updated.diagnosticCategory);
+
         broadcastCritical(tenantId, 'tuning_suggestion_updated', {
           suggestionId: updated.id,
           status: 'REJECTED',
