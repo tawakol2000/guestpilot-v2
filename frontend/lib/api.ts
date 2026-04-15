@@ -1506,3 +1506,90 @@ export async function apiRejectAlteration(reservationId: string): Promise<Reserv
   return apiFetch<ReservationActionResult>(`/api/reservations/${reservationId}/alteration/reject`, { method: 'POST' })
 }
 
+// ─── Feature 041 sprint 04: tuning agent chat + conversations ────────────────
+
+export type TuningConversationStatus = 'OPEN' | 'ARCHIVED' | string
+
+export interface TuningConversationSummary {
+  id: string
+  title: string | null
+  anchorMessageId: string | null
+  triggerType: TuningTriggerType
+  status: TuningConversationStatus
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TuningConversationAnchor {
+  id: string
+  content: string
+  role: string
+  conversationId: string
+  sentAt: string
+}
+
+export interface TuningConversationMessage {
+  id: string
+  role: 'user' | 'assistant' | 'tool' | 'system' | string
+  parts: unknown
+  createdAt: string
+}
+
+export interface TuningConversationDetail {
+  id: string
+  title: string | null
+  anchorMessageId: string | null
+  anchorMessage: TuningConversationAnchor | null
+  triggerType: TuningTriggerType
+  status: TuningConversationStatus
+  sdkSessionId: string | null
+  createdAt: string
+  updatedAt: string
+  messages: TuningConversationMessage[]
+}
+
+export async function apiListTuningConversations(
+  params: { limit?: number; cursor?: string; q?: string } = {}
+): Promise<{ conversations: TuningConversationSummary[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams()
+  if (params.limit) qs.set('limit', String(params.limit))
+  if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.q) qs.set('q', params.q)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return apiFetch<{ conversations: TuningConversationSummary[]; nextCursor: string | null }>(
+    `/api/tuning/conversations${suffix}`
+  )
+}
+
+export async function apiCreateTuningConversation(body: {
+  anchorMessageId?: string | null
+  triggerType?: TuningTriggerType
+  initialMessage?: string
+  title?: string
+}): Promise<{ conversation: TuningConversationSummary }> {
+  return apiFetch<{ conversation: TuningConversationSummary }>(`/api/tuning/conversations`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function apiGetTuningConversation(id: string): Promise<{ conversation: TuningConversationDetail }> {
+  return apiFetch<{ conversation: TuningConversationDetail }>(`/api/tuning/conversations/${id}`)
+}
+
+export async function apiPatchTuningConversation(
+  id: string,
+  body: { title?: string | null; status?: TuningConversationStatus }
+): Promise<{ conversation: TuningConversationSummary }> {
+  return apiFetch<{ conversation: TuningConversationSummary }>(`/api/tuning/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+/** Absolute URL for the streaming chat endpoint. `useChat` POSTs here directly. */
+export function tuningChatEndpoint(): string {
+  return `${BASE_URL}/api/tuning/chat`
+}
+

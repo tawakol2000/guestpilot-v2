@@ -15,6 +15,8 @@ import { TuningTopNav } from '@/components/tuning/top-nav'
 import { TuningQueue } from '@/components/tuning/queue'
 import { DetailPanel } from '@/components/tuning/detail-panel'
 import { DashboardsPanel } from '@/components/tuning/dashboards'
+import { ConversationList } from '@/components/tuning/conversation-list'
+import { ChatPanel } from '@/components/tuning/chat-panel'
 
 function DashboardsToggleWrapper({
   children,
@@ -45,9 +47,20 @@ function TuningPageInner() {
   const [tools, setTools] = useState<ToolDefinitionSummary[]>([])
 
   const selectedId = searchParams.get('suggestionId')
+  const conversationId = searchParams.get('conversationId')
   const selected = useMemo(
     () => suggestions.find((s) => s.id === selectedId) ?? null,
     [suggestions, selectedId],
+  )
+
+  const setConversation = useCallback(
+    (id: string | null) => {
+      const qs = new URLSearchParams(Array.from(searchParams.entries()))
+      if (id) qs.set('conversationId', id)
+      else qs.delete('conversationId')
+      router.replace(`/tuning${qs.toString() ? `?${qs.toString()}` : ''}`, { scroll: false })
+    },
+    [router, searchParams],
   )
 
   const refresh = useCallback(async () => {
@@ -148,29 +161,55 @@ function TuningPageInner() {
               onSelect={setSelected}
             />
           </div>
-          {/* Chat seam — reserved for sprint 04 */}
-          <div className="border-t border-[#E7E5E4] px-4 py-4">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-[#57534E]">
-              Conversations
-            </div>
-            <p className="mt-1 text-[11px] italic text-[#A8A29E]">
-              Coming soon — chat with your tuner.
-            </p>
+          {/* Sprint 04 — chat history browser */}
+          <div className="border-t border-[#E7E5E4]">
+            <ConversationList
+              selectedId={conversationId}
+              onSelect={setConversation}
+              onCreated={setConversation}
+            />
           </div>
         </aside>
 
-        {/* Center — detail */}
+        {/* Center — detail panel, or chat when a conversation is selected */}
         <main
           id="tuning-detail-main"
           tabIndex={-1}
-          className="flex-1 overflow-auto bg-[#FAFAF9] outline-none"
+          className="flex-1 overflow-hidden bg-[#FAFAF9] outline-none"
         >
-          <DetailPanel
-            suggestion={selected}
-            properties={properties}
-            tools={tools}
-            onMutated={handleMutated}
-          />
+          {conversationId ? (
+            <div className="flex h-full flex-col">
+              <div
+                className="flex items-center gap-2 border-b border-[#E7E5E4] bg-white px-4 py-2"
+              >
+                <button
+                  type="button"
+                  onClick={() => setConversation(null)}
+                  className="rounded px-2 py-0.5 text-[11px] font-medium text-[#1E3A8A] hover:bg-[#EEF2FF]"
+                >
+                  ← Back to queue
+                </button>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
+                  Tuning chat
+                </span>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <ChatPanel
+                  conversationId={conversationId}
+                  suggestionId={selectedId}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="h-full overflow-auto">
+              <DetailPanel
+                suggestion={selected}
+                properties={properties}
+                tools={tools}
+                onMutated={handleMutated}
+              />
+            </div>
+          )}
         </main>
 
         {/* Right rail — dashboards */}
