@@ -245,7 +245,10 @@ function AgentPageInner() {
   }, [scope, storedPrompt])
 
   const resetDefaults = useCallback(async () => {
-    if (resetting) return
+    // Bug fix (round 10) — also check `saving` so a save-in-flight can't
+    // race with a reset. The button is disabled in the same way, but
+    // this guards against any programmatic entry path.
+    if (resetting || saving) return
     const confirmed = window.confirm(
       'Reset BOTH the coordinator and screening system prompts to their defaults? This creates a new version and discards any unsaved edits on either persona.',
     )
@@ -278,7 +281,7 @@ function AgentPageInner() {
     } finally {
       setResetting(false)
     }
-  }, [resetting])
+  }, [resetting, saving])
 
   const insertVariable = useCallback(
     (token: string) => {
@@ -425,7 +428,10 @@ function AgentPageInner() {
             <button
               type="button"
               onClick={resetDefaults}
-              disabled={resetting}
+              // Bug fix (round 10) — disable during EITHER resetting OR
+              // saving so a rapid "Save then Reset" sequence can't fire
+              // two concurrent mutations against the tenant config.
+              disabled={resetting || saving}
               className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[#6B7280] transition-colors duration-150 hover:bg-white hover:text-[#1A1A1A] disabled:opacity-50"
               title="Reset both prompts to defaults"
             >
@@ -492,7 +498,7 @@ function AgentPageInner() {
             <button
               type="button"
               onClick={discard}
-              disabled={!dirty || saving}
+              disabled={!dirty || saving || resetting}
               className="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-[#6B7280] transition-all duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Discard
@@ -500,7 +506,7 @@ function AgentPageInner() {
             <button
               type="button"
               onClick={save}
-              disabled={!dirty || saving}
+              disabled={!dirty || saving || resetting}
               className="inline-flex items-center justify-center rounded-lg bg-[#6C5CE7] px-5 py-2 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#5B4CDB] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
             >
               {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
