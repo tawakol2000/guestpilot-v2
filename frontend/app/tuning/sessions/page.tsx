@@ -60,6 +60,11 @@ function SessionsInner() {
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
 
   const loadList = useCallback(async () => {
+    // Bug fix — on a retry after a prior error, conversations had been
+    // set to [] which caused the "No sessions match that filter" empty
+    // state to render (instead of skeletons) during the retry fetch.
+    // Reset to null so the skeleton branch fires again.
+    setConversations(null)
     setListError(null)
     try {
       const res = await apiGetConversations()
