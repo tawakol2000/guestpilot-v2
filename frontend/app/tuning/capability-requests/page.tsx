@@ -105,12 +105,18 @@ function CapabilityRow({
 function CapabilityRequestsInner() {
   const [requests, setRequests] = useState<CapabilityRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const res = await apiListCapabilityRequests()
       setRequests(res.requests)
+    } catch (e) {
+      // Bug fix — previously errors were swallowed and the UI fell through
+      // to "No requests yet", hiding backend failures from the manager.
+      setLoadError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
@@ -139,6 +145,25 @@ function CapabilityRequestsInner() {
         <ul className="mt-8">
           {loading ? (
             <li className="py-6 text-sm text-[#9CA3AF]">Loading…</li>
+          ) : loadError ? (
+            <li className="py-10 text-center">
+              <p className="text-base font-medium text-[#6B7280]">
+                Couldn&rsquo;t load capability requests
+              </p>
+              <p
+                className="mt-1 truncate text-xs font-mono text-[#9CA3AF]"
+                title={loadError}
+              >
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={load}
+                className="mt-3 rounded-md px-2 py-1 text-xs font-medium text-[#6C5CE7] transition-colors hover:bg-[#F0EEFF]"
+              >
+                Retry
+              </button>
+            </li>
           ) : requests.length === 0 ? (
             <li className="py-10 text-center">
               <p className="text-base font-medium text-[#6B7280]">No requests yet</p>

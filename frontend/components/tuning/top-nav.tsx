@@ -55,7 +55,10 @@ export function TuningTopNav({ onOpenDrawer }: { onOpenDrawer?: () => void } = {
           style={{ background: TUNING_COLORS.hairline }}
         />
 
-        <nav className="flex items-center gap-1">
+        <nav
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label="Tuning sections"
+        >
           {links.map((l) => {
             const active =
               pathname === l.href || (l.href !== '/tuning' && pathname.startsWith(l.href))

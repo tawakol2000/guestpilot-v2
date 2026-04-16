@@ -113,7 +113,14 @@ function SessionsInner() {
       router.replace(`/tuning/sessions${qs.toString() ? `?${qs.toString()}` : ''}`, {
         scroll: false,
       })
+      // Bug fix — eagerly clear stale detail state so the one-frame flash
+      // between sessions doesn't briefly show the PREVIOUS session's
+      // transcript or error banner. The useEffect below will reload
+      // afterward.
       setFocusedMessageId(null)
+      setDetail(null)
+      setDetailError(null)
+      setDetailLoading(!!id)
     },
     [router, searchParams],
   )

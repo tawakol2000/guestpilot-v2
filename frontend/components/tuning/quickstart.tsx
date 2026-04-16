@@ -15,6 +15,7 @@
 
 import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   ArrowRight,
   BarChart3,
@@ -60,8 +61,13 @@ export function Quickstart({
     try {
       const { conversation } = await apiCreateTuningConversation({ triggerType: 'MANUAL' })
       onOpenConversation(conversation.id)
-    } catch {
-      // surface-level failure; let the conversation list retry path handle it
+    } catch (e) {
+      // Bug fix — previously the catch was empty and failures produced a
+      // silent "spinner stops, nothing happens" state. Surface via toast
+      // so the manager knows something went wrong and can retry.
+      toast.error('Could not start a tuning chat', {
+        description: e instanceof Error ? e.message : String(e),
+      })
     } finally {
       setStarting(false)
     }

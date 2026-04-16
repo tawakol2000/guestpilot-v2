@@ -40,9 +40,15 @@ export function DetailPanel({
   useEffect(() => {
     if (!suggestion?.sourceConversationId) {
       setConvo(null)
+      setConvoLoading(false)
       return
     }
     let cancelled = false
+    // Bug fix — clear the previous convo state on id change so the panel
+    // doesn't briefly render the PREVIOUS suggestion's transcript while
+    // the new one is in flight. anchorMessage.find() would otherwise
+    // produce an accidental match on shared message ids.
+    setConvo(null)
     setConvoLoading(true)
     apiGetConversation(suggestion.sourceConversationId)
       .then((d) => !cancelled && setConvo(d))
@@ -56,8 +62,11 @@ export function DetailPanel({
   }, [suggestion?.sourceConversationId])
 
   useEffect(() => {
-    // clear error when switching suggestions
+    // clear error + close any open evidence pane when switching suggestions —
+    // otherwise a pane opened for suggestion A stays open over suggestion B,
+    // refetching B's bundle unexpectedly.
     setError(null)
+    setEvidenceOpen(false)
   }, [suggestion?.id])
 
   const isLegacy = !suggestion.diagnosticCategory
@@ -237,7 +246,15 @@ export function DetailPanel({
         </section>
 
         <section>
+          {/*
+           * Bug fix: key by suggestion.id so <AcceptControls/> remounts on
+           * suggestion change. Without this, its internal state (sopStatus,
+           * sopPropertyId, toolId, editedText, rejectReason) stays seeded
+           * from the PREVIOUS suggestion — users could click Apply and
+           * submit dispatch choices that belonged to a different suggestion.
+           */}
           <AcceptControls
+            key={suggestion.id}
             suggestion={suggestion}
             properties={properties}
             tools={tools}

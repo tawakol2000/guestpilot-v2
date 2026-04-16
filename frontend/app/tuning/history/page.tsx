@@ -108,14 +108,20 @@ function HistoryRow({
 function HistoryPageInner() {
   const [entries, setEntries] = useState<VersionHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [confirmEntry, setConfirmEntry] = useState<VersionHistoryEntry | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(null)
     try {
       const res = await apiListTuningHistory(50)
       setEntries(res.entries)
+    } catch (e) {
+      // Bug fix — previously errors were swallowed and the UI fell through
+      // to "No edits yet", which is misleading when the API is unreachable.
+      setLoadError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
@@ -123,6 +129,16 @@ function HistoryPageInner() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Escape dismisses the rollback confirmation modal.
+  useEffect(() => {
+    if (!confirmEntry) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmEntry(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [confirmEntry])
 
   async function doRollback() {
     if (!confirmEntry) return
@@ -173,6 +189,23 @@ function HistoryPageInner() {
         <ul className="mt-8">
           {loading ? (
             <li className="py-6 text-sm text-[#9CA3AF]">Loading…</li>
+          ) : loadError ? (
+            <li className="py-10 text-center">
+              <p className="text-base font-medium text-[#6B7280]">Couldn&rsquo;t load history</p>
+              <p
+                className="mt-1 truncate text-xs font-mono text-[#9CA3AF]"
+                title={loadError}
+              >
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={load}
+                className="mt-3 rounded-md px-2 py-1 text-xs font-medium text-[#6C5CE7] transition-colors hover:bg-[#F0EEFF]"
+              >
+                Retry
+              </button>
+            </li>
           ) : entries.length === 0 ? (
             <li className="py-10 text-center">
               <p className="text-base font-medium text-[#6B7280]">No edits yet</p>
