@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import {
   apiListTuningHistory,
   apiRollbackVersion,
@@ -19,6 +20,13 @@ const ARTIFACT_LABEL: Record<VersionHistoryEntry['artifactType'], string> = {
   TOOL_DEFINITION: 'Tool definition',
 }
 
+const ARTIFACT_ACCENT: Record<VersionHistoryEntry['artifactType'], string> = {
+  SYSTEM_PROMPT: '#3B82F6',
+  SOP_VARIANT: '#CA8A04',
+  FAQ_ENTRY: '#14B8A6',
+  TOOL_DEFINITION: '#8B5CF6',
+}
+
 function HistoryRow({
   entry,
   onRollback,
@@ -28,29 +36,40 @@ function HistoryRow({
 }) {
   const [open, setOpen] = useState(false)
   const supportsRollback = (entry as any).rollbackSupported !== false
+  const accent = ARTIFACT_ACCENT[entry.artifactType]
   return (
-    <li className="border-b border-[#E7E5E4] py-4">
-      <div className="flex items-baseline gap-3">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-[#A8A29E]">
+    <li
+      className="relative py-5 pl-6"
+      style={{ borderBottom: `1px solid ${TUNING_COLORS.hairlineSoft}` }}
+    >
+      <span
+        aria-hidden
+        className="absolute left-0 top-6 h-2 w-2 rounded-full"
+        style={{ background: accent }}
+      />
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-xs font-medium text-[#6B7280]">
           {ARTIFACT_LABEL[entry.artifactType]}
         </span>
-        <span className="text-[15px] text-[#0C0A09]">{entry.artifactLabel}</span>
+        <span className="text-sm font-medium text-[#1A1A1A]">{entry.artifactLabel}</span>
         {entry.version !== null ? (
-          <span className="font-mono text-[11px] text-[#57534E]">v{entry.version}</span>
+          <span className="font-mono text-xs tabular-nums text-[#9CA3AF]">
+            v{entry.version}
+          </span>
         ) : null}
-        <span className="ml-auto text-[11px] text-[#A8A29E]">
+        <span className="ml-auto text-xs text-[#9CA3AF]">
           <RelativeTime iso={entry.createdAt} />
         </span>
       </div>
       {entry.note ? (
-        <div className="mt-1 text-[12px] text-[#57534E]">{entry.note}</div>
+        <div className="mt-1.5 text-sm leading-6 text-[#6B7280]">{entry.note}</div>
       ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px]">
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
         {entry.diffPreview ? (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="text-[#1E3A8A] hover:underline"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-[#6C5CE7] transition-colors duration-150 hover:bg-[#F0EEFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE]"
           >
             {open ? 'Hide diff' : 'Show diff'}
           </button>
@@ -58,9 +77,10 @@ function HistoryRow({
         {entry.sourceSuggestionId ? (
           <a
             href={`/tuning?suggestionId=${entry.sourceSuggestionId}`}
-            className="text-[#57534E] hover:text-[#0C0A09]"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-[#6B7280] transition-colors duration-150 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
           >
-            Source suggestion ↗
+            <span>Source suggestion</span>
+            <ExternalLink size={11} strokeWidth={2} aria-hidden />
           </a>
         ) : null}
         <span className="ml-auto" />
@@ -68,18 +88,16 @@ function HistoryRow({
           <button
             type="button"
             onClick={() => onRollback(entry)}
-            className="rounded-md border border-[#E7E5E4] px-2.5 py-1 text-[12px] text-[#0C0A09] hover:bg-[#F5F4F1]"
+            className="inline-flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#1A1A1A] transition-all duration-200 hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
           >
             Roll back
           </button>
         ) : (
-          <span className="text-[11px] italic text-[#A8A29E]">
-            Rollback not supported in V1
-          </span>
+          <span className="text-xs italic text-[#9CA3AF]">Rollback not supported in V1</span>
         )}
       </div>
       {open && entry.diffPreview ? (
-        <div className="mt-2">
+        <div className="mt-3">
           <DiffViewer before={entry.diffPreview.before} after={entry.diffPreview.after} />
         </div>
       ) : null}
@@ -125,15 +143,13 @@ function HistoryPageInner() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TuningTopNav />
-      <main className="mx-auto w-full max-w-3xl px-8 py-10">
+      <main className="mx-auto w-full max-w-3xl px-6 py-10 md:px-8">
         <header className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-            Version history
-          </div>
-          <h1 className="font-[family-name:var(--font-playfair)] text-3xl text-[#0C0A09]">
+          <div className="text-xs font-medium text-[#6B7280]">Version history</div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1A1A1A]">
             Recent edits
           </h1>
-          <p className="max-w-prose text-[14px] text-[#57534E]">
+          <p className="max-w-prose text-sm leading-6 text-[#6B7280]">
             The last 50 changes to system prompts, SOPs, FAQs, and tool
             definitions. Roll back to restore a previous version — rollbacks
             create a new version rather than overwriting the current one.
@@ -142,22 +158,25 @@ function HistoryPageInner() {
 
         {actionMessage ? (
           <div
-            className="mt-4 rounded-md border border-[#E7E5E4] bg-white px-3 py-2 text-[12px] text-[#0C0A09]"
+            className="mt-5 rounded-lg border-l-2 px-4 py-3 text-sm"
+            style={{
+              background: TUNING_COLORS.accentSoft,
+              borderLeftColor: TUNING_COLORS.accent,
+              color: TUNING_COLORS.ink,
+            }}
             role="status"
           >
             {actionMessage}
           </div>
         ) : null}
 
-        <ul className="mt-6 border-t border-[#E7E5E4]">
+        <ul className="mt-8">
           {loading ? (
-            <li className="py-6 text-sm text-[#A8A29E]">Loading…</li>
+            <li className="py-6 text-sm text-[#9CA3AF]">Loading…</li>
           ) : entries.length === 0 ? (
             <li className="py-10 text-center">
-              <p className="font-[family-name:var(--font-playfair)] text-base italic text-[#57534E]">
-                No edits yet.
-              </p>
-              <p className="mt-1 text-xs text-[#A8A29E]">
+              <p className="text-base font-medium text-[#6B7280]">No edits yet</p>
+              <p className="mt-1 text-sm text-[#9CA3AF]">
                 Accept a tuning suggestion to start the history.
               </p>
             </li>
@@ -167,30 +186,33 @@ function HistoryPageInner() {
         </ul>
 
         {confirmEntry ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
-            <div className="w-[min(440px,90vw)] rounded-md border border-[#E7E5E4] bg-white p-5 shadow-xl">
-              <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-                Confirm rollback
-              </div>
-              <p className="mt-2 text-[14px] leading-6 text-[#0C0A09]">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setConfirmEntry(null)}
+          >
+            <div
+              className="w-[min(460px,90vw)] rounded-xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-xs font-medium text-[#6B7280]">Confirm rollback</div>
+              <p className="mt-2 text-sm leading-6 text-[#1A1A1A]">
                 Rolling back restores the previous version of{' '}
                 <span className="font-medium">{confirmEntry.artifactLabel}</span>{' '}
                 verbatim. Any suggestions accepted since will remain in history
                 but won&rsquo;t be re-applied.
               </p>
-              <div className="mt-4 flex items-center justify-end gap-2">
+              <div className="mt-5 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setConfirmEntry(null)}
-                  className="rounded-md px-3 py-1.5 text-sm text-[#57534E] hover:bg-[#F5F4F1]"
+                  className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={doRollback}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-white"
-                  style={{ background: TUNING_COLORS.accent }}
+                  className="inline-flex items-center justify-center rounded-lg bg-[#6C5CE7] px-5 py-2 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#5B4CDB] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
                 >
                   Roll back
                 </button>

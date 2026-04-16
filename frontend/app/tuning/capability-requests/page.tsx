@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import {
   apiListCapabilityRequests,
   apiUpdateCapabilityRequest,
@@ -10,14 +11,15 @@ import {
 import { TuningAuthGate } from '@/components/tuning/auth-gate'
 import { TuningTopNav } from '@/components/tuning/top-nav'
 import { RelativeTime } from '@/components/tuning/relative-time'
+import { TUNING_COLORS } from '@/components/tuning/tokens'
 
 const STATUS_OPTIONS: CapabilityRequestStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'WONT_FIX']
 
-const STATUS_STYLE: Record<CapabilityRequestStatus, { bg: string; fg: string }> = {
-  OPEN:        { bg: '#FFF7ED', fg: '#9A3412' },
-  IN_PROGRESS: { bg: '#EFF6FF', fg: '#1E40AF' },
-  RESOLVED:    { bg: '#F0FDFA', fg: '#115E59' },
-  WONT_FIX:    { bg: '#F5F4F1', fg: '#57534E' },
+const STATUS_STYLE: Record<CapabilityRequestStatus, { bg: string; fg: string; label: string }> = {
+  OPEN:        { bg: '#FFEDD5', fg: '#9A3412', label: 'Open' },
+  IN_PROGRESS: { bg: '#DBEAFE', fg: '#1E40AF', label: 'In progress' },
+  RESOLVED:    { bg: '#CCFBF1', fg: '#0F766E', label: 'Resolved' },
+  WONT_FIX:    { bg: '#F3F4F6', fg: '#6B7280', label: "Won't fix" },
 }
 
 function CapabilityRow({
@@ -45,35 +47,37 @@ function CapabilityRow({
   }
 
   return (
-    <li className="border-b border-[#E7E5E4] py-4">
+    <li
+      className="py-5"
+      style={{ borderBottom: `1px solid ${TUNING_COLORS.hairlineSoft}` }}
+    >
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]"
+              className="rounded-full px-2.5 py-0.5 text-xs font-medium"
               style={{ background: style.bg, color: style.fg }}
             >
-              {status.replace('_', ' ')}
+              {style.label}
             </span>
-            <span className="text-[11px] text-[#A8A29E]">
+            <span className="text-xs text-[#9CA3AF]">
               <RelativeTime iso={req.createdAt} />
             </span>
           </div>
-          <h3 className="mt-1 text-[16px] font-medium text-[#0C0A09]">{req.title}</h3>
-          <p className="mt-1 text-[13px] leading-6 text-[#57534E]">
-            {req.description}
-          </p>
+          <h3 className="mt-2 text-base font-semibold tracking-tight text-[#1A1A1A]">
+            {req.title}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-[#6B7280]">{req.description}</p>
           {req.rationale ? (
-            <p className="mt-1 text-[12px] italic leading-5 text-[#A8A29E]">
-              {req.rationale}
-            </p>
+            <p className="mt-1 text-xs italic leading-5 text-[#9CA3AF]">{req.rationale}</p>
           ) : null}
           {req.sourceConversationId ? (
             <a
               href={`/?conversationId=${req.sourceConversationId}`}
-              className="mt-2 inline-block text-[12px] text-[#1E3A8A] hover:underline"
+              className="mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-[#6C5CE7] transition-colors duration-150 hover:bg-[#F0EEFF]"
             >
-              Source conversation ↗
+              <span>Source conversation</span>
+              <ExternalLink size={11} strokeWidth={2} aria-hidden />
             </a>
           ) : null}
         </div>
@@ -82,12 +86,13 @@ function CapabilityRow({
             value={status}
             disabled={saving}
             onChange={(e) => save(e.target.value as CapabilityRequestStatus)}
-            className="rounded-md border border-[#E7E5E4] bg-white px-2 py-1 text-[12px]"
+            className="rounded-lg border bg-white px-2.5 py-1.5 text-xs font-medium text-[#1A1A1A] outline-none transition-all duration-200 focus:border-[#6C5CE7] focus:ring-2 focus:ring-[#F0EEFF] disabled:opacity-60"
+            style={{ borderColor: TUNING_COLORS.hairline }}
             aria-label="Change status"
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
-                {s.replace('_', ' ')}
+                {STATUS_STYLE[s].label}
               </option>
             ))}
           </select>
@@ -117,30 +122,27 @@ function CapabilityRequestsInner() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TuningTopNav />
-      <main className="mx-auto w-full max-w-3xl px-8 py-10">
+      <main className="mx-auto w-full max-w-3xl px-6 py-10 md:px-8">
         <header className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-            Capability requests
-          </div>
-          <h1 className="font-[family-name:var(--font-playfair)] text-3xl text-[#0C0A09]">
+          <div className="text-xs font-medium text-[#6B7280]">Capability requests</div>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1A1A1A]">
             What the AI wished it had
           </h1>
-          <p className="max-w-prose text-[14px] text-[#57534E]">
-            Suggestions tagged <em>missing capability</em> route here instead of
-            becoming artifact edits. They&rsquo;re a backlog for engineering —
-            not something the tuning agent can fix on its own.
+          <p className="max-w-prose text-sm leading-6 text-[#6B7280]">
+            Suggestions tagged <em className="not-italic font-medium">missing capability</em>{' '}
+            route here instead of becoming artifact edits. They&rsquo;re a
+            backlog for engineering — not something the tuning agent can fix
+            on its own.
           </p>
         </header>
 
-        <ul className="mt-6 border-t border-[#E7E5E4]">
+        <ul className="mt-8">
           {loading ? (
-            <li className="py-6 text-sm text-[#A8A29E]">Loading…</li>
+            <li className="py-6 text-sm text-[#9CA3AF]">Loading…</li>
           ) : requests.length === 0 ? (
             <li className="py-10 text-center">
-              <p className="font-[family-name:var(--font-playfair)] text-base italic text-[#57534E]">
-                No requests yet.
-              </p>
-              <p className="mt-1 text-xs text-[#A8A29E]">
+              <p className="text-base font-medium text-[#6B7280]">No requests yet</p>
+              <p className="mt-1 text-sm text-[#9CA3AF]">
                 The diagnostic pipeline files one here when the AI needs a tool
                 that doesn&rsquo;t exist.
               </p>
