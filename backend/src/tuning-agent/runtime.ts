@@ -248,6 +248,23 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
                 if (block.type === 'text') finalText += block.text;
                 if (block.type === 'tool_use') toolCallsInvoked.push(block.name);
               }
+              // Sprint 05 §8: surface prompt-cache usage on every assistant
+              // message so the deploy verification can confirm the cached-
+              // fraction target ≥ 0.70 on turn 2 without round-tripping to
+              // Langfuse. The SDK passes the underlying Anthropic usage
+              // object through verbatim on `message.message.usage`.
+              const u: any = (message as any).message?.usage;
+              if (u && (u.cache_read_input_tokens !== undefined || u.input_tokens !== undefined)) {
+                const inp = u.input_tokens ?? 0;
+                const cached = u.cache_read_input_tokens ?? 0;
+                const created = u.cache_creation_input_tokens ?? 0;
+                const out = u.output_tokens ?? 0;
+                const denom = inp + cached;
+                const frac = denom === 0 ? 0 : cached / denom;
+                console.log(
+                  `[TuningAgent] usage tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
+                );
+              }
             }
             bridgeSDKMessage(message, state, (chunk) => {
               try {
