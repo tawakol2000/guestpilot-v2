@@ -11,7 +11,7 @@ import {
   type TuningGraduationMetrics,
   type TuningDiagnosticCategory,
 } from '@/lib/api'
-import { CATEGORY_ACCENT, CATEGORY_STYLES, TUNING_COLORS } from './tokens'
+import { TUNING_COLORS, categoryAccent, categoryStyle } from './tokens'
 
 function fmtPct(n: number | null | undefined, digits = 0): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '—'
@@ -167,8 +167,13 @@ function VelocityDashboard() {
               .sort((a, b) => b.acceptCount + b.rejectCount - (a.acceptCount + a.rejectCount))
               .map((row) => {
                 const cat = row.category as TuningDiagnosticCategory
-                const meta = CATEGORY_STYLES[cat]
-                const color = CATEGORY_ACCENT[cat]
+                // Bug fix (round 12) — use the categoryStyle() / categoryAccent()
+                // helpers rather than the raw Record lookups, so an unknown
+                // category (e.g. backend ships a new enum before the frontend
+                // deploys) falls back to LEGACY/neutral instead of crashing
+                // on `meta.bg`.
+                const meta = categoryStyle(cat)
+                const color = categoryAccent(cat)
                 const total = row.acceptCount + row.rejectCount
                 return (
                   <li key={cat} className="space-y-1">
