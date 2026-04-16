@@ -76,19 +76,25 @@ export function bridgeSDKMessage(message: SDKMessage, state: BridgeState, write:
       for (const block of content) {
         if (block.type === 'text') {
           closeReasoning(state, write);
-          const id = `text:${state.assistantMessageId}:${state.textBlockId ?? '1'}`;
-          if (!state.textBlockId) {
-            state.textBlockId = id;
-            write({ type: 'text-start', id });
-          }
-          write({ type: 'text-delta', id: state.textBlockId, delta: block.text });
+          // If partial `stream_event` deltas already forwarded this text
+          // block live, the SDK's aggregated `assistant` message carries
+          // the same content verbatim — emitting another text-delta here
+          // would make the UI (and `onFinish`-persisted parts) show every
+          // word twice. Skip the aggregate; closeText() on a subsequent
+          // tool_use / result will end the block.
+          if (state.textBlockId) continue;
+          const id = `text:${state.assistantMessageId}:1`;
+          state.textBlockId = id;
+          write({ type: 'text-start', id });
+          write({ type: 'text-delta', id, delta: block.text });
         } else if (block.type === 'thinking') {
           closeText(state, write);
-          const id = state.reasoningBlockId ?? `reasoning:${state.assistantMessageId}`;
-          if (!state.reasoningBlockId) {
-            state.reasoningBlockId = id;
-            write({ type: 'reasoning-start', id });
-          }
+          // Same rule for reasoning: don't re-emit the aggregate if
+          // stream_event thinking_deltas already streamed the block.
+          if (state.reasoningBlockId) continue;
+          const id = `reasoning:${state.assistantMessageId}`;
+          state.reasoningBlockId = id;
+          write({ type: 'reasoning-start', id });
           write({ type: 'reasoning-delta', id, delta: block.thinking });
         } else if (block.type === 'tool_use') {
           closeText(state, write);
