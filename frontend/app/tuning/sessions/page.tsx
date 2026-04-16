@@ -662,7 +662,12 @@ function EventInspector({
             </Row>
             <Row label="AI replies">
               <span className="font-mono tabular-nums text-[#1A1A1A]">
-                {detail.messages.filter((m) => m.role === 'AI').length}
+                {/* Bug fix (round 14) — include AI_PRIVATE (draft/shadow
+                    previews) to match the isAi definition used when
+                    rendering each transcript row. Previously this count
+                    was narrower than the row-level filter and underreported
+                    in shadow-mode conversations. */}
+                {detail.messages.filter((m) => m.role === 'AI' || m.role === 'AI_PRIVATE').length}
               </span>
             </Row>
             <Row label="Property">

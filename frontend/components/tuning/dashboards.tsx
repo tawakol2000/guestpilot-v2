@@ -96,7 +96,13 @@ function SectionHeader({
 function VelocityDashboard() {
   const [stats, setStats] = useState<TuningCategoryStatsRow[] | null>(null)
   const [coverage, setCoverage] = useState<TuningCoverage | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  // Bug fix (round 14) — track per-request error state instead of a single
+  // `err` that only fires when BOTH reject. Previously a partial failure
+  // (e.g. coverage fetch fails, stats succeeds) left the coverage hero
+  // card stuck showing "loading…" forever because `coverage` stayed null
+  // with no error signal.
+  const [coverageErr, setCoverageErr] = useState(false)
+  const [statsErr, setStatsErr] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -104,10 +110,9 @@ function VelocityDashboard() {
       if (cancelled) return
       const [s, c] = out
       if (s.status === 'fulfilled') setStats(s.value.stats)
+      else setStatsErr(true)
       if (c.status === 'fulfilled') setCoverage(c.value)
-      if (s.status === 'rejected' && c.status === 'rejected') {
-        setErr('Stats unavailable')
-      }
+      else setCoverageErr(true)
     })
     return () => {
       cancelled = true
@@ -117,10 +122,6 @@ function VelocityDashboard() {
   return (
     <section className="space-y-4">
       <SectionHeader title="Tuning velocity" meta="Last 14 days" />
-
-      {err ? (
-        <div className="text-xs text-[#9CA3AF]">{err}</div>
-      ) : null}
 
       {/* Coverage hero card */}
       <div
@@ -145,6 +146,8 @@ function VelocityDashboard() {
                 </div>
                 <div>unedited · {coverage.windowDays}d</div>
               </>
+            ) : coverageErr ? (
+              'unavailable'
             ) : (
               'loading…'
             )}
@@ -194,11 +197,15 @@ function VelocityDashboard() {
                 )
               })}
           </ul>
-        ) : (
+        ) : statsErr ? (
+          <p className="text-xs leading-5 text-[#9CA3AF]">
+            Category stats unavailable.
+          </p>
+        ) : stats ? (
           <p className="text-xs leading-5 text-[#9CA3AF]">
             No category signal yet — accept or dismiss a suggestion to start.
           </p>
-        )}
+        ) : null}
       </div>
     </section>
   )

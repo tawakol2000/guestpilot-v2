@@ -59,17 +59,22 @@ export function ConversationList({
     }
   }, [])
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
+  // Bug fix (round 14) — previously there were TWO effects: one that
+  // called refresh() on mount, and a debounce effect that called refresh
+  // 250ms after `q` changed (starting from ''). That produced two
+  // identical requests on every mount. Consolidate: the debounce effect
+  // handles both the first load (250ms delay from '' is fine) and
+  // every subsequent keystroke.
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
+    // First load should feel immediate; later keystrokes use the
+    // 250ms debounce.
+    const delay = q === '' && refreshGenRef.current === 0 ? 0 : 250
     debounceRef.current = window.setTimeout(() => {
       refresh(q.trim())
-    }, 250)
+    }, delay)
     return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current)
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
     }
   }, [q, refresh])
 

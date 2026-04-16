@@ -158,16 +158,22 @@ function AgentPageInner() {
   const seededRef = useRef<Record<Scope, boolean>>({ coordinator: false, screening: false })
   useEffect(() => {
     if (!tenantCfg) return
+    // Bug fix (round 14) — flip the seeded flags OUTSIDE the setDrafts
+    // updater. React Strict Mode (and concurrent rendering in general) may
+    // invoke the updater function more than once for the same logical
+    // update. Mutating a ref inside the updater is a classic footgun: a
+    // re-run would see the ref already set and skip the seed on its
+    // second invocation. Decide once, outside, then issue the state
+    // update deterministically.
+    const seedCoord = !seededRef.current.coordinator
+    const seedScreen = !seededRef.current.screening
+    if (!seedCoord && !seedScreen) return
+    if (seedCoord) seededRef.current.coordinator = true
+    if (seedScreen) seededRef.current.screening = true
     setDrafts((d) => {
       const next = { ...d }
-      if (!seededRef.current.coordinator) {
-        next.coordinator = tenantCfg.systemPromptCoordinator ?? ''
-        seededRef.current.coordinator = true
-      }
-      if (!seededRef.current.screening) {
-        next.screening = tenantCfg.systemPromptScreening ?? ''
-        seededRef.current.screening = true
-      }
+      if (seedCoord) next.coordinator = tenantCfg.systemPromptCoordinator ?? ''
+      if (seedScreen) next.screening = tenantCfg.systemPromptScreening ?? ''
       return next
     })
   }, [tenantCfg])

@@ -114,12 +114,17 @@ export function AcceptControls({
   async function runReject() {
     // Round-9 bug fix — same re-entry guard as runAccept.
     if (mode === 'saving') return
+    // Round-14 bug fix — trim rejectReason so a user who typed only
+    // whitespace (or accidentally hit space before submitting) doesn't
+    // send "   " as the reason, which would store as a non-null but
+    // meaningless string on the server.
+    const trimmedReason = rejectReason.trim()
     setMode('saving')
     try {
-      await apiRejectTuningSuggestion(suggestion.id, rejectReason || undefined)
+      await apiRejectTuningSuggestion(suggestion.id, trimmedReason || undefined)
       setMode('idle')
       toast('Dismissed', {
-        description: rejectReason ? `Reason: ${rejectReason}` : undefined,
+        description: trimmedReason ? `Reason: ${trimmedReason}` : undefined,
       })
       onMutated()
     } catch (err) {
@@ -304,12 +309,18 @@ export function AcceptControls({
       </PrimaryButton>
       <SecondaryButton
         onClick={() => {
-          // Explicitly pass the intended applyMode — setApplyMode state update
-          // alone is async and wouldn't reach runAccept in time (see sprint-07
-          // bug fix note above).
-          setApplyMode('QUEUED')
-          if (requiresDispatch) setMode('dispatch')
-          else runAccept({ applyMode: 'QUEUED' })
+          // Round-14 bug fix — previously this called setApplyMode('QUEUED')
+          // AND runAccept({applyMode:'QUEUED'}), which ALSO calls
+          // setApplyMode internally. Two redundant setState calls.
+          // The dispatch-mode branch still needs setApplyMode so the
+          // dispatch UI's subsequent "Apply now" button reads QUEUED
+          // from state when it calls runAccept() with no opts.
+          if (requiresDispatch) {
+            setApplyMode('QUEUED')
+            setMode('dispatch')
+          } else {
+            runAccept({ applyMode: 'QUEUED' })
+          }
         }}
         disabled={isSaving}
         title="Save as queued; still applies on confirm, but marks applyMode=QUEUED for later review batching."

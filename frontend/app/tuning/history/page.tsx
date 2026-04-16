@@ -249,11 +249,29 @@ function HistoryPageInner() {
             onClick={() => setConfirmEntry(null)}
           >
             <div
-              className="w-[min(460px,90vw)] rounded-xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+              // Bug fix (round 14) — the rollback modal had no role /
+              // aria-modal / aria-labelledby, so screen readers didn't
+              // announce it and keyboard users tabbed past it into the
+              // page behind. Evidence-pane already does this correctly;
+              // mirror that pattern here.
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="history-rollback-title"
+              aria-describedby="history-rollback-desc"
+              tabIndex={-1}
+              className="w-[min(460px,90vw)] rounded-xl bg-white p-6 shadow-2xl outline-none animate-in zoom-in-95 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-xs font-medium text-[#6B7280]">Confirm rollback</div>
-              <p className="mt-2 text-sm leading-6 text-[#1A1A1A]">
+              <div
+                id="history-rollback-title"
+                className="text-xs font-medium text-[#6B7280]"
+              >
+                Confirm rollback
+              </div>
+              <p
+                id="history-rollback-desc"
+                className="mt-2 text-sm leading-6 text-[#1A1A1A]"
+              >
                 Rolling back restores the previous version of{' '}
                 <span className="font-medium">{confirmEntry.artifactLabel}</span>{' '}
                 verbatim. Any suggestions accepted since will remain in history
