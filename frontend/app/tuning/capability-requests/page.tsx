@@ -34,13 +34,20 @@ function CapabilityRow({
   const style = STATUS_STYLE[status]
 
   async function save(next: CapabilityRequestStatus) {
+    // Bug fix — originally setStatus(next) happened AFTER the await, so
+    // between the user selecting an option and the PUT resolving, the
+    // controlled <select value={status}> would forcibly snap back to the
+    // previous value (React re-renders as soon as setSaving fires). The
+    // user would see their click revert then jump back on success.
+    // Optimistically set next immediately; revert only on error.
+    const prev = status
+    setStatus(next)
     setSaving(true)
     try {
       await apiUpdateCapabilityRequest(req.id, next)
-      setStatus(next)
       onChange()
     } catch {
-      // silent — UI keeps prior state
+      setStatus(prev)
     } finally {
       setSaving(false)
     }

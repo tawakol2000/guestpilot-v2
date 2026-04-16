@@ -24,11 +24,6 @@ export function EvidencePane({
     let cancelled = false
     setLoading(true)
     setError(null)
-    // Bug fix — previously this template-literaled localStorage.getItem which
-    // returns null if the key is missing, producing an invalid
-    // "Authorization: Bearer null" header and a 401 instead of a clean
-    // "not authenticated" error. Use the getToken helper and only attach
-    // the header when we actually have a token.
     const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers.Authorization = `Bearer ${token}`
@@ -37,6 +32,17 @@ export function EvidencePane({
       { headers },
     )
       .then(async (r) => {
+        // Bug fix — the rest of the app's API calls go through apiFetch,
+        // which auto-redirects to /login on 401. This raw fetch didn't,
+        // so a logged-out user would see an opaque "401" error in the
+        // pane instead of being sent to login. Mirror the apiFetch
+        // behavior here.
+        if (r.status === 401 && typeof window !== 'undefined') {
+          localStorage.removeItem('gp_token')
+          localStorage.removeItem('gp_tenant')
+          window.location.href = '/login'
+          throw new Error('Unauthorized')
+        }
         if (!r.ok) throw new Error(`${r.status}`)
         return r.json()
       })

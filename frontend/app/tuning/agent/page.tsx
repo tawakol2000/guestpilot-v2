@@ -180,6 +180,32 @@ function AgentPageInner() {
   }, [scope, tenantCfg])
 
   const dirty = (storedPrompt ?? '') !== draft
+  // Bug fix — also track whether the *other* scope has unsaved edits so we
+  // can still warn the user before they close the tab with changes on
+  // either persona. Without this, a dirty coordinator draft would be
+  // silently discarded if the user was viewing the (clean) screening
+  // scope when they closed.
+  const otherScopeDirty = useMemo(() => {
+    if (!tenantCfg) return false
+    if (scope === 'coordinator') {
+      return (tenantCfg.systemPromptScreening ?? '') !== drafts.screening
+    }
+    return (tenantCfg.systemPromptCoordinator ?? '') !== drafts.coordinator
+  }, [tenantCfg, scope, drafts.coordinator, drafts.screening])
+
+  // beforeunload warning when there are unsaved edits on any scope.
+  useEffect(() => {
+    const needsWarning = dirty || otherScopeDirty
+    if (!needsWarning) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // Modern browsers ignore the custom string, but some need
+      // returnValue set to trigger the native prompt.
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty, otherScopeDirty])
 
   const save = useCallback(async () => {
     if (!dirty || saving) return
