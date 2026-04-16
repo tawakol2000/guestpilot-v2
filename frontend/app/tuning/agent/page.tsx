@@ -192,8 +192,11 @@ function AgentPageInner() {
   }, [draft, dirty, saving, scope])
 
   const discard = useCallback(() => {
-    setDraft(storedPrompt ?? '')
-  }, [storedPrompt])
+    // Bug fix: write via setDrafts directly (not the memoized setDraft) so we
+    // never capture a stale setDraft closure from a prior scope when both
+    // scopes happen to have identical stored prompts.
+    setDrafts((d) => ({ ...d, [scope]: storedPrompt ?? '' }))
+  }, [scope, storedPrompt])
 
   const resetDefaults = useCallback(async () => {
     if (resetting) return
@@ -227,22 +230,25 @@ function AgentPageInner() {
   const insertVariable = useCallback(
     (token: string) => {
       const el = textareaRef.current
-      if (!el) {
-        setDraft((d) => `${d}{${token}}`)
-        return
-      }
-      const start = el.selectionStart ?? draft.length
-      const end = el.selectionEnd ?? draft.length
-      const next = `${draft.slice(0, start)}{${token}}${draft.slice(end)}`
-      setDraft(next)
+      // Bug fix: operate on the CURRENT draft for the CURRENT scope via
+      // setDrafts directly. Capturing `draft`/`setDraft` in useCallback deps
+      // wasn't enough — if both scopes' drafts were string-equal the
+      // callback wouldn't recreate on scope switch and would write into the
+      // wrong scope.
+      const current = drafts[scope]
+      const start = el?.selectionStart ?? current.length
+      const end = el?.selectionEnd ?? current.length
+      const next = `${current.slice(0, start)}{${token}}${current.slice(end)}`
+      setDrafts((d) => ({ ...d, [scope]: next }))
       // Restore selection just after the inserted token on next tick.
       setTimeout(() => {
+        if (!el) return
         el.focus()
         const pos = start + token.length + 2
         el.setSelectionRange(pos, pos)
       }, 0)
     },
-    [draft],
+    [drafts, scope],
   )
 
   // Prefer the prompt-history endpoint (which tracks system-prompt versions

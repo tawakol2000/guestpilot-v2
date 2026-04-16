@@ -10,14 +10,16 @@
  * rail = detail pane when a message is clicked (full content + tool
  * names + delivery status).
  *
- * Deliberately read-only. The "Discuss in tuning" link on each AI
- * message deep-links into /tuning?conversationId=… so the manager can
- * hand the conversation to the tuning agent for analysis.
+ * Deliberately read-only. The "Discuss in tuning" button on a session
+ * creates a new TuningConversation anchored to the focused AI message
+ * (or the most recent AI reply if none is focused) via
+ * apiCreateTuningConversation, then deep-links the manager into
+ * /tuning?conversationId=<new-tuning-convo-id>.
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   Bot,
   CircleUser,
@@ -29,6 +31,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import {
+  apiCreateTuningConversation,
   apiGetConversation,
   apiGetConversations,
   type ApiConversationDetail,
@@ -355,6 +358,40 @@ function SessionDetail({
   focusedMessageId: string | null
   onFocusMessage: (id: string | null) => void
 }) {
+  const router = useRouter()
+  const [startingTuning, setStartingTuning] = useState(false)
+
+  const discussInTuning = useCallback(async () => {
+    if (startingTuning) return
+    // Pick the best anchor: focused message (if AI), else latest AI reply,
+    // else the latest message overall. If none, fall back to a non-anchored
+    // manual conversation so the button is never a no-op.
+    const focused = focusedMessageId
+      ? detail.messages.find((m) => m.id === focusedMessageId)
+      : null
+    const anchorCandidate =
+      (focused && (focused.role === 'AI' || focused.role === 'AI_PRIVATE')
+        ? focused
+        : null) ??
+      [...detail.messages].reverse().find((m) => m.role === 'AI') ??
+      detail.messages[detail.messages.length - 1] ??
+      null
+
+    setStartingTuning(true)
+    try {
+      const { conversation } = await apiCreateTuningConversation({
+        triggerType: 'MANUAL',
+        anchorMessageId: anchorCandidate?.id ?? null,
+      })
+      router.push(`/tuning?conversationId=${conversation.id}`)
+    } catch (e) {
+      toast.error('Could not start tuning chat', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+      setStartingTuning(false)
+    }
+  }, [detail.messages, focusedMessageId, router, startingTuning])
+
   return (
     <div className="flex h-full flex-col">
       <header
@@ -377,14 +414,23 @@ function SessionDetail({
             <span>{detail.reservation.guestCount} guests</span>
           </div>
         </div>
-        <Link
-          href={`/tuning?conversationId=${detail.id}`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-xs font-medium text-[#6C5CE7] transition-colors duration-200 hover:bg-[#F0EEFF]"
+        <button
+          type="button"
+          onClick={discussInTuning}
+          disabled={startingTuning}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border bg-white px-3 py-1.5 text-xs font-medium text-[#6C5CE7] transition-colors duration-200 hover:bg-[#F0EEFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           style={{ borderColor: TUNING_COLORS.hairline }}
         >
-          <MessageSquareText size={12} strokeWidth={2} aria-hidden />
-          <span>Discuss in tuning</span>
-        </Link>
+          {startingTuning ? (
+            <span
+              aria-hidden
+              className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
+            />
+          ) : (
+            <MessageSquareText size={12} strokeWidth={2} aria-hidden />
+          )}
+          <span>{startingTuning ? 'Starting…' : 'Discuss in tuning'}</span>
+        </button>
       </header>
 
       <div className="flex-1 overflow-auto">
