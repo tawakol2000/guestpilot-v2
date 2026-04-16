@@ -55,6 +55,11 @@ export function AcceptControls({
     // runAccept would capture the stale 'IMMEDIATE' value from this render's
     // closure. Allow the caller to pass the intended applyMode explicitly;
     // update the state as a side effect so the UI's footer hint reflects it.
+    //
+    // Round-9 bug fix — guard against re-entry while a previous call is
+    // still in flight. Without this, a rapid double-click could fire two
+    // identical PUT requests in parallel.
+    if (mode === 'saving') return
     const effectiveApplyMode: TuningApplyMode = opts.applyMode ?? applyMode
     if (opts.applyMode && opts.applyMode !== applyMode) {
       setApplyMode(opts.applyMode)
@@ -107,6 +112,8 @@ export function AcceptControls({
   }
 
   async function runReject() {
+    // Round-9 bug fix — same re-entry guard as runAccept.
+    if (mode === 'saving') return
     setMode('saving')
     try {
       await apiRejectTuningSuggestion(suggestion.id, rejectReason || undefined)
@@ -278,15 +285,22 @@ export function AcceptControls({
   }
 
   // Idle — primary + secondary actions.
+  // Bug fix (round 9) — previously the `mode === 'saving'` state had no
+  // dedicated branch and fell through to the idle UI with every button
+  // still clickable. A quick double-click on Apply would fire two PUTs
+  // in parallel. The `isSaving` flag below disables every action while
+  // the request is in flight.
   const requiresDispatch = needsSopDispatch || needsToolDispatch
+  const isSaving = mode === 'saving'
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <PrimaryButton
         onClick={() => (requiresDispatch ? setMode('dispatch') : runAccept())}
         data-testid="apply-now"
+        disabled={isSaving}
       >
-        Apply now
+        {isSaving ? 'Applying…' : 'Apply now'}
       </PrimaryButton>
       <SecondaryButton
         onClick={() => {
@@ -297,13 +311,14 @@ export function AcceptControls({
           if (requiresDispatch) setMode('dispatch')
           else runAccept({ applyMode: 'QUEUED' })
         }}
+        disabled={isSaving}
         title="Save as queued; still applies on confirm, but marks applyMode=QUEUED for later review batching."
       >
         Queue
       </SecondaryButton>
       <GhostButton
         onClick={() => setMode('edit')}
-        disabled={!suggestion.proposedText}
+        disabled={!suggestion.proposedText || isSaving}
       >
         Edit proposal
       </GhostButton>
@@ -311,7 +326,8 @@ export function AcceptControls({
       <button
         type="button"
         onClick={() => setMode('reject')}
-        className="rounded-lg px-3 py-2 text-sm text-[#6B7280] transition-all duration-200 hover:bg-[#FEF2F2] hover:text-[#B91C1C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FEE2E2]"
+        disabled={isSaving}
+        className="rounded-lg px-3 py-2 text-sm text-[#6B7280] transition-all duration-200 hover:bg-[#FEF2F2] hover:text-[#B91C1C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FEE2E2] disabled:cursor-not-allowed disabled:opacity-50"
       >
         Dismiss
       </button>

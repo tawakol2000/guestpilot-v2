@@ -110,7 +110,11 @@ function HistoryPageInner() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [confirmEntry, setConfirmEntry] = useState<VersionHistoryEntry | null>(null)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionMessage, setActionMessage] = useState<{
+    text: string
+    variant: 'success' | 'error'
+  } | null>(null)
+  const [rollingBack, setRollingBack] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -141,18 +145,31 @@ function HistoryPageInner() {
   }, [confirmEntry])
 
   async function doRollback() {
-    if (!confirmEntry) return
+    if (!confirmEntry || rollingBack) return
+    setRollingBack(true)
     try {
       const res = await apiRollbackVersion(confirmEntry.artifactType, confirmEntry.id)
-      setActionMessage(
-        res.newVersion
+      setActionMessage({
+        variant: 'success',
+        text: res.newVersion
           ? `Rolled back. New version v${res.newVersion}.`
           : 'Reset to default.',
-      )
+      })
       setConfirmEntry(null)
       await load()
     } catch (err) {
-      setActionMessage(err instanceof Error ? err.message : 'Rollback failed')
+      // Bug fix (round 9) — previously the modal STAYED open on error and
+      // the action-message banner rendered BEHIND the modal backdrop,
+      // leaving the user with no visible feedback. Close the modal so the
+      // banner actually surfaces, and distinguish error from success via
+      // a variant field instead of rendering both in the accent color.
+      setActionMessage({
+        variant: 'error',
+        text: err instanceof Error ? err.message : 'Rollback failed',
+      })
+      setConfirmEntry(null)
+    } finally {
+      setRollingBack(false)
     }
   }
 
@@ -175,14 +192,22 @@ function HistoryPageInner() {
         {actionMessage ? (
           <div
             className="mt-5 rounded-lg border-l-2 px-4 py-3 text-sm"
-            style={{
-              background: TUNING_COLORS.accentSoft,
-              borderLeftColor: TUNING_COLORS.accent,
-              color: TUNING_COLORS.ink,
-            }}
-            role="status"
+            style={
+              actionMessage.variant === 'error'
+                ? {
+                    background: TUNING_COLORS.dangerBg,
+                    borderLeftColor: TUNING_COLORS.dangerFg,
+                    color: TUNING_COLORS.dangerFg,
+                  }
+                : {
+                    background: TUNING_COLORS.accentSoft,
+                    borderLeftColor: TUNING_COLORS.accent,
+                    color: TUNING_COLORS.ink,
+                  }
+            }
+            role={actionMessage.variant === 'error' ? 'alert' : 'status'}
           >
-            {actionMessage}
+            {actionMessage.text}
           </div>
         ) : null}
 
@@ -238,16 +263,22 @@ function HistoryPageInner() {
                 <button
                   type="button"
                   onClick={() => setConfirmEntry(null)}
-                  className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
+                  disabled={rollingBack}
+                  className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={doRollback}
-                  className="inline-flex items-center justify-center rounded-lg bg-[#6C5CE7] px-5 py-2 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#5B4CDB] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
+                  disabled={rollingBack}
+                  className="inline-flex items-center justify-center rounded-lg bg-[#6C5CE7] px-5 py-2 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#5B4CDB] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
                 >
-                  Roll back
+                  {/* Bug fix — prevent double-submits and show a spinner so
+                      the user knows the request is in flight. Without this,
+                      clicking "Roll back" rapidly could fire multiple
+                      identical rollbacks. */}
+                  {rollingBack ? 'Rolling back…' : 'Roll back'}
                 </button>
               </div>
             </div>
