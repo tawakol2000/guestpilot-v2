@@ -36,17 +36,26 @@ export function ConversationList({
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<number | null>(null)
+  // Bug fix (round 11) — each refresh gets a monotonically-increasing id.
+  // If the user types fast, an earlier (slower) request can complete AFTER
+  // a later one, and without this guard the stale results would overwrite
+  // the newer query's results. The generation check drops any response
+  // whose id no longer matches the latest fired request.
+  const refreshGenRef = useRef(0)
 
   const refresh = useCallback(async (query = '') => {
+    const gen = ++refreshGenRef.current
     setLoading(true)
     setError(null)
     try {
       const res = await apiListTuningConversations({ limit: 50, q: query || undefined })
+      if (gen !== refreshGenRef.current) return
       setItems(res.conversations)
     } catch (err) {
+      if (gen !== refreshGenRef.current) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (gen === refreshGenRef.current) setLoading(false)
     }
   }, [])
 

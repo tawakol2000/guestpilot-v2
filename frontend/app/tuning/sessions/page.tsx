@@ -17,7 +17,7 @@
  * /tuning?conversationId=<new-tuning-convo-id>.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -59,17 +59,21 @@ function SessionsInner() {
   const [filter, setFilter] = useState<Filter>('all')
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null)
 
+  // Bug fix (round 11) — generation counter so a rapid mount → retry
+  // sequence (or two retries in a row while the first is still in flight)
+  // can't let the slower response overwrite the newer one.
+  const loadListGenRef = useRef(0)
   const loadList = useCallback(async () => {
-    // Bug fix — on a retry after a prior error, conversations had been
-    // set to [] which caused the "No sessions match that filter" empty
-    // state to render (instead of skeletons) during the retry fetch.
-    // Reset to null so the skeleton branch fires again.
+    const gen = ++loadListGenRef.current
+    // Reset to null so the skeleton branch fires again on retry.
     setConversations(null)
     setListError(null)
     try {
       const res = await apiGetConversations()
+      if (gen !== loadListGenRef.current) return
       setConversations(res)
     } catch (e) {
+      if (gen !== loadListGenRef.current) return
       setListError(e instanceof Error ? e.message : String(e))
       setConversations([])
     }
