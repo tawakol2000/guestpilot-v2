@@ -186,8 +186,21 @@ export function DetailPanel({
                     }}
                   >
                     <div className="flex items-center gap-2 text-xs text-[#9CA3AF]">
+                      {/* Bug fix — sentence-case role label rather than raw
+                          uppercase enum value (GUEST / HOST / AI_PRIVATE), to
+                          match the rest of the /tuning chrome. */}
                       <span className="font-medium text-[#6B7280]">
-                        {isAi ? 'AI' : m.role}
+                        {m.role === 'AI'
+                          ? 'AI'
+                          : m.role === 'AI_PRIVATE'
+                            ? 'AI draft'
+                            : m.role === 'GUEST'
+                              ? 'Guest'
+                              : m.role === 'HOST'
+                                ? 'Host'
+                                : m.role === 'MANAGER_PRIVATE'
+                                  ? 'Manager note'
+                                  : String(m.role).toLowerCase()}
                       </span>
                       <span aria-hidden>·</span>
                       <span>

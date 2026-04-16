@@ -80,6 +80,16 @@ function PlaygroundInner() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
+  // Bug fix — apiSandboxChatStream has no AbortController, so if the user
+  // navigates away mid-stream the onDelta / envelope resolution would fire
+  // setTurns() on an unmounted component. This ref gates those updates.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -169,6 +179,7 @@ function PlaygroundInner() {
           messages: history,
         },
         (delta) => {
+          if (!mountedRef.current) return
           setTurns((list) =>
             list.map((t) =>
               t.id === assistantTurn.id ? { ...t, content: t.content + delta } : t,
@@ -176,6 +187,7 @@ function PlaygroundInner() {
           )
         },
       )
+      if (!mountedRef.current) return
       setTurns((list) =>
         list.map((t) =>
           t.id === assistantTurn.id
@@ -189,11 +201,12 @@ function PlaygroundInner() {
         ),
       )
     } catch (e) {
+      if (!mountedRef.current) return
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg)
       setTurns((list) => list.filter((t) => t.id !== assistantTurn.id))
     } finally {
-      setSending(false)
+      if (mountedRef.current) setSending(false)
     }
   }, [draft, sending, propertyId, turns, status, channel, guestName, checkIn, checkOut, guestCount, reasoning])
 

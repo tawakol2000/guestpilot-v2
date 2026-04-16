@@ -122,17 +122,39 @@ function AgentPageInner() {
     load()
   }, [load])
 
-  // Reload template variables when scope changes — different personas expose different content blocks.
+  // Reload template variables when scope changes — different personas expose
+  // different content blocks. Bug fix: add a cancellation flag so rapid
+  // scope toggles don't end up with the slower response overwriting the
+  // newer scope's variables (race condition).
   useEffect(() => {
+    let cancelled = false
     apiGetTemplateVariables(scope)
-      .then(setTemplateVars)
-      .catch(() => setTemplateVars([]))
+      .then((vars) => {
+        if (!cancelled) setTemplateVars(vars)
+      })
+      .catch(() => {
+        if (!cancelled) setTemplateVars([])
+      })
+    return () => {
+      cancelled = true
+    }
   }, [scope])
 
   // Seed both per-scope drafts from the server whenever tenant config
   // (re)loads. Use a functional update so we only fill a scope's draft on
   // first load — subsequent loads (e.g. after save) MUST NOT clobber a
-  // manager's unsaved edits on the *other* scope.
+  // manager's unsaved edits on any scope.
+  //
+  // Bug fix (round 5): earlier this effect ALSO overwrote drafts[scope]
+  // with tenantCfg[scope] on every tenantCfg change, under the comment
+  // "After a save, ALWAYS refresh the currently-viewed scope." That
+  // introduced a data-loss race: if the user typed more characters while
+  // an in-flight save was completing, the server response would snap
+  // drafts[scope] back to the pre-continued-typing value. We now only
+  // seed on the first load. The dirty flag lines up naturally — when
+  // drafts[scope] matches tenantCfg[scope] dirty is false; when the user
+  // has continued to type beyond what was saved, dirty stays true so
+  // they can save again.
   const seededRef = useRef<Record<Scope, boolean>>({ coordinator: false, screening: false })
   useEffect(() => {
     if (!tenantCfg) return
@@ -146,18 +168,8 @@ function AgentPageInner() {
         next.screening = tenantCfg.systemPromptScreening ?? ''
         seededRef.current.screening = true
       }
-      // After a save, ALWAYS refresh the *currently-viewed* scope to the
-      // server's canonical version so the dirty comparison lines up. The
-      // other scope's unsaved edits are preserved.
-      next[scope] =
-        scope === 'coordinator'
-          ? tenantCfg.systemPromptCoordinator ?? ''
-          : tenantCfg.systemPromptScreening ?? ''
       return next
     })
-    // Intentionally omit `scope` from deps — we only want to resync when
-    // tenantCfg changes. Switching scopes should NOT overwrite drafts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantCfg])
 
   const storedPrompt = useMemo(() => {

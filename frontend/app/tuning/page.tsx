@@ -162,11 +162,19 @@ function TuningPageInner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [suggestions, selectedId, setSelected])
 
-  // Auto-select the first item when nothing is selected.
+  // Auto-select the first item when nothing is selected, OR when the
+  // currently-pinned selectedId no longer exists in the queue (e.g.
+  // another tab accepted/dismissed it via SSE).
+  //
+  // Bug fix (round 5): earlier this fired only when `!selectedId`, so if
+  // another tab accepted the current suggestion the URL still pinned a
+  // dead id and we'd render <Quickstart/> even though there were still
+  // pending suggestions to review.
   useEffect(() => {
-    if (!loading && !selectedId && suggestions.length > 0) {
-      setSelected(suggestions[0].id)
-    }
+    if (loading) return
+    if (suggestions.length === 0) return
+    const stillExists = !!selectedId && suggestions.some((s) => s.id === selectedId)
+    if (!stillExists) setSelected(suggestions[0].id)
   }, [loading, selectedId, suggestions, setSelected])
 
   const handleMutated = useCallback(async () => {

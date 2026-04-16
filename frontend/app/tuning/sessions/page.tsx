@@ -560,7 +560,16 @@ function RoleBadge({ role }: { role: ApiMessage['role'] }) {
     AI_PRIVATE: { bg: '#F0EEFF', fg: '#6C5CE7', label: 'AI (private)' },
     MANAGER_PRIVATE: { bg: '#F3F4F6', fg: '#6B7280', label: 'Manager note' },
   }
-  const s = styles[role]
+  // Bug fix — defensive fallback for unknown roles. TypeScript guarantees
+  // the role is one of the five known values today, but if the backend
+  // evolves and ships a new role before the frontend deploys, `s` would
+  // be undefined and `s.bg` would crash the transcript. Fall back to a
+  // neutral chip with the raw role string.
+  const s = styles[role] ?? {
+    bg: '#F3F4F6',
+    fg: '#6B7280',
+    label: String(role ?? 'Unknown').toLowerCase(),
+  }
   return (
     <span
       className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
@@ -683,7 +692,10 @@ function EventInspector({
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-[#9CA3AF]">{label}</dt>
+      {/* Bug fix — sprint-07 rule #2 forbids UPPERCASE labels; use weight +
+          size for hierarchy instead. Keeps this inspector consistent with
+          every other /tuning micro-label. */}
+      <dt className="text-xs font-medium text-[#9CA3AF]">{label}</dt>
       <dd className="text-sm text-[#1A1A1A]">{children}</dd>
     </div>
   )

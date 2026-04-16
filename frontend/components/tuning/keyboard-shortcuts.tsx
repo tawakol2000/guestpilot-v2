@@ -9,7 +9,7 @@
  * and prefers-reduced-motion.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Keyboard, X } from 'lucide-react'
 import { TUNING_COLORS } from './tokens'
@@ -42,6 +42,22 @@ const GLOBAL_GROUP: ShortcutGroup = {
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Bug fix — when the modal opens, move focus into the dialog so screen
+  // readers announce it and keyboard users can navigate without first
+  // hunting for the dialog. On close, restore focus to whatever held it
+  // before (typically the trigger button) for a clean return.
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (open) {
+      returnFocusRef.current = document.activeElement as HTMLElement | null
+      // Focus the dialog on the next microtask so the DOM node exists.
+      requestAnimationFrame(() => dialogRef.current?.focus())
+    } else if (returnFocusRef.current) {
+      returnFocusRef.current.focus?.()
+      returnFocusRef.current = null
+    }
+  }, [open])
 
   // Bug fix — j/k/Enter only work on the main /tuning (queue) page;
   // advertising them on /tuning/agent, /tuning/playground, etc. misleads
@@ -92,10 +108,12 @@ export function KeyboardShortcuts() {
           role="presentation"
         >
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Keyboard shortcuts"
-            className="w-[min(440px,92vw)] rounded-xl bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            tabIndex={-1}
+            className="w-[min(440px,92vw)] rounded-xl bg-white shadow-2xl outline-none animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <header
