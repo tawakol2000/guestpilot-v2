@@ -284,16 +284,24 @@ function ChatPanelInner({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
+                // Bug fix (round 13) — also bail if a message is already in
+                // flight (status='submitted'). Previously only isStreaming
+                // blocked submit, so Enter during the brief submitted-but-
+                // not-yet-streaming window fired a concurrent sendMessage.
+                if (isStreaming || isSending) return
                 onSubmit(e as unknown as React.FormEvent)
               }
             }}
             rows={1}
             placeholder={
-              isStreaming
+              isStreaming || isSending
                 ? 'Agent is replying…'
                 : 'Tell your tuner what you see.'
             }
-            disabled={isStreaming}
+            // Bug fix (round 13) — disable on BOTH submitted and streaming,
+            // not just streaming, so the textarea and its Enter handler
+            // can't trigger a second send mid-request.
+            disabled={isStreaming || isSending}
             className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
             aria-label="Message the tuning agent"
           />
