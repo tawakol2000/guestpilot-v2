@@ -210,7 +210,12 @@ function PlaygroundInner() {
     }
   }, [draft, sending, propertyId, turns, status, channel, guestName, checkIn, checkOut, guestCount, reasoning])
 
-  const canSend = !!draft.trim() && !sending && !!propertyId
+  // Bug fix (round 16) — also require valid check-in / check-out. Previously
+  // if a user cleared either date after mount, canSend stayed true and the
+  // backend would receive empty strings for the stay window, rejecting
+  // with an unhelpful error. Guard here so the send button disables with
+  // the same visual feedback as a missing property.
+  const canSend = !!draft.trim() && !sending && !!propertyId && !!checkIn && !!checkOut
   const property = useMemo(
     () => properties.find((p) => p.id === propertyId) ?? null,
     [properties, propertyId],
