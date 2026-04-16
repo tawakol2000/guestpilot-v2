@@ -182,6 +182,14 @@ function AgentPageInner() {
       toast.success('System prompt saved', {
         description: `New version v${updated.systemPromptVersion}.`,
       })
+      // Bug fix — the "Last edit X ago" label is derived from
+      // promptHistory[0], which is fetched only on mount. Without a refresh
+      // here, the label stays stale until the user navigates away and back.
+      apiGetPromptHistory()
+        .then((h) => setPromptHistory(h.history))
+        .catch(() => {
+          /* non-critical; label stays whatever it was */
+        })
     } catch (e) {
       toast.error('Could not save', {
         description: e instanceof Error ? e.message : String(e),
@@ -218,6 +226,13 @@ function AgentPageInner() {
       toast.success('Reset to defaults', {
         description: `Version bumped to v${updated.systemPromptVersion}.`,
       })
+      // Same rationale as in save() — refresh promptHistory so the header
+      // "Last edit" label reflects the reset.
+      apiGetPromptHistory()
+        .then((h) => setPromptHistory(h.history))
+        .catch(() => {
+          /* non-critical */
+        })
     } catch (e) {
       toast.error('Could not reset', {
         description: e instanceof Error ? e.message : String(e),

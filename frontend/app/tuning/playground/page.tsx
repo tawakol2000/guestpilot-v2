@@ -63,16 +63,14 @@ function PlaygroundInner() {
   )
   const [channel, setChannel] = useState<Channel>('AIRBNB')
   const [guestName, setGuestName] = useState('Jamie Guest')
-  const [checkIn, setCheckIn] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 7)
-    return d.toISOString().slice(0, 10)
-  })
-  const [checkOut, setCheckOut] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 10)
-    return d.toISOString().slice(0, 10)
-  })
+  // Bug fix — date initializers must be deterministic so the initial server
+  // render matches the client hydration render. Using `new Date()` in a
+  // useState lazy initializer would differ between server render time and
+  // client hydration time (they can straddle midnight in different zones),
+  // producing a React hydration warning on the <input type="date" value>.
+  // Start empty; populate client-side after mount.
+  const [checkIn, setCheckIn] = useState<string>('')
+  const [checkOut, setCheckOut] = useState<string>('')
   const [guestCount, setGuestCount] = useState<number>(2)
   const [reasoning, setReasoning] = useState<'low' | 'medium' | 'high'>('medium')
   const [settingsOpen, setSettingsOpen] = useState(true)
@@ -102,6 +100,20 @@ function PlaygroundInner() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // Populate check-in / check-out AFTER hydration so the server-rendered
+  // HTML doesn't embed a "today + 7" value that mismatches the client's
+  // clock. Defaults: +7 days and +10 days.
+  useEffect(() => {
+    if (checkIn && checkOut) return
+    const ci = new Date()
+    ci.setDate(ci.getDate() + 7)
+    const co = new Date()
+    co.setDate(co.getDate() + 10)
+    if (!checkIn) setCheckIn(ci.toISOString().slice(0, 10))
+    if (!checkOut) setCheckOut(co.toISOString().slice(0, 10))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
+import { getToken } from '@/lib/api'
 import { TUNING_COLORS } from './tokens'
 
 export function EvidencePane({
@@ -23,13 +24,17 @@ export function EvidencePane({
     let cancelled = false
     setLoading(true)
     setError(null)
+    // Bug fix — previously this template-literaled localStorage.getItem which
+    // returns null if the key is missing, producing an invalid
+    // "Authorization: Bearer null" header and a 401 instead of a clean
+    // "not authenticated" error. Use the getToken helper and only attach
+    // the header when we actually have a token.
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
     fetch(
       `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'}/api/evidence-bundles/${bundleId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('gp_token') : ''}`,
-        },
-      },
+      { headers },
     )
       .then(async (r) => {
         if (!r.ok) throw new Error(`${r.status}`)

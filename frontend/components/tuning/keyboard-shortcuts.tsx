@@ -9,7 +9,8 @@
  * and prefers-reduced-motion.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { Keyboard, X } from 'lucide-react'
 import { TUNING_COLORS } from './tokens'
 
@@ -19,26 +20,36 @@ type Shortcut = {
   hint?: string
 }
 
-const SHORTCUTS: Array<{ heading: string; items: Shortcut[] }> = [
-  {
-    heading: 'Queue',
-    items: [
-      { keys: ['J'], label: 'Next suggestion' },
-      { keys: ['K'], label: 'Previous suggestion' },
-      { keys: ['Enter'], label: 'Focus detail' },
-    ],
-  },
-  {
-    heading: 'Global',
-    items: [
-      { keys: ['?'], label: 'Keyboard shortcuts' },
-      { keys: ['Esc'], label: 'Close panel / modal' },
-    ],
-  },
-]
+type ShortcutGroup = { heading: string; items: Shortcut[] }
+
+const QUEUE_GROUP: ShortcutGroup = {
+  heading: 'Queue',
+  items: [
+    { keys: ['J'], label: 'Next suggestion' },
+    { keys: ['K'], label: 'Previous suggestion' },
+    { keys: ['Enter'], label: 'Focus detail' },
+  ],
+}
+
+const GLOBAL_GROUP: ShortcutGroup = {
+  heading: 'Global',
+  items: [
+    { keys: ['?'], label: 'Keyboard shortcuts' },
+    { keys: ['Esc'], label: 'Close panel / modal' },
+  ],
+}
 
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
+  // Bug fix — j/k/Enter only work on the main /tuning (queue) page;
+  // advertising them on /tuning/agent, /tuning/playground, etc. misleads
+  // users into pressing keys that do nothing. Scope the list per route.
+  const shortcuts = useMemo<ShortcutGroup[]>(() => {
+    const onQueue = pathname === '/tuning'
+    return onQueue ? [QUEUE_GROUP, GLOBAL_GROUP] : [GLOBAL_GROUP]
+  }, [pathname])
 
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
@@ -107,7 +118,7 @@ export function KeyboardShortcuts() {
               </button>
             </header>
             <div className="px-5 py-4">
-              {SHORTCUTS.map((group) => (
+              {shortcuts.map((group) => (
                 <section
                   key={group.heading}
                   className="mb-4 last:mb-0"
