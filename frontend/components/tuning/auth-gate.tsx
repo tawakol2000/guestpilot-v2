@@ -16,9 +16,14 @@ export function TuningAuthGate({ children }: { children: React.ReactNode }) {
   }, [router])
 
   if (!ready) {
+    // Sprint 07 palette alignment — the main /tuning surface renders on
+    // the cool-neutral canvas (#F9FAFB), so this loading flash needs to
+    // match. Previously it used the pre-sprint warm-stone palette
+    // (#FAFAF9 + #A8A29E), producing a subtle color flash before
+    // hydration.
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-[#FAFAF9]">
-        <span className="text-sm text-[#A8A29E]">Loading…</span>
+      <div className="flex min-h-dvh items-center justify-center bg-[#F9FAFB]">
+        <span className="text-sm text-[#9CA3AF]">Loading…</span>
       </div>
     )
   }

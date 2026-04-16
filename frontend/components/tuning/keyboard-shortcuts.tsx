@@ -90,12 +90,17 @@ export function KeyboardShortcuts() {
 
   return (
     <>
+      {/*
+       * Bug fix — originally at `bottom-5 right-5`, which collided with the
+       * Sonner toaster (also bottom-right). Toasts would cover this button.
+       * Moved to bottom-left to own its own corner.
+       */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Show keyboard shortcuts"
         title="Keyboard shortcuts (?)"
-        className="group fixed bottom-5 right-5 z-40 hidden h-9 w-9 items-center justify-center rounded-full border bg-white text-[#6B7280] shadow-sm transition-all duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2 md:inline-flex"
+        className="group fixed bottom-5 left-5 z-40 hidden h-9 w-9 items-center justify-center rounded-full border bg-white text-[#6B7280] shadow-sm transition-all duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2 md:inline-flex"
         style={{ borderColor: TUNING_COLORS.hairline }}
       >
         <Keyboard size={14} strokeWidth={2} aria-hidden />

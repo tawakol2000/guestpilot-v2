@@ -22,13 +22,18 @@
 }
 
 /* Focus-visible fallback: if a control forgets its focus-visible ring,
-   surface a subtle default so keyboard users are never stranded. We
-   keep it unobtrusive so explicit focus-visible:ring-2 classes
-   dominate where they exist. */
+   surface a subtle default outline so keyboard users are never stranded.
+   Scoped to :focus-visible so mouse-click focus doesn't draw it.
+   Bug fix (round 6): `border-radius: inherit` was originally included
+   hoping to make the outline follow the element's shape — but it
+   actually RESETS the element's own border-radius to the parent's
+   value during focus-visible, causing rounded buttons to briefly
+   snap to sharp corners. Modern browsers draw outlines along the
+   element's own border-radius without any extra help, so the
+   property was both harmful and unnecessary. */
 .tuning-surface *:focus-visible {
   outline: 2px solid #A29BFE;
   outline-offset: 2px;
-  border-radius: inherit;
 }
 
 /* Keep Sonner toasts readable inside the tuning surface. */

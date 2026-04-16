@@ -33,11 +33,10 @@ export function TuningToaster() {
           fontSize: 14,
           padding: '12px 14px',
         },
-        classNames: {
-          success: 'tuning-toast-success',
-          error: 'tuning-toast-error',
-          info: 'tuning-toast-info',
-        },
+        // Bug fix — removed references to tuning-toast-success /
+        // tuning-toast-error / tuning-toast-info classNames that were
+        // never defined in tuning.css. Sonner would attach the classes
+        // but they'd have no effect. Dead references tidied.
       }}
     />
   )
