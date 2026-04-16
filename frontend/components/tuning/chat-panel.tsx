@@ -197,7 +197,12 @@ function ChatPanelInner({
   const canSend = !!trimmedDraft && !isStreaming && !isSending
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    // Bug fix (round 16) — `min-h-0` on nested flex columns is the classic
+    // Tailwind/Flexbox fix for "overflow-auto children don't actually
+    // shrink". Without it, a very tall transcript inside `flex-1` can
+    // push its parent past the viewport despite the outer h-dvh lock,
+    // because flex items default to min-height:auto (content height).
+    <div className="flex h-full min-h-0 flex-col bg-white">
       {anchor ? (
         <div
           className="border-b px-5 py-3"
@@ -218,7 +223,7 @@ function ChatPanelInner({
 
       <div
         ref={scrollerRef}
-        className="flex-1 overflow-auto px-4 py-6 md:px-6"
+        className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-6"
         style={{ background: TUNING_COLORS.canvas }}
       >
         {messages.length === 0 ? (
