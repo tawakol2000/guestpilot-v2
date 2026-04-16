@@ -6,6 +6,10 @@
  *   - category-stats EMA updates
  *   - SopVariantHistory / FaqEntryHistory snapshot row written (sprint 05 §2)
  */
+// MUST be first — seeds env before suggestion-action's transitive import
+// graph reaches the auth middleware's eager JWT_SECRET check.
+import './_env-bootstrap';
+
 import { test, after, before } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { PrismaClient, TuningActionType } from '@prisma/client';

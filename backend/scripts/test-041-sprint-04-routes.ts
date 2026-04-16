@@ -5,9 +5,9 @@
  *
  * Usage: npx tsx scripts/test-041-sprint-04-routes.ts
  */
-process.env.JWT_SECRET ||= 'test-only-stub-secret-for-route-verification';
-process.env.OPENAI_API_KEY ||= 'test-only-stub-key';
-import 'dotenv/config';
+// MUST be the first import — seeds env defaults before any transitive
+// import reaches the auth middleware's eager JWT_SECRET check.
+import './_smoke-env';
 
 import { PrismaClient } from '@prisma/client';
 import { tuningChatRouter } from '../src/routes/tuning-chat';
