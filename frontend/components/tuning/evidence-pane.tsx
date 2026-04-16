@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
+import { TUNING_COLORS } from './tokens'
 
 export function EvidencePane({
   open,
@@ -43,39 +45,59 @@ export function EvidencePane({
     }
   }, [open, bundleId])
 
+  // Close on Escape.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/10">
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Evidence bundle"
-        className="flex h-full w-[min(560px,90vw)] flex-col border-l border-[#E7E5E4] bg-white shadow-xl"
+        className="flex h-full w-[min(600px,90vw)] flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300"
+        onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between border-b border-[#E7E5E4] px-5 py-3">
+        <header
+          className="flex items-start justify-between border-b px-5 py-4"
+          style={{ borderColor: TUNING_COLORS.hairline }}
+        >
           <div>
-            <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">Evidence</div>
-            <div className="font-[family-name:var(--font-playfair)] text-lg text-[#0C0A09]">
+            <div className="text-xs font-medium text-[#6B7280]">Evidence</div>
+            <div className="mt-0.5 text-lg font-semibold tracking-tight text-[#1A1A1A]">
               Bundle
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-[#57534E] hover:bg-[#F5F4F1]"
+            aria-label="Close evidence pane"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6B7280] transition-colors duration-150 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE]"
           >
-            Close
+            <X size={16} strokeWidth={2} aria-hidden />
           </button>
         </header>
         <div className="flex-1 overflow-auto px-5 py-4 font-mono text-[12px] leading-6">
           {loading ? (
-            <div className="text-[#A8A29E]">Loading…</div>
+            <div className="text-[#9CA3AF]">Loading…</div>
           ) : error ? (
-            <div className="text-[#9F1239]">Failed to load bundle: {error}</div>
+            <div style={{ color: TUNING_COLORS.dangerFg }}>
+              Failed to load bundle: {error}
+            </div>
           ) : payload ? (
             <TreeNode value={payload} depth={0} path="$" />
           ) : (
-            <div className="text-[#A8A29E]">No bundle attached to this suggestion.</div>
+            <div className="text-[#9CA3AF]">No bundle attached to this suggestion.</div>
           )}
         </div>
       </div>
@@ -85,13 +107,19 @@ export function EvidencePane({
 
 function TreeNode({ value, depth, path }: { value: unknown; depth: number; path: string }) {
   const [open, setOpen] = useState(depth < 1)
-  if (value === null) return <span className="text-[#A8A29E]">null</span>
+  if (value === null) return <span className="text-[#9CA3AF]">null</span>
   if (typeof value !== 'object') {
-    return (
-      <span className="text-[#0C0A09]">
-        {typeof value === 'string' ? JSON.stringify(value) : String(value)}
-      </span>
-    )
+    if (typeof value === 'string') {
+      return (
+        <span style={{ color: TUNING_COLORS.diffAddFg }}>
+          {JSON.stringify(value)}
+        </span>
+      )
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return <span style={{ color: TUNING_COLORS.ink }}>{String(value)}</span>
+    }
+    return <span style={{ color: TUNING_COLORS.ink }}>{String(value)}</span>
   }
   const entries = Array.isArray(value)
     ? value.map((v, i) => [String(i), v] as [string, unknown])
@@ -102,19 +130,21 @@ function TreeNode({ value, depth, path }: { value: unknown; depth: number; path:
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 text-[#57534E] hover:text-[#0C0A09]"
+        className="inline-flex items-center gap-1 text-[#6B7280] transition-colors duration-150 hover:text-[#1A1A1A]"
       >
-        <span>{open ? '▾' : '▸'}</span>
-        <span className="font-mono text-[11px] uppercase tracking-[0.1em]">
-          {isArr ? `Array(${entries.length})` : `Object (${entries.length})`}
+        <span className="inline-block w-3 text-center font-mono text-[10px]">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="font-mono text-[11px]">
+          {isArr ? `Array(${entries.length})` : `Object { ${entries.length} }`}
         </span>
       </button>
       {open ? (
         <div>
           {entries.map(([k, v]) => (
             <div key={k} className="py-0.5">
-              <span className="text-[#1E3A8A]">{JSON.stringify(k)}</span>
-              <span className="text-[#A8A29E]">: </span>
+              <span className="text-[#6B7280]">{JSON.stringify(k)}</span>
+              <span className="text-[#9CA3AF]">: </span>
               <TreeNode value={v} depth={depth + 1} path={`${path}.${k}`} />
             </div>
           ))}

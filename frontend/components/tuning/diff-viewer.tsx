@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { TUNING_COLORS } from './tokens'
 
 // Minimal word-level LCS-based diff. Good enough for conversational edits
-// (40-800 chars). Keeps us from adding a dependency for sprint 03.
+// (40-800 chars). Keeps us from adding a dependency.
 type Token = { text: string; type: 'equal' | 'add' | 'del' }
 
 function tokenize(text: string): string[] {
@@ -70,55 +70,65 @@ export function DiffViewer({
   const empty = !before && !after
   if (empty) {
     return (
-      <div className="rounded-md border border-dashed border-[#E7E5E4] bg-[#F5F4F1] p-4 text-center text-xs text-[#A8A29E]">
-        No diff available
+      <div
+        className="rounded-lg p-4 text-center text-xs"
+        style={{
+          background: TUNING_COLORS.surfaceSunken,
+          color: TUNING_COLORS.inkSubtle,
+        }}
+      >
+        No changes
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-[#E7E5E4] bg-white">
+    <div
+      className="overflow-hidden rounded-lg"
+      style={{ background: TUNING_COLORS.surfaceSunken }}
+    >
       {title ? (
-        <div className="flex items-center justify-between border-b border-[#E7E5E4] bg-[#F5F4F1] px-3 py-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">{title}</span>
-          <span className="font-mono text-[10px] text-[#A8A29E]">word-level diff</span>
+        <div
+          className="flex items-center justify-between border-b px-4 py-2.5"
+          style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+        >
+          <span className="text-xs font-medium text-[#6B7280]">{title}</span>
+          <span className="font-mono text-[10px] text-[#9CA3AF]">word-level diff</span>
         </div>
       ) : null}
       <pre
-        className="whitespace-pre-wrap break-words font-mono text-[13px] leading-6"
-        style={{ padding: '14px 16px' }}
+        className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[13px] leading-7"
+        style={{ color: TUNING_COLORS.ink }}
       >
         {tokens.map((t, i) => {
           if (t.type === 'equal') {
-            return (
-              <span key={i} style={{ color: TUNING_COLORS.ink }}>
-                {t.text}
-              </span>
-            )
+            return <span key={i}>{t.text}</span>
           }
           if (t.type === 'add') {
             return (
               <span
                 key={i}
+                className="rounded-sm px-0.5"
                 style={{
                   background: TUNING_COLORS.diffAddBg,
                   color: TUNING_COLORS.diffAddFg,
-                  borderRadius: 2,
                 }}
               >
                 {t.text}
               </span>
             )
           }
+          // Deletion: use line-through without opacity to avoid muddy
+          // translucent-red overlay (per design review).
           return (
             <span
               key={i}
+              className="rounded-sm px-0.5"
               style={{
                 background: TUNING_COLORS.diffDelBg,
                 color: TUNING_COLORS.diffDelFg,
                 textDecoration: 'line-through',
                 textDecorationThickness: '1px',
-                borderRadius: 2,
               }}
             >
               {t.text}
