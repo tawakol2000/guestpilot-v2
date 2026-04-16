@@ -9,10 +9,14 @@
  *
  * Rehydrates existing TuningMessage rows on mount via
  * apiGetTuningConversation so long-running conversations survive reload.
+ *
+ * Sprint 07: restyled with rounded message bubbles, a focus-ring input,
+ * and a circular send button.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
+import { ArrowUp, Pin } from 'lucide-react'
 import {
   apiGetTuningConversation,
   getToken,
@@ -67,10 +71,7 @@ export function ChatPanel({
 
   if (initialMessages === null) {
     return (
-      <div
-        className="flex h-full items-center justify-center px-4 py-6 text-[12px]"
-        style={{ color: TUNING_COLORS.inkSubtle }}
-      >
+      <div className="flex h-full items-center justify-center px-4 py-6 text-sm text-[#9CA3AF]">
         Loading conversation…
       </div>
     )
@@ -78,8 +79,12 @@ export function ChatPanel({
   if (hydrateError) {
     return (
       <div
-        className="p-4 text-[12px]"
-        style={{ color: TUNING_COLORS.diffDelFg }}
+        className="mx-4 mt-4 rounded-lg border-l-2 px-4 py-3 text-sm"
+        style={{
+          background: TUNING_COLORS.dangerBg,
+          borderLeftColor: TUNING_COLORS.dangerFg,
+          color: TUNING_COLORS.dangerFg,
+        }}
       >
         {hydrateError}
       </div>
@@ -107,9 +112,6 @@ function ChatPanelInner({
   anchor: TuningConversationDetail['anchorMessage']
   initialMessages: UIMessage[]
 }) {
-  // Build the transport once, memoed on conversationId so changing
-  // conversations creates a fresh transport (auth header reads the token
-  // lazily via the header factory so expired tokens refresh cleanly).
   const openerRef = useRef(false)
   const transport = useMemo(() => {
     return new DefaultChatTransport<UIMessage>({
@@ -141,10 +143,13 @@ function ChatPanelInner({
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll on new message.
   useEffect(() => {
     if (!scrollerRef.current) return
-    scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollHeight })
+    // Sprint 07: smooth scroll instead of a jump.
+    scrollerRef.current.scrollTo({
+      top: scrollerRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
   }, [messages])
 
   const onSubmit = useCallback(
@@ -175,10 +180,6 @@ function ChatPanelInner({
 
   const proactiveRequested = useRef(false)
   useEffect(() => {
-    // Proactive opener: if the conversation has no messages yet, send a
-    // zero-content turn ("please greet the manager") to kick the agent
-    // into action. The agent's system prompt handles the actual greeting
-    // — this is just the trigger.
     if (proactiveRequested.current) return
     if (initialMessages.length > 0) return
     if (messages.length > 0) return
@@ -190,37 +191,48 @@ function ChatPanelInner({
     sendMessage({ text: openerPrompt })
   }, [anchor, initialMessages, messages, sendMessage])
 
+  const isStreaming = status === 'streaming'
+  const isSending = status === 'submitted'
+  const trimmedDraft = draft.trim()
+  const canSend = !!trimmedDraft && !isStreaming && !isSending
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-white">
       {anchor ? (
         <div
-          className="border-b px-3 py-2 text-[11px]"
+          className="border-b px-5 py-3"
           style={{
-            borderColor: TUNING_COLORS.hairline,
-            background: TUNING_COLORS.surfaceSunken,
-            color: TUNING_COLORS.inkMuted,
+            borderColor: TUNING_COLORS.hairlineSoft,
+            background: TUNING_COLORS.accentSoft,
           }}
         >
-          <div className="uppercase tracking-[0.14em]">Anchored to message</div>
-          <div className="mt-1 line-clamp-2 text-[12px]" style={{ color: TUNING_COLORS.ink }}>
-            {anchor.content.slice(0, 200)}
+          <div className="flex items-center gap-2 text-xs font-medium text-[#6B7280]">
+            <Pin size={12} strokeWidth={2} aria-hidden />
+            <span>Anchored to message</span>
+          </div>
+          <div className="mt-1 line-clamp-2 text-sm leading-5 text-[#1A1A1A]">
+            {anchor.content.slice(0, 240)}
           </div>
         </div>
       ) : null}
 
-      <div ref={scrollerRef} className="flex-1 overflow-auto px-3 py-4">
+      <div
+        ref={scrollerRef}
+        className="flex-1 overflow-auto px-4 py-6 md:px-6"
+        style={{ background: TUNING_COLORS.canvas }}
+      >
         {messages.length === 0 ? (
-          <div
-            className="mt-4 text-center text-[12px] italic"
-            style={{ color: TUNING_COLORS.inkSubtle }}
-          >
-            Starting conversation…
+          <div className="mt-6 flex flex-col items-center text-center">
+            <div className="inline-flex h-8 w-8 animate-pulse items-center justify-center rounded-full bg-[#F0EEFF]">
+              <span className="h-2 w-2 rounded-full bg-[#6C5CE7]" />
+            </div>
+            <p className="mt-3 text-sm text-[#6B7280]">Starting conversation…</p>
           </div>
         ) : null}
-        <div className="space-y-4">
+
+        <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {messages.map((m, idx) => {
-            // Hide the first-ever user turn when it was the proactive-opener
-            // trigger. The backend didn't persist it; on reload it's gone.
+            // Hide the first-ever user turn when it was the proactive-opener trigger.
             const isFirstUserTrigger =
               idx === 0 &&
               m.role === 'user' &&
@@ -236,14 +248,17 @@ function ChatPanelInner({
               />
             )
           })}
+
+          {isStreaming ? <TypingIndicator /> : null}
         </div>
+
         {error ? (
           <div
-            className="mt-3 rounded border px-3 py-2 text-[12px]"
+            className="mx-auto mt-4 max-w-3xl rounded-lg border-l-2 px-4 py-3 text-sm"
             style={{
-              borderColor: TUNING_COLORS.diffDelBg,
-              background: TUNING_COLORS.diffDelBg,
-              color: TUNING_COLORS.diffDelFg,
+              background: TUNING_COLORS.dangerBg,
+              borderLeftColor: TUNING_COLORS.dangerFg,
+              color: TUNING_COLORS.dangerFg,
             }}
           >
             {error.message}
@@ -253,10 +268,16 @@ function ChatPanelInner({
 
       <form
         onSubmit={onSubmit}
-        className="border-t px-3 py-2"
-        style={{ borderColor: TUNING_COLORS.hairline, background: TUNING_COLORS.surfaceRaised }}
+        className="border-t px-4 py-4 md:px-6"
+        style={{
+          borderColor: TUNING_COLORS.hairlineSoft,
+          background: TUNING_COLORS.surfaceRaised,
+        }}
       >
-        <div className="flex items-end gap-2">
+        <div
+          className="mx-auto flex max-w-3xl items-end gap-3 rounded-2xl border bg-white p-2 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
+          style={{ borderColor: TUNING_COLORS.hairline }}
+        >
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -266,29 +287,28 @@ function ChatPanelInner({
                 onSubmit(e as unknown as React.FormEvent)
               }
             }}
-            rows={2}
-            placeholder={status === 'streaming' ? 'agent is replying…' : 'Tell your tuner what you see.'}
-            disabled={status === 'streaming'}
-            className="flex-1 resize-none rounded border bg-white px-2 py-1.5 font-sans text-[13px] leading-5 focus:outline-none focus:ring-1"
-            style={{
-              borderColor: TUNING_COLORS.hairline,
-              color: TUNING_COLORS.ink,
-            }}
+            rows={1}
+            placeholder={
+              isStreaming
+                ? 'Agent is replying…'
+                : 'Tell your tuner what you see.'
+            }
+            disabled={isStreaming}
+            className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
+            aria-label="Message the tuning agent"
           />
           <button
             type="submit"
-            disabled={status === 'streaming' || !draft.trim()}
-            className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-40"
-            style={{ background: TUNING_COLORS.accent, color: '#FFFFFF' }}
+            disabled={!canSend}
+            aria-label="Send message"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-all duration-200 hover:shadow-md disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
+            style={{
+              background: canSend ? TUNING_COLORS.accent : TUNING_COLORS.hairline,
+              color: canSend ? '#FFFFFF' : TUNING_COLORS.inkSubtle,
+            }}
           >
-            Send
+            <ArrowUp size={18} strokeWidth={2.25} aria-hidden />
           </button>
-        </div>
-        <div
-          className="mt-1 text-[10px] uppercase tracking-[0.14em]"
-          style={{ color: TUNING_COLORS.inkSubtle }}
-        >
-          {status === 'streaming' ? 'streaming' : status === 'submitted' ? 'sending…' : 'ready'}
         </div>
       </form>
     </div>
@@ -305,25 +325,62 @@ function MessageRow({
   const isUser = message.role === 'user'
   const parts = (message as any).parts as Array<Record<string, any>> | undefined
 
-  const aligned = isUser ? 'items-end' : 'items-start'
+  // Split parts into "bubble text" (text/reasoning) vs "standalone cards"
+  // (tool calls, suggestion preview, evidence, follow-up). This way a user
+  // bubble renders as a single accent chip and an agent response renders
+  // as a text bubble followed by any attached tool/suggestion cards.
+  const bubbleParts: Array<Record<string, any>> = []
+  const standaloneParts: Array<Record<string, any>> = []
+  for (const p of parts ?? []) {
+    const type = typeof p?.type === 'string' ? p.type : ''
+    if (type === 'text' || type === 'reasoning') bubbleParts.push(p)
+    else standaloneParts.push(p)
+  }
+
   return (
-    <div className={`flex flex-col gap-2 ${aligned}`}>
-      <div
-        className="text-[10px] uppercase tracking-[0.14em]"
-        style={{ color: TUNING_COLORS.inkSubtle }}
-      >
-        {isUser ? 'you' : 'tuning agent'}
-      </div>
-      <div className={`flex w-full flex-col gap-2 ${isUser ? 'items-end' : 'items-start'}`}>
-        {(parts ?? []).map((p, idx) => (
-          <PartView key={idx} part={p} onSuggestionAction={onSuggestionAction} />
-        ))}
-      </div>
+    <div className={`flex flex-col gap-2 ${isUser ? 'items-end' : 'items-start'}`}>
+      {bubbleParts.length > 0 ? (
+        <div
+          className="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-shadow duration-200"
+          style={{
+            background: isUser ? TUNING_COLORS.accent : TUNING_COLORS.surfaceRaised,
+            color: isUser ? '#FFFFFF' : TUNING_COLORS.ink,
+            border: isUser ? 'none' : `1px solid ${TUNING_COLORS.hairlineSoft}`,
+            borderTopRightRadius: isUser ? 6 : undefined,
+            borderTopLeftRadius: !isUser ? 6 : undefined,
+          }}
+        >
+          {bubbleParts.map((p, idx) => {
+            const type = typeof p?.type === 'string' ? p.type : ''
+            if (type === 'text') {
+              return <TextPart key={idx} text={p.text ?? ''} inverted={isUser} />
+            }
+            if (type === 'reasoning') {
+              return <ThinkingSection key={idx} text={p.text ?? ''} />
+            }
+            return null
+          })}
+        </div>
+      ) : null}
+
+      {standaloneParts.length > 0 ? (
+        <div
+          className={`flex w-full flex-col gap-2 ${isUser ? 'items-end' : 'items-start'}`}
+        >
+          {standaloneParts.map((p, idx) => (
+            <StandalonePart
+              key={idx}
+              part={p}
+              onSuggestionAction={onSuggestionAction}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
 
-function PartView({
+function StandalonePart({
   part,
   onSuggestionAction,
 }: {
@@ -332,13 +389,6 @@ function PartView({
 }) {
   if (!part || typeof part !== 'object') return null
   const type = typeof part.type === 'string' ? part.type : ''
-
-  if (type === 'text') {
-    return <TextPart text={part.text ?? ''} />
-  }
-  if (type === 'reasoning') {
-    return <ThinkingSection text={part.text ?? ''} />
-  }
   if (type.startsWith('tool-')) {
     const toolName = part.toolName ?? type.slice('tool-'.length)
     const state = part.state ?? 'input-available'
@@ -365,6 +415,25 @@ function PartView({
     return <AgentDisabledCard reason={part.data?.reason ?? 'disabled'} />
   }
   return null
+}
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1.5 self-start rounded-2xl border bg-white px-4 py-3 shadow-sm"
+      style={{ borderColor: TUNING_COLORS.hairlineSoft, borderTopLeftRadius: 6 }}
+    >
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block h-1.5 w-1.5 rounded-full bg-[#9CA3AF]"
+          style={{
+            animation: 'typing-bounce 1.4s ease-in-out infinite',
+            animationDelay: `${i * 0.15}s`,
+          }}
+        />
+      ))}
+    </div>
+  )
 }
 
 /**
