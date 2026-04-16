@@ -251,7 +251,13 @@ function TuningPageInner() {
   )
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    // Bug fix — was `min-h-dvh`, which let the WHOLE page grow taller than the
+    // viewport when a chat transcript got long. That pushed the chat input
+    // below the fold and forced users to page-scroll down to reach it.
+    // `h-dvh overflow-hidden` locks the outer to the viewport so only the
+    // transcript scroller inside ChatPanel scrolls; the input stays pinned
+    // like every modern chat UI (Claude, ChatGPT, Linear inbox).
+    <div className="flex h-dvh flex-col overflow-hidden">
       <TuningTopNav onOpenDrawer={() => setDrawerOpen(true)} />
       {/* Mobile drawer — visible only below md (handled by the trigger
           rendering md:hidden in TuningTopNav). Sheet portals to body so the
