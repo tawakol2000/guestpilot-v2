@@ -347,7 +347,12 @@ function MessageRow({
   }
 
   return (
-    <div className={`flex flex-col gap-2 ${isUser ? 'items-end' : 'items-start'}`}>
+    <div
+      // Subtle fade + translate-up on mount so newly-arrived messages ease
+      // into place instead of popping. Respects reduced-motion via Tailwind's
+      // built-in `animate-in` media query contract.
+      className={`flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 ${isUser ? 'items-end' : 'items-start'}`}
+    >
       {bubbleParts.length > 0 ? (
         <div
           className="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition-shadow duration-200"

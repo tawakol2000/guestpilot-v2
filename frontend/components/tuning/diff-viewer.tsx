@@ -82,59 +82,144 @@ export function DiffViewer({
     )
   }
 
+  // Two-panel side-by-side rendering:
+  //   LEFT panel  → equal + del tokens (the "before" state). Deletions get
+  //                 the red overlay + line-through so you can see what was
+  //                 cut without scanning around.
+  //   RIGHT panel → equal + add tokens (the "after" state). Additions get
+  //                 the green overlay so the new text is obvious in context.
+  //
+  // Equal tokens appear on BOTH sides (so the reader always has the surrounding
+  // prose to anchor against), with a subtle muted color. del tokens are
+  // skipped on the right; add tokens are skipped on the left.
   return (
     <div
       className="overflow-hidden rounded-lg"
-      style={{ background: TUNING_COLORS.surfaceSunken }}
+      style={{
+        background: TUNING_COLORS.surfaceRaised,
+        border: `1px solid ${TUNING_COLORS.hairlineSoft}`,
+      }}
     >
       {title ? (
         <div
-          className="flex items-center justify-between border-b px-4 py-2.5"
+          className="flex items-center justify-between border-b px-3 py-2"
           style={{ borderColor: TUNING_COLORS.hairlineSoft }}
         >
           <span className="text-xs font-medium text-[#6B7280]">{title}</span>
           <span className="font-mono text-[10px] text-[#9CA3AF]">word-level diff</span>
         </div>
       ) : null}
+
+      <div
+        className="grid grid-cols-1 divide-y md:grid-cols-2 md:divide-x md:divide-y-0"
+        style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+      >
+        <DiffPane
+          label="Before"
+          tokens={tokens}
+          kind="before"
+        />
+        <DiffPane
+          label="After"
+          tokens={tokens}
+          kind="after"
+        />
+      </div>
+    </div>
+  )
+}
+
+function DiffPane({
+  label,
+  tokens,
+  kind,
+}: {
+  label: string
+  tokens: Token[]
+  kind: 'before' | 'after'
+}) {
+  const isBefore = kind === 'before'
+  // Filter: equal on both; del only on before; add only on after.
+  const visible = tokens.filter((t) => {
+    if (t.type === 'equal') return true
+    return isBefore ? t.type === 'del' : t.type === 'add'
+  })
+  const highlightType = isBefore ? 'del' : 'add'
+  const isEmpty = visible.every((t) => t.type === 'equal' && !t.text.trim())
+    || visible.length === 0
+    || !visible.some((t) => t.type === highlightType || t.text.trim())
+
+  return (
+    <div
+      className="flex flex-col"
+      style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+    >
+      <div
+        className="flex items-center gap-2 border-b px-3 py-1.5"
+        style={{
+          borderColor: TUNING_COLORS.hairlineSoft,
+          background: TUNING_COLORS.surfaceSunken,
+        }}
+      >
+        <span
+          aria-hidden
+          className="inline-block h-1.5 w-1.5 rounded-full"
+          style={{
+            background: isBefore ? TUNING_COLORS.diffDelFg : TUNING_COLORS.diffAddFg,
+          }}
+        />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+          {label}
+        </span>
+      </div>
       <pre
-        className="whitespace-pre-wrap break-words px-4 py-3 font-mono text-[13px] leading-7"
+        className="min-h-[3em] whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[12.5px] leading-6"
         style={{ color: TUNING_COLORS.ink }}
       >
-        {tokens.map((t, i) => {
-          if (t.type === 'equal') {
-            return <span key={i}>{t.text}</span>
-          }
-          if (t.type === 'add') {
-            return (
-              <span
-                key={i}
-                className="rounded-sm px-0.5"
-                style={{
-                  background: TUNING_COLORS.diffAddBg,
-                  color: TUNING_COLORS.diffAddFg,
-                }}
-              >
-                {t.text}
-              </span>
-            )
-          }
-          // Deletion: use line-through without opacity to avoid muddy
-          // translucent-red overlay (per design review).
-          return (
-            <span
-              key={i}
-              className="rounded-sm px-0.5"
-              style={{
-                background: TUNING_COLORS.diffDelBg,
-                color: TUNING_COLORS.diffDelFg,
-                textDecoration: 'line-through',
-                textDecorationThickness: '1px',
-              }}
-            >
-              {t.text}
-            </span>
-          )
-        })}
+        {isEmpty ? (
+          <span className="italic text-[#9CA3AF]">—</span>
+        ) : (
+          visible.map((t, i) => {
+            if (t.type === 'equal') {
+              return (
+                <span key={i} style={{ color: TUNING_COLORS.inkMuted }}>
+                  {t.text}
+                </span>
+              )
+            }
+            if (isBefore && t.type === 'del') {
+              return (
+                <span
+                  key={i}
+                  className="rounded-sm px-0.5"
+                  style={{
+                    background: TUNING_COLORS.diffDelBg,
+                    color: TUNING_COLORS.diffDelFg,
+                    textDecoration: 'line-through',
+                    textDecorationThickness: '1px',
+                  }}
+                >
+                  {t.text}
+                </span>
+              )
+            }
+            if (!isBefore && t.type === 'add') {
+              return (
+                <span
+                  key={i}
+                  className="rounded-sm px-0.5 font-semibold"
+                  style={{
+                    background: TUNING_COLORS.diffAddBg,
+                    color: TUNING_COLORS.diffAddFg,
+                  }}
+                >
+                  {t.text}
+                </span>
+              )
+            }
+            return null
+          })
+        )}
       </pre>
     </div>
   )
