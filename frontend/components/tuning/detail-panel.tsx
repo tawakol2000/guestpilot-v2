@@ -24,7 +24,10 @@ export function DetailPanel({
   tools,
   onMutated,
 }: {
-  suggestion: TuningSuggestion | null
+  // Sprint 07: the null-state of this panel moved to <Quickstart/> so the
+  // empty center column no longer looks like "nothing happened". This
+  // component now always renders an actual suggestion.
+  suggestion: TuningSuggestion
   properties: ApiProperty[]
   tools: ToolDefinitionSummary[]
   onMutated: () => void
@@ -56,19 +59,6 @@ export function DetailPanel({
     // clear error when switching suggestions
     setError(null)
   }, [suggestion?.id])
-
-  if (!suggestion) {
-    return (
-      <div className="flex h-full items-center justify-center px-10 py-16 text-center">
-        <div>
-          <div className="text-lg font-semibold text-[#1A1A1A]">Select a suggestion</div>
-          <p className="mt-2 text-sm text-[#6B7280]">
-            Pick an item from the queue to see its evidence and proposed change.
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   const isLegacy = !suggestion.diagnosticCategory
   const anchorMessage = convo?.messages.find((m) => m.id === suggestion.sourceMessageId) ?? null

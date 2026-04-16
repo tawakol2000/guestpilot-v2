@@ -19,6 +19,9 @@ import { DetailPanel } from '@/components/tuning/detail-panel'
 import { DashboardsPanel } from '@/components/tuning/dashboards'
 import { ConversationList } from '@/components/tuning/conversation-list'
 import { ChatPanel } from '@/components/tuning/chat-panel'
+import { Quickstart } from '@/components/tuning/quickstart'
+import { categoryAccent, CATEGORY_STYLES } from '@/components/tuning/tokens'
+import type { TuningDiagnosticCategory } from '@/lib/api'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
 function DashboardsToggleWrapper({
@@ -179,11 +182,14 @@ function TuningPageInner() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const leftRailContent = (
     <>
-      <div className="flex items-baseline justify-between border-b border-[#E5E7EB] px-5 py-4">
-        <div className="text-sm font-semibold text-[#1A1A1A]">Pending suggestions</div>
-        <div className="text-xs font-medium text-[#9CA3AF]">
-          {loading ? '…' : `${suggestions.length}`}
+      <div className="border-b border-[#E5E7EB] px-5 py-4">
+        <div className="flex items-baseline justify-between">
+          <div className="text-sm font-semibold text-[#1A1A1A]">Pending suggestions</div>
+          <div className="text-xs font-medium text-[#9CA3AF]">
+            {loading ? '…' : `${suggestions.length}`}
+          </div>
         </div>
+        <CompositionStrip suggestions={suggestions} loading={loading} />
       </div>
       <div className="flex-1 overflow-auto">
         <TuningQueue
@@ -266,12 +272,19 @@ function TuningPageInner() {
             </div>
           ) : (
             <div className="h-full overflow-auto">
-              <DetailPanel
-                suggestion={selected}
-                properties={properties}
-                tools={tools}
-                onMutated={handleMutated}
-              />
+              {selected ? (
+                <DetailPanel
+                  suggestion={selected}
+                  properties={properties}
+                  tools={tools}
+                  onMutated={handleMutated}
+                />
+              ) : (
+                <Quickstart
+                  pendingCount={suggestions.length}
+                  onOpenConversation={setConversation}
+                />
+              )}
             </div>
           )}
         </main>
@@ -283,6 +296,74 @@ function TuningPageInner() {
           )}
         </DashboardsToggleWrapper>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Sprint 07 — a thin stacked composition strip under the queue header.
+ * One segment per diagnostic category, width proportional to count,
+ * colored by the CATEGORY_ACCENT hue. Legacy/null-category items fall
+ * into the shared "Legacy" slot at the end. Hovering a segment shows
+ * "{label} · {count}" as a native tooltip so we don't ship a bespoke
+ * tooltip primitive for this.
+ */
+function CompositionStrip({
+  suggestions,
+  loading,
+}: {
+  suggestions: TuningSuggestion[]
+  loading: boolean
+}) {
+  if (loading || suggestions.length === 0) {
+    return (
+      <div
+        className="mt-3 h-1.5 w-full rounded-full"
+        style={{ background: '#F3F4F6' }}
+        aria-hidden
+      />
+    )
+  }
+  type Bucket = { key: string; label: string; count: number; color: string }
+  const buckets = new Map<string, Bucket>()
+  for (const s of suggestions) {
+    const cat = s.diagnosticCategory as TuningDiagnosticCategory | null
+    const key = cat ?? 'LEGACY'
+    const existing = buckets.get(key)
+    if (existing) {
+      existing.count += 1
+      continue
+    }
+    buckets.set(key, {
+      key,
+      label: cat ? CATEGORY_STYLES[cat]?.label ?? cat : 'Legacy',
+      count: 1,
+      color: categoryAccent(cat),
+    })
+  }
+  const ordered = Array.from(buckets.values()).sort((a, b) => b.count - a.count)
+  const total = suggestions.length
+  return (
+    <div
+      className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full"
+      role="img"
+      aria-label={`Queue composition: ${ordered.map((b) => `${b.count} ${b.label}`).join(', ')}`}
+    >
+      {ordered.map((b, i) => {
+        const pct = (b.count / total) * 100
+        return (
+          <span
+            key={b.key}
+            title={`${b.label} · ${b.count}`}
+            className="h-full transition-[width] duration-500 ease-out motion-reduce:transition-none"
+            style={{
+              width: `${pct}%`,
+              background: b.color,
+              marginLeft: i === 0 ? 0 : 1,
+            }}
+          />
+        )
+      })}
     </div>
   )
 }

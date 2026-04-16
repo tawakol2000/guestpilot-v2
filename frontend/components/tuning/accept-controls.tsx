@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import type {
   ApiProperty,
   TuningApplyMode,
@@ -78,11 +79,20 @@ export function AcceptControls({
         await apiAcceptTuningSuggestion(suggestion.id, body)
       }
       setMode('idle')
+      toast.success(
+        applyMode === 'QUEUED' ? 'Queued for review' : 'Applied',
+        {
+          description: opts.edited
+            ? 'Saved your edit as a preference pair.'
+            : 'Change is live on the next reply.',
+        },
+      )
       onMutated()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Accept failed'
       // 429/409 from the cooldown path is shown calmly as a banner, not a modal.
       onError(msg)
+      toast.error('Could not apply', { description: msg })
       setMode('idle')
     }
   }
@@ -92,9 +102,14 @@ export function AcceptControls({
     try {
       await apiRejectTuningSuggestion(suggestion.id, rejectReason || undefined)
       setMode('idle')
+      toast('Dismissed', {
+        description: rejectReason ? `Reason: ${rejectReason}` : undefined,
+      })
       onMutated()
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Reject failed')
+      const msg = err instanceof Error ? err.message : 'Reject failed'
+      onError(msg)
+      toast.error('Could not dismiss', { description: msg })
       setMode('idle')
     }
   }

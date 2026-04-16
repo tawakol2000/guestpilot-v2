@@ -1,0 +1,37 @@
+/*
+ * Feature 041 sprint 07 — tuning-scoped global polish.
+ *
+ * Not @import-ed into globals.css — the tuning surface imports this
+ * file directly via the layout.tsx so the rules stay sandboxed to
+ * /tuning and can't leak into the rest of the app.
+ */
+
+/* Reduced-motion catch-all: zero out transitions/animations anywhere
+   inside a .tuning-surface that a component forgot to gate with
+   motion-reduce:*. Keeps keyboard/mouse interactions snappy without
+   the content flash. */
+@media (prefers-reduced-motion: reduce) {
+  .tuning-surface *,
+  .tuning-surface *::before,
+  .tuning-surface *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Focus-visible fallback: if a control forgets its focus-visible ring,
+   surface a subtle default so keyboard users are never stranded. We
+   keep it unobtrusive so explicit focus-visible:ring-2 classes
+   dominate where they exist. */
+.tuning-surface *:focus-visible {
+  outline: 2px solid #A29BFE;
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* Keep Sonner toasts readable inside the tuning surface. */
+.tuning-surface [data-sonner-toaster] {
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+}
