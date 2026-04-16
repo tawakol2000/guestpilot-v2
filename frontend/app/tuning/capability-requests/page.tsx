@@ -135,7 +135,7 @@ function CapabilityRequestsInner() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TuningTopNav />
-      <main className="mx-auto w-full max-w-3xl px-6 py-10 md:px-8">
+      <main className="mx-auto w-full max-w-3xl px-5 py-6 md:px-8 md:py-8">
         <header className="space-y-2">
           <div className="text-xs font-medium text-[#6B7280]">Capability requests</div>
           <h1 className="text-2xl font-semibold tracking-tight text-[#1A1A1A]">

@@ -231,7 +231,7 @@ function PlaygroundInner() {
           style={{ borderColor: TUNING_COLORS.hairline }}
         >
           <div
-            className="flex items-center justify-between border-b px-5 py-3"
+            className="flex items-center justify-between border-b px-4 py-2"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
             <div className="flex items-center gap-2">
@@ -249,7 +249,7 @@ function PlaygroundInner() {
           </div>
 
           {settingsOpen ? (
-            <div className="flex-1 space-y-4 overflow-auto px-5 py-4">
+            <div className="flex-1 space-y-3 overflow-auto px-4 py-3">
               <Field label="Property">
                 <select
                   value={propertyId}
@@ -367,9 +367,9 @@ function PlaygroundInner() {
         </aside>
 
         {/* Chat area */}
-        <main className="flex flex-1 flex-col bg-[#F9FAFB]">
+        <main className="flex min-h-0 flex-1 flex-col bg-[#F9FAFB]">
           <header
-            className="flex items-center justify-between border-b bg-white px-6 py-3"
+            className="flex items-center justify-between border-b bg-white px-5 py-2"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
             <div className="flex min-w-0 items-center gap-2">
@@ -386,7 +386,7 @@ function PlaygroundInner() {
             </div>
           </header>
 
-          <div ref={scrollerRef} className="flex-1 overflow-auto px-6 py-6">
+          <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto px-5 py-4">
             {turns.length === 0 ? (
               <EmptyState status={status} />
             ) : (
@@ -416,7 +416,7 @@ function PlaygroundInner() {
               e.preventDefault()
               send()
             }}
-            className="border-t bg-white px-6 py-4"
+            className="border-t bg-white px-5 py-3"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
             <div

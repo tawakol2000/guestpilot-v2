@@ -323,7 +323,7 @@ function AgentPageInner() {
   return (
     <div className="flex min-h-dvh flex-col">
       <TuningTopNav />
-      <main className="mx-auto w-full max-w-5xl px-6 py-10 md:px-8">
+      <main className="mx-auto w-full max-w-5xl px-5 py-6 md:px-8 md:py-8">
         {/* Header */}
         <header className="space-y-3">
           <div className="text-xs font-medium text-[#6B7280]">Agent</div>

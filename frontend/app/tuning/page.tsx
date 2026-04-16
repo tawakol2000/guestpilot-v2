@@ -20,9 +20,10 @@ import { DashboardsPanel } from '@/components/tuning/dashboards'
 import { ConversationList } from '@/components/tuning/conversation-list'
 import { ChatPanel } from '@/components/tuning/chat-panel'
 import { Quickstart } from '@/components/tuning/quickstart'
-import { categoryAccent, CATEGORY_STYLES } from '@/components/tuning/tokens'
+import { categoryAccent, CATEGORY_STYLES, TUNING_COLORS } from '@/components/tuning/tokens'
 import type { TuningDiagnosticCategory } from '@/lib/api'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { ArrowLeft } from 'lucide-react'
 
 function DashboardsToggleWrapper({
   children,
@@ -198,10 +199,12 @@ function TuningPageInner() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const leftRailContent = (
     <>
-      <div className="border-b border-[#E5E7EB] px-5 py-4">
+      {/* Tighter left-rail header: 16px vertical padding → 10px; smaller
+          label + count still scans cleanly. */}
+      <div className="border-b border-[#E5E7EB] px-4 py-2.5">
         <div className="flex items-baseline justify-between">
-          <div className="text-sm font-semibold text-[#1A1A1A]">Pending suggestions</div>
-          <div className="text-xs font-medium text-[#9CA3AF]">
+          <div className="text-[13px] font-semibold text-[#1A1A1A]">Pending</div>
+          <div className="text-[11px] font-medium tabular-nums text-[#9CA3AF]">
             {loading ? '…' : queueError ? '—' : `${suggestions.length}`}
           </div>
         </div>
@@ -286,22 +289,33 @@ function TuningPageInner() {
         <main
           id="tuning-detail-main"
           tabIndex={-1}
-          className="flex-1 overflow-hidden bg-[#F9FAFB] outline-none"
+          className="min-h-0 flex-1 overflow-hidden bg-[#F9FAFB] outline-none"
         >
           {conversationId ? (
-            <div className="flex h-full flex-col">
-              <div className="flex items-center gap-3 border-b border-[#E5E7EB] bg-white px-5 py-3">
+            <div className="flex h-full min-h-0 flex-col">
+              {/* Slim chat header — icon-only back, conversation context on
+                  the right. Saves ~20px of vertical space vs the old
+                  "← Back to queue | Tuning chat" bar. */}
+              <div
+                className="flex items-center gap-2 border-b bg-white px-4 py-2"
+                style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+              >
                 <button
                   type="button"
                   onClick={() => setConversation(null)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
+                  aria-label="Back to queue"
+                  title="Back to queue"
+                  className="group flex h-7 w-7 items-center justify-center rounded-md text-[#6B7280] transition-colors duration-150 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE]"
                 >
-                  <span aria-hidden>←</span>
-                  <span>Back to queue</span>
+                  <ArrowLeft size={14} strokeWidth={2} aria-hidden />
                 </button>
                 <span className="text-sm font-medium text-[#1A1A1A]">Tuning chat</span>
+                <span aria-hidden className="text-[#D1D5DB]">·</span>
+                <span className="truncate text-xs text-[#9CA3AF]">
+                  tuner is here to help you edit prompts, SOPs, FAQs, and tools
+                </span>
               </div>
-              <div className="flex-1 overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden">
                 <ChatPanel
                   conversationId={conversationId}
                   suggestionId={selectedId}

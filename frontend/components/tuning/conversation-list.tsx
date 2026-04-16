@@ -104,41 +104,36 @@ export function ConversationList({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between px-5 py-3">
-        <div className="text-sm font-semibold text-[#1A1A1A]">Conversations</div>
+      <div className="flex items-center justify-between px-4 py-2">
+        <div className="text-[13px] font-semibold text-[#1A1A1A]">Chats</div>
         <button
           type="button"
           onClick={startNew}
-          className="inline-flex items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-medium text-[#1A1A1A] transition-all duration-200 hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
+          className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-0.5 text-[11px] font-medium text-[#1A1A1A] transition-all duration-200 hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
         >
-          <Plus size={12} strokeWidth={2.25} aria-hidden />
+          <Plus size={11} strokeWidth={2.25} aria-hidden />
           <span>New</span>
         </button>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="px-2 pb-2">
         <div
-          className="flex items-center gap-2 rounded-lg border bg-white px-3 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
+          className="flex items-center gap-1.5 rounded-md border bg-white px-2.5 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
           style={{ borderColor: TUNING_COLORS.hairline }}
         >
-          <Search
-            size={14}
-            strokeWidth={2}
-            className="text-[#9CA3AF]"
-            aria-hidden
-          />
+          <Search size={12} strokeWidth={2} className="text-[#9CA3AF]" aria-hidden />
           <input
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search conversations"
-            className="flex-1 border-0 bg-transparent py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]"
+            placeholder="Search"
+            className="flex-1 border-0 bg-transparent py-1.5 text-[12px] text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]"
             aria-label="Search conversations"
           />
         </div>
       </div>
 
-      <ul className="max-h-[280px] space-y-0.5 overflow-auto px-2 pb-3">
+      <ul className="max-h-[220px] space-y-0.5 overflow-auto px-1.5 pb-2">
         {loading && items.length === 0 ? (
           Array.from({ length: 3 }).map((_, i) => (
             <li
@@ -176,7 +171,7 @@ export function ConversationList({
                 type="button"
                 onClick={() => onSelect(c.id)}
                 className={
-                  'group relative flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
+                  'group relative flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
                   (active ? '' : 'hover:bg-[#F3F4F6]')
                 }
                 style={{ background: active ? TUNING_COLORS.accentSoft : undefined }}
@@ -184,24 +179,24 @@ export function ConversationList({
                 {active ? (
                   <span
                     aria-hidden
-                    className="absolute bottom-2 left-0 top-2 w-[2px] rounded-full"
+                    className="absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-full"
                     style={{ background: TUNING_COLORS.accent }}
                   />
                 ) : null}
-                <div className="flex items-center gap-2">
-                  <span className="line-clamp-1 flex-1 text-sm font-medium text-[#1A1A1A]">
+                <div className="flex items-center gap-1.5">
+                  <span className="line-clamp-1 flex-1 text-[12px] font-medium text-[#1A1A1A]">
                     {c.title || 'Untitled conversation'}
                   </span>
                   {c.anchorMessageId ? (
                     <Pin
-                      size={11}
+                      size={10}
                       strokeWidth={2}
                       className="shrink-0 text-[#9CA3AF]"
                       aria-label="Anchored to a main-AI message"
                     />
                   ) : null}
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-[#9CA3AF]">
+                <div className="flex items-center gap-1 text-[10px] text-[#9CA3AF]">
                   <span className="tabular-nums">{c.messageCount}</span>
                   <span aria-hidden>·</span>
                   <span>

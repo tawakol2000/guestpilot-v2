@@ -180,11 +180,11 @@ export function SuggestionCard({
     typeof data.confidence === 'number' ? Math.round(data.confidence * 100) : null
   return (
     <article
-      className="w-full max-w-full overflow-hidden rounded-xl bg-white shadow-sm transition-shadow duration-200 hover:shadow-md"
+      className="w-full max-w-full overflow-hidden rounded-lg bg-white shadow-sm transition-shadow duration-200 hover:shadow-md"
       style={{ border: `1px solid ${TUNING_COLORS.hairlineSoft}` }}
     >
       <header
-        className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5"
+        className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
         style={{
           borderColor: TUNING_COLORS.hairlineSoft,
           background: TUNING_COLORS.surfaceSunken,
@@ -217,8 +217,8 @@ export function SuggestionCard({
         ) : null}
       </header>
 
-      <div className="space-y-3 px-4 py-4">
-        <p className="text-sm leading-6 text-[#1A1A1A]">{data.rationale}</p>
+      <div className="space-y-3 px-3 py-3">
+        <p className="text-[13px] leading-5 text-[#1A1A1A]">{data.rationale}</p>
         {data.beforeText || data.proposedText ? (
           <DiffViewer
             before={data.beforeText ?? ''}
@@ -228,7 +228,7 @@ export function SuggestionCard({
       </div>
 
       <footer
-        className="flex flex-wrap items-center gap-2 border-t px-4 py-3"
+        className="flex flex-wrap items-center gap-1.5 border-t px-3 py-2"
         style={{ borderColor: TUNING_COLORS.hairlineSoft }}
       >
         <button

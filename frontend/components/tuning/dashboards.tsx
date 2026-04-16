@@ -125,7 +125,7 @@ function VelocityDashboard() {
 
       {/* Coverage hero card */}
       <div
-        className="rounded-xl p-5"
+        className="rounded-xl p-4"
         style={{
           background: TUNING_COLORS.surfaceRaised,
           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
@@ -234,13 +234,13 @@ function GraduationDashboard() {
       <SectionHeader title="Graduation" meta={meta} />
       {err ? <div className="text-xs text-[#9CA3AF]">{err}</div> : null}
       <div
-        className="rounded-xl p-5"
+        className="rounded-xl p-4"
         style={{
           background: TUNING_COLORS.surfaceRaised,
           boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
         }}
       >
-        <div className="grid grid-cols-2 gap-5 gap-y-6">
+        <div className="grid grid-cols-2 gap-4 gap-y-5">
           <Stat
             label="Edit rate"
             value={fmtPct(m?.editRate, 1)}
@@ -322,7 +322,7 @@ export function DashboardsPanel({
         </button>
       </div>
       {open ? (
-        <div className="flex-1 space-y-5 overflow-auto px-5 pb-8">
+        <div className="flex-1 space-y-4 overflow-auto px-4 pb-6">
           <VelocityDashboard />
           <GraduationDashboard />
         </div>

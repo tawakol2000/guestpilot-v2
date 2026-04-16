@@ -140,25 +140,22 @@ function SessionsInner() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left rail — conversation list */}
         <aside
-          className="hidden w-[340px] shrink-0 flex-col overflow-hidden border-r bg-[#F9FAFB] md:flex"
+          className="hidden w-[320px] shrink-0 flex-col overflow-hidden border-r bg-[#F9FAFB] md:flex"
           style={{ borderColor: TUNING_COLORS.hairline }}
         >
           <div
-            className="border-b px-5 py-4"
+            className="border-b px-4 py-2.5"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
             <div className="flex items-baseline justify-between">
-              <div className="text-sm font-semibold text-[#1A1A1A]">Sessions</div>
-              <div className="text-xs font-medium text-[#9CA3AF] tabular-nums">
+              <div className="text-[13px] font-semibold text-[#1A1A1A]">Sessions</div>
+              <div className="text-[11px] font-medium tabular-nums text-[#9CA3AF]">
                 {conversations ? filteredConversations.length : '…'}
               </div>
             </div>
-            <p className="mt-1 text-xs leading-5 text-[#6B7280]">
-              Recent guest conversations. Click any AI reply to see the SOPs and tools it used.
-            </p>
           </div>
 
-          <div className="space-y-2 px-3 pt-3">
+          <div className="space-y-2 px-3 pt-2">
             <div
               className="flex items-center gap-2 rounded-lg border bg-white px-3 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
               style={{ borderColor: TUNING_COLORS.hairline }}
@@ -193,7 +190,7 @@ function SessionsInner() {
               Array.from({ length: 6 }).map((_, i) => (
                 <li
                   key={`skel-${i}`}
-                  className="mb-1 h-16 animate-pulse rounded-lg"
+                  className="mb-1 h-12 animate-pulse rounded-md"
                   style={{ background: TUNING_COLORS.surfaceSunken }}
                 />
               ))
@@ -223,7 +220,7 @@ function SessionsInner() {
                     type="button"
                     onClick={() => select(c.id)}
                     className={
-                      'relative flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
+                      'relative flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
                       (active ? '' : 'hover:bg-white')
                     }
                     style={{ background: active ? TUNING_COLORS.accentSoft : undefined }}
@@ -231,12 +228,12 @@ function SessionsInner() {
                     {active ? (
                       <span
                         aria-hidden
-                        className="absolute bottom-2 left-0 top-2 w-[2px] rounded-full"
+                        className="absolute bottom-1.5 left-0 top-1.5 w-[2px] rounded-full"
                         style={{ background: TUNING_COLORS.accent }}
                       />
                     ) : null}
-                    <div className="flex items-center gap-2">
-                      <span className="line-clamp-1 flex-1 text-sm font-medium text-[#1A1A1A]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="line-clamp-1 flex-1 text-[12px] font-medium text-[#1A1A1A]">
                         {c.guestName || 'Unknown guest'}
                       </span>
                       {c.starred ? (
@@ -246,14 +243,14 @@ function SessionsInner() {
                         <RelativeTime iso={c.lastMessageAt} />
                       </span>
                     </div>
-                    <div className="line-clamp-1 text-xs text-[#6B7280]">
+                    <div className="line-clamp-1 text-[11px] text-[#6B7280]">
                       <span className="font-medium">{c.propertyName}</span>
                       <span aria-hidden> · </span>
                       <span>{c.channel.toLowerCase()}</span>
                       <span aria-hidden> · </span>
-                      <span>{c.reservationStatus.replace('_', ' ').toLowerCase()}</span>
+                      <span>{c.reservationStatus.replace(/_/g, ' ').toLowerCase()}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-[#9CA3AF]">
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#9CA3AF]">
                       <RoleIcon role={c.lastMessageRole} />
                       <span className="line-clamp-1 flex-1">{c.lastMessage}</span>
                     </div>
@@ -265,7 +262,7 @@ function SessionsInner() {
         </aside>
 
         {/* Main — session detail */}
-        <main className="flex-1 overflow-hidden bg-[#F9FAFB]">
+        <main className="min-h-0 flex-1 overflow-hidden bg-[#F9FAFB]">
           {!selectedId ? (
             <SessionsEmptyState />
           ) : detailError ? (

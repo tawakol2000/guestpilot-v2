@@ -83,9 +83,12 @@ export function DetailPanel({
     (anchorMessage?.role !== 'AI' ? null : anchorMessage.content)
 
   return (
-    <article className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8 md:px-8">
+    // Compact outer gutters (px-6→5, py-8→5) and tighter card padding
+    // (p-6/md:p-8 → p-5/md:p-6). Saves ~48px of vertical space on the
+    // opened suggestion view without losing the card breathing room.
+    <article className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-5 md:px-6 md:py-6">
       <div
-        className="flex flex-col gap-6 rounded-xl p-6 md:p-8"
+        className="flex flex-col gap-5 rounded-xl p-5 md:p-6"
         style={{
           background: TUNING_COLORS.surfaceRaised,
           boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',

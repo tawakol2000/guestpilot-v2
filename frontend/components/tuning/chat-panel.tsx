@@ -204,38 +204,41 @@ function ChatPanelInner({
     // because flex items default to min-height:auto (content height).
     <div className="flex h-full min-h-0 flex-col bg-white">
       {anchor ? (
+        // Compact anchor banner — single row with pin + inline excerpt.
+        // Reduces from ~72px to ~36px of vertical space.
         <div
-          className="border-b px-5 py-3"
+          className="flex items-center gap-2 border-b px-4 py-2"
           style={{
             borderColor: TUNING_COLORS.hairlineSoft,
             background: TUNING_COLORS.accentSoft,
           }}
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-[#6B7280]">
-            <Pin size={12} strokeWidth={2} aria-hidden />
-            <span>Anchored to message</span>
-          </div>
-          <div className="mt-1 line-clamp-2 text-sm leading-5 text-[#1A1A1A]">
-            {anchor.content.slice(0, 240)}
-          </div>
+          <Pin size={11} strokeWidth={2} className="shrink-0 text-[#6C5CE7]" aria-hidden />
+          <span className="shrink-0 text-xs font-medium text-[#6B7280]">
+            Anchored to
+          </span>
+          <span className="truncate text-xs text-[#1A1A1A]" title={anchor.content}>
+            {anchor.content.slice(0, 200)}
+          </span>
         </div>
       ) : null}
 
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-6"
+        className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-6 md:py-5"
         style={{ background: TUNING_COLORS.canvas }}
       >
         {messages.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center text-center">
-            <div className="inline-flex h-8 w-8 animate-pulse items-center justify-center rounded-full bg-[#F0EEFF]">
-              <span className="h-2 w-2 rounded-full bg-[#6C5CE7]" />
-            </div>
-            <p className="mt-3 text-sm text-[#6B7280]">Starting conversation…</p>
+          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-[#9CA3AF]">
+            <span
+              aria-hidden
+              className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#6C5CE7] motion-reduce:animate-none"
+            />
+            <span>Starting conversation…</span>
           </div>
         ) : null}
 
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {messages.map((m, idx) => {
             // Hide the first-ever user turn when it was the proactive-opener trigger.
             const isFirstUserTrigger =
@@ -273,14 +276,14 @@ function ChatPanelInner({
 
       <form
         onSubmit={onSubmit}
-        className="border-t px-4 py-4 md:px-6"
+        className="border-t px-4 py-3 md:px-6"
         style={{
           borderColor: TUNING_COLORS.hairlineSoft,
           background: TUNING_COLORS.surfaceRaised,
         }}
       >
         <div
-          className="mx-auto flex max-w-3xl items-end gap-3 rounded-2xl border bg-white p-2 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
+          className="mx-auto flex max-w-3xl items-end gap-2 rounded-xl border bg-white p-1.5 transition-all duration-200 focus-within:border-[#6C5CE7] focus-within:ring-2 focus-within:ring-[#F0EEFF]"
           style={{ borderColor: TUNING_COLORS.hairline }}
         >
           <textarea
@@ -289,10 +292,6 @@ function ChatPanelInner({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
-                // Bug fix (round 13) — also bail if a message is already in
-                // flight (status='submitted'). Previously only isStreaming
-                // blocked submit, so Enter during the brief submitted-but-
-                // not-yet-streaming window fired a concurrent sendMessage.
                 if (isStreaming || isSending) return
                 onSubmit(e as unknown as React.FormEvent)
               }
@@ -303,24 +302,21 @@ function ChatPanelInner({
                 ? 'Agent is replying…'
                 : 'Tell your tuner what you see.'
             }
-            // Bug fix (round 13) — disable on BOTH submitted and streaming,
-            // not just streaming, so the textarea and its Enter handler
-            // can't trigger a second send mid-request.
             disabled={isStreaming || isSending}
-            className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-6 text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
+            className="min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-5 text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
             aria-label="Message the tuning agent"
           />
           <button
             type="submit"
             disabled={!canSend}
             aria-label="Send message"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-all duration-200 hover:shadow-md disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white shadow-sm transition-all duration-200 hover:shadow-md disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
             style={{
               background: canSend ? TUNING_COLORS.accent : TUNING_COLORS.hairline,
               color: canSend ? '#FFFFFF' : TUNING_COLORS.inkSubtle,
             }}
           >
-            <ArrowUp size={18} strokeWidth={2.25} aria-hidden />
+            <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
           </button>
         </div>
       </form>
@@ -432,13 +428,15 @@ function StandalonePart({
 
 function TypingIndicator() {
   return (
-    <div className="flex items-center gap-1.5 self-start rounded-2xl border bg-white px-4 py-3 shadow-sm"
+    // Compact typing indicator: smaller bubble, tighter dots.
+    <div
+      className="flex items-center gap-1.5 self-start rounded-2xl border bg-white px-3 py-2 shadow-sm"
       style={{ borderColor: TUNING_COLORS.hairlineSoft, borderTopLeftRadius: 6 }}
     >
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="inline-block h-1.5 w-1.5 rounded-full bg-[#9CA3AF]"
+          className="inline-block h-1 w-1 rounded-full bg-[#9CA3AF] motion-reduce:animate-none"
           style={{
             animation: 'typing-bounce 1.4s ease-in-out infinite',
             animationDelay: `${i * 0.15}s`,

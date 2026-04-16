@@ -52,11 +52,11 @@ export function TuningQueue({
 
   if (loading) {
     return (
-      <div className="space-y-2 px-3 py-3">
+      <div className="space-y-1.5 px-2 py-2">
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-16 animate-pulse rounded-lg"
+            className="h-14 animate-pulse rounded-lg"
             style={{ background: TUNING_COLORS.surfaceSunken }}
           />
         ))}
@@ -76,7 +76,7 @@ export function TuningQueue({
   }
 
   return (
-    <div className="space-y-5 px-2 py-3">
+    <div className="space-y-4 px-2 py-2">
       {groups.map((g) => {
         const isCollapsed = !!collapsed[g.key]
         return (
@@ -84,7 +84,7 @@ export function TuningQueue({
             <button
               type="button"
               onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
-              className="group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[#F3F4F6]"
+              className="group flex w-full items-center justify-between rounded-md px-2 py-1 text-left transition-colors duration-150 hover:bg-[#F3F4F6]"
               aria-expanded={!isCollapsed}
             >
               <span className="text-xs font-semibold text-[#6B7280]">{g.label}</span>
@@ -108,7 +108,7 @@ export function TuningQueue({
             </button>
             {!isCollapsed ? (
               <ul
-                className="mt-2 overflow-hidden rounded-lg border"
+                className="mt-1.5 overflow-hidden rounded-lg border"
                 style={{
                   background: TUNING_COLORS.surfaceRaised,
                   borderColor: TUNING_COLORS.hairlineSoft,
@@ -134,7 +134,7 @@ export function TuningQueue({
                         type="button"
                         onClick={() => onSelect(s.id)}
                         className={
-                          'relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
+                          'relative flex w-full items-start gap-2.5 px-2.5 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
                           (active ? '' : 'hover:bg-[#F9FAFB]')
                         }
                         style={{
@@ -144,13 +144,13 @@ export function TuningQueue({
                       >
                         <span
                           aria-hidden
-                          className="mt-0.5 h-8 w-[3px] shrink-0 rounded-full transition-colors duration-150"
+                          className="mt-0.5 h-7 w-[2px] shrink-0 rounded-full transition-colors duration-150"
                           style={{ background: leftBar }}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start gap-2">
                             <p
-                              className="line-clamp-2 flex-1 text-sm font-medium leading-5"
+                              className="line-clamp-2 flex-1 text-[13px] font-medium leading-[1.35]"
                               style={{ color: TUNING_COLORS.ink }}
                             >
                               {title}
@@ -159,15 +159,15 @@ export function TuningQueue({
                               <ConfidenceBar value={s.confidence} compact />
                             ) : null}
                           </div>
-                          <div className="mt-1.5 flex items-center gap-2">
+                          <div className="mt-1 flex items-center gap-1.5">
                             <CategoryPill
                               category={cat}
                               subLabel={null}
                             />
                             {sub ? (
-                              <span className="truncate text-xs text-[#9CA3AF]">{sub}</span>
+                              <span className="truncate text-[11px] text-[#9CA3AF]">{sub}</span>
                             ) : null}
-                            <span className="ml-auto shrink-0 text-xs text-[#9CA3AF]">
+                            <span className="ml-auto shrink-0 text-[11px] text-[#9CA3AF]">
                               <RelativeTime iso={s.createdAt} />
                             </span>
                           </div>
