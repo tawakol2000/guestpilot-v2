@@ -417,33 +417,47 @@ function TranscriptRow({
   const sops = message.aiMeta?.sopCategories ?? []
   const tools = message.aiMeta?.toolNames ?? (message.aiMeta?.toolName ? [message.aiMeta.toolName] : [])
 
+  // Sprint-07 bug fix — render AI messages as <button> (inspectable), but
+  // render guest / host / manager-private messages as <div> so screen
+  // readers don't announce them as dead buttons.
+  const bubbleClassName = `max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-relaxed transition-all duration-200 ${isAi ? 'cursor-pointer hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2' : ''}`
+  const bubbleStyle: React.CSSProperties = {
+    background: isGuest
+      ? TUNING_COLORS.accent
+      : message.role === 'HOST'
+        ? TUNING_COLORS.surfaceSunken
+        : TUNING_COLORS.surfaceRaised,
+    color: isGuest ? '#FFFFFF' : TUNING_COLORS.ink,
+    border: isGuest
+      ? 'none'
+      : `1px solid ${focused ? TUNING_COLORS.accentMuted : TUNING_COLORS.hairlineSoft}`,
+    borderTopRightRadius: isGuest ? 6 : undefined,
+    borderTopLeftRadius: !isGuest ? 6 : undefined,
+    boxShadow: focused
+      ? '0 0 0 3px rgba(108,92,231,0.12), 0 1px 2px rgba(0,0,0,0.04)'
+      : isGuest
+        ? undefined
+        : '0 1px 2px rgba(0,0,0,0.04)',
+  }
+
   return (
     <li className={`flex flex-col gap-2 ${isGuest ? 'items-end' : 'items-start'}`}>
-      <button
-        type="button"
-        onClick={isAi ? onClick : undefined}
-        className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-left text-sm leading-relaxed transition-all duration-200 ${isAi ? 'cursor-pointer hover:shadow-md' : 'cursor-default'}`}
-        style={{
-          background: isGuest
-            ? TUNING_COLORS.accent
-            : message.role === 'HOST'
-              ? TUNING_COLORS.surfaceSunken
-              : TUNING_COLORS.surfaceRaised,
-          color: isGuest ? '#FFFFFF' : TUNING_COLORS.ink,
-          border: isGuest
-            ? 'none'
-            : `1px solid ${focused ? TUNING_COLORS.accentMuted : TUNING_COLORS.hairlineSoft}`,
-          borderTopRightRadius: isGuest ? 6 : undefined,
-          borderTopLeftRadius: !isGuest ? 6 : undefined,
-          boxShadow: focused
-            ? '0 0 0 3px rgba(108,92,231,0.12), 0 1px 2px rgba(0,0,0,0.04)'
-            : isGuest
-              ? undefined
-              : '0 1px 2px rgba(0,0,0,0.04)',
-        }}
-      >
-        {message.content}
-      </button>
+      {isAi ? (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-pressed={focused}
+          aria-label={`Inspect AI reply — ${message.content.slice(0, 60)}${message.content.length > 60 ? '…' : ''}`}
+          className={bubbleClassName}
+          style={bubbleStyle}
+        >
+          {message.content}
+        </button>
+      ) : (
+        <div className={bubbleClassName} style={bubbleStyle}>
+          {message.content}
+        </div>
+      )}
 
       <div className={`flex flex-wrap items-center gap-1.5 ${isGuest ? 'justify-end' : ''}`}>
         <RoleBadge role={message.role} />

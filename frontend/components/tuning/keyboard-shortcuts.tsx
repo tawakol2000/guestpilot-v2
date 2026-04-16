@@ -9,7 +9,7 @@
  * and prefers-reduced-motion.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Keyboard, X } from 'lucide-react'
 import { TUNING_COLORS } from './tokens'
 
@@ -39,7 +39,6 @@ const SHORTCUTS: Array<{ heading: string; items: Shortcut[] }> = [
 
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false)
-  const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
@@ -82,7 +81,6 @@ export function KeyboardShortcuts() {
           role="presentation"
         >
           <div
-            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Keyboard shortcuts"

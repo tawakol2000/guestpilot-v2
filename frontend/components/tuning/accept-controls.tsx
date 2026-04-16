@@ -49,7 +49,16 @@ export function AcceptControls({
   const needsSopDispatch = category === 'SOP_CONTENT' || category === 'SOP_ROUTING' || category === 'PROPERTY_OVERRIDE'
   const needsToolDispatch = category === 'TOOL_CONFIG'
 
-  async function runAccept(opts: { edited?: boolean } = {}) {
+  async function runAccept(opts: { edited?: boolean; applyMode?: TuningApplyMode } = {}) {
+    // Sprint 07 bug fix — the Queue button calls setApplyMode('QUEUED') then
+    // synchronously calls runAccept(), but React's state update is async so
+    // runAccept would capture the stale 'IMMEDIATE' value from this render's
+    // closure. Allow the caller to pass the intended applyMode explicitly;
+    // update the state as a side effect so the UI's footer hint reflects it.
+    const effectiveApplyMode: TuningApplyMode = opts.applyMode ?? applyMode
+    if (opts.applyMode && opts.applyMode !== applyMode) {
+      setApplyMode(opts.applyMode)
+    }
     setMode('saving')
     try {
       if (needsToolDispatch) {
@@ -63,12 +72,12 @@ export function AcceptControls({
           toolDefinitionId: toolId,
           editedDescription: editedToolDescription || (opts.edited ? editedText : undefined) ||
             suggestion.proposedText || target?.description,
-          applyMode,
+          applyMode: effectiveApplyMode,
           editedFromOriginal: !!opts.edited,
         })
       } else {
         const body: Parameters<typeof apiAcceptTuningSuggestion>[1] = {
-          applyMode,
+          applyMode: effectiveApplyMode,
           editedFromOriginal: !!opts.edited,
         }
         if (opts.edited) body.editedText = editedText
@@ -80,7 +89,7 @@ export function AcceptControls({
       }
       setMode('idle')
       toast.success(
-        applyMode === 'QUEUED' ? 'Queued for review' : 'Applied',
+        effectiveApplyMode === 'QUEUED' ? 'Queued for review' : 'Applied',
         {
           description: opts.edited
             ? 'Saved your edit as a preference pair.'
@@ -281,9 +290,12 @@ export function AcceptControls({
       </PrimaryButton>
       <SecondaryButton
         onClick={() => {
+          // Explicitly pass the intended applyMode — setApplyMode state update
+          // alone is async and wouldn't reach runAccept in time (see sprint-07
+          // bug fix note above).
           setApplyMode('QUEUED')
           if (requiresDispatch) setMode('dispatch')
-          else runAccept()
+          else runAccept({ applyMode: 'QUEUED' })
         }}
         title="Save as queued; still applies on confirm, but marks applyMode=QUEUED for later review batching."
       >

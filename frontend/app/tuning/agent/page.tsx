@@ -29,6 +29,7 @@ import {
 import {
   apiGetAIConfig,
   apiGetAiConfigVersions,
+  apiGetPromptHistory,
   apiGetSopDefinitions,
   apiGetTemplateVariables,
   apiGetTenantAiConfig,
@@ -38,6 +39,7 @@ import {
   type AiConfig,
   type AiConfigVersion,
   type ApiToolDefinition,
+  type PromptHistoryEntry,
   type SopDefinitionData,
   type TemplateVariableInfo,
   type TenantAiConfig,
@@ -70,22 +72,39 @@ function AgentPageInner() {
   const [sopDefs, setSopDefs] = useState<SopDefinitionData[]>([])
   const [tools, setTools] = useState<ApiToolDefinition[]>([])
   const [templateVars, setTemplateVars] = useState<TemplateVariableInfo[]>([])
-  const [draft, setDraft] = useState<string>('')
+  // Per-scope drafts so switching personas doesn't silently discard unsaved
+  // edits on the other persona (sprint-07 bug fix).
+  const [drafts, setDrafts] = useState<Record<Scope, string>>({
+    coordinator: '',
+    screening: '',
+  })
+  const draft = drafts[scope]
+  const setDraft = useCallback(
+    (next: string | ((prev: string) => string)) => {
+      setDrafts((d) => {
+        const resolved = typeof next === 'function' ? next(d[scope]) : next
+        return { ...d, [scope]: resolved }
+      })
+    },
+    [scope],
+  )
   const [saving, setSaving] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[] | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [cfg, ai, versionsRes, sopRes, toolsList] = await Promise.allSettled([
+      const [cfg, ai, versionsRes, sopRes, toolsList, history] = await Promise.allSettled([
         apiGetTenantAiConfig(),
         apiGetAIConfig(),
         apiGetAiConfigVersions(),
         apiGetSopDefinitions(),
         apiGetTools(),
+        apiGetPromptHistory(),
       ])
       if (cfg.status === 'fulfilled') setTenantCfg(cfg.value)
       else setError(cfg.reason instanceof Error ? cfg.reason.message : 'Unable to load tenant config')
@@ -93,6 +112,7 @@ function AgentPageInner() {
       if (versionsRes.status === 'fulfilled') setVersions(versionsRes.value)
       if (sopRes.status === 'fulfilled') setSopDefs(sopRes.value.definitions)
       if (toolsList.status === 'fulfilled') setTools(toolsList.value)
+      if (history.status === 'fulfilled') setPromptHistory(history.value.history)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -109,13 +129,36 @@ function AgentPageInner() {
       .catch(() => setTemplateVars([]))
   }, [scope])
 
-  // Sync draft with the stored prompt whenever scope or tenant config changes.
+  // Seed both per-scope drafts from the server whenever tenant config
+  // (re)loads. Use a functional update so we only fill a scope's draft on
+  // first load — subsequent loads (e.g. after save) MUST NOT clobber a
+  // manager's unsaved edits on the *other* scope.
+  const seededRef = useRef<Record<Scope, boolean>>({ coordinator: false, screening: false })
   useEffect(() => {
     if (!tenantCfg) return
-    const stored =
-      scope === 'coordinator' ? tenantCfg.systemPromptCoordinator : tenantCfg.systemPromptScreening
-    setDraft(stored ?? '')
-  }, [scope, tenantCfg])
+    setDrafts((d) => {
+      const next = { ...d }
+      if (!seededRef.current.coordinator) {
+        next.coordinator = tenantCfg.systemPromptCoordinator ?? ''
+        seededRef.current.coordinator = true
+      }
+      if (!seededRef.current.screening) {
+        next.screening = tenantCfg.systemPromptScreening ?? ''
+        seededRef.current.screening = true
+      }
+      // After a save, ALWAYS refresh the *currently-viewed* scope to the
+      // server's canonical version so the dirty comparison lines up. The
+      // other scope's unsaved edits are preserved.
+      next[scope] =
+        scope === 'coordinator'
+          ? tenantCfg.systemPromptCoordinator ?? ''
+          : tenantCfg.systemPromptScreening ?? ''
+      return next
+    })
+    // Intentionally omit `scope` from deps — we only want to resync when
+    // tenantCfg changes. Switching scopes should NOT overwrite drafts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantCfg])
 
   const storedPrompt = useMemo(() => {
     if (!tenantCfg) return null
@@ -155,13 +198,20 @@ function AgentPageInner() {
   const resetDefaults = useCallback(async () => {
     if (resetting) return
     const confirmed = window.confirm(
-      'Reset BOTH the coordinator and screening system prompts to their defaults? This creates a new version.',
+      'Reset BOTH the coordinator and screening system prompts to their defaults? This creates a new version and discards any unsaved edits on either persona.',
     )
     if (!confirmed) return
     setResetting(true)
     try {
       const updated = await apiResetSystemPrompts()
       setTenantCfg(updated)
+      // Reset explicitly clears BOTH personas server-side; mirror that on
+      // the client so the user's unsaved edits on the other scope don't
+      // stick around as phantom "dirty" state after the reset toast.
+      setDrafts({
+        coordinator: updated.systemPromptCoordinator ?? '',
+        screening: updated.systemPromptScreening ?? '',
+      })
       toast.success('Reset to defaults', {
         description: `Version bumped to v${updated.systemPromptVersion}.`,
       })
@@ -195,7 +245,12 @@ function AgentPageInner() {
     [draft],
   )
 
-  const latestVersion = versions[0] ?? null
+  // Prefer the prompt-history endpoint (which tracks system-prompt versions
+  // specifically) over apiGetAiConfigVersions (which tracks all ai-config
+  // versions — model, temperature, etc. — and would mislabel the "last
+  // edit" timestamp for unrelated AI-config changes).
+  const latestPromptEdit = promptHistory?.[0] ?? null
+  void versions // keep versions loaded for future compare features
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -302,9 +357,9 @@ function AgentPageInner() {
                 v{tenantCfg.systemPromptVersion}
               </span>
             ) : null}
-            {latestVersion ? (
+            {latestPromptEdit ? (
               <span className="text-xs text-[#9CA3AF]">
-                Last edit <RelativeTime iso={latestVersion.createdAt} />
+                Last edit <RelativeTime iso={latestPromptEdit.timestamp} />
               </span>
             ) : null}
             <span className="ml-auto" />

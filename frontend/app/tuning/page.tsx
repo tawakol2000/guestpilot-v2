@@ -49,6 +49,7 @@ function TuningPageInner() {
   const searchParams = useSearchParams()
   const [suggestions, setSuggestions] = useState<TuningSuggestion[]>([])
   const [loading, setLoading] = useState(true)
+  const [queueError, setQueueError] = useState<string | null>(null)
   const [properties, setProperties] = useState<ApiProperty[]>([])
   const [tools, setTools] = useState<ToolDefinitionSummary[]>([])
 
@@ -71,9 +72,16 @@ function TuningPageInner() {
 
   const refresh = useCallback(async () => {
     setLoading(true)
+    setQueueError(null)
     try {
       const res = await apiListTuningSuggestions({ status: 'PENDING', limit: 100 })
       setSuggestions(res.suggestions)
+    } catch (e) {
+      // Sprint-07 bug fix — previously the error was swallowed silently and
+      // the UI fell through to the "All caught up" empty state, which is
+      // misleading when the API is unreachable. Surface the failure in the
+      // left-rail header with a retry.
+      setQueueError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
@@ -186,21 +194,37 @@ function TuningPageInner() {
         <div className="flex items-baseline justify-between">
           <div className="text-sm font-semibold text-[#1A1A1A]">Pending suggestions</div>
           <div className="text-xs font-medium text-[#9CA3AF]">
-            {loading ? '…' : `${suggestions.length}`}
+            {loading ? '…' : queueError ? '—' : `${suggestions.length}`}
           </div>
         </div>
         <CompositionStrip suggestions={suggestions} loading={loading} />
       </div>
       <div className="flex-1 overflow-auto">
-        <TuningQueue
-          suggestions={suggestions}
-          loading={loading}
-          selectedId={selectedId}
-          onSelect={(id) => {
-            setSelected(id)
-            setDrawerOpen(false)
-          }}
-        />
+        {queueError ? (
+          <div className="mx-3 mt-3 rounded-lg bg-white p-4 text-center">
+            <p className="text-xs text-[#6B7280]">Couldn&rsquo;t load suggestions.</p>
+            <p className="mt-1 truncate text-[10px] font-mono text-[#9CA3AF]" title={queueError}>
+              {queueError}
+            </p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="mt-2 rounded-md px-2 py-1 text-xs font-medium text-[#6C5CE7] transition-colors hover:bg-[#F0EEFF]"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <TuningQueue
+            suggestions={suggestions}
+            loading={loading}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelected(id)
+              setDrawerOpen(false)
+            }}
+          />
+        )}
       </div>
       <div className="border-t border-[#E5E7EB]">
         <ConversationList
@@ -282,6 +306,7 @@ function TuningPageInner() {
               ) : (
                 <Quickstart
                   pendingCount={suggestions.length}
+                  loading={loading}
                   onOpenConversation={setConversation}
                 />
               )}

@@ -84,10 +84,24 @@ function PlaygroundInner() {
   const scrollerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    apiGetProperties().then((list) => {
-      setProperties(list)
-      if (list[0]) setPropertyId((cur) => cur || list[0].id)
-    })
+    let cancelled = false
+    apiGetProperties()
+      .then((list) => {
+        if (cancelled) return
+        setProperties(list)
+        if (list[0]) setPropertyId((cur) => cur || list[0].id)
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setError(
+          e instanceof Error
+            ? `Couldn’t load properties: ${e.message}`
+            : 'Couldn’t load properties.',
+        )
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {

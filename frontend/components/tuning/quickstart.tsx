@@ -38,9 +38,17 @@ type Template = {
 
 export function Quickstart({
   pendingCount,
+  loading = false,
   onOpenConversation,
 }: {
   pendingCount: number
+  /**
+   * True while the queue is still loading — avoids the "queue is empty right
+   * now" copy flashing on first paint before apiListTuningSuggestions
+   * resolves. Bug fix: previously showed a misleading empty-state during
+   * load.
+   */
+  loading?: boolean
   onOpenConversation: (id: string) => void
 }) {
   const router = useRouter()
@@ -71,12 +79,14 @@ export function Quickstart({
     {
       icon: <Inbox size={16} strokeWidth={1.75} aria-hidden />,
       title: 'Review the queue',
-      description:
-        pendingCount > 0
+      description: loading
+        ? 'Checking the queue for new suggestions…'
+        : pendingCount > 0
           ? `${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} waiting — pick one and apply, edit, or dismiss.`
           : 'The queue is empty right now. Check back after the next batch of AI replies.',
       onRun: () => router.push('/tuning'),
-      disabled: pendingCount === 0,
+      // Disable only when we know the queue is truly empty (not while loading).
+      disabled: !loading && pendingCount === 0,
     },
     {
       icon: <Wand2 size={16} strokeWidth={1.75} aria-hidden />,
