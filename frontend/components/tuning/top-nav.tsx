@@ -5,10 +5,13 @@ import { usePathname } from 'next/navigation'
 import { ChevronLeft, Menu } from 'lucide-react'
 import { TUNING_COLORS } from './tokens'
 
-const links: Array<{ href: string; label: string }> = [
-  { href: '/tuning', label: 'Tuning' },
-  { href: '/tuning/history', label: 'History' },
-  { href: '/tuning/capability-requests', label: 'Capability requests' },
+const links: Array<{ href: string; label: string; group?: 'review' | 'configure' | 'analyze' }> = [
+  { href: '/tuning', label: 'Suggestions', group: 'review' },
+  { href: '/tuning/agent', label: 'Agent', group: 'configure' },
+  { href: '/tuning/playground', label: 'Playground', group: 'configure' },
+  { href: '/tuning/sessions', label: 'Sessions', group: 'review' },
+  { href: '/tuning/history', label: 'History', group: 'analyze' },
+  { href: '/tuning/capability-requests', label: 'Capability requests', group: 'analyze' },
 ]
 
 export function TuningTopNav({ onOpenDrawer }: { onOpenDrawer?: () => void } = {}) {
