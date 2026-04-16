@@ -179,12 +179,10 @@ function TuningPageInner() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const leftRailContent = (
     <>
-      <div className="border-b border-[#E7E5E4] px-4 py-3">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-          Pending suggestions
-        </div>
-        <div className="mt-0.5 font-mono text-[11px] text-[#A8A29E]">
-          {loading ? '…' : `${suggestions.length} open`}
+      <div className="flex items-baseline justify-between border-b border-[#E5E7EB] px-5 py-4">
+        <div className="text-sm font-semibold text-[#1A1A1A]">Pending suggestions</div>
+        <div className="text-xs font-medium text-[#9CA3AF]">
+          {loading ? '…' : `${suggestions.length}`}
         </div>
       </div>
       <div className="flex-1 overflow-auto">
@@ -198,7 +196,7 @@ function TuningPageInner() {
           }}
         />
       </div>
-      <div className="border-t border-[#E7E5E4]">
+      <div className="border-t border-[#E5E7EB]">
         <ConversationList
           selectedId={conversationId}
           onSelect={(id) => {
@@ -223,15 +221,20 @@ function TuningPageInner() {
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent
           side="top"
-          className="flex h-[85vh] w-full max-w-full flex-col overflow-hidden bg-[#FAFAF9] p-0"
+          className="flex h-[85vh] w-full max-w-full flex-col overflow-hidden bg-[#F9FAFB] p-0"
         >
           <SheetTitle className="sr-only">Pending suggestions</SheetTitle>
+          <div
+            aria-hidden
+            className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full"
+            style={{ background: '#D1D5DB' }}
+          />
           {leftRailContent}
         </SheetContent>
       </Sheet>
       <div className="flex flex-1 overflow-hidden">
         {/* Left rail — queue + reserved chat seam (desktop only) */}
-        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-[#E7E5E4] bg-[#FAFAF9] md:flex">
+        <aside className="hidden w-[320px] shrink-0 flex-col border-r border-[#E5E7EB] bg-[#F9FAFB] md:flex">
           {leftRailContent}
         </aside>
 
@@ -239,23 +242,20 @@ function TuningPageInner() {
         <main
           id="tuning-detail-main"
           tabIndex={-1}
-          className="flex-1 overflow-hidden bg-[#FAFAF9] outline-none"
+          className="flex-1 overflow-hidden bg-[#F9FAFB] outline-none"
         >
           {conversationId ? (
             <div className="flex h-full flex-col">
-              <div
-                className="flex items-center gap-2 border-b border-[#E7E5E4] bg-white px-4 py-2"
-              >
+              <div className="flex items-center gap-3 border-b border-[#E5E7EB] bg-white px-5 py-3">
                 <button
                   type="button"
                   onClick={() => setConversation(null)}
-                  className="rounded px-2 py-0.5 text-[11px] font-medium text-[#1E3A8A] hover:bg-[#EEF2FF]"
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
                 >
-                  ← Back to queue
+                  <span aria-hidden>←</span>
+                  <span>Back to queue</span>
                 </button>
-                <span className="text-[11px] uppercase tracking-[0.14em] text-[#57534E]">
-                  Tuning chat
-                </span>
+                <span className="text-sm font-medium text-[#1A1A1A]">Tuning chat</span>
               </div>
               <div className="flex-1 overflow-hidden">
                 <ChatPanel
@@ -291,8 +291,8 @@ export default function TuningPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-dvh items-center justify-center bg-[#FAFAF9]">
-          <span className="text-sm text-[#A8A29E]">Loading…</span>
+        <div className="flex min-h-dvh items-center justify-center bg-[#F9FAFB]">
+          <span className="text-sm text-[#9CA3AF]">Loading…</span>
         </div>
       }
     >

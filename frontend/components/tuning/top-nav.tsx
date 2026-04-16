@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ChevronLeft, Menu } from 'lucide-react'
+import { TUNING_COLORS } from './tokens'
 
 const links: Array<{ href: string; label: string }> = [
   { href: '/tuning', label: 'Tuning' },
@@ -12,33 +14,45 @@ const links: Array<{ href: string; label: string }> = [
 export function TuningTopNav({ onOpenDrawer }: { onOpenDrawer?: () => void } = {}) {
   const pathname = usePathname()
   return (
-    <header className="border-b border-[#E7E5E4] bg-[#FAFAF9]/80 backdrop-blur">
-      <div className="mx-auto flex h-12 items-center gap-3 px-3 md:gap-6 md:px-6">
+    <header
+      className="sticky top-0 z-30 border-b backdrop-blur"
+      style={{
+        borderColor: TUNING_COLORS.hairline,
+        background: 'rgba(249, 250, 251, 0.8)',
+      }}
+    >
+      <div className="mx-auto flex h-14 items-center gap-4 px-4 md:gap-8 md:px-8">
         {onOpenDrawer ? (
           <button
             type="button"
             onClick={onOpenDrawer}
             aria-label="Open queue"
-            className="flex h-8 w-8 items-center justify-center rounded text-[#57534E] hover:bg-[#F5F4F2] hover:text-[#0C0A09] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A] md:hidden"
           >
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-              <path
-                d="M2 4h12M2 8h12M2 12h12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
+            <Menu size={18} strokeWidth={1.75} aria-hidden />
           </button>
         ) : null}
+
         <Link
           href="/"
-          className="text-[11px] uppercase tracking-[0.14em] text-[#57534E] hover:text-[#0C0A09]"
+          className="group flex items-center gap-1.5 text-sm text-[#6B7280] transition-colors duration-200 hover:text-[#1A1A1A]"
         >
-          ← Inbox
+          <ChevronLeft
+            size={16}
+            strokeWidth={1.75}
+            className="transition-transform duration-200 group-hover:-translate-x-0.5"
+            aria-hidden
+          />
+          <span>Inbox</span>
         </Link>
-        <nav className="flex items-center gap-5">
+
+        <div
+          aria-hidden
+          className="hidden h-5 w-px md:block"
+          style={{ background: TUNING_COLORS.hairline }}
+        />
+
+        <nav className="flex items-center gap-1">
           {links.map((l) => {
             const active =
               pathname === l.href || (l.href !== '/tuning' && pathname.startsWith(l.href))
@@ -47,20 +61,24 @@ export function TuningTopNav({ onOpenDrawer }: { onOpenDrawer?: () => void } = {
                 key={l.href}
                 href={l.href}
                 className={
-                  'text-sm transition-colors ' +
+                  'relative px-3 py-1.5 text-sm transition-colors duration-200 ' +
                   (active
-                    ? 'text-[#0C0A09] font-medium'
-                    : 'text-[#57534E] hover:text-[#0C0A09]')
+                    ? 'font-semibold text-[#1A1A1A]'
+                    : 'font-medium text-[#6B7280] hover:text-[#1A1A1A]')
                 }
               >
                 {l.label}
+                {active ? (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute -bottom-[15px] left-3 right-3 h-[2px] rounded-full"
+                    style={{ background: TUNING_COLORS.accent }}
+                  />
+                ) : null}
               </Link>
             )
           })}
         </nav>
-        <div className="ml-auto font-[family-name:var(--font-playfair)] text-sm italic text-[#A8A29E]">
-          Tuning
-        </div>
       </div>
     </header>
   )

@@ -5,5 +5,6 @@ export const metadata: Metadata = {
 }
 
 export default function TuningLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-dvh bg-[#FAFAF9] text-[#0C0A09]">{children}</div>
+  // Sprint 07: cool neutral canvas replaces the warm stone editorial surface.
+  return <div className="min-h-dvh bg-[#F9FAFB] text-[#1A1A1A]">{children}</div>
 }
