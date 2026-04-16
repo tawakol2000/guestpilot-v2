@@ -1,11 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import type { TuningSuggestion, TuningTriggerType } from '@/lib/api'
 import { CategoryPill } from './category-pill'
 import { ConfidenceBar } from './confidence-bar'
 import { RelativeTime } from './relative-time'
-import { TUNING_COLORS, triggerLabel } from './tokens'
+import { TUNING_COLORS, categoryAccent, triggerLabel } from './tokens'
 
 type Group = { key: TuningTriggerType | 'LEGACY'; label: string; items: TuningSuggestion[] }
 
@@ -51,11 +52,11 @@ export function TuningQueue({
 
   if (loading) {
     return (
-      <div className="space-y-2 p-4">
+      <div className="space-y-2 px-3 py-3">
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-14 animate-pulse rounded-md"
+            className="h-16 animate-pulse rounded-lg"
             style={{ background: TUNING_COLORS.surfaceSunken }}
           />
         ))}
@@ -65,11 +66,9 @@ export function TuningQueue({
 
   if (groups.length === 0) {
     return (
-      <div className="px-4 py-8 text-center">
-        <p className="font-[family-name:var(--font-playfair)] text-base italic text-[#57534E]">
-          All caught up.
-        </p>
-        <p className="mt-1 text-xs text-[#A8A29E]">
+      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+        <p className="text-base font-medium text-[#6B7280]">All caught up</p>
+        <p className="mt-1 text-xs text-[#9CA3AF]">
           We&rsquo;ll surface the next suggestion when one&rsquo;s ready.
         </p>
       </div>
@@ -77,7 +76,7 @@ export function TuningQueue({
   }
 
   return (
-    <div className="space-y-4 px-3 py-2">
+    <div className="space-y-5 px-2 py-3">
       {groups.map((g) => {
         const isCollapsed = !!collapsed[g.key]
         return (
@@ -85,55 +84,93 @@ export function TuningQueue({
             <button
               type="button"
               onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
-              className="flex w-full items-center justify-between px-1 py-1 text-left"
+              className="group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-[#F3F4F6]"
               aria-expanded={!isCollapsed}
             >
-              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#57534E]">
-                {g.label}
-              </span>
+              <span className="text-xs font-semibold text-[#6B7280]">{g.label}</span>
               <span className="flex items-center gap-2">
-                <span className="font-mono text-[11px] text-[#A8A29E]">{g.items.length}</span>
                 <span
-                  className="text-[#A8A29E] transition-transform"
-                  style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    background: TUNING_COLORS.surfaceSunken,
+                    color: TUNING_COLORS.inkMuted,
+                  }}
                 >
-                  ▾
+                  {g.items.length}
                 </span>
+                <ChevronDown
+                  size={14}
+                  strokeWidth={2}
+                  className="text-[#9CA3AF] transition-transform duration-200"
+                  style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                />
               </span>
             </button>
             {!isCollapsed ? (
-              <ul className="mt-1 space-y-1">
+              <ul
+                className="mt-2 overflow-hidden rounded-lg border"
+                style={{
+                  background: TUNING_COLORS.surfaceRaised,
+                  borderColor: TUNING_COLORS.hairlineSoft,
+                }}
+              >
                 {g.items.map((s) => {
                   const active = s.id === selectedId
+                  const cat = s.diagnosticCategory
+                  const leftBar = active ? TUNING_COLORS.accent : categoryAccent(cat)
+                  const title =
+                    s.rationale?.trim() || s.proposedText?.trim() || 'Proposed change'
+                  const sub =
+                    s.diagnosticSubLabel?.replace(/[-_]/g, ' ') ||
+                    (s.sopCategory ?? null)?.replace(/^sop-/, '').replace(/-/g, ' ') ||
+                    null
                   return (
-                    <li key={s.id}>
+                    <li
+                      key={s.id}
+                      className="border-t first:border-t-0"
+                      style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+                    >
                       <button
                         type="button"
                         onClick={() => onSelect(s.id)}
-                        className="w-full rounded-md px-2 py-2 text-left transition-colors"
+                        className={
+                          'relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] ' +
+                          (active ? '' : 'hover:bg-[#F9FAFB]')
+                        }
                         style={{
-                          background: active ? TUNING_COLORS.accentSoft : 'transparent',
-                          borderLeft: `2px solid ${
-                            active ? TUNING_COLORS.accent : 'transparent'
-                          }`,
-                          paddingLeft: 10,
+                          background: active ? TUNING_COLORS.accentSoft : undefined,
                         }}
                         aria-current={active ? 'true' : undefined}
                       >
-                        <div className="flex items-center gap-2">
-                          <CategoryPill
-                            category={s.diagnosticCategory}
-                            subLabel={s.diagnosticSubLabel}
-                          />
-                          {s.confidence !== null ? (
-                            <ConfidenceBar value={s.confidence} compact />
-                          ) : null}
-                        </div>
-                        <div className="mt-1 line-clamp-2 text-[13px] leading-5 text-[#0C0A09]">
-                          {s.rationale || s.proposedText || 'Suggestion'}
-                        </div>
-                        <div className="mt-1 text-[11px] text-[#A8A29E]">
-                          <RelativeTime iso={s.createdAt} />
+                        <span
+                          aria-hidden
+                          className="mt-0.5 h-8 w-[3px] shrink-0 rounded-full transition-colors duration-150"
+                          style={{ background: leftBar }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-2">
+                            <p
+                              className="line-clamp-2 flex-1 text-sm font-medium leading-5"
+                              style={{ color: TUNING_COLORS.ink }}
+                            >
+                              {title}
+                            </p>
+                            {s.confidence !== null ? (
+                              <ConfidenceBar value={s.confidence} compact />
+                            ) : null}
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <CategoryPill
+                              category={cat}
+                              subLabel={null}
+                            />
+                            {sub ? (
+                              <span className="truncate text-xs text-[#9CA3AF]">{sub}</span>
+                            ) : null}
+                            <span className="ml-auto shrink-0 text-xs text-[#9CA3AF]">
+                              <RelativeTime iso={s.createdAt} />
+                            </span>
+                          </div>
                         </div>
                       </button>
                     </li>

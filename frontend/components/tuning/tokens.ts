@@ -19,7 +19,8 @@ export const TUNING_COLORS = {
 
   // Borders / dividers
   hairline: '#E5E7EB',      // primary divider
-  hairlineSoft: '#F3F4F6',  // near-invisible divider, used for list separation
+  hairlineSoft: '#EEF0F3',  // near-invisible divider (distinct from surfaceSunken
+                            // so it still reads when drawn on a sunken background)
 
   // Accent — one purple, used sparingly on interactive affordances
   accent: '#6C5CE7',        // primary accent (buttons, selected states, links)
