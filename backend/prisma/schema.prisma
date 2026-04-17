@@ -715,6 +715,14 @@ enum TuningSuggestionStatus {
   PENDING
   ACCEPTED
   REJECTED
+  // Feature 041 sprint 08 §5 — per-category confidence gating.
+  // Written when the diagnostic pipeline produces a suggestion in a category
+  // whose 30-day acceptance rate is < 30% AND the suggestion's confidence is
+  // below the elevated gating threshold (0.75). The row is retained for
+  // record-keeping / DPO signal but is hidden from the default queue. Old-
+  // branch code never produces this value; code that reads TuningSuggestion
+  // must fall through to "treat as non-pending" rather than crash.
+  AUTO_SUPPRESSED
 }
 
 model TuningSuggestion {
@@ -764,6 +772,14 @@ model TuningSuggestion {
   diagnosticSubLabel String? // Free-form model-generated sub-label within the category
   triggerType        TuningConversationTriggerType? // Originating trigger event (reuses sprint 01 enum)
   evidenceBundleId   String? // FK → EvidenceBundle (SetNull on delete)
+
+  // ─── Feature 041 sprint 08 §4 — critical-failure flag (additive, default false) ───
+  // Set by the diagnostic pipeline when a suggestion is high-confidence (>=0.85)
+  // AND high-magnitude (WHOLESALE) AND in a content-affecting category
+  // (SOP_CONTENT, SOP_ROUTING, SYSTEM_PROMPT). Graduation blocks on any
+  // criticalFailure = true in the last 30 days. Old rows default to false;
+  // old-branch writes omit the column (default applies). Safe to coexist.
+  criticalFailure Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
