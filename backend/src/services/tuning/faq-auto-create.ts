@@ -115,12 +115,37 @@ export async function resolveFaqAutoCreateFields(
     suggestion.faqScope === 'PROPERTY' || suggestion.faqScope === 'GLOBAL'
       ? (suggestion.faqScope as FaqScope)
       : null;
-  const finalScope: FaqScope = overrideScope ?? persistedScope ?? 'GLOBAL';
-  const finalPropertyId: string | null =
-    finalScope === 'PROPERTY'
-      ? (typeof overrides.faqPropertyId === 'string' && overrides.faqPropertyId) ||
-        suggestion.faqPropertyId
-      : null;
+  let finalScope: FaqScope = overrideScope ?? persistedScope ?? 'GLOBAL';
+  let finalPropertyId: string | null = null;
+  if (finalScope === 'PROPERTY') {
+    const candidatePropertyId =
+      (typeof overrides.faqPropertyId === 'string' && overrides.faqPropertyId) ||
+      suggestion.faqPropertyId ||
+      null;
+    // Defense-in-depth: verify the candidate property belongs to this
+    // tenant before writing it on the FAQ row. Cross-tenant propertyId
+    // would create an orphaned FAQ attached to another tenant's property.
+    if (candidatePropertyId) {
+      const owns = await prisma.property.findFirst({
+        where: { id: candidatePropertyId, tenantId },
+        select: { id: true },
+      });
+      if (owns) {
+        finalPropertyId = owns.id;
+      } else {
+        // Silently coerce to GLOBAL rather than persist a PROPERTY row
+        // with a foreign/missing propertyId. The manager can re-scope
+        // explicitly after apply.
+        finalScope = 'GLOBAL';
+      }
+    } else {
+      // PROPERTY scope requested but no id supplied — would produce an
+      // orphan FAQ (PROPERTY-scoped with null propertyId is never
+      // retrievable by either the property filter or the GLOBAL filter).
+      // Coerce to GLOBAL.
+      finalScope = 'GLOBAL';
+    }
+  }
 
   return { finalQuestion, finalCategory, finalScope, finalPropertyId, sourceHint };
 }

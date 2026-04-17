@@ -141,6 +141,18 @@ export function buildSuggestionActionTool(
           let draftEditFormat: 'search_replace' | 'full_replacement' =
             (args.draft.editFormat as any) ?? 'full_replacement';
           if (draftEditFormat === 'search_replace') {
+            // TOOL_CONFIG has no "current artifact text" the resolver can
+            // hand back — the tool description IS the artifact but it's
+            // matched by exact-equality at apply time, not by substring
+            // splice. Fail early with a clean error instead of letting
+            // resolveCurrentArtifactText return null and surfacing the
+            // generic target-not-found message.
+            if (args.draft.category === 'TOOL_CONFIG') {
+              span.end({ error: 'SEARCH_REPLACE_UNSUPPORTED_TOOL_CONFIG' });
+              return asError(
+                'TOOL_CONFIG edits do not support editFormat=search_replace. Use editFormat=full_replacement with the complete new tool description in proposedText, and set beforeText to the current description so the apply path can identify the target.'
+              );
+            }
             const oldText = args.draft.oldText ?? '';
             const newText = args.draft.newText ?? '';
             if (!oldText || !newText) {
@@ -411,6 +423,10 @@ async function applyArtifactWrite(
     sopPropertyId: string | null;
     sopToolDescription: string | null;
     faqEntryId: string | null;
+    faqQuestion?: string | null;
+    faqCategory?: string | null;
+    faqScope?: string | null;
+    faqPropertyId?: string | null;
     beforeText: string | null;
     proposedText: string | null;
     sourceMessageId?: string | null;
@@ -645,16 +661,18 @@ async function applyArtifactWrite(
       if (!suggestion.faqEntryId) {
         const resolved = await resolveFaqAutoCreateFields(c.prisma, c.tenantId, {
           overrides: {},
+          // Thread all persisted FAQ fields through so the agent path
+          // resolves the same `finalQuestion` / category / scope as the
+          // HTTP endpoint. Previously these were passed as null, which
+          // meant the two surfaces could produce different dedup keys
+          // and create duplicate FAQ entries from a single suggestion.
           suggestion: {
             sourceMessageId: suggestion.sourceMessageId ?? null,
             beforeText: suggestion.beforeText,
-            // `suggestion` here is the ToolDefinition-shaped view, which
-            // omits FAQ-create fields. Pass null — the resolver falls
-            // through to beforeText → inferred → placeholder.
-            faqQuestion: null,
-            faqCategory: null,
-            faqScope: null,
-            faqPropertyId: null,
+            faqQuestion: suggestion.faqQuestion ?? null,
+            faqCategory: suggestion.faqCategory ?? null,
+            faqScope: suggestion.faqScope ?? null,
+            faqPropertyId: suggestion.faqPropertyId ?? null,
           },
         });
         let createdId: string;

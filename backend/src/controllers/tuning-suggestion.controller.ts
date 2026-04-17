@@ -667,13 +667,33 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             if (!finalQuestion || !finalAnswer || !suggestion.faqCategory || !suggestion.faqScope) {
               throw new RequiredFieldsError();
             }
+            // Defense-in-depth: if the suggestion claims PROPERTY scope,
+            // verify the persisted faqPropertyId actually belongs to this
+            // tenant before writing. Coerces to GLOBAL if the check fails
+            // rather than persisting a cross-tenant propertyId on the FAQ.
+            let finalScope: string = suggestion.faqScope;
+            let finalPropertyId: string | null = null;
+            if (suggestion.faqScope === 'PROPERTY' && suggestion.faqPropertyId) {
+              const owns = await prisma.property.findFirst({
+                where: { id: suggestion.faqPropertyId, tenantId },
+                select: { id: true },
+              });
+              if (owns) {
+                finalPropertyId = owns.id;
+              } else {
+                finalScope = 'GLOBAL';
+              }
+            } else if (suggestion.faqScope === 'PROPERTY') {
+              // PROPERTY scope requested but no propertyId — would orphan.
+              finalScope = 'GLOBAL';
+            }
             // Constitution §VIII: source=MANUAL, not AUTO_SUGGESTED — admin explicitly approved.
             const entry = await prisma.faqEntry.create({
               data: {
                 tenantId,
                 category: suggestion.faqCategory,
-                scope: suggestion.faqScope as any,
-                propertyId: suggestion.faqScope === 'PROPERTY' ? suggestion.faqPropertyId : null,
+                scope: finalScope as any,
+                propertyId: finalPropertyId,
                 question: finalQuestion,
                 answer: finalAnswer,
                 status: 'ACTIVE',
