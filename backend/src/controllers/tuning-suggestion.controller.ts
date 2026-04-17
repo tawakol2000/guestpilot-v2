@@ -24,6 +24,7 @@ import {
   updateCategoryStatsOnReject,
 } from '../services/tuning/category-stats.service';
 import { recordPreferencePair } from '../services/tuning/preference-pair.service';
+import { mergeSystemPromptClause } from '../services/tuning/system-prompt-merge.service';
 import {
   snapshotFaqEntry,
   snapshotSopVariant,
@@ -123,24 +124,51 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
 
         switch (suggestion.actionType) {
           case TuningActionType.EDIT_SYSTEM_PROMPT: {
-            const finalText: string | null =
+            const proposedText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.proposedText;
-            if (!finalText || !suggestion.systemPromptVariant) {
+            if (!proposedText || !suggestion.systemPromptVariant) {
               res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
               return;
             }
+            // Hotfix — until the recent fix this branch wrote `proposedText`
+            // directly into the variant field, OVERWRITING the entire system
+            // prompt with the new clause and wiping ~5,000 chars of existing
+            // rules. The diagnostic produces a clause to add, not a complete
+            // prompt. `mergeSystemPromptClause` appends the clause inside
+            // marker comments tagged with the suggestion id so re-apply is
+            // idempotent and the inserted block is locatable for later edits.
+            // Callers can opt into the legacy replace semantics via
+            // body.applyMode === 'replace' for the rare case where the
+            // manager hand-edited the proposed text into a complete prompt.
+            // `coordinator` / `screening` are the canonical variant names;
+            // the diagnostic occasionally returns capitalized variants
+            // (e.g. 'SystemPromptScreening'), so we sniff defensively.
+            const variantLower = suggestion.systemPromptVariant.toLowerCase();
             const variantField =
-              suggestion.systemPromptVariant === 'coordinator'
+              variantLower.includes('coord')
                 ? 'systemPromptCoordinator'
                 : 'systemPromptScreening';
             const current = await prisma.tenantAiConfig.findUnique({ where: { tenantId } });
+            const currentPromptText = ((current as any)?.[variantField] as string | null) ?? '';
+            const mergeMode: 'append' | 'replace' =
+              body && body.applyMode === 'replace' ? 'replace' : 'append';
+            const finalText = mergeSystemPromptClause(
+              currentPromptText,
+              proposedText,
+              suggestion.id,
+              { mode: mergeMode }
+            );
             const history = Array.isArray(current?.systemPromptHistory)
               ? [...((current!.systemPromptHistory as any[]) || [])]
               : [];
+            // Snapshot under canonical key (coordinator/screening) so the
+            // rollback path can locate the prior content reliably.
+            const snapshotVariantKey =
+              variantField === 'systemPromptCoordinator' ? 'coordinator' : 'screening';
             history.push({
               version: current?.systemPromptVersion ?? 1,
               timestamp: new Date().toISOString(),
-              [suggestion.systemPromptVariant]: (current as any)?.[variantField] || '',
+              [snapshotVariantKey]: currentPromptText,
               note: `Tuning suggestion ${suggestion.id} accepted`,
             });
             while (history.length > 10) history.shift();
@@ -154,7 +182,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               },
             });
             invalidateTenantConfigCache(tenantId);
-            appliedPayload = { text: finalText };
+            appliedPayload = { text: finalText, mode: mergeMode };
             targetUpdated = { kind: 'system_prompt', id: suggestion.systemPromptVariant };
             break;
           }

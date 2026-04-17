@@ -30,6 +30,7 @@ import {
   snapshotSopVariant,
 } from '../../services/tuning/artifact-history.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
+import { mergeSystemPromptClause } from '../../services/tuning/system-prompt-merge.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 const CATEGORY_TO_ACTION_TYPE: Record<string, TuningActionType> = {
@@ -311,25 +312,38 @@ async function applyArtifactWrite(
   switch (suggestion.actionType) {
     case 'EDIT_SYSTEM_PROMPT': {
       if (!suggestion.systemPromptVariant) return { ok: false, error: 'MISSING_SYSTEM_PROMPT_VARIANT' };
+      // Hotfix — see tuning-suggestion.controller.ts for the same bug fix.
+      // Append the proposed clause inside marker comments rather than
+      // overwriting the entire prompt. Variant key sniffed defensively.
+      const variantLower = suggestion.systemPromptVariant.toLowerCase();
       const variantField =
-        suggestion.systemPromptVariant === 'coordinator'
+        variantLower.includes('coord')
           ? 'systemPromptCoordinator'
           : 'systemPromptScreening';
       const current = await c.prisma.tenantAiConfig.findUnique({ where: { tenantId: c.tenantId } });
+      const currentPromptText = ((current as any)?.[variantField] as string | null) ?? '';
+      const mergedFinalText = mergeSystemPromptClause(
+        currentPromptText,
+        finalText,
+        suggestion.id,
+        { mode: 'append' }
+      );
       const history = Array.isArray(current?.systemPromptHistory)
         ? [...((current!.systemPromptHistory as unknown[]) || [])]
         : [];
+      const snapshotVariantKey =
+        variantField === 'systemPromptCoordinator' ? 'coordinator' : 'screening';
       history.push({
         version: current?.systemPromptVersion ?? 1,
         timestamp: new Date().toISOString(),
-        [suggestion.systemPromptVariant]: (current as any)?.[variantField] || '',
+        [snapshotVariantKey]: currentPromptText,
         note: `Tuning agent applied suggestion ${suggestion.id}`,
       });
       while (history.length > 10) history.shift();
       await c.prisma.tenantAiConfig.update({
         where: { tenantId: c.tenantId },
         data: {
-          [variantField]: finalText,
+          [variantField]: mergedFinalText,
           systemPromptVersion: { increment: 1 },
           systemPromptHistory: history as Prisma.InputJsonValue,
         },
@@ -338,7 +352,7 @@ async function applyArtifactWrite(
       return {
         ok: true,
         target: { kind: 'system_prompt', id: suggestion.systemPromptVariant },
-        appliedPayload: { text: finalText },
+        appliedPayload: { text: mergedFinalText, mode: 'append' },
       };
     }
 

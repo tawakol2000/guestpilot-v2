@@ -60,18 +60,53 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
         const entries: HistoryEntry[] = [];
 
         // ── System prompt history (JSON array on TenantAiConfig) ────────────
+        // Each snapshot stores the OLD prompt content right before a write.
+        // To produce a diff for entry N: pair its content with the next
+        // chronological entry of the same variant (its content was the new
+        // value at the time), or fall back to the live prompt if N is the
+        // most recent snapshot.
         const cfg = await prisma.tenantAiConfig.findUnique({
           where: { tenantId },
-          select: { systemPromptHistory: true, systemPromptVersion: true },
+          select: {
+            systemPromptHistory: true,
+            systemPromptVersion: true,
+            systemPromptCoordinator: true,
+            systemPromptScreening: true,
+          },
         });
         const spHistory: any[] = Array.isArray(cfg?.systemPromptHistory)
           ? (cfg!.systemPromptHistory as any[])
           : [];
-        for (const h of spHistory) {
-          if (!h || typeof h !== 'object') continue;
+        // Sort oldest→newest so the next-entry-of-same-variant lookup is linear.
+        const spSorted = spHistory
+          .filter((h) => h && typeof h === 'object')
+          .map((h, idx) => ({ h, idx, ts: typeof h.timestamp === 'string' ? h.timestamp : '' }))
+          .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.idx - b.idx));
+        for (let i = 0; i < spSorted.length; i++) {
+          const { h, ts: tsRaw } = spSorted[i];
           const version = typeof h.version === 'number' ? h.version : null;
-          const ts = typeof h.timestamp === 'string' ? h.timestamp : new Date().toISOString();
-          const which = h.coordinator ? 'coordinator' : h.screening ? 'screening' : 'unknown';
+          const ts = tsRaw || new Date().toISOString();
+          // Robust variant detection: pick whichever known key holds string
+          // content. The legacy heuristic returned 'unknown' when the prior
+          // prompt value was empty string OR when the snapshot wrote under a
+          // non-canonical key.
+          const beforeText = pickPromptText(h);
+          const which = beforeText.variant ?? 'unknown';
+          // Find the next snapshot of the same variant for after-text. If
+          // none, the change landed on the live prompt.
+          let afterContent = '';
+          for (let j = i + 1; j < spSorted.length; j++) {
+            const next = pickPromptText(spSorted[j].h)
+            if (next.variant === which) { afterContent = next.text; break }
+          }
+          if (!afterContent) {
+            afterContent =
+              which === 'coordinator'
+                ? (cfg?.systemPromptCoordinator ?? '')
+                : which === 'screening'
+                  ? (cfg?.systemPromptScreening ?? '')
+                  : ''
+          }
           entries.push({
             id: `sp:${version ?? 'x'}:${ts}`,
             artifactType: 'SYSTEM_PROMPT',
@@ -81,7 +116,10 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             authorUserId: null,
             note: typeof h.note === 'string' ? h.note : null,
             sourceSuggestionId: parseSuggestionIdFromNote(h.note),
-            diffPreview: null,
+            diffPreview:
+              beforeText.text || afterContent
+                ? { before: beforeText.text || null, after: afterContent || null }
+                : null,
             createdAt: ts,
             rollbackSupported: true,
           });
@@ -219,10 +257,18 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             res.status(404).json({ error: 'VERSION_NOT_FOUND' });
             return;
           }
-          const variant: 'coordinator' | 'screening' = target.coordinator
-            ? 'coordinator'
-            : 'screening';
-          const prevContent: string = target[variant] || '';
+          // Hotfix — earlier the rollback only checked `target.coordinator`
+          // and `target.screening` (lowercase canonical keys). Snapshots
+          // written via `tuning-suggestion.controller.ts` use whatever string
+          // the diagnostic put in `suggestion.systemPromptVariant`, which is
+          // often capitalized ('SystemPromptScreening'), so the lookup
+          // returned empty content and the rollback failed with
+          // ROLLBACK_CONTENT_EMPTY. `pickPromptText` walks every long string
+          // value on the snapshot and tags it as coordinator/screening using
+          // a substring sniff, recovering the prior content reliably.
+          const picked = pickPromptText(target);
+          const variant: 'coordinator' | 'screening' = picked.variant ?? 'coordinator';
+          const prevContent: string = picked.text;
           if (!prevContent) {
             res.status(400).json({ error: 'ROLLBACK_CONTENT_EMPTY' });
             return;
@@ -447,6 +493,27 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
       }
     },
   };
+}
+
+function pickPromptText(h: any): { variant: 'coordinator' | 'screening' | null; text: string } {
+  // Robust read of which variant the snapshot stored. Suggestion-controller
+  // writes the key dynamically (`[suggestion.systemPromptVariant]`), so the
+  // key may be 'coordinator', 'screening', or any other string the diagnostic
+  // produced ('Screening', 'SystemPromptScreening', 'screening_agent', …).
+  // Walk every string-valued key longer than 50 chars (i.e. actual prompt
+  // text) and best-effort tag it as coordinator/screening using a substring
+  // sniff on the key name.
+  if (!h || typeof h !== 'object') return { variant: null, text: '' }
+  const keys = Object.keys(h)
+  for (const k of keys) {
+    const v = (h as any)[k]
+    if (typeof v !== 'string' || v.length < 50) continue
+    if (k === 'coordinator' || k === 'screening') return { variant: k, text: v }
+    const lower = k.toLowerCase()
+    if (lower.includes('screen')) return { variant: 'screening', text: v }
+    if (lower.includes('coord')) return { variant: 'coordinator', text: v }
+  }
+  return { variant: null, text: '' }
 }
 
 function parseSuggestionIdFromNote(note: unknown): string | null {
