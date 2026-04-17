@@ -383,6 +383,7 @@ async function applyArtifactWrite(
     faqEntryId: string | null;
     beforeText: string | null;
     proposedText: string | null;
+    sourceMessageId?: string | null;
   },
   finalText: string | null
 ): Promise<ApplyOutcome> {
@@ -604,7 +605,67 @@ async function applyArtifactWrite(
     }
 
     case 'EDIT_FAQ': {
-      if (!suggestion.faqEntryId) return { ok: false, error: 'MISSING_FAQ_ENTRY_ID' };
+      // Hotfix (mirrors tuning-suggestion.controller.ts): the diagnostic
+      // pipeline writes FAQ suggestions with actionType=EDIT_FAQ and a null
+      // faqEntryId when the fix is "there should be an FAQ entry for this
+      // topic" (new-entry case). Promote to create rather than failing.
+      if (!suggestion.faqEntryId) {
+        const srcMsg = suggestion.sourceMessageId
+          ? await c.prisma.message.findFirst({
+              where: { id: suggestion.sourceMessageId, tenantId: c.tenantId },
+              select: { conversationId: true, sentAt: true },
+            })
+          : null;
+        let inferredQuestion: string | null = null;
+        if (srcMsg?.conversationId && srcMsg.sentAt) {
+          const priorGuest = await c.prisma.message.findFirst({
+            where: {
+              conversationId: srcMsg.conversationId,
+              tenantId: c.tenantId,
+              role: 'GUEST',
+              sentAt: { lte: srcMsg.sentAt },
+            },
+            orderBy: { sentAt: 'desc' },
+            select: { content: true },
+          });
+          if (priorGuest?.content) {
+            inferredQuestion = priorGuest.content.trim().slice(0, 500);
+          }
+        }
+        const finalQuestion: string =
+          (suggestion.beforeText?.trim() || inferredQuestion || '(question — please edit)');
+        const duplicate = await c.prisma.faqEntry.findFirst({
+          where: { tenantId: c.tenantId, question: finalQuestion, propertyId: null },
+          select: { id: true },
+        });
+        let createdId: string;
+        if (duplicate) {
+          await c.prisma.faqEntry.update({
+            where: { id: duplicate.id },
+            data: { answer: finalText, status: 'ACTIVE' as any },
+          });
+          createdId = duplicate.id;
+        } else {
+          const entry = await c.prisma.faqEntry.create({
+            data: {
+              tenantId: c.tenantId,
+              question: finalQuestion,
+              answer: finalText,
+              category: 'property-neighborhood',
+              scope: 'GLOBAL' as any,
+              propertyId: null,
+              status: 'ACTIVE' as any,
+              source: 'MANUAL',
+            },
+          });
+          createdId = entry.id;
+        }
+        return {
+          ok: true,
+          target: { kind: 'faq_entry_new', id: createdId },
+          appliedPayload: { question: finalQuestion, answer: finalText, created: !duplicate },
+        };
+      }
       const faq = await c.prisma.faqEntry.findFirst({
         where: { id: suggestion.faqEntryId, tenantId: c.tenantId },
       });

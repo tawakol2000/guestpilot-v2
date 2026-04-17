@@ -16,36 +16,40 @@ import {
 function makeMockPrisma() {
   const rows = new Map<string, { acceptRateEma: number; acceptCount: number; rejectCount: number }>();
   const key = (tenantId: string, category: string) => `${tenantId}:${category}`;
-  return {
-    rows,
-    prisma: {
-      tuningCategoryStats: {
-        findUnique: async ({ where }: any) => {
-          const k = key(where.tenantId_category.tenantId, where.tenantId_category.category);
-          return rows.get(k) ?? null;
-        },
-        upsert: async ({ where, create, update }: any) => {
-          const k = key(where.tenantId_category.tenantId, where.tenantId_category.category);
-          const existing = rows.get(k);
-          if (!existing) {
-            rows.set(k, {
-              acceptRateEma: create.acceptRateEma,
-              acceptCount: create.acceptCount,
-              rejectCount: create.rejectCount,
-            });
-            return;
-          }
-          const newAccept = existing.acceptCount + (update.acceptCount?.increment ?? 0);
-          const newReject = existing.rejectCount + (update.rejectCount?.increment ?? 0);
-          rows.set(k, {
-            acceptRateEma: update.acceptRateEma,
-            acceptCount: newAccept,
-            rejectCount: newReject,
-          });
-        },
-      },
+  const tuningCategoryStats = {
+    findUnique: async ({ where }: any) => {
+      const k = key(where.tenantId_category.tenantId, where.tenantId_category.category);
+      return rows.get(k) ?? null;
+    },
+    upsert: async ({ where, create, update }: any) => {
+      const k = key(where.tenantId_category.tenantId, where.tenantId_category.category);
+      const existing = rows.get(k);
+      if (!existing) {
+        rows.set(k, {
+          acceptRateEma: create.acceptRateEma,
+          acceptCount: create.acceptCount,
+          rejectCount: create.rejectCount,
+        });
+        return;
+      }
+      const newAccept = existing.acceptCount + (update.acceptCount?.increment ?? 0);
+      const newReject = existing.rejectCount + (update.rejectCount?.increment ?? 0);
+      rows.set(k, {
+        acceptRateEma: update.acceptRateEma,
+        acceptCount: newAccept,
+        rejectCount: newReject,
+      });
     },
   };
+  const prisma: any = {
+    tuningCategoryStats,
+    // Sprint 09 phase 6 added a $transaction wrapper around the EMA read-
+    // compute-write. The test mock now implements $transaction as a pass-
+    // through that invokes the callback with `this` — equivalent to
+    // running the work inline without isolation.
+    $transaction: async (cb: (tx: any) => Promise<any>) => cb(prisma),
+  };
+  return { rows, prisma };
 }
 
 test('EMA on first accept = α (0.3)', async () => {

@@ -395,8 +395,105 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           case TuningActionType.EDIT_FAQ: {
             const finalText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.proposedText;
-            if (!finalText || !suggestion.faqEntryId) {
+            if (!finalText) {
               throw new RequiredFieldsError();
+            }
+            // Hotfix — the diagnostic pipeline writes FAQ suggestions with
+            // actionType=EDIT_FAQ and a null faqEntryId when the fix is
+            // "there should be a FAQ entry for this topic" (new-entry case).
+            // Prior code rejected these with MISSING_REQUIRED_FIELDS even
+            // though the UI shows "Apply will create it." Auto-promote to
+            // a create path: use the guest's triggering question as the
+            // FAQ question (truncated), the proposed text as the answer,
+            // and sensible defaults for category + scope.
+            if (!suggestion.faqEntryId) {
+              // Pull the most-recent GUEST message at/before the trigger to
+              // use as the question; falls back to the disputed AI message's
+              // conversation context if needed. Kept narrow to avoid
+              // blowing up the transaction timeout.
+              const srcMsg = await prisma.message.findFirst({
+                where: { id: suggestion.sourceMessageId, tenantId },
+                select: { conversationId: true, sentAt: true },
+              });
+              let inferredQuestion: string | null = null;
+              if (srcMsg?.conversationId && srcMsg.sentAt) {
+                const priorGuest = await prisma.message.findFirst({
+                  where: {
+                    conversationId: srcMsg.conversationId,
+                    tenantId,
+                    role: 'GUEST',
+                    sentAt: { lte: srcMsg.sentAt },
+                  },
+                  orderBy: { sentAt: 'desc' },
+                  select: { content: true },
+                });
+                if (priorGuest?.content) {
+                  inferredQuestion = priorGuest.content.trim().slice(0, 500);
+                }
+              }
+              const finalQuestion: string =
+                (typeof body.editedQuestion === 'string' && body.editedQuestion.trim())
+                  ? body.editedQuestion.trim()
+                  : (suggestion.faqQuestion?.trim() || inferredQuestion || '(question — please edit)');
+              const finalAnswer: string = finalText;
+              const finalCategory: string =
+                (typeof body.faqCategory === 'string' && body.faqCategory.trim())
+                  ? body.faqCategory.trim()
+                  : (suggestion.faqCategory || 'property-neighborhood');
+              const finalScope: 'GLOBAL' | 'PROPERTY' =
+                body.faqScope === 'PROPERTY' || suggestion.faqScope === 'PROPERTY'
+                  ? 'PROPERTY'
+                  : 'GLOBAL';
+              const finalPropertyId: string | null =
+                finalScope === 'PROPERTY'
+                  ? (typeof body.faqPropertyId === 'string' && body.faqPropertyId) ||
+                    suggestion.faqPropertyId
+                  : null;
+              // Avoid duplicate inserts if the manager accepts twice — match
+              // on exact question text within tenant (+ property when scoped).
+              const duplicate = await prisma.faqEntry.findFirst({
+                where: {
+                  tenantId,
+                  question: finalQuestion,
+                  ...(finalScope === 'PROPERTY' && finalPropertyId
+                    ? { propertyId: finalPropertyId }
+                    : { propertyId: null }),
+                },
+                select: { id: true },
+              });
+              let createdId: string;
+              if (duplicate) {
+                // Update answer on the duplicate — preserves the manager's
+                // intent without violating any implicit uniqueness.
+                await prisma.faqEntry.update({
+                  where: { id: duplicate.id },
+                  data: { answer: finalAnswer, status: 'ACTIVE' as any },
+                });
+                createdId = duplicate.id;
+              } else {
+                const entry = await prisma.faqEntry.create({
+                  data: {
+                    tenantId,
+                    question: finalQuestion,
+                    answer: finalAnswer,
+                    category: finalCategory,
+                    scope: finalScope as any,
+                    propertyId: finalPropertyId,
+                    status: 'ACTIVE' as any,
+                    source: 'MANUAL',
+                  },
+                });
+                createdId = entry.id;
+              }
+              appliedPayload = {
+                question: finalQuestion,
+                answer: finalAnswer,
+                category: finalCategory,
+                scope: finalScope,
+                created: !duplicate,
+              };
+              targetUpdated = { kind: 'faq_entry_new', id: createdId };
+              break;
             }
             let faq = await prisma.faqEntry.findFirst({
               where: { id: suggestion.faqEntryId, tenantId },
