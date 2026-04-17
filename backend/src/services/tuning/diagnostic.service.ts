@@ -54,6 +54,19 @@ export type DiagnosticCategory =
 
 export type ArtifactTargetType = 'SOP' | 'FAQ' | 'SYSTEM_PROMPT' | 'TOOL' | 'PROPERTY_OVERRIDE' | 'NONE';
 
+/**
+ * Sprint 10 workstream C.2: per-category trace entry. The diagnostic must
+ * evaluate ALL 8 categories before committing to a final one — each is
+ * marked 'eliminated' or 'candidate' with a one-line reason citing the
+ * specific evidence that drove the verdict. This forces explicit reasoning
+ * over the full taxonomy and surfaces the chain to graders/auditors.
+ */
+export interface DecisionTraceEntry {
+  category: DiagnosticCategory;
+  verdict: 'eliminated' | 'candidate';
+  reason: string;
+}
+
 export interface DiagnosticResult {
   category: DiagnosticCategory;
   subLabel: string;
@@ -62,6 +75,8 @@ export interface DiagnosticResult {
   proposedText: string | null;
   artifactTarget: { type: ArtifactTargetType; id: string | null };
   capabilityRequest: { title: string; description: string; rationale: string } | null;
+  // Sprint 10: explicit per-category reasoning chain (required, length 8).
+  decisionTrace: DecisionTraceEntry[];
   // Pass-through context so the suggestion writer can stamp linkage fields
   // without re-reading the DB.
   evidenceBundleId: string;
@@ -169,29 +184,89 @@ export function __resetDiagnosticModelCacheForTests(): void {
 
 // ─── Taxonomy definitions (stable, hoisted so caching works cleanly) ─────────
 
+// Sprint 10 workstream C.3: anchored-contrast exemplars. Each category is
+// paired with a positive example AND its nearest-confusable negative,
+// forcing the model to discriminate at the boundary rather than pattern-
+// match on surface features. The expanded definitions also push the
+// system prompt past the 1,024-token threshold OpenAI requires for
+// automatic prompt caching (workstream C.5 / M8).
 const TAXONOMY_DEFINITIONS = `
 The 8 categories are:
 
 1. SOP_CONTENT — The SOP for this status / category said the wrong thing or
    didn't cover this case. Fix: edit SopVariant.content (or a property
    override when needed).
+   ✓ Example: Manager corrected "checkout is 11am" to "checkout is 12pm" —
+     the SOP itself had the wrong time.
+   ✗ Contrast (SOP_ROUTING): Manager corrected parking info, but the parking
+     SOP existed with correct content; the classifier just routed to the
+     wrong SOP. That's SOP_ROUTING, not SOP_CONTENT.
+
 2. SOP_ROUTING — The classifier picked the wrong SOP; correct content
    existed elsewhere. Fix: edit the SopDefinition.toolDescription.
+   ✓ Example: Guest asked about WiFi, AI fetched the check-in SOP (which
+     happened to mention "WiFi works on arrival") instead of the dedicated
+     WiFi SOP that holds the password and troubleshooting steps.
+   ✗ Contrast (TOOL_CONFIG): Guest asked about extending stay, AI never
+     called check_extend_availability at all. That's TOOL_CONFIG (the tool
+     description didn't make the use-case obvious), not SOP_ROUTING.
+
 3. FAQ — A factual detail the AI needed wasn't in any FAQ, or was but was
    incorrect. Fix: create or edit a FaqEntry (global or property-scoped).
+   ✓ Example: Guest asked about the nearest pharmacy, AI said "I don't have
+     that information" — no FAQ entry existed for pharmacy locations.
+   ✗ Contrast (SOP_CONTENT): Guest asked about check-in time, AI gave the
+     wrong time. Check-in time lives in the SOP, not FAQ — that's
+     SOP_CONTENT.
+
 4. SYSTEM_PROMPT — Tone, policy, reasoning, or conditional-branch behavior
    at the prompt level. Fix: edit TenantAiConfig.systemPromptCoordinator
    or systemPromptScreening.
+   ✓ Example: AI repeatedly closed messages with "Cheers!" on Booking.com
+     channel where the manager wants more formal tone — the conditional
+     "channel-aware closing" rule belongs in the system prompt, not in any
+     SOP.
+   ✗ Contrast (NO_FIX): Manager rephrased a single sentence to sound
+     warmer in one specific reply, with no pattern across other replies.
+     One-off polish ≠ system-wide policy. That's NO_FIX.
+
 5. TOOL_CONFIG — Wrong tool called, right tool called wrong, tool
    description unclear, tool parameters misused. Fix: edit ToolDefinition.
+   ✓ Example: AI called search_available_properties when the guest just
+     wanted to confirm THEIR existing booking — the tool description was
+     ambiguous about cross-sell vs. own-booking lookup.
+   ✗ Contrast (MISSING_CAPABILITY): Guest asked to swap their reservation
+     for one in a different city; no tool exists to handle cross-city
+     transfers. Don't edit a tool description — that's MISSING_CAPABILITY.
+
 6. MISSING_CAPABILITY — The AI needed a tool that does not exist. Do NOT
    invent an artifact fix. Emit a capabilityRequest instead.
+   ✓ Example: Guest wanted to split their stay across two adjacent units
+     mid-reservation — no tool covers that workflow. capabilityRequest:
+     "split_stay_across_units".
+   ✗ Contrast (TOOL_CONFIG): Guest wanted to extend the stay, AI failed to
+     call check_extend_availability — but that tool DOES exist. The
+     description just wasn't clear enough. That's TOOL_CONFIG.
+
 7. PROPERTY_OVERRIDE — The content is correct globally but this specific
    property is different and needs a SopPropertyOverride or property-scoped
    FAQ.
+   ✓ Example: Default check-in SOP says "11am check-in"; the Marina Tower
+     unit specifically has a 2pm check-in due to building staffing. Create
+     a SopPropertyOverride for that property + status.
+   ✗ Contrast (SOP_CONTENT): Manager corrected check-in time on a reply
+     for the only property in inventory, or the correction is meant to
+     apply to ALL properties. That's SOP_CONTENT (edit the variant), not
+     PROPERTY_OVERRIDE.
+
 8. NO_FIX — The edit was cosmetic (typo, punctuation, tone nudge) or a
    one-off manager preference that does NOT generalize. First-class abstain.
    Return this instead of a forced artifact change.
+   ✓ Example: Manager fixed "your reservation" to "Your reservation" — a
+     capitalisation polish with no policy implication. NO_FIX.
+   ✗ Contrast (SYSTEM_PROMPT): Manager consistently downcases sentence-
+     starters across multiple replies because the brand voice is "lowercase
+     casual" — that IS a policy and belongs in the system prompt.
 `.trim();
 
 const DIAGNOSTIC_SYSTEM_PROMPT = `
@@ -202,6 +277,30 @@ the correction into exactly one of the 8 taxonomy categories. You produce
 one structured JSON object per call; no prose outside the JSON.
 
 ${TAXONOMY_DEFINITIONS}
+
+DEFAULT DISPOSITION: NO_FIX. Before committing to any other category, you must
+identify: (a) the specific artifact that would change, (b) the specific
+observation in the evidence bundle that necessitates the change, and (c) a
+falsifiable prediction about what the change would fix. If any of (a), (b),
+or (c) is missing, return NO_FIX.
+
+The manager's correction is ONE datum, not ground truth. The manager may be
+wrong, may be expressing a style preference, or may be correcting a one-off
+mistake that doesn't generalize. Treat the correction as a claim to be
+evaluated against the evidence, not as a directive to be satisfied. A
+correction that the SOP/FAQ already covers correctly, or that contradicts
+established platform rules, is NOT a fix — it's a NO_FIX with a rationale
+explaining the conflict.
+
+DECISION TRACE — REQUIRED. Populate the decision_trace array BEFORE
+committing to the final category. Evaluate ALL 8 categories in the order
+they appear above (SOP_CONTENT, SOP_ROUTING, FAQ, SYSTEM_PROMPT, TOOL_CONFIG,
+MISSING_CAPABILITY, PROPERTY_OVERRIDE, NO_FIX), marking each as 'eliminated'
+or 'candidate' with a one-sentence reason citing specific evidence (e.g.
+"the parking SOP for CONFIRMED status already covers this case" or
+"manager's edit only changed punctuation"). Exactly one entry should be
+the candidate that becomes the final category — multiple candidates with
+ambiguous evidence means you should return NO_FIX.
 
 Rules (non-negotiable):
 
@@ -310,6 +409,37 @@ const DIAGNOSTIC_SCHEMA = {
         required: ['title', 'description', 'rationale'],
         additionalProperties: false,
       },
+      // Sprint 10 workstream C.2: explicit per-category reasoning chain.
+      // The model evaluates ALL 8 categories before committing to its
+      // final pick — every entry is 'eliminated' or 'candidate' with a
+      // short justification. Exactly 8 items in taxonomy order.
+      decision_trace: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              enum: [
+                'SOP_CONTENT',
+                'SOP_ROUTING',
+                'FAQ',
+                'SYSTEM_PROMPT',
+                'TOOL_CONFIG',
+                'MISSING_CAPABILITY',
+                'PROPERTY_OVERRIDE',
+                'NO_FIX',
+              ],
+            },
+            verdict: { type: 'string', enum: ['eliminated', 'candidate'] },
+            reason: { type: 'string' },
+          },
+          required: ['category', 'verdict', 'reason'],
+          additionalProperties: false,
+        },
+        minItems: 8,
+        maxItems: 8,
+      },
     },
     required: [
       'category',
@@ -319,6 +449,7 @@ const DIAGNOSTIC_SCHEMA = {
       'proposedText',
       'artifactTarget',
       'capabilityRequest',
+      'decision_trace',
     ],
     additionalProperties: false,
   },
@@ -398,54 +529,61 @@ export async function runDiagnostic(
 
     const start = Date.now();
     const reasoningEffort: 'high' = 'high';
-    let result: DiagnosticResult | null = null;
-    let modelUsed = getDiagnosticModel();
-    try {
-      let response: any;
-      try {
-        response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
-        // Primary (or whatever we just tried) succeeded — clear the fallback
-        // window so subsequent calls resume using the configured primary
-        // model immediately, not after the TTL expires.
-        clearFallbackAfterSuccess(modelUsed);
-      } catch (err) {
-        if (isModelNotFoundError(err) && modelUsed !== FALLBACK_DIAGNOSTIC_MODEL) {
-          fallBackToMini(`model_not_found for ${modelUsed}`);
-          modelUsed = FALLBACK_DIAGNOSTIC_MODEL;
-          response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
-        } else {
-          throw err;
-        }
-      }
+    const modelUsed = getDiagnosticModel();
+    const batchId = `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-      const rawText = extractOutputText(response);
-      const usage = extractUsage(response);
-      if (!rawText) {
-        console.warn(
-          `[Diagnostic] Empty model output — abstaining. model=${modelUsed} reasoning=${reasoningEffort} input_tokens=${usage.inputTokens} output_tokens=${usage.outputTokens}`
-        );
-        span.end({ error: 'EMPTY_OUTPUT', durationMs: Date.now() - start, model: modelUsed, ...usage });
+    // Sprint 10 workstream C.4: self-consistency k=3. Run three parallel
+    // diagnostic calls at temperature 0.7, majority-vote on the category.
+    // Disagreement (all three different categories) overrides to NO_FIX
+    // with a "diagnostic disagreement" rationale. Two-of-three uses the
+    // majority's full output (highest-confidence wins ties on confidence).
+    // All three responses log to AiApiLog under a shared batchId for
+    // offline analysis.
+    try {
+      const samples = await Promise.all([
+        runOneDiagnosticSample(openai, modelUsed, reasoningEffort, llmInput, input, evidenceBundleId, {
+          similarity, magnitude, originalText, finalText, diff,
+        }, batchId, 0, prisma),
+        runOneDiagnosticSample(openai, modelUsed, reasoningEffort, llmInput, input, evidenceBundleId, {
+          similarity, magnitude, originalText, finalText, diff,
+        }, batchId, 1, prisma),
+        runOneDiagnosticSample(openai, modelUsed, reasoningEffort, llmInput, input, evidenceBundleId, {
+          similarity, magnitude, originalText, finalText, diff,
+        }, batchId, 2, prisma),
+      ]);
+
+      const successful = samples.filter((s): s is { result: DiagnosticResult; modelUsed: string; usage: ReturnType<typeof extractUsage> } => s !== null);
+      if (successful.length === 0) {
+        console.warn(`[Diagnostic] all 3 samples failed — abstaining. batchId=${batchId}`);
+        span.end({ error: 'ALL_SAMPLES_FAILED', durationMs: Date.now() - start, model: modelUsed, batchId });
         return null;
       }
 
-      const parsed = JSON.parse(rawText) as Omit<DiagnosticResult, 'evidenceBundleId' | 'triggerType' | 'tenantId' | 'sourceMessageId' | 'diagMeta'>;
-      result = normalizeResult(parsed, {
-        evidenceBundleId,
-        triggerType: input.triggerType as TuningConversationTriggerType,
-        tenantId: input.tenantId,
-        sourceMessageId: input.messageId ?? null,
-        diagMeta: { similarity, magnitude, originalText, finalText, diff },
-      });
-      // Sprint 05 §1: one-line per-call log so cost + model + reasoning effort
-      // are visible in stdout/Railway logs without hunting through Langfuse.
+      const finalResult = majorityVoteResult(successful.map((s) => s.result));
+      const totalUsage = successful.reduce(
+        (acc, s) => ({
+          inputTokens: acc.inputTokens + s.usage.inputTokens,
+          outputTokens: acc.outputTokens + s.usage.outputTokens,
+          cachedInputTokens: acc.cachedInputTokens + s.usage.cachedInputTokens,
+        }),
+        { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 }
+      );
+
+      const categoryVotes = successful
+        .map((s) => s.result.category)
+        .reduce<Record<string, number>>((acc, c) => {
+          acc[c] = (acc[c] ?? 0) + 1;
+          return acc;
+        }, {});
+
       console.log(
-        `[Diagnostic] model=${modelUsed} reasoning=${reasoningEffort} input_tokens=${usage.inputTokens} output_tokens=${usage.outputTokens} category=${result.category} confidence=${result.confidence.toFixed(2)} duration_ms=${Date.now() - start}`
+        `[Diagnostic] k=3 batchId=${batchId} model=${modelUsed} reasoning=${reasoningEffort} input_tokens=${totalUsage.inputTokens} output_tokens=${totalUsage.outputTokens} votes=${JSON.stringify(categoryVotes)} category=${finalResult.category} confidence=${finalResult.confidence.toFixed(2)} duration_ms=${Date.now() - start}`
       );
       span.end(
         {
-          category: result.category,
-          subLabel: result.subLabel,
-          confidence: result.confidence,
+          category: finalResult.category,
+          subLabel: finalResult.subLabel,
+          confidence: finalResult.confidence,
         },
         {
           durationMs: Date.now() - start,
@@ -453,17 +591,22 @@ export async function runDiagnostic(
           similarity,
           model: modelUsed,
           reasoningEffort,
-          ...usage,
+          batchId,
+          k: 3,
+          successfulSamples: successful.length,
+          votes: categoryVotes,
+          ...totalUsage,
         }
       );
-      return result;
+      return finalResult;
     } catch (err) {
-      console.error('[Diagnostic] OpenAI call failed (non-fatal):', err);
+      console.error('[Diagnostic] k=3 self-consistency pipeline failed (non-fatal):', err);
       span.end({
         error: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - start,
         model: modelUsed,
         reasoningEffort,
+        batchId,
       });
       return null;
     }
@@ -472,6 +615,165 @@ export async function runDiagnostic(
     span.end({ error: outerErr instanceof Error ? outerErr.message : String(outerErr) });
     return null;
   }
+}
+
+// ─── Sprint 10 workstream C.4: single-sample helper for self-consistency ────
+
+interface SingleSampleSuccess {
+  result: DiagnosticResult;
+  modelUsed: string;
+  usage: ReturnType<typeof extractUsage>;
+}
+
+async function runOneDiagnosticSample(
+  openai: OpenAI,
+  initialModel: string,
+  reasoningEffort: 'high',
+  llmInput: string,
+  input: DiagnosticInput,
+  evidenceBundleId: string,
+  diagMeta: {
+    similarity: number;
+    magnitude: EditMagnitude;
+    originalText: string;
+    finalText: string;
+    diff: MyersDiffResult;
+  },
+  batchId: string,
+  sampleIndex: number,
+  prisma: PrismaClient
+): Promise<SingleSampleSuccess | null> {
+  let modelUsed = initialModel;
+  const sampleStart = Date.now();
+  try {
+    let response: any;
+    try {
+      response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
+      clearFallbackAfterSuccess(modelUsed);
+    } catch (err) {
+      if (isModelNotFoundError(err) && modelUsed !== FALLBACK_DIAGNOSTIC_MODEL) {
+        fallBackToMini(`model_not_found for ${modelUsed}`);
+        modelUsed = FALLBACK_DIAGNOSTIC_MODEL;
+        response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
+      } else {
+        throw err;
+      }
+    }
+    const rawText = extractOutputText(response);
+    const usage = extractUsage(response);
+    if (!rawText) {
+      console.warn(
+        `[Diagnostic] sample ${sampleIndex} empty output — skipping. batchId=${batchId} model=${modelUsed}`
+      );
+      await logSampleToAiApiLog(prisma, input.tenantId, modelUsed, batchId, sampleIndex, llmInput, '', usage, Date.now() - sampleStart, 'EMPTY_OUTPUT').catch(() => {});
+      return null;
+    }
+    const parsed = JSON.parse(rawText) as Parameters<typeof normalizeResult>[0];
+    const result = normalizeResult(parsed, {
+      evidenceBundleId,
+      triggerType: input.triggerType as TuningConversationTriggerType,
+      tenantId: input.tenantId,
+      sourceMessageId: input.messageId ?? null,
+      diagMeta,
+    });
+    await logSampleToAiApiLog(prisma, input.tenantId, modelUsed, batchId, sampleIndex, llmInput, rawText, usage, Date.now() - sampleStart, null).catch(() => {});
+    return { result, modelUsed, usage };
+  } catch (err) {
+    console.warn(
+      `[Diagnostic] sample ${sampleIndex} failed: ${err instanceof Error ? err.message : String(err)} batchId=${batchId}`
+    );
+    return null;
+  }
+}
+
+/**
+ * Majority-vote across N≥1 successful samples on the `category` field.
+ * - All-disagree → NO_FIX with "diagnostic disagreement" rationale, mean
+ *   confidence across samples (capped low to signal uncertainty).
+ * - Tie / majority → pick the highest-confidence sample within the
+ *   majority bucket; that sample's full output becomes the canonical
+ *   result.
+ */
+function majorityVoteResult(results: DiagnosticResult[]): DiagnosticResult {
+  if (results.length === 1) return results[0];
+  const buckets = new Map<DiagnosticCategory, DiagnosticResult[]>();
+  for (const r of results) {
+    const arr = buckets.get(r.category) ?? [];
+    arr.push(r);
+    buckets.set(r.category, arr);
+  }
+  let bestCategory: DiagnosticCategory | null = null;
+  let bestSize = 0;
+  for (const [cat, arr] of buckets) {
+    if (arr.length > bestSize) {
+      bestCategory = cat;
+      bestSize = arr.length;
+    }
+  }
+  // No majority (every sample voted differently) → abstain to NO_FIX.
+  if (bestCategory == null || bestSize < 2) {
+    const seed = results[0];
+    const meanConf = results.reduce((a, r) => a + r.confidence, 0) / results.length;
+    const altCategories = results.map((r) => `${r.category}:${r.confidence.toFixed(2)}`).join(', ');
+    return {
+      ...seed,
+      category: 'NO_FIX',
+      subLabel: 'diagnostic-disagreement',
+      confidence: Math.min(meanConf, 0.4),
+      rationale:
+        `Self-consistency k=3 produced 3 different categories (${altCategories}). ` +
+        `Overriding to NO_FIX per sprint 10 protocol — disagreement is treated as low signal.`,
+      proposedText: null,
+      artifactTarget: { type: 'NONE', id: null },
+      capabilityRequest: null,
+    };
+  }
+  const winners = buckets.get(bestCategory)!;
+  // Pick the highest-confidence winner; ties resolve naturally by array order.
+  winners.sort((a, b) => b.confidence - a.confidence);
+  return winners[0];
+}
+
+/**
+ * Sprint 10 workstream C.4: persist each sample's prompt + response under a
+ * shared batchId so offline analysis can re-score self-consistency without
+ * the wall-time penalty of replaying the call. The batchId is stamped into
+ * `ragContext` JSON since AiApiLog has no dedicated column. Best-effort —
+ * writes are fire-and-forget; failures here never break the diagnostic.
+ */
+async function logSampleToAiApiLog(
+  prisma: PrismaClient,
+  tenantId: string,
+  model: string,
+  batchId: string,
+  sampleIndex: number,
+  systemPlusInput: string,
+  responseText: string,
+  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number },
+  durationMs: number,
+  error: string | null
+): Promise<void> {
+  await prisma.aiApiLog.create({
+    data: {
+      tenantId,
+      agentName: 'tuning-diagnostic',
+      model,
+      temperature: 0.7,
+      maxTokens: 4000,
+      systemPrompt: DIAGNOSTIC_SYSTEM_PROMPT,
+      userContent: systemPlusInput,
+      responseText: responseText ?? '',
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      durationMs,
+      error: error ?? null,
+      ragContext: {
+        batchId,
+        sampleIndex,
+        cachedInputTokens: usage.cachedInputTokens,
+      } as any,
+    },
+  });
 }
 
 // ─── Prompt assembly ─────────────────────────────────────────────────────────
@@ -643,11 +945,16 @@ async function callDiagnosticModel(
   llmInput: string,
   tenantId: string
 ): Promise<any> {
+  // Sprint 10 workstream C.4: temperature 0.7 enables sample diversity for
+  // the k=3 self-consistency ensemble. The Responses API on GPT-5.x
+  // accepts the legacy temperature param even with reasoning effort set;
+  // it modulates the final-output sampling stage.
   return await (openai as any).responses.create({
     model,
     instructions: DIAGNOSTIC_SYSTEM_PROMPT,
     input: [{ role: 'user', content: llmInput }],
     reasoning: { effort: reasoningEffort },
+    temperature: 0.7,
     // Sprint 05 §1: bumped from 1500 to 4000. The full gpt-5.4 with
     // reasoning effort high spends a meaningful chunk of output tokens on
     // hidden reasoning before producing the structured JSON. 1500 starves
@@ -694,7 +1001,9 @@ function extractOutputText(response: any): string | null {
 }
 
 function normalizeResult(
-  parsed: Omit<DiagnosticResult, 'evidenceBundleId' | 'triggerType' | 'tenantId' | 'sourceMessageId' | 'diagMeta'>,
+  parsed: Omit<DiagnosticResult, 'evidenceBundleId' | 'triggerType' | 'tenantId' | 'sourceMessageId' | 'diagMeta' | 'decisionTrace'> & {
+    decision_trace?: Array<{ category?: string; verdict?: string; reason?: string }>;
+  },
   extra: Pick<DiagnosticResult, 'evidenceBundleId' | 'triggerType' | 'tenantId' | 'sourceMessageId' | 'diagMeta'>
 ): DiagnosticResult {
   // Clamp confidence defensively.
@@ -714,6 +1023,16 @@ function normalizeResult(
     capabilityRequest = null;
   }
 
+  // Sprint 10: decision_trace passes through. The schema enforces 8 entries,
+  // but defend against drift by coercing missing/malformed entries.
+  const decisionTrace: DecisionTraceEntry[] = Array.isArray(parsed.decision_trace)
+    ? parsed.decision_trace.map((e) => ({
+        category: (e?.category as DiagnosticCategory) ?? 'NO_FIX',
+        verdict: e?.verdict === 'candidate' ? 'candidate' : 'eliminated',
+        reason: typeof e?.reason === 'string' ? e.reason : '',
+      }))
+    : [];
+
   return {
     category: parsed.category,
     subLabel: (parsed.subLabel ?? '').trim() || 'unlabeled',
@@ -722,6 +1041,7 @@ function normalizeResult(
     proposedText,
     artifactTarget,
     capabilityRequest,
+    decisionTrace,
     ...extra,
   };
 }

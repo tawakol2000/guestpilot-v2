@@ -25,6 +25,7 @@ function baseResult(overrides: Partial<DiagnosticResult> = {}): DiagnosticResult
     proposedText: 'Parking: there is no on-site parking; street parking is free after 6pm.',
     artifactTarget: { type: 'SOP', id: 'sop-parking' },
     capabilityRequest: null,
+    decisionTrace: [],
     evidenceBundleId: 'eb_1',
     triggerType: 'EDIT_TRIGGERED',
     tenantId: 'tenant_1',
