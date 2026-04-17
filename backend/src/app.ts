@@ -31,6 +31,7 @@ import {
   tuningHistoryRouter,
   evidenceBundleRouter,
   capabilityRequestsRouter,
+  preferencePairsRouter,
 } from './routes/tuning-surface';
 import { messagesRouter } from './routes/messages';
 import { aiLogsRouter } from './routes/ai-logs';
@@ -103,6 +104,8 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/tuning', tuningHistoryRouter(prisma));
   // Feature 041 sprint 04: conversational agent (SSE chat + conversation CRUD)
   app.use('/api/tuning', tuningChatRouter(prisma));
+  // Sprint 08 §3 — preference pair viewer.
+  app.use('/api/tuning', preferencePairsRouter(prisma));
   app.use('/api/evidence-bundles', evidenceBundleRouter(prisma));
   app.use('/api/capability-requests', capabilityRequestsRouter(prisma));
 

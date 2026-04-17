@@ -673,6 +673,51 @@ export async function apiTuningRetentionSummary(): Promise<TuningRetentionSummar
   return apiFetch('/api/tuning/retention-summary')
 }
 
+// ─── Sprint 08 §3 — preference pair viewer ──────────────────────────────────
+
+export interface TuningPreferencePairSummary {
+  id: string
+  category: TuningDiagnosticCategory | null
+  contextExcerpt: string
+  rejectedExcerpt: string
+  acceptedExcerpt: string
+  createdAt: string
+}
+
+export async function apiListPreferencePairs(
+  params: { limit?: number; cursor?: string } = {},
+): Promise<{ pairs: TuningPreferencePairSummary[]; nextCursor: string | null }> {
+  const q = new URLSearchParams()
+  if (params.limit) q.set('limit', String(params.limit))
+  if (params.cursor) q.set('cursor', params.cursor)
+  const qs = q.toString()
+  return apiFetch(`/api/tuning/preference-pairs${qs ? `?${qs}` : ''}`)
+}
+
+export interface TuningPreferencePairDetail {
+  id: string
+  category: TuningDiagnosticCategory | null
+  context: unknown
+  rejectedSuggestion: unknown
+  preferredFinal: unknown
+  createdAt: string
+}
+
+export async function apiGetPreferencePair(id: string): Promise<TuningPreferencePairDetail> {
+  return apiFetch(`/api/tuning/preference-pairs/${id}`)
+}
+
+export interface TuningPreferencePairStats {
+  total: number
+  byCategory: Record<string, number> // keys include TuningDiagnosticCategory values plus 'LEGACY'
+  oldestAt: string | null
+  newestAt: string | null
+}
+
+export async function apiGetPreferencePairStats(): Promise<TuningPreferencePairStats> {
+  return apiFetch('/api/tuning/preference-pairs/stats')
+}
+
 export type CapabilityRequestStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'WONT_FIX'
 
 export interface CapabilityRequest {

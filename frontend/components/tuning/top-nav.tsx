@@ -11,6 +11,7 @@ const links: Array<{ href: string; label: string; group?: 'review' | 'configure'
   { href: '/tuning/playground', label: 'Playground', group: 'configure' },
   { href: '/tuning/sessions', label: 'Sessions', group: 'review' },
   { href: '/tuning/history', label: 'History', group: 'analyze' },
+  { href: '/tuning/pairs', label: 'Pairs', group: 'analyze' },
   { href: '/tuning/capability-requests', label: 'Capability requests', group: 'analyze' },
 ]
 

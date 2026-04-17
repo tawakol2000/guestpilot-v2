@@ -18,6 +18,7 @@ import { makeTuningDashboardsController } from '../controllers/tuning-dashboards
 import { makeTuningHistoryController } from '../controllers/tuning-history.controller';
 import { makeEvidenceBundleController } from '../controllers/evidence-bundle.controller';
 import { makeCapabilityRequestController } from '../controllers/capability-request.controller';
+import { makePreferencePairController } from '../controllers/preference-pair.controller';
 
 export function tuningDashboardsRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -53,5 +54,19 @@ export function capabilityRequestsRouter(prisma: PrismaClient): Router {
   const ctrl = makeCapabilityRequestController(prisma);
   router.get('/', (req: any, res) => ctrl.list(req, res));
   router.patch('/:id', (req: any, res) => ctrl.update(req, res));
+  return router;
+}
+
+// Sprint 08 §3: read-only viewer for the D2 preference-pair training signal.
+// Mounted under /api/tuning so it shares the tuning-surface auth + namespace.
+export function preferencePairsRouter(prisma: PrismaClient): Router {
+  const router = Router();
+  router.use(authMiddleware as unknown as RequestHandler);
+  const ctrl = makePreferencePairController(prisma);
+  // Order matters — /stats must win over /:id so that the literal route is
+  // reached before the param route. Express resolves top-down.
+  router.get('/preference-pairs', (req: any, res) => ctrl.list(req, res));
+  router.get('/preference-pairs/stats', (req: any, res) => ctrl.stats(req, res));
+  router.get('/preference-pairs/:id', (req: any, res) => ctrl.get(req, res));
   return router;
 }
