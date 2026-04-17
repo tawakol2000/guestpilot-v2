@@ -242,11 +242,22 @@ export async function apiGetPropertiesAiStatus(): Promise<PropertyAiStatus[]> {
 export async function apiSendMessage(
   conversationId: string,
   content: string,
-  channel?: string
+  channel?: string,
+  options?: { fromDraft?: boolean }
 ): Promise<ApiMessage> {
+  // `fromDraft: true` signals the backend that the manager was editing a
+  // pending AI copilot draft when they sent this message, which is the
+  // trigger gate for the tuning diagnostic pipeline. Passing true when
+  // false, or omitting it entirely when editing, both produce wrong
+  // signal — the inbox should only set it when the manager's input was
+  // seeded from an AI suggestion box.
   return apiFetch<ApiMessage>(`/api/conversations/${conversationId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content, channel }),
+    body: JSON.stringify({
+      content,
+      channel,
+      ...(options?.fromDraft ? { fromDraft: true } : {}),
+    }),
   })
 }
 

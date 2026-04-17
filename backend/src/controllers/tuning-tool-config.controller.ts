@@ -24,6 +24,8 @@ import { AuthenticatedRequest } from '../types';
 import { broadcastCritical } from '../services/socket.service';
 import { updateCategoryStatsOnAccept } from '../services/tuning/category-stats.service';
 import { recordPreferencePair } from '../services/tuning/preference-pair.service';
+import { invalidateToolCache } from '../services/tool-definition.service';
+import { invalidateTenantConfigCache } from '../services/tenant-config.service';
 
 export function makeTuningToolConfigController(prisma: PrismaClient) {
   return {
@@ -33,16 +35,21 @@ export function makeTuningToolConfigController(prisma: PrismaClient) {
       const userId = (req as any).userId ?? null;
       const body = req.body || {};
 
+      // Sprint 09 follow-up: atomic status CAS mirrors the main accept
+      // endpoint. Two concurrent POSTs to this URL used to both pass the
+      // PENDING check, both overwrite ToolDefinition.description (one edit
+      // lost), and both broadcast + duplicate the PreferencePair row. The
+      // updateMany below takes a Postgres row lock on UPDATE — the second
+      // caller re-evaluates the WHERE on committed state and matches 0
+      // rows → 409. Also accepts AUTO_SUPPRESSED so gated-category tool-
+      // config suggestions (sprint 08 §5) are resolvable.
+      let claimed = false;
       try {
         const suggestion = await prisma.tuningSuggestion.findFirst({
           where: { id, tenantId },
         });
         if (!suggestion) {
           res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
-          return;
-        }
-        if (suggestion.status !== 'PENDING') {
-          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
           return;
         }
         // Defensive: enforce that the accept-tool-config endpoint only runs for
@@ -82,26 +89,44 @@ export function makeTuningToolConfigController(prisma: PrismaClient) {
 
         const beforeDescription = tool.description;
 
+        const applyMode: 'IMMEDIATE' | 'QUEUED' =
+          body.applyMode === 'QUEUED' ? 'QUEUED' : 'IMMEDIATE';
+
+        // Atomic claim — only one concurrent accept can win.
+        const claim = await prisma.tuningSuggestion.updateMany({
+          where: {
+            id: suggestion.id,
+            tenantId,
+            status: { in: ['PENDING', 'AUTO_SUPPRESSED'] },
+          },
+          data: {
+            status: 'ACCEPTED',
+            appliedAt: new Date(),
+            appliedByUserId: userId,
+          },
+        });
+        if (claim.count === 0) {
+          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
+          return;
+        }
+        claimed = true;
+
         await prisma.toolDefinition.update({
           where: { id: tool.id },
           data: { description: finalDescription },
         });
-
-        const applyMode: 'IMMEDIATE' | 'QUEUED' =
-          body.applyMode === 'QUEUED' ? 'QUEUED' : 'IMMEDIATE';
+        invalidateToolCache(tenantId);
+        invalidateTenantConfigCache(tenantId);
 
         const updated = await prisma.tuningSuggestion.update({
           where: { id: suggestion.id },
           data: {
-            status: 'ACCEPTED',
-            appliedAt: new Date(),
             appliedPayload: {
               toolDefinitionId: tool.id,
               toolName: tool.name,
               before: beforeDescription,
               after: finalDescription,
             } as any,
-            appliedByUserId: userId,
             applyMode,
           },
         });
@@ -134,6 +159,19 @@ export function makeTuningToolConfigController(prisma: PrismaClient) {
           targetUpdated: { kind: 'tool_definition', id: tool.id },
         });
       } catch (err) {
+        // Revert the claim if we flipped to ACCEPTED but failed before
+        // completing the artifact write or final payload stamp. Without
+        // this, the suggestion would be stuck ACCEPTED with no real edit.
+        if (claimed) {
+          await prisma.tuningSuggestion
+            .update({
+              where: { id },
+              data: { status: 'PENDING', appliedAt: null, appliedByUserId: null },
+            })
+            .catch((revertErr) =>
+              console.error(`[tuning-tool-config] [${id}] revert failed:`, revertErr),
+            );
+        }
         console.error(`[tuning-tool-config] [${id}] accept failed:`, err);
         res.status(500).json({
           error: 'INTERNAL_ERROR',

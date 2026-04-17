@@ -23,6 +23,15 @@ import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
   channel: z.string().optional(),
+  // Sprint-10 follow-up: explicit opt-in signal from the UI that the
+  // manager was editing an AI-drafted reply when they sent this message.
+  // Without this the legacy copilot path fired EDIT/REJECT_TRIGGERED
+  // diagnostics on every send that happened while ANY PendingAiReply
+  // existed — including freshly-typed replies unrelated to the draft —
+  // which poisoned the diagnostic corpus and fed criticalFailure
+  // detection. Callers that DO want diagnostic fire must pass true; the
+  // default stays false for back-compat with existing API consumers.
+  fromDraft: z.boolean().optional(),
 });
 
 export function makeMessagesController(prisma: PrismaClient) {
@@ -48,7 +57,7 @@ export function makeMessagesController(prisma: PrismaClient) {
           return;
         }
 
-        const { content, channel } = parsed.data;
+        const { content, channel, fromDraft } = parsed.data;
 
         // Read optional client source header for audit trail
         const rawSource = req.headers['x-client-source'] as string | undefined;
@@ -91,13 +100,22 @@ export function makeMessagesController(prisma: PrismaClient) {
         // (set by ai.service.ts when shadowModeEnabled is false). The worker
         // marks fired:true after generating, so we look up by conversationId
         // alone — not fired:false, which would miss the typical case.
-        const pendingDraft = await prisma.pendingAiReply
-          .findFirst({
-            where: { conversationId: id, suggestion: { not: null } },
-            orderBy: { scheduledAt: 'desc' },
-            select: { suggestion: true },
-          })
-          .catch(() => null);
+        //
+        // Sprint-10 follow-up: only consider the pending draft as an "edit
+        // signal" if the client explicitly opted in via fromDraft: true.
+        // Merely having a debounced draft in flight when the manager types
+        // an unrelated reply used to trigger false REJECT_TRIGGERED runs
+        // (similarity < 0.3 because texts are unrelated), which poisoned
+        // the critical-failure signal feeding Autopilot graduation.
+        const pendingDraft = fromDraft
+          ? await prisma.pendingAiReply
+              .findFirst({
+                where: { conversationId: id, suggestion: { not: null } },
+                orderBy: { scheduledAt: 'desc' },
+                select: { suggestion: true },
+              })
+              .catch(() => null)
+          : null;
         const pendingSuggestion = pendingDraft?.suggestion?.trim() ? pendingDraft.suggestion : null;
 
         // If there was an AI draft, also link the most recent AiApiLog so the

@@ -32,6 +32,7 @@ import {
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 import { invalidateSopCache } from '../../services/sop.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
+import { broadcastCritical } from '../../services/socket.service';
 import { performSearchReplace } from './search-replace';
 import {
   findDuplicateFaqEntry,
@@ -277,6 +278,15 @@ export function buildSuggestionActionTool(
               preferredFinal: suggestion.beforeText,
             }).catch((err) => console.warn('[suggestion_action] preference-pair write failed:', err));
           }
+          // Broadcast so the frontend tuning dashboard refetches and any
+          // other open tab drops this row from the pending queue. The
+          // HTTP reject path broadcasts the same event; parity here lets
+          // agent-driven rejects update the UI without manual refresh.
+          broadcastCritical(c.tenantId, 'tuning_suggestion_updated', {
+            suggestionId: suggestion.id,
+            status: 'REJECTED',
+            appliedByUserId: c.userId,
+          });
           const payload = { suggestionId: suggestion.id, status: 'REJECTED' };
           span.end(payload);
           return asCallToolResult(payload);
@@ -373,6 +383,14 @@ export function buildSuggestionActionTool(
           target: outcome.target,
         };
         acceptedClaimForId = null; // payload stamp + artifact write both succeeded
+        // Broadcast so the frontend tuning dashboard + any other open tab
+        // drops the row from PENDING and shows the new ACCEPTED state.
+        broadcastCritical(c.tenantId, 'tuning_suggestion_updated', {
+          suggestionId: suggestion.id,
+          status: 'ACCEPTED',
+          appliedByUserId: c.userId,
+          applyMode: 'IMMEDIATE',
+        });
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
@@ -503,6 +521,14 @@ async function applyArtifactWrite(
         suggestion.id,
         { mode: 'auto' }
       );
+      // Match tenant-config.service.ts validation — tuning writes must
+      // respect the same 100-char floor / 50k ceiling as direct edits.
+      if (mergedFinalText.length < 100 || mergedFinalText.length > 50000) {
+        return {
+          ok: false,
+          error: `SYSTEM_PROMPT_INVALID_LENGTH:${mergedFinalText.length}`,
+        };
+      }
       const history = Array.isArray(current?.systemPromptHistory)
         ? [...((current!.systemPromptHistory as unknown[]) || [])]
         : [];
@@ -580,6 +606,11 @@ async function applyArtifactWrite(
             content: finalText,
           },
         });
+        // Main AI reads SOP content through a 5-minute cache. Without this
+        // the override takes up to 5 minutes to reach the main-AI pipeline,
+        // so guests keep seeing pre-edit replies. The non-override branch
+        // below already invalidates.
+        invalidateSopCache(c.tenantId);
         return {
           ok: true,
           target: { kind: 'sop_property_override', id: override.id },

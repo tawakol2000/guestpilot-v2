@@ -38,8 +38,14 @@ export async function lockOlderPreviews(
 
   const ids = pending.map(m => m.id);
 
+  // Sprint-10 follow-up: keep the `previewState: PREVIEW_PENDING`
+  // precondition in the update. Without it, a row that a concurrent send
+  // handler has already transitioned (PREVIEW_PENDING → PREVIEW_SENDING
+  // → cleared) between the findMany and this updateMany would be
+  // retroactively stamped as PREVIEW_LOCKED — audit integrity broken +
+  // UI shows a sent message as locked.
   await prisma.message.updateMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, previewState: 'PREVIEW_PENDING' },
     data: { previewState: 'PREVIEW_LOCKED' },
   });
 

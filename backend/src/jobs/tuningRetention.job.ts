@@ -38,6 +38,16 @@ export async function runRetentionSweep(prisma: PrismaClient): Promise<{
 }> {
   const now = Date.now();
   const upper = new Date(now - 7 * DAY_MS);
+  // Sprint-10 follow-up: the old bounds were [now-8d, now-7d] — a strict
+  // 24-hour slice. If a daily tick was missed (deploy skipping the job
+  // window, job-internal crash, Railway pod eviction crossing 24h) the
+  // rows in the missed slice aged past the upper bound and their
+  // retention flag was never set. They stayed `pending` forever in the
+  // retention dashboard. Catch-up rule: evaluate every row that's older
+  // than 7d AND either has a null flag OR is within the standard 8d
+  // window (so we still re-evaluate yesterday's rows idempotently).
+  // Older already-flagged rows are skipped — no reason to re-check a
+  // row that's already `retained` or `reverted`.
   const lower = new Date(now - 8 * DAY_MS);
 
   let scanned = 0;
@@ -48,8 +58,11 @@ export async function runRetentionSweep(prisma: PrismaClient): Promise<{
     const candidates = await prisma.tuningSuggestion.findMany({
       where: {
         status: 'ACCEPTED',
-        appliedAt: { gte: lower, lte: upper },
-        // appliedAndRetained7d may already be set — re-evaluate idempotently.
+        appliedAt: { lte: upper },
+        OR: [
+          { appliedAt: { gte: lower } }, // normal daily window
+          { appliedAndRetained7d: null }, // stragglers from missed days
+        ],
       },
       select: {
         id: true,
@@ -122,11 +135,18 @@ async function evaluateRetention(
   c: RetentionCandidate
 ): Promise<boolean> {
   if (!c.appliedAt) return true;
+  // Sprint-10 follow-up: do NOT filter by actionType. A later CREATE_SOP
+  // that stomps on an earlier EDIT_SOP_CONTENT on the same (category,
+  // status, property) is an overwrite; the old code filtered by
+  // actionType and missed these cross-type overwrites, inflating the
+  // retention rate. For SOP the target key is (category, status,
+  // propertyId); for FAQ it's (faqEntryId); for SYSTEM_PROMPT it's the
+  // variant. The action type is irrelevant to "was this edit later
+  // overwritten?".
   const newerWhere: any = {
     tenantId: c.tenantId,
     status: 'ACCEPTED',
     appliedAt: { gt: c.appliedAt },
-    actionType: c.actionType,
     NOT: { id: c.id },
   };
   switch (c.actionType) {
@@ -150,8 +170,11 @@ async function evaluateRetention(
       // A creation is retained unless the created FAQ has been ARCHIVED.
       if (!c.faqEntryId) return true;
       try {
-        const faq = await prisma.faqEntry.findUnique({
-          where: { id: c.faqEntryId },
+        // Defense-in-depth: scope the lookup to the suggestion's tenantId
+        // so a rogue cuid collision with another tenant's FAQ can't
+        // influence this tenant's retention verdict.
+        const faq = await prisma.faqEntry.findFirst({
+          where: { id: c.faqEntryId, tenantId: c.tenantId },
           select: { status: true },
         });
         if (!faq) return false; // entry deleted

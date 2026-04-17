@@ -29,6 +29,8 @@ import { Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
+import { invalidateSopCache } from '../services/sop.service';
+import { invalidateToolCache } from '../services/tool-definition.service';
 import {
   snapshotFaqEntry,
   snapshotSopVariant,
@@ -448,6 +450,9 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
               create: { sopDefinitionId, propertyId, status, content },
               select: { id: true },
             });
+            // Main AI reads SOP content through a 5-min cache; rollback
+            // would take up to 5 min to reach live guests otherwise.
+            invalidateSopCache(tenantId);
             res.json({ ok: true, artifactType: 'SOP_VARIANT', kind: 'override', targetId: restored.id });
             return;
           }
@@ -475,6 +480,7 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             create: { sopDefinitionId, status, content },
             select: { id: true },
           });
+          invalidateSopCache(tenantId);
           res.json({ ok: true, artifactType: 'SOP_VARIANT', kind: 'variant', targetId: restored.id });
           return;
         }
@@ -566,6 +572,12 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             where: { id: tool.id },
             data: { description: tool.defaultDescription },
           });
+          // Tool schema is cached by tool-definition.service for 5 minutes.
+          // Busting it here means the rolled-back description reaches the
+          // next main-AI call instead of waiting out the TTL. Also bust the
+          // tenant config cache for symmetry with the accept path.
+          invalidateToolCache(tenantId);
+          invalidateTenantConfigCache(tenantId);
           res.json({ ok: true, newVersion: null });
           return;
         }

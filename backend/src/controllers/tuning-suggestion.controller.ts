@@ -36,6 +36,19 @@ class NotFoundError extends Error {
     this.detail = detail;
   }
 }
+// Sprint-10 follow-up: 400 Bad Request for validation failures that aren't
+// "field is missing" (which uses RequiredFieldsError) — e.g. a computed
+// system prompt exceeds length bounds. Separate class keeps the catch
+// handler's status-mapping explicit.
+class ValidationError extends Error {
+  readonly httpCode: string;
+  readonly detail?: string;
+  constructor(code: string, detail?: string) {
+    super(code);
+    this.httpCode = code;
+    this.detail = detail;
+  }
+}
 import { AuthenticatedRequest } from '../types';
 import { broadcastCritical } from '../services/socket.service';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
@@ -235,6 +248,16 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               suggestion.id,
               { mode: mergeMode }
             );
+            // Mirror the length guard from tenant-config.service.ts so the
+            // tuning accept path can't bypass it and write an unusably
+            // short / empty prompt. Legacy writes via updateTenantAiConfig
+            // already enforce 100 <= len <= 50000.
+            if (finalText.length < 100 || finalText.length > 50000) {
+              throw new ValidationError(
+                'SYSTEM_PROMPT_INVALID_LENGTH',
+                `Resolved system prompt length ${finalText.length} is outside the allowed 100–50,000 char range. Review the proposed text or rollback to a prior version.`
+              );
+            }
             const history = Array.isArray(current?.systemPromptHistory)
               ? [...((current!.systemPromptHistory as any[]) || [])]
               : [];
@@ -776,6 +799,10 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
         }
         if (err instanceof RequiredFieldsError) {
           res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
+          return;
+        }
+        if (err instanceof ValidationError) {
+          res.status(400).json({ error: err.httpCode, ...(err.detail ? { detail: err.detail } : {}) });
           return;
         }
         if (err instanceof NotFoundError) {

@@ -139,11 +139,40 @@ export function taskController(prisma: PrismaClient) {
         }
         const existing = await prisma.task.findFirst({ where: { id, tenantId } });
         if (!existing) { res.status(404).json({ error: 'Task not found' }); return; }
-        const task = await prisma.task.update({ where: { id }, data });
+        // Sprint-10 follow-up: atomic transition guard. Two concurrent
+        // PATCHes flipping an open escalation to completed used to both
+        // pass the non-atomic read+update, call maybeFireEscalationTrigger
+        // twice with previous.status='open', and (when the retries cross
+        // the in-process 60s dedup window) produce duplicate diagnostic
+        // runs for the same resolution. When the caller is flipping status
+        // we use updateMany with a precondition on the previous value so
+        // only one caller wins.
+        let task;
+        let fireEscalationTrigger = false;
+        if (status !== undefined && String(status) !== existing.status) {
+          const claim = await prisma.task.updateMany({
+            where: { id, tenantId, status: existing.status },
+            data,
+          });
+          if (claim.count === 0) {
+            // Lost the race — some other caller already transitioned the
+            // task. Fetch the winning state and return it without firing
+            // another diagnostic.
+            const current = await prisma.task.findFirst({ where: { id, tenantId } });
+            if (!current) { res.status(404).json({ error: 'Task not found' }); return; }
+            res.json(current);
+            return;
+          }
+          task = await prisma.task.findFirst({ where: { id, tenantId } });
+          fireEscalationTrigger = true;
+        } else {
+          task = await prisma.task.update({ where: { id }, data });
+        }
+        if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
         broadcastToTenant(tenantId, 'task_updated', { conversationId: task.conversationId, task });
         // Feature 041 sprint 08 §2 — escalation-resolution → ESCALATION_TRIGGERED.
         // Fire-and-forget; must never block or fail the HTTP response.
-        if (status !== undefined) {
+        if (fireEscalationTrigger) {
           maybeFireEscalationTrigger(prisma, {
             tenantId,
             newStatus: String(status),
