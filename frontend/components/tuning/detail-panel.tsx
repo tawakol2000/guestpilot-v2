@@ -4,9 +4,18 @@ import { useEffect, useState } from 'react'
 import { Pin } from 'lucide-react'
 import {
   apiGetConversation,
+  apiGetFaqEntries,
+  apiGetSopDefinitions,
+  apiGetSopPropertyOverrides,
+  apiGetTenantAiConfig,
   type ApiConversationDetail,
   type ApiMessage,
   type ApiProperty,
+  type FaqEntry,
+  type SopDefinitionData,
+  type SopPropertyOverrideData,
+  type TenantAiConfig,
+  type TuningDiagnosticCategory,
   type TuningSuggestion,
   type ToolDefinitionSummary,
 } from '@/lib/api'
@@ -14,6 +23,7 @@ import { AcceptControls } from './accept-controls'
 import { CategoryPill } from './category-pill'
 import { ConfidenceBar } from './confidence-bar'
 import { DiffViewer } from './diff-viewer'
+import { DiscussButton } from './discuss-button'
 import { EvidencePane } from './evidence-pane'
 import { RelativeTime } from './relative-time'
 import { TUNING_COLORS, triggerLabel } from './tokens'
@@ -72,15 +82,22 @@ export function DetailPanel({
   const isLegacy = !suggestion.diagnosticCategory
   const anchorMessage = convo?.messages.find((m) => m.id === suggestion.sourceMessageId) ?? null
   const context = contextAround(convo?.messages ?? [], anchorMessage?.id)
+  const title = titleFor(suggestion)
 
-  // For the diff, we prefer (originalAiText || beforeText) vs (sent text || proposedText).
-  const beforeText =
+  // ── Section ① data: the message edit that triggered the suggestion ──
+  // Prefer the anchor message's actual fields (most accurate). Fall back to
+  // the suggestion's `beforeText` snapshot only when the anchor isn't loaded
+  // yet or for legacy rows where originalAiText wasn't captured.
+  const aiDraft =
     anchorMessage?.originalAiText ??
-    suggestion.beforeText ??
-    (anchorMessage?.role === 'AI' ? anchorMessage.content : '')
-  const afterText =
-    suggestion.proposedText ??
-    (anchorMessage?.role !== 'AI' ? null : anchorMessage.content)
+    (suggestion.triggerType === 'EDIT_TRIGGERED' || suggestion.triggerType === 'REJECT_TRIGGERED'
+      ? suggestion.beforeText
+      : null)
+  const sentText = anchorMessage?.content ?? null
+  const showReplyDiff = !!aiDraft && !!sentText && aiDraft !== sentText
+
+  // ── Section ② data: the proposed change to the AI flow ──
+  const artifact = useArtifactDiff(suggestion)
 
   return (
     // Compact outer gutters (px-6→5, py-8→5) and tighter card padding
@@ -125,7 +142,7 @@ export function DetailPanel({
             ) : null}
           </div>
           <h1 className="text-xl font-semibold leading-tight tracking-tight text-[#1A1A1A]">
-            {titleFor(suggestion)}
+            {title}
           </h1>
         </header>
 
@@ -229,20 +246,66 @@ export function DetailPanel({
           />
         ) : null}
 
+        {/* ① The edit that triggered this — only when there actually was an
+            edit. Suggestions from THUMBS_DOWN / COMPLAINT have no draft to
+            compare against, so this section is hidden in those cases. */}
+        {showReplyDiff ? (
+          <section>
+            <h2 className="text-sm font-semibold text-[#1A1A1A]">
+              <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#F3F4F6] text-[11px] font-semibold text-[#6B7280]">
+                1
+              </span>
+              The edit that triggered this
+            </h2>
+            <p className="mt-1 text-xs text-[#9CA3AF]">
+              What the AI proposed sending vs. what you actually sent to the guest.
+            </p>
+            <div className="mt-3">
+              <DiffViewer
+                plain
+                before={aiDraft}
+                after={sentText}
+                title="Reply"
+                leftLabel="AI drafted"
+                rightLabel="You sent"
+                leftAccent="red"
+                rightAccent="green"
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {/* ② Proposed change to the AI flow — current artifact text vs the
+            tuner's proposed replacement. For categories where there isn't a
+            single comparable "current" block (SYSTEM_PROMPT, TOOL_CONFIG),
+            the left pane shows a placeholder explaining the apply scope. */}
         <section>
-          <h2 className="text-sm font-semibold text-[#1A1A1A]">Proposed change</h2>
+          <h2 className="text-sm font-semibold text-[#1A1A1A]">
+            <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#F3F4F6] text-[11px] font-semibold text-[#6B7280]">
+              2
+            </span>
+            Proposed change to the AI flow
+          </h2>
+          <p className="mt-1 text-xs text-[#9CA3AF]">{artifact.subtitle}</p>
           <div className="mt-3 space-y-3">
-            <DiffViewer
-              before={beforeText ?? ''}
-              after={afterText ?? ''}
-              title={
-                suggestion.diagnosticCategory === 'SOP_ROUTING'
-                  ? 'Tool description'
-                  : suggestion.diagnosticCategory === 'TOOL_CONFIG'
-                    ? 'Tool description'
-                    : 'Draft → Proposed'
-              }
-            />
+            {artifact.loading ? (
+              <div
+                className="h-20 animate-pulse rounded-lg"
+                style={{ background: TUNING_COLORS.surfaceSunken }}
+              />
+            ) : (
+              <DiffViewer
+                plain
+                before={artifact.currentText}
+                after={suggestion.proposedText ?? ''}
+                title={artifact.targetLabel}
+                leftLabel="Current"
+                rightLabel="Proposed"
+                leftAccent="muted"
+                rightAccent="green"
+                leftPlaceholder={artifact.leftPlaceholder}
+              />
+            )}
             {suggestion.evidenceBundleId ? (
               <button
                 type="button"
@@ -277,6 +340,10 @@ export function DetailPanel({
             onMutated={onMutated}
             onError={setError}
           />
+          <div className="mt-3 flex items-center gap-2 border-t pt-3" style={{ borderColor: TUNING_COLORS.hairlineSoft }}>
+            <span className="text-xs text-[#9CA3AF]">Not sure?</span>
+            <DiscussButton suggestion={suggestion} title={title} />
+          </div>
         </section>
       </div>
 
@@ -304,4 +371,244 @@ function contextAround(all: ApiMessage[], anchorId: string | undefined): ApiMess
   const start = Math.max(0, idx - 4)
   const end = Math.min(all.length, idx + 2)
   return all.slice(start, end)
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Section ② data resolver
+// Different categories pull "current artifact text" from different sources.
+// All loads are best-effort; failures fall back to a placeholder so the
+// proposed text is always shown.
+// ──────────────────────────────────────────────────────────────────────────
+
+interface ArtifactDiff {
+  loading: boolean
+  /** Heading shown above the diff (e.g. "Check-in SOP — Confirmed"). */
+  targetLabel: string
+  /** Sub-caption under the section heading. */
+  subtitle: string
+  /** Current artifact text. Empty string when unavailable. */
+  currentText: string
+  /** Italic placeholder for the left pane when currentText is empty. */
+  leftPlaceholder?: string
+}
+
+function useArtifactDiff(suggestion: TuningSuggestion): ArtifactDiff {
+  const [loading, setLoading] = useState(true)
+  const [currentText, setCurrentText] = useState<string>('')
+  const [targetLabel, setTargetLabel] = useState<string>('Proposed change')
+  const [subtitle, setSubtitle] = useState<string>(
+    'How the tuner wants to update the AI flow to prevent this in future.'
+  )
+  const [leftPlaceholder, setLeftPlaceholder] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setCurrentText('')
+    setLeftPlaceholder(undefined)
+    const category = suggestion.diagnosticCategory
+    const fetcher = resolveArtifact(suggestion, category)
+
+    fetcher
+      .then((res) => {
+        if (cancelled) return
+        setCurrentText(res.currentText)
+        setTargetLabel(res.targetLabel)
+        setSubtitle(res.subtitle)
+        setLeftPlaceholder(res.leftPlaceholder)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLeftPlaceholder('Could not load the current text — showing the proposed change only.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestion.id])
+
+  return { loading, targetLabel, subtitle, currentText, leftPlaceholder }
+}
+
+interface ArtifactResolution {
+  targetLabel: string
+  subtitle: string
+  currentText: string
+  leftPlaceholder?: string
+}
+
+async function resolveArtifact(
+  s: TuningSuggestion,
+  category: TuningDiagnosticCategory | null
+): Promise<ArtifactResolution> {
+  switch (category) {
+    case 'SOP_CONTENT':
+      return resolveSopContent(s, false)
+    case 'SOP_ROUTING':
+      return resolveSopRouting(s)
+    case 'PROPERTY_OVERRIDE':
+      return resolveSopContent(s, true)
+    case 'FAQ':
+      return resolveFaq(s)
+    case 'SYSTEM_PROMPT':
+      return resolveSystemPrompt(s)
+    case 'TOOL_CONFIG':
+      return {
+        targetLabel: 'Tool configuration',
+        subtitle: 'How the tuner wants to update the AI flow to prevent this in future.',
+        currentText: '',
+        leftPlaceholder:
+          'Tool config edits don\u2019t have a single comparable block. Apply will route this to the matching tool.',
+      }
+    default:
+      // Legacy / unknown — best-effort use beforeText so something sensible renders.
+      return {
+        targetLabel: 'Proposed change',
+        subtitle: 'How the tuner wants to update the AI flow to prevent this in future.',
+        currentText: s.beforeText ?? '',
+        leftPlaceholder: s.beforeText ? undefined : 'No prior text recorded.',
+      }
+  }
+}
+
+async function resolveSopContent(s: TuningSuggestion, isOverride: boolean): Promise<ArtifactResolution> {
+  if (!s.sopCategory) {
+    return {
+      targetLabel: 'SOP',
+      subtitle: 'How the tuner wants to update the AI flow to prevent this in future.',
+      currentText: '',
+      leftPlaceholder: 'No SOP category attached to this suggestion.',
+    }
+  }
+  const status = (s.sopStatus ?? 'DEFAULT').toUpperCase()
+  const defs = await apiGetSopDefinitions()
+  const def = defs.definitions.find((d: SopDefinitionData) => d.category === s.sopCategory)
+  const variant = def?.variants.find((v) => v.status.toUpperCase() === status)
+  const friendly = humanizeCategory(s.sopCategory)
+
+  if (isOverride && s.sopPropertyId) {
+    const propName = defs.properties.find((p) => p.id === s.sopPropertyId)?.name ?? 'this property'
+    let overrideText = ''
+    try {
+      const overrides: SopPropertyOverrideData[] = await apiGetSopPropertyOverrides(s.sopPropertyId)
+      const match = overrides.find(
+        (o) => o.sopDefinitionId === def?.id && o.status.toUpperCase() === status
+      )
+      overrideText = match?.content ?? ''
+    } catch {
+      // Fall back to base variant if overrides endpoint fails.
+    }
+    const current = overrideText || variant?.content || ''
+    const noteWhich = overrideText
+      ? `existing ${propName} override`
+      : `falling back to base ${humanizeStatus(status)} variant`
+    return {
+      targetLabel: `${friendly} \u00b7 ${humanizeStatus(status)} \u00b7 scoped to ${propName}`,
+      subtitle: `Property-scoped override (${noteWhich}).`,
+      currentText: current,
+      leftPlaceholder: current
+        ? undefined
+        : `No existing override or base variant. Apply will create one for ${propName}.`,
+    }
+  }
+
+  return {
+    targetLabel: `${friendly} \u00b7 ${humanizeStatus(status)}`,
+    subtitle: 'Edit to the SOP content — applies to every reservation in this status.',
+    currentText: variant?.content ?? '',
+    leftPlaceholder: variant ? undefined : 'No existing variant for this status. Apply will create one.',
+  }
+}
+
+async function resolveSopRouting(s: TuningSuggestion): Promise<ArtifactResolution> {
+  if (!s.sopCategory) {
+    return {
+      targetLabel: 'SOP routing',
+      subtitle: 'How the tuner wants to update the AI flow to prevent this in future.',
+      currentText: '',
+      leftPlaceholder: 'No SOP category attached to this suggestion.',
+    }
+  }
+  const defs = await apiGetSopDefinitions()
+  const def = defs.definitions.find((d) => d.category === s.sopCategory)
+  return {
+    targetLabel: `${humanizeCategory(s.sopCategory)} \u00b7 tool description`,
+    subtitle:
+      'Edit to the SOP\u2019s tool description — affects when the AI picks this SOP for a reply.',
+    currentText: def?.toolDescription ?? '',
+    leftPlaceholder: def ? undefined : 'SOP not found.',
+  }
+}
+
+async function resolveFaq(s: TuningSuggestion): Promise<ArtifactResolution> {
+  if (!s.faqEntryId) {
+    return {
+      targetLabel: 'FAQ entry',
+      subtitle: 'New FAQ entry — no existing answer to compare against.',
+      currentText: '',
+      leftPlaceholder: 'This is a new FAQ entry. Apply will create it.',
+    }
+  }
+  const res = await apiGetFaqEntries({})
+  const entry = res.entries.find((e: FaqEntry) => e.id === s.faqEntryId)
+  return {
+    targetLabel: entry ? `FAQ \u00b7 ${entry.question}` : 'FAQ entry',
+    subtitle: 'Edit to the existing FAQ answer.',
+    currentText: entry?.answer ?? s.faqAnswer ?? '',
+    leftPlaceholder: entry ? undefined : 'FAQ entry not found.',
+  }
+}
+
+async function resolveSystemPrompt(s: TuningSuggestion): Promise<ArtifactResolution> {
+  // The diagnostic doesn't currently pinpoint a section in the multi-thousand-
+  // token system prompt, so the honest UX is "here's the clause to add." We
+  // still load the variant for context (length + first line) so the user
+  // knows which prompt they'd be editing.
+  let variantLabel = s.systemPromptVariant ?? 'Coordinator'
+  let cfg: TenantAiConfig | null = null
+  try {
+    cfg = await apiGetTenantAiConfig()
+  } catch {
+    /* swallow — we still render the proposed text */
+  }
+  const wholePrompt =
+    (s.systemPromptVariant === 'screening'
+      ? cfg?.systemPromptScreening
+      : cfg?.systemPromptCoordinator) ?? ''
+  const lengthHint = wholePrompt
+    ? `current prompt: ${wholePrompt.length.toLocaleString()} chars`
+    : 'current prompt unavailable'
+  variantLabel = variantLabel.charAt(0).toUpperCase() + variantLabel.slice(1)
+  return {
+    targetLabel: `System prompt \u00b7 ${variantLabel}`,
+    subtitle: `New clause to add to the ${variantLabel.toLowerCase()} system prompt (${lengthHint}). The insertion point is picked when you apply.`,
+    currentText: '',
+    leftPlaceholder:
+      'System-prompt edits add or replace a clause; the diff against the whole prompt would be too large to skim. Use \u201CDiscuss\u201D to negotiate the exact insertion point.',
+  }
+}
+
+function humanizeCategory(slug: string): string {
+  return slug
+    .replace(/^sop-/i, '')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function humanizeStatus(status: string): string {
+  switch (status.toUpperCase()) {
+    case 'DEFAULT':
+      return 'Default'
+    case 'INQUIRY':
+      return 'Inquiry'
+    case 'CONFIRMED':
+      return 'Confirmed'
+    case 'CHECKED_IN':
+      return 'Checked-in'
+    default:
+      return status
+  }
 }

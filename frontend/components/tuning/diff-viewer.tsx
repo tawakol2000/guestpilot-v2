@@ -56,18 +56,41 @@ export function DiffViewer({
   before,
   after,
   title,
+  // Sprint-07 follow-up — when `plain` is true, render full text on each side
+  // with no token-level del/add highlighting. The two panes already make
+  // before/after obvious; the strikethrough/green overlay was overkill and
+  // looked broken when before/after weren't lexically comparable (e.g.
+  // SYSTEM_PROMPT proposals where "before" is a reply draft and "after" is
+  // a prompt clause).
+  plain = false,
+  leftLabel = 'Before',
+  rightLabel = 'After',
+  leftAccent = 'red',
+  rightAccent = 'green',
+  rightPlaceholder,
+  leftPlaceholder,
 }: {
   before: string | null | undefined
   after: string | null | undefined
   title?: string
+  plain?: boolean
+  leftLabel?: string
+  rightLabel?: string
+  leftAccent?: 'red' | 'green' | 'muted'
+  rightAccent?: 'red' | 'green' | 'muted'
+  /** Shown in italic gray when `after` is empty/null. */
+  rightPlaceholder?: string
+  /** Shown in italic gray when `before` is empty/null. */
+  leftPlaceholder?: string
 }) {
   const tokens = useMemo(() => {
+    if (plain) return [] // skip the LCS pass when not used
     const a = tokenize(before ?? '')
     const b = tokenize(after ?? '')
     return diffTokens(a, b)
-  }, [before, after])
+  }, [before, after, plain])
 
-  const empty = !before && !after
+  const empty = !before && !after && !leftPlaceholder && !rightPlaceholder
   if (empty) {
     return (
       <div
@@ -82,7 +105,8 @@ export function DiffViewer({
     )
   }
 
-  // Two-panel side-by-side rendering:
+  // Two-panel side-by-side rendering. In `plain` mode each pane just shows
+  // its own text in full. In diff mode (the default) we use word-level LCS:
   //   LEFT panel  → equal + del tokens (the "before" state). Deletions get
   //                 the red overlay + line-through so you can see what was
   //                 cut without scanning around.
@@ -106,7 +130,9 @@ export function DiffViewer({
           style={{ borderColor: TUNING_COLORS.hairlineSoft }}
         >
           <span className="text-xs font-medium text-[#6B7280]">{title}</span>
-          <span className="font-mono text-[10px] text-[#9CA3AF]">word-level diff</span>
+          {!plain ? (
+            <span className="font-mono text-[10px] text-[#9CA3AF]">word-level diff</span>
+          ) : null}
         </div>
       ) : null}
 
@@ -114,17 +140,68 @@ export function DiffViewer({
         className="grid grid-cols-1 divide-y md:grid-cols-2 md:divide-x md:divide-y-0"
         style={{ borderColor: TUNING_COLORS.hairlineSoft }}
       >
-        <DiffPane
-          label="Before"
-          tokens={tokens}
-          kind="before"
-        />
-        <DiffPane
-          label="After"
-          tokens={tokens}
-          kind="after"
-        />
+        {plain ? (
+          <>
+            <PlainPane label={leftLabel} text={before ?? ''} accent={leftAccent} placeholder={leftPlaceholder} />
+            <PlainPane label={rightLabel} text={after ?? ''} accent={rightAccent} placeholder={rightPlaceholder} />
+          </>
+        ) : (
+          <>
+            <DiffPane label={leftLabel} tokens={tokens} kind="before" />
+            <DiffPane label={rightLabel} tokens={tokens} kind="after" />
+          </>
+        )}
       </div>
+    </div>
+  )
+}
+
+function PlainPane({
+  label,
+  text,
+  accent,
+  placeholder,
+}: {
+  label: string
+  text: string
+  accent: 'red' | 'green' | 'muted'
+  placeholder?: string
+}) {
+  const dotColor =
+    accent === 'red'
+      ? TUNING_COLORS.diffDelFg
+      : accent === 'green'
+        ? TUNING_COLORS.diffAddFg
+        : TUNING_COLORS.inkSubtle
+  return (
+    <div
+      className="flex flex-col"
+      style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+    >
+      <div
+        className="flex items-center gap-2 border-b px-3 py-1.5"
+        style={{
+          borderColor: TUNING_COLORS.hairlineSoft,
+          background: TUNING_COLORS.surfaceSunken,
+        }}
+      >
+        <span
+          aria-hidden
+          className="inline-block h-1.5 w-1.5 rounded-full"
+          style={{ background: dotColor }}
+        />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+          {label}
+        </span>
+      </div>
+      <pre
+        className="min-h-[3em] whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[12.5px] leading-6"
+        style={{ color: TUNING_COLORS.ink }}
+      >
+        {text.trim() ? text : (
+          <span className="italic text-[#9CA3AF]">{placeholder ?? '—'}</span>
+        )}
+      </pre>
     </div>
   )
 }
