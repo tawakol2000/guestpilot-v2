@@ -64,7 +64,12 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         systemPromptVariant?: string;
         faqEntryId?: string;
         confidence?: number;
-        targetHint?: string;
+        // Sprint 09 follow-up: `beforeText` is the TOOL_CONFIG cooldown key.
+        // The draft schema in suggestion-action has no `targetHint` and the
+        // persisted row has no toolDefinitionId column, so beforeText (the
+        // current tool description) is the closest stable identifier two
+        // suggestions targeting the same tool share.
+        beforeText?: string;
       };
     };
     const action = toolInput.action;
@@ -97,7 +102,7 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
           sopPropertyId: true,
           systemPromptVariant: true,
           faqEntryId: true,
-          diagnosticSubLabel: true,
+          beforeText: true,
           status: true,
         },
       });
@@ -110,11 +115,14 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       systemPromptVariant:
         existingSuggestion?.systemPromptVariant ?? toolInput.draft?.systemPromptVariant ?? null,
       faqEntryId: existingSuggestion?.faqEntryId ?? toolInput.draft?.faqEntryId ?? null,
-      // Sprint 09 fix 3: TOOL_CONFIG needs a target identifier too. We reuse
-      // diagnosticSubLabel (agent convention: tool name as sublabel) when
-      // available, otherwise the draft's targetHint.
+      // Sprint 09 fix 3 (follow-up): TOOL_CONFIG cooldown key is `beforeText`.
+      // Two suggestions targeting the same tool share the same current
+      // description (that's exactly how the apply handler resolves the
+      // target). Using it here means two TOOL_CONFIG proposals against the
+      // same tool definition will collide as intended, without needing
+      // a tool-id column on TuningSuggestion.
       toolTarget:
-        existingSuggestion?.diagnosticSubLabel ?? toolInput.draft?.targetHint ?? null,
+        existingSuggestion?.beforeText ?? toolInput.draft?.beforeText ?? null,
     };
     const confidence = existingSuggestion?.confidence ?? toolInput.draft?.confidence ?? null;
 
@@ -212,13 +220,13 @@ function artifactTargetWhere(
   // Sprint 09 fix 3: TOOL_CONFIG previously had no case here, meaning zero
   // cooldown or oscillation protection. TuningSuggestion has no dedicated
   // tool-id column, so we scope by (diagnosticCategory = 'TOOL_CONFIG',
-  // diagnosticSubLabel = tool name / hint) — the same identifier the
-  // suggestion-action tool uses for TOOL_CONFIG targets. Same-tenant rows
-  // already filtered by the caller, so the sublabel collision window is
-  // narrow enough to serve as a dedup key.
+  // beforeText = the current tool description). The apply handler in
+  // suggestion-action.ts identifies the target tool by exact beforeText
+  // match, so two suggestions aiming at the same tool share the same
+  // beforeText and collide here as intended.
   if (category === 'TOOL_CONFIG') {
     return t.toolTarget
-      ? { diagnosticCategory: 'TOOL_CONFIG', diagnosticSubLabel: t.toolTarget }
+      ? { diagnosticCategory: 'TOOL_CONFIG', beforeText: t.toolTarget }
       : null;
   }
   return null;

@@ -53,6 +53,12 @@ const APPLY_SANCTION_PATTERNS = [
   // "apply" in clear imperative context
   /\bapply\s+(it|this|that|them|the\s+(change|suggestion|fix|edit|update|changes)|now)\b/i,
   /\bapply\s+(now|them|it|this|that)\b/i,
+  // Politeness-prefixed "apply": "please apply", "sure, apply", "ok apply",
+  // "could you apply", etc. The leading-word check keeps it from matching
+  // "apply for a visa" (no imperative cue) while covering common natural
+  // phrasings the tighter patterns above missed.
+  /\b(please|pls|sure|ok|okay|alright|yeah|yep|go\s+and|could\s+you|can\s+you|let'?s)[,.!\s]+apply\b/i,
+  /^\s*apply\s*[.!?]?\s*$/i, // bare "apply" as the whole message
   // "confirm" in write-action context
   /\bconfirm\s+(the\s+)?(change|apply|rollback|revert|edit|update|changes|fix)\b/i,
   // agreement phrases

@@ -207,6 +207,18 @@ test('sanctions "apply it" and "apply the change"', async () => {
   assert.equal(detectApplySanction('Please apply the change'), true);
 });
 
+test('sanctions politeness-prefixed "apply" phrases', async () => {
+  const { detectApplySanction } = await import('../hooks/shared');
+  assert.equal(detectApplySanction('please apply'), true);
+  assert.equal(detectApplySanction('sure, apply'), true);
+  assert.equal(detectApplySanction('ok apply'), true);
+  assert.equal(detectApplySanction('Could you apply'), true);
+  assert.equal(detectApplySanction('apply'), true); // bare one-word turn
+  // Verify the "apply for a visa" negative still holds after the new pattern
+  assert.equal(detectApplySanction('I need to apply for a visa'), false);
+  assert.equal(detectApplySanction('apply for a grant'), false);
+});
+
 test('sanctions "confirm the rollback"', async () => {
   const { detectApplySanction } = await import('../hooks/shared');
   assert.equal(detectApplySanction('confirm the rollback'), true);
