@@ -236,12 +236,17 @@ export async function assembleEvidenceBundle(
   }
 
   // ─── 2. Hostaway entities (Property / Reservation / Guest) ─────────────
+  //
+  // Sprint 09 follow-up: every lookup is scoped to tenantId as defense-in-
+  // depth. The conversation row is already tenant-scoped, so in the happy
+  // path this is a no-op. But a corrupt FK on another tenant's row would
+  // otherwise leak cross-tenant PII into the evidence bundle.
   let entities: EvidenceBundle['entities'] = { property: null, reservation: null, guest: null };
   if (conversation) {
     const [property, reservation, guest] = await Promise.all([
-      prisma.property.findUnique({ where: { id: conversation.propertyId } }),
-      prisma.reservation.findUnique({ where: { id: conversation.reservationId } }),
-      prisma.guest.findUnique({ where: { id: conversation.guestId } }),
+      prisma.property.findFirst({ where: { id: conversation.propertyId, tenantId: triggerEvent.tenantId } }),
+      prisma.reservation.findFirst({ where: { id: conversation.reservationId, tenantId: triggerEvent.tenantId } }),
+      prisma.guest.findFirst({ where: { id: conversation.guestId, tenantId: triggerEvent.tenantId } }),
     ]);
     entities = {
       property: property
@@ -284,7 +289,10 @@ export async function assembleEvidenceBundle(
   let mainAiTrace: EvidenceBundle['mainAiTrace'] = null;
   let aiApiLogRow: AiApiLog | null = null;
   if (message?.aiApiLogId) {
-    aiApiLogRow = await prisma.aiApiLog.findUnique({ where: { id: message.aiApiLogId } });
+    // Defense-in-depth: scope AiApiLog lookup to tenantId too.
+    aiApiLogRow = await prisma.aiApiLog.findFirst({
+      where: { id: message.aiApiLogId, tenantId: triggerEvent.tenantId },
+    });
   } else if (message) {
     // Fallback: most recent AiApiLog on this conversation before or at the message
     aiApiLogRow = await prisma.aiApiLog.findFirst({

@@ -89,6 +89,11 @@ export function buildSuggestionActionTool(
         action: args.action,
         suggestionId: args.suggestionId ?? null,
       });
+      // Sprint 09 follow-up: track whether the CAS flipped this row to
+      // ACCEPTED so the catch handler can revert if anything throws after
+      // the claim. Previously an unexpected throw between CAS and outcome
+      // left the row permanently ACCEPTED with no artifact written.
+      let acceptedClaimForId: string | null = null;
       try {
         // 1. Resolve or create the suggestion row.
         let suggestionId = args.suggestionId ?? null;
@@ -236,6 +241,7 @@ export function buildSuggestionActionTool(
           span.end({ error: 'NOT_PENDING' });
           return asError(`Suggestion ${suggestionId} is not in an applicable state.`);
         }
+        acceptedClaimForId = suggestion.id;
         const outcome = await applyArtifactWrite(c, suggestion, finalText);
         if (!outcome.ok) {
           // Revert the claim so the manager can retry.
@@ -247,6 +253,7 @@ export function buildSuggestionActionTool(
             .catch((err) =>
               console.warn('[suggestion_action] CAS revert failed:', err)
             );
+          acceptedClaimForId = null;
           span.end({ error: outcome.error });
           return asError(`apply failed: ${outcome.error}`);
         }
@@ -280,9 +287,24 @@ export function buildSuggestionActionTool(
           status: 'ACCEPTED',
           target: outcome.target,
         };
+        acceptedClaimForId = null; // payload stamp + artifact write both succeeded
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
+        // Sprint 09 follow-up: revert the CAS flip if we claimed a row but
+        // never completed the full apply. Without this, an unexpected throw
+        // (network, DB unavailable, unhandled runtime error) would leave the
+        // row ACCEPTED with no artifact written and no path to retry.
+        if (acceptedClaimForId) {
+          await c.prisma.tuningSuggestion
+            .update({
+              where: { id: acceptedClaimForId },
+              data: { status: 'PENDING', appliedAt: null, appliedByUserId: null },
+            })
+            .catch((revertErr) =>
+              console.warn('[suggestion_action] CAS revert-on-throw failed:', revertErr)
+            );
+        }
         span.end({ error: String(err) });
         return asError(`suggestion_action failed: ${err?.message ?? String(err)}`);
       }

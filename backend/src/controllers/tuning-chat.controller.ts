@@ -92,6 +92,11 @@ export function makeTuningChatController(prisma: PrismaClient) {
       // Persist incoming user message (unless this is a proactive opener
       // trigger — the manager didn't type it, we don't want it to
       // rehydrate on reload or show up as a user turn in the transcript).
+      //
+      // Sprint 09 follow-up: if the user-message persist fails we MUST stop
+      // — otherwise the assistant turn persists at onFinish with no matching
+      // user turn, breaking the transcript invariant. Previously the error
+      // was only console.warn'd.
       if (!isOpener) {
         try {
           await prisma.tuningMessage.create({
@@ -104,7 +109,9 @@ export function makeTuningChatController(prisma: PrismaClient) {
             },
           });
         } catch (err) {
-          console.warn('[tuning-chat] user message persist failed:', err);
+          console.error('[tuning-chat] user message persist failed:', err);
+          res.status(500).json({ error: 'USER_MESSAGE_PERSIST_FAILED' });
+          return;
         }
       }
 
@@ -157,6 +164,18 @@ export function makeTuningChatController(prisma: PrismaClient) {
           console.error('[tuning-chat] stream error:', err);
           return err instanceof Error ? err.message : String(err);
         },
+      });
+
+      // Sprint 09 follow-up: log client disconnect so deployment dashboards
+      // can see when streams were aborted mid-turn. We can't cleanly cancel
+      // the in-flight agent query without plumbing an AbortSignal through
+      // runTuningAgentTurn (future sprint), but at least flag the event.
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          console.warn(
+            `[tuning-chat] client disconnected mid-stream (conversationId=${conversationId}). Agent turn will complete but stream is dead.`
+          );
+        }
       });
 
       pipeUIMessageStreamToResponse({

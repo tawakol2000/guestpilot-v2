@@ -83,27 +83,34 @@ async function applyEmaUpdate(
   category: TuningDiagnosticCategory,
   accepted: boolean
 ): Promise<void> {
+  // Sprint 09 follow-up: wrap read-compute-write in an interactive tx so two
+  // concurrent accepts for the same (tenantId, category) can't both read the
+  // same oldEma and both write identical newEma (statistical drift). The
+  // first tx takes the row lock on upsert, the second waits, re-reads the
+  // post-commit row, and computes against the updated EMA.
   try {
-    const existing = await prisma.tuningCategoryStats.findUnique({
-      where: { tenantId_category: { tenantId, category } },
-      select: { acceptRateEma: true, acceptCount: true, rejectCount: true },
-    });
-    const oldEma = existing?.acceptRateEma ?? 0;
-    const newEma = ALPHA * (accepted ? 1 : 0) + (1 - ALPHA) * oldEma;
-    await prisma.tuningCategoryStats.upsert({
-      where: { tenantId_category: { tenantId, category } },
-      create: {
-        tenantId,
-        category,
-        acceptRateEma: newEma,
-        acceptCount: accepted ? 1 : 0,
-        rejectCount: accepted ? 0 : 1,
-      },
-      update: {
-        acceptRateEma: newEma,
-        acceptCount: { increment: accepted ? 1 : 0 },
-        rejectCount: { increment: accepted ? 0 : 1 },
-      },
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.tuningCategoryStats.findUnique({
+        where: { tenantId_category: { tenantId, category } },
+        select: { acceptRateEma: true },
+      });
+      const oldEma = existing?.acceptRateEma ?? 0;
+      const newEma = ALPHA * (accepted ? 1 : 0) + (1 - ALPHA) * oldEma;
+      await tx.tuningCategoryStats.upsert({
+        where: { tenantId_category: { tenantId, category } },
+        create: {
+          tenantId,
+          category,
+          acceptRateEma: newEma,
+          acceptCount: accepted ? 1 : 0,
+          rejectCount: accepted ? 0 : 1,
+        },
+        update: {
+          acceptRateEma: newEma,
+          acceptCount: { increment: accepted ? 1 : 0 },
+          rejectCount: { increment: accepted ? 0 : 1 },
+        },
+      });
     });
   } catch (err) {
     // Stats update must never break accept/reject.
