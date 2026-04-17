@@ -99,10 +99,21 @@ export function makeTuningConversationController(prisma: PrismaClient) {
 
         // Substring search over TuningMessage.parts content. Keep it simple
         // via raw query to avoid Json path-quirks on older Postgres.
+        //
+        // Sprint 09 follow-up: join to TuningConversation and filter by
+        // tenantId so the scan doesn't iterate every TuningMessage in the
+        // database. The outer `where.id = { in: ids }` already narrows the
+        // result to tenant-scoped conversations, but the raw query itself
+        // should not cross tenants.
         if (q) {
           const ids = await prisma.$queryRawUnsafe<{ conversationId: string }[]>(
-            'SELECT DISTINCT "conversationId" FROM "TuningMessage" WHERE "parts"::text ILIKE $1 LIMIT 500',
-            `%${q}%`
+            `SELECT DISTINCT m."conversationId"
+             FROM "TuningMessage" m
+             INNER JOIN "TuningConversation" c ON c.id = m."conversationId"
+             WHERE c."tenantId" = $2 AND m."parts"::text ILIKE $1
+             LIMIT 500`,
+            `%${q}%`,
+            tenantId
           );
           where.id = { in: ids.map((r) => r.conversationId) };
         }
