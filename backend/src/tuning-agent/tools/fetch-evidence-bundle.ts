@@ -77,11 +77,16 @@ export function buildFetchEvidenceBundleTool(tool: typeof ToolFactory, ctx: () =
         const rendered = detailed ? clip(bundlePayload, 4000) : clip(summarizeBundle(bundlePayload), 1200);
 
         // Emit a client-side part so the chat UI can render a curated preview.
+        // Sprint 09 follow-up: mark as transient so multi-KB evidence payloads
+        // are NOT persisted to the TuningMessage row on every mid-turn
+        // evidence peek. The main assistant response carries enough context
+        // on reload; the inline preview is a UX nicety for the live turn.
         if (c.emitDataPart) {
           c.emitDataPart({
             type: 'data-evidence-inline',
             id: `evidence:${bundleId ?? args.messageId}`,
             data: summarizeBundle(bundlePayload),
+            transient: true,
           });
         }
 

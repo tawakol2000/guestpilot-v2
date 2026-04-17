@@ -134,30 +134,46 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         const windowStart14d = new Date(now - 14 * DAY_MS);
         const sevenDaysAgo = new Date(now - 7 * DAY_MS);
 
-        // Accepts in the 14d window, split by "settled" (≥7d old) vs "pending".
-        const accepts = await prisma.tuningSuggestion.findMany({
-          where: {
-            tenantId,
-            status: 'ACCEPTED',
-            appliedAt: { gte: windowStart14d },
-          },
-          select: { appliedAndRetained7d: true, appliedAt: true },
-        });
-
-        let retained = 0;
-        let reverted = 0;
-        let pending = 0;
-        for (const a of accepts) {
-          if (!a.appliedAt) continue;
-          if (a.appliedAt > sevenDaysAgo) {
-            // <7d old — flag hasn't had a chance to be set by the retention job yet.
-            pending++;
-            continue;
-          }
-          if (a.appliedAndRetained7d === true) retained++;
-          else if (a.appliedAndRetained7d === false) reverted++;
-          else pending++; // null — job hasn't run on it yet despite being eligible
-        }
+        // Sprint 09 follow-up: aggregate via count() instead of findMany.
+        // Previously this loaded every accepted row in the 14d window into
+        // memory just to tally three buckets.
+        const [pendingYoung, retainedOld, revertedOld, pendingOldNullFlag] = await Promise.all([
+          // <7d old — the retention job hasn't had a chance to run on these.
+          prisma.tuningSuggestion.count({
+            where: {
+              tenantId,
+              status: 'ACCEPTED',
+              appliedAt: { gte: sevenDaysAgo },
+            },
+          }),
+          prisma.tuningSuggestion.count({
+            where: {
+              tenantId,
+              status: 'ACCEPTED',
+              appliedAt: { gte: windowStart14d, lt: sevenDaysAgo },
+              appliedAndRetained7d: true,
+            },
+          }),
+          prisma.tuningSuggestion.count({
+            where: {
+              tenantId,
+              status: 'ACCEPTED',
+              appliedAt: { gte: windowStart14d, lt: sevenDaysAgo },
+              appliedAndRetained7d: false,
+            },
+          }),
+          prisma.tuningSuggestion.count({
+            where: {
+              tenantId,
+              status: 'ACCEPTED',
+              appliedAt: { gte: windowStart14d, lt: sevenDaysAgo },
+              appliedAndRetained7d: null,
+            },
+          }),
+        ]);
+        const retained = retainedOld;
+        const reverted = revertedOld;
+        const pending = pendingYoung + pendingOldNullFlag;
 
         const settled = retained + reverted;
         const retentionRate = settled === 0 ? null : retained / settled;
@@ -239,20 +255,35 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         }
         const editMagnitude = magCount === 0 ? 0 : magSum / magCount;
 
-        const escalations = await prisma.task.count({
-          where: { tenantId, type: 'ESCALATION', createdAt: { gte: since } },
-        });
-        // Denominator: distinct conversations that saw an AI reply in the window.
-        // Sprint 09 fix 18: use Conversation.count with a `some` filter instead
-        // of findMany-with-distinct (which loaded every matching Message row).
-        const convCount = await prisma.conversation.count({
+        // Sprint 09 follow-up: match the escalation numerator to the
+        // conversation-with-AI denominator. The old code counted ALL
+        // tenant-scoped escalations (including ones with no AI
+        // conversationId), then divided by conversations-with-AI — which
+        // inflated the rate above 1 for tenants running manual ops, then
+        // clamped with Math.min. Narrow the numerator to escalations tied
+        // to a conversation that also saw an AI reply in the window.
+        const convsWithAi = await prisma.conversation.findMany({
           where: {
             tenantId,
             messages: {
               some: { role: MessageRole.AI, sentAt: { gte: since } },
             },
           },
+          select: { id: true },
         });
+        const convCount = convsWithAi.length;
+        const convIds = convsWithAi.map((c) => c.id);
+        const escalations =
+          convIds.length === 0
+            ? 0
+            : await prisma.task.count({
+                where: {
+                  tenantId,
+                  type: 'ESCALATION',
+                  createdAt: { gte: since },
+                  conversationId: { in: convIds },
+                },
+              });
         const escalationRate = convCount === 0 ? 0 : Math.min(1, escalations / convCount);
 
         // Composite acceptance rate across TuningCategoryStats. Volume-weighted.

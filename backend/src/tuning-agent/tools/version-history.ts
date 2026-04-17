@@ -334,12 +334,29 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
             span.end({ error: 'VERSION_NOT_FOUND' });
             return asError(`rollback: version v${version} not found in systemPromptHistory.`);
           }
-          const variant: 'coordinator' | 'screening' = target.coordinator ? 'coordinator' : 'screening';
-          const prev: string = target[variant] || '';
-          if (!prev) {
+          // Sprint 09 follow-up: guard against ambiguous history rows. The
+          // OLD code did `target.coordinator ? 'coordinator' : 'screening'`,
+          // which silently defaulted to `screening` whenever the coordinator
+          // field was missing — including when the row snapshot ONLY stored
+          // the screening prompt. Worse, if neither key was present (bad
+          // legacy row) the rollback would blank the screening prompt even
+          // when the user was trying to roll back the coordinator.
+          // Detect explicitly: require exactly one of the two variant keys
+          // to be a non-empty string, else refuse.
+          const hasCoord = typeof target.coordinator === 'string' && target.coordinator.length > 0;
+          const hasScreen = typeof target.screening === 'string' && target.screening.length > 0;
+          if (!hasCoord && !hasScreen) {
             span.end({ error: 'ROLLBACK_CONTENT_EMPTY' });
-            return asError('rollback: stored history entry has empty content.');
+            return asError('rollback: stored history entry has no coordinator or screening snapshot.');
           }
+          if (hasCoord && hasScreen) {
+            span.end({ error: 'ROLLBACK_AMBIGUOUS' });
+            return asError(
+              'rollback: stored history entry contains both coordinator and screening snapshots; cannot pick a single variant. This row likely predates the per-variant snapshot convention.'
+            );
+          }
+          const variant: 'coordinator' | 'screening' = hasCoord ? 'coordinator' : 'screening';
+          const prev: string = target[variant] as string;
           const field = variant === 'coordinator' ? 'systemPromptCoordinator' : 'systemPromptScreening';
           const newHistory = [...history];
           newHistory.push({

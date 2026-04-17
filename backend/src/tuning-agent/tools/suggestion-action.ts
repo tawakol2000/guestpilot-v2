@@ -30,6 +30,8 @@ import {
   snapshotSopVariant,
 } from '../../services/tuning/artifact-history.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
+import { invalidateSopCache } from '../../services/sop.service';
+import { invalidateToolCache } from '../../services/tool-definition.service';
 import { mergeSystemPromptClause } from '../../services/tuning/system-prompt-merge.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
@@ -147,16 +149,20 @@ export function buildSuggestionActionTool(
 
         // 2. Dispatch on action.
         if (args.action === 'reject') {
-          if (suggestion.status !== 'PENDING') {
-            span.end({ error: 'NOT_PENDING' });
-            return asError(`Suggestion ${suggestionId} is ${suggestion.status}; cannot reject.`);
-          }
+          // Sprint 09 follow-up: atomic CAS mirrors the HTTP endpoint so a
+          // parallel accept + reject (or two concurrent rejects) cannot both
+          // pass the status gate. Allow AUTO_SUPPRESSED → REJECTED too,
+          // matching the HTTP endpoint.
           const appliedPayload: Record<string, unknown> = {
             rejectReason: args.rejectReason ?? null,
             rejectedByAgent: true,
           };
-          await c.prisma.tuningSuggestion.update({
-            where: { id: suggestion.id },
+          const claim = await c.prisma.tuningSuggestion.updateMany({
+            where: {
+              id: suggestion.id,
+              tenantId: c.tenantId,
+              status: { in: ['PENDING', 'AUTO_SUPPRESSED'] },
+            },
             data: {
               status: 'REJECTED' as TuningSuggestionStatus,
               appliedAt: new Date(),
@@ -164,6 +170,10 @@ export function buildSuggestionActionTool(
               conversationId: c.conversationId ?? suggestion.conversationId,
             },
           });
+          if (claim.count === 0) {
+            span.end({ error: 'NOT_PENDING' });
+            return asError(`Suggestion ${suggestionId} is not in a rejectable state.`);
+          }
           await updateCategoryStatsOnReject(c.prisma, c.tenantId, suggestion.diagnosticCategory);
           // PreferencePair on reject captures the (context, rejected, preferred-final=before)
           // triple so DPO can later learn "prefer keeping the original over this suggestion".
@@ -198,11 +208,45 @@ export function buildSuggestionActionTool(
           return asCallToolResult(payload);
         }
 
-        // apply | edit_then_apply — artifact write + ACCEPTED status
-        const finalText = args.editedText ?? suggestion.proposedText;
+        // apply | edit_then_apply — atomic status claim, then artifact write.
+        // Sprint 09 follow-up: mirror the HTTP endpoint's CAS pattern so two
+        // concurrent agent-path accepts (or an agent accept + HTTP accept
+        // racing on the same row) cannot both pass the status gate.
         const wasEdited = args.action === 'edit_then_apply';
+        if (wasEdited && (args.editedText == null || args.editedText.length === 0)) {
+          span.end({ error: 'EDIT_THEN_APPLY_REQUIRES_EDITED_TEXT' });
+          return asError(
+            `edit_then_apply requires a non-empty editedText argument. If you meant to apply the original proposed text verbatim, use action:'apply' instead.`
+          );
+        }
+        const finalText = args.editedText ?? suggestion.proposedText;
+        const claim = await c.prisma.tuningSuggestion.updateMany({
+          where: {
+            id: suggestion.id,
+            tenantId: c.tenantId,
+            status: { in: ['PENDING', 'AUTO_SUPPRESSED'] },
+          },
+          data: {
+            status: 'ACCEPTED' as TuningSuggestionStatus,
+            appliedAt: new Date(),
+            appliedByUserId: c.userId,
+          },
+        });
+        if (claim.count === 0) {
+          span.end({ error: 'NOT_PENDING' });
+          return asError(`Suggestion ${suggestionId} is not in an applicable state.`);
+        }
         const outcome = await applyArtifactWrite(c, suggestion, finalText);
         if (!outcome.ok) {
+          // Revert the claim so the manager can retry.
+          await c.prisma.tuningSuggestion
+            .update({
+              where: { id: suggestion.id },
+              data: { status: 'PENDING', appliedAt: null, appliedByUserId: null },
+            })
+            .catch((err) =>
+              console.warn('[suggestion_action] CAS revert failed:', err)
+            );
           span.end({ error: outcome.error });
           return asError(`apply failed: ${outcome.error}`);
         }
@@ -214,9 +258,6 @@ export function buildSuggestionActionTool(
         await c.prisma.tuningSuggestion.update({
           where: { id: suggestion.id },
           data: {
-            status: 'ACCEPTED' as TuningSuggestionStatus,
-            appliedAt: new Date(),
-            appliedByUserId: c.userId,
             appliedPayload: appliedPayload as Prisma.InputJsonValue,
             applyMode: 'IMMEDIATE',
             conversationId: c.conversationId ?? suggestion.conversationId,
@@ -294,9 +335,16 @@ async function applyArtifactWrite(
       select: { id: true, description: true, name: true },
     });
     if (allTools.length === 0) return { ok: false, error: 'NO_TOOL_DEFINITIONS_FOUND' };
-    const target = allTools.find(
-      (t) => suggestion.beforeText && t.description === suggestion.beforeText
-    );
+    // Sprint 09 follow-up: normalise whitespace/line-endings on both sides so
+    // CRLF vs LF drift or trailing newlines don't cause a correct-in-spirit
+    // match to miss. Previously a copy-paste through a Windows client would
+    // always fail the match and trigger the "Could not identify" error path.
+    const normalize = (s: string | null): string =>
+      (s ?? '').replace(/\r\n/g, '\n').trim();
+    const wanted = normalize(suggestion.beforeText);
+    const target = wanted
+      ? allTools.find((t) => normalize(t.description) === wanted)
+      : undefined;
     if (!target) {
       return {
         ok: false,
@@ -308,6 +356,12 @@ async function applyArtifactWrite(
       where: { id: target.id },
       data: { description: finalText },
     });
+    // Tool definitions feed the main AI's tool schema via tool-definition.service
+    // (5-minute cache). Bust it so the updated description reaches the next
+    // main-AI turn immediately. Also bust tenant config cache for symmetry
+    // with other apply paths.
+    invalidateToolCache(c.tenantId);
+    invalidateTenantConfigCache(c.tenantId);
     return {
       ok: true,
       target: { kind: 'tool_definition', id: target.id },
@@ -455,6 +509,9 @@ async function applyArtifactWrite(
           })
         ).id;
       }
+      // Bust the SOP cache so the main AI picks up the new content on the
+      // next turn, not after the 5-minute TTL expires.
+      invalidateSopCache(c.tenantId);
       return {
         ok: true,
         target: { kind: 'sop_variant', id: targetId },
@@ -473,6 +530,7 @@ async function applyArtifactWrite(
         where: { id: sopDef.id },
         data: { toolDescription: finalText },
       });
+      invalidateSopCache(c.tenantId);
       return {
         ok: true,
         target: { kind: 'sop_routing', id: sopDef.id },

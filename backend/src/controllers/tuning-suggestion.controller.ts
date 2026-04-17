@@ -39,6 +39,7 @@ class NotFoundError extends Error {
 import { AuthenticatedRequest } from '../types';
 import { broadcastCritical } from '../services/socket.service';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
+import { invalidateSopCache } from '../services/sop.service';
 import {
   updateCategoryStatsOnAccept,
   updateCategoryStatsOnReject,
@@ -364,6 +365,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               sopStatus: effectiveSopStatus,
               sopPropertyId: effectiveSopPropertyId ?? null,
             };
+            invalidateSopCache(tenantId);
             break;
           }
 
@@ -384,6 +386,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               where: { id: sopDef.id },
               data: { toolDescription: finalText },
             });
+            invalidateSopCache(tenantId);
             appliedPayload = { text: finalText };
             targetUpdated = { kind: 'sop_routing', id: sopDef.id };
             break;
@@ -550,6 +553,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               });
             }
             appliedPayload = { content: finalContent, toolDescription: finalToolDesc };
+            invalidateSopCache(tenantId);
             targetUpdated = { kind: 'sop_definition_new', id: sopDef.id };
             break;
           }
