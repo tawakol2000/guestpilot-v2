@@ -592,6 +592,13 @@ export interface TuningAcceptBody {
   // Feature 041 sprint 03: manager-supplied fields the diagnostic doesn't know.
   sopStatus?: string         // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
   sopPropertyId?: string     // optional; empty string or undefined = global variant
+  // Round-3 follow-up: for new-FAQ auto-create, the manager can explicitly
+  // choose GLOBAL vs PROPERTY (and the property id when PROPERTY). If
+  // absent, the backend resolver infers PROPERTY from the source
+  // conversation when available, GLOBAL otherwise.
+  faqScope?: 'GLOBAL' | 'PROPERTY'
+  faqPropertyId?: string
+  faqCategory?: string
   applyMode?: TuningApplyMode
   // Preference-pair capture (D2 pre-wire): when the manager edits then accepts.
   editedFromOriginal?: boolean

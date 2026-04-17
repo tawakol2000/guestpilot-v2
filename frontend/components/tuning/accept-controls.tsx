@@ -24,12 +24,19 @@ export function AcceptControls({
   suggestion,
   properties,
   tools,
+  sourceConversationPropertyId,
+  sourceConversationPropertyName,
   onMutated,
   onError,
 }: {
   suggestion: TuningSuggestion
   properties: ApiProperty[]
   tools: ToolDefinitionSummary[]
+  /** PropertyId of the conversation that triggered this suggestion, if any.
+   *  Used as the default when the suggestion needs a new PROPERTY-scoped FAQ. */
+  sourceConversationPropertyId?: string | null
+  /** Human-readable property name for the same — purely UX. */
+  sourceConversationPropertyName?: string | null
   onMutated: () => void
   onError: (message: string) => void
 }) {
@@ -48,6 +55,22 @@ export function AcceptControls({
   const category = suggestion.diagnosticCategory
   const needsSopDispatch = category === 'SOP_CONTENT' || category === 'SOP_ROUTING' || category === 'PROPERTY_OVERRIDE'
   const needsToolDispatch = category === 'TOOL_CONFIG'
+  // Round-3 follow-up — when a FAQ suggestion has no faqEntryId, the backend
+  // auto-creates a new FAQ. The manager needs to confirm GLOBAL vs PROPERTY
+  // scope (and which property) before apply; otherwise the resolver infers
+  // PROPERTY from the source conversation, which may not match intent.
+  const needsFaqDispatch = category === 'FAQ' && !suggestion.faqEntryId
+  // Default scope: if the suggestion was triggered by a conversation tied to
+  // a specific property AND the tenant owns more than one property, default
+  // to PROPERTY scoped to that one. If there's no source property, default
+  // to GLOBAL. Manager can override either way.
+  const defaultFaqScope: 'GLOBAL' | 'PROPERTY' = sourceConversationPropertyId
+    ? 'PROPERTY'
+    : 'GLOBAL'
+  const [faqScope, setFaqScope] = useState<'GLOBAL' | 'PROPERTY'>(defaultFaqScope)
+  const [faqPropertyId, setFaqPropertyId] = useState<string>(
+    sourceConversationPropertyId ?? properties[0]?.id ?? '',
+  )
 
   async function runAccept(opts: { edited?: boolean; applyMode?: TuningApplyMode } = {}) {
     // Sprint 07 bug fix — the Queue button calls setApplyMode('QUEUED') then
@@ -89,6 +112,17 @@ export function AcceptControls({
         if (needsSopDispatch) {
           body.sopStatus = sopStatus
           if (sopPropertyId) body.sopPropertyId = sopPropertyId
+        }
+        if (needsFaqDispatch) {
+          body.faqScope = faqScope
+          if (faqScope === 'PROPERTY') {
+            if (!faqPropertyId) {
+              onError('Pick a property for this FAQ, or switch to Global.')
+              setMode('dispatch')
+              return
+            }
+            body.faqPropertyId = faqPropertyId
+          }
         }
         await apiAcceptTuningSuggestion(suggestion.id, body)
       }
@@ -281,6 +315,77 @@ export function AcceptControls({
           </div>
         ) : null}
 
+        {needsFaqDispatch ? (
+          <div className="space-y-3">
+            <p className="text-xs text-[#6B7280]">
+              This is a new FAQ entry. Pick whether it should apply globally
+              (every property) or to a specific property only.
+              {sourceConversationPropertyName ? (
+                <>
+                  {' '}The triggering conversation is at{' '}
+                  <span className="font-medium text-[#1A1A1A]">
+                    {sourceConversationPropertyName}
+                  </span>
+                  .
+                </>
+              ) : null}
+            </p>
+
+            <FieldLabel>Scope</FieldLabel>
+            <div className="grid grid-cols-2 gap-2">
+              {(['PROPERTY', 'GLOBAL'] as const).map((scope) => {
+                const active = faqScope === scope
+                const label = scope === 'PROPERTY' ? 'This property only' : 'Global (all properties)'
+                const desc =
+                  scope === 'PROPERTY'
+                    ? 'Only served when a guest at the selected property asks.'
+                    : 'Served for every guest across every property.'
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => setFaqScope(scope)}
+                    className="flex flex-col gap-1 rounded-lg border p-3 text-left transition-all duration-150"
+                    style={{
+                      background: active ? TUNING_COLORS.accentSoft : '#ffffff',
+                      borderColor: active ? TUNING_COLORS.accentMuted : TUNING_COLORS.hairline,
+                    }}
+                    aria-pressed={active}
+                  >
+                    <span
+                      className="text-sm font-semibold"
+                      style={{ color: active ? TUNING_COLORS.accent : TUNING_COLORS.ink }}
+                    >
+                      {label}
+                    </span>
+                    <span className="text-xs leading-5 text-[#6B7280]">{desc}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {faqScope === 'PROPERTY' ? (
+              <>
+                <FieldLabel>Property</FieldLabel>
+                <SelectInput
+                  value={faqPropertyId}
+                  onChange={(e) => setFaqPropertyId(e.target.value)}
+                >
+                  {properties.length === 0 ? (
+                    <option value="">No properties available</option>
+                  ) : (
+                    properties.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))
+                  )}
+                </SelectInput>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex items-center gap-3 pt-1">
           <PrimaryButton onClick={() => runAccept()}>Apply now</PrimaryButton>
           <GhostButton onClick={() => setMode('idle')}>Cancel</GhostButton>
@@ -295,7 +400,7 @@ export function AcceptControls({
   // still clickable. A quick double-click on Apply would fire two PUTs
   // in parallel. The `isSaving` flag below disables every action while
   // the request is in flight.
-  const requiresDispatch = needsSopDispatch || needsToolDispatch
+  const requiresDispatch = needsSopDispatch || needsToolDispatch || needsFaqDispatch
   const isSaving = mode === 'saving'
 
   return (

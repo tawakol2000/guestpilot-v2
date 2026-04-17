@@ -36,6 +36,18 @@ export interface FaqAutoCreateResolved {
   finalScope: FaqScope;
   finalPropertyId: string | null;
   sourceHint: 'override' | 'persistedQuestion' | 'beforeText' | 'inferred' | 'placeholder';
+  /**
+   * Where the scope decision came from — helps the UI (and the manager)
+   * understand why this new FAQ will land at PROPERTY vs GLOBAL when the
+   * diagnostic didn't specify.
+   *
+   *  - `override`          — HTTP body / agent arg explicitly picked.
+   *  - `persisted`         — stored on the TuningSuggestion row.
+   *  - `inferredFromConversation` — inferred from the source conversation's
+   *    propertyId (a guest-asking-at-a-specific-property flow).
+   *  - `defaulted`         — no signal; fell through to GLOBAL.
+   */
+  scopeSource: 'override' | 'persisted' | 'inferredFromConversation' | 'defaulted';
 }
 
 export const DEFAULT_FAQ_CATEGORY = 'property-neighborhood';
@@ -107,6 +119,17 @@ export async function resolveFaqAutoCreateFields(
   const finalCategory = overrideCat || suggestion.faqCategory || DEFAULT_FAQ_CATEGORY;
 
   // 3. Scope + property precedence.
+  //
+  // Order:
+  //   1. override (HTTP body / agent arg) — manager explicitly picked.
+  //   2. persisted on the suggestion row — diagnostic wrote it.
+  //   3. inferred from the source conversation's propertyId — the guest
+  //      was asking at a specific property, so the default is to scope
+  //      the new FAQ to THAT property (not GLOBAL). This matches what
+  //      managers almost always want — the diagnostic-generated answer
+  //      for a guest who asked about "this property" typically refers to
+  //      that one property, not the whole portfolio.
+  //   4. GLOBAL — only when there's no property context anywhere.
   const overrideScope: FaqScope | null =
     overrides.faqScope === 'PROPERTY' || overrides.faqScope === 'GLOBAL'
       ? overrides.faqScope
@@ -115,12 +138,51 @@ export async function resolveFaqAutoCreateFields(
     suggestion.faqScope === 'PROPERTY' || suggestion.faqScope === 'GLOBAL'
       ? (suggestion.faqScope as FaqScope)
       : null;
-  let finalScope: FaqScope = overrideScope ?? persistedScope ?? 'GLOBAL';
+
+  // Infer a conversation-propertyId when neither override nor persisted
+  // scope is provided. Reuses the sourceMessageId lookup we may have
+  // already done for `inferredQuestion`, but fetches the propertyId here
+  // rather than plumb state through. Best-effort: if the source isn't
+  // resolvable, we fall through to GLOBAL.
+  let inferredPropertyId: string | null = null;
+  if (!overrideScope && !persistedScope && suggestion.sourceMessageId) {
+    const srcMsg = await prisma.message.findFirst({
+      where: { id: suggestion.sourceMessageId, tenantId },
+      select: { conversationId: true },
+    });
+    if (srcMsg?.conversationId) {
+      const conv = await prisma.conversation.findFirst({
+        where: { id: srcMsg.conversationId, tenantId },
+        select: { propertyId: true },
+      });
+      if (conv?.propertyId) {
+        inferredPropertyId = conv.propertyId;
+      }
+    }
+  }
+
+  let finalScope: FaqScope;
   let finalPropertyId: string | null = null;
+  let scopeSource: FaqAutoCreateResolved['scopeSource'];
+  if (overrideScope) {
+    finalScope = overrideScope;
+    scopeSource = 'override';
+  } else if (persistedScope) {
+    finalScope = persistedScope;
+    scopeSource = 'persisted';
+  } else if (inferredPropertyId) {
+    finalScope = 'PROPERTY';
+    scopeSource = 'inferredFromConversation';
+  } else {
+    finalScope = 'GLOBAL';
+    scopeSource = 'defaulted';
+  }
+
   if (finalScope === 'PROPERTY') {
     const candidatePropertyId =
       (typeof overrides.faqPropertyId === 'string' && overrides.faqPropertyId) ||
       suggestion.faqPropertyId ||
+      inferredPropertyId ||
       null;
     // Defense-in-depth: verify the candidate property belongs to this
     // tenant before writing it on the FAQ row. Cross-tenant propertyId
@@ -137,6 +199,7 @@ export async function resolveFaqAutoCreateFields(
         // with a foreign/missing propertyId. The manager can re-scope
         // explicitly after apply.
         finalScope = 'GLOBAL';
+        scopeSource = 'defaulted';
       }
     } else {
       // PROPERTY scope requested but no id supplied — would produce an
@@ -144,10 +207,18 @@ export async function resolveFaqAutoCreateFields(
       // retrievable by either the property filter or the GLOBAL filter).
       // Coerce to GLOBAL.
       finalScope = 'GLOBAL';
+      scopeSource = 'defaulted';
     }
   }
 
-  return { finalQuestion, finalCategory, finalScope, finalPropertyId, sourceHint };
+  return {
+    finalQuestion,
+    finalCategory,
+    finalScope,
+    finalPropertyId,
+    sourceHint,
+    scopeSource,
+  };
 }
 
 /**

@@ -380,6 +380,8 @@ export function DetailPanel({
             suggestion={suggestion}
             properties={properties}
             tools={tools}
+            sourceConversationPropertyId={convo?.property?.id ?? null}
+            sourceConversationPropertyName={convo?.property?.name ?? null}
             onMutated={onMutated}
             onError={setError}
           />

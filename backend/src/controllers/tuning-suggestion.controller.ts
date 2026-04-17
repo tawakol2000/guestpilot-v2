@@ -528,8 +528,10 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
                 answer: finalAnswer,
                 category: resolved.finalCategory,
                 scope: resolved.finalScope,
+                propertyId: resolved.finalPropertyId,
                 created: wasCreated,
                 questionSource: resolved.sourceHint,
+                scopeSource: resolved.scopeSource,
               };
               targetUpdated = { kind: 'faq_entry_new', id: createdId };
               break;

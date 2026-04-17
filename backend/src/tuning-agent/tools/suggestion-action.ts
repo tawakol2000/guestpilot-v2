@@ -777,8 +777,12 @@ async function applyArtifactWrite(
           appliedPayload: {
             question: resolved.finalQuestion,
             answer: finalText,
+            category: resolved.finalCategory,
+            scope: resolved.finalScope,
+            propertyId: resolved.finalPropertyId,
             created: wasCreated,
             questionSource: resolved.sourceHint,
+            scopeSource: resolved.scopeSource,
           },
         };
       }

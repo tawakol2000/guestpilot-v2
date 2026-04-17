@@ -16,6 +16,7 @@ function mockPrisma(options: {
   ownedPropertyIds?: string[];
   sourceMessage?: { conversationId: string; sentAt: Date } | null;
   priorGuestMessage?: { content: string } | null;
+  conversationPropertyId?: string | null;
 }) {
   return {
     property: {
@@ -37,6 +38,12 @@ function mockPrisma(options: {
           return options.priorGuestMessage ?? null;
         }
         return null;
+      },
+    },
+    conversation: {
+      findFirst: async () => {
+        if (options.conversationPropertyId === undefined) return null;
+        return { propertyId: options.conversationPropertyId };
       },
     },
   } as any;
@@ -198,6 +205,152 @@ test('PROPERTY scope with missing propertyId coerces to GLOBAL', async () => {
   });
   assert.equal(resolved.finalScope, 'GLOBAL');
   assert.equal(resolved.finalPropertyId, null);
+});
+
+// Scope inference tests (Round-3 follow-up).
+test('PROPERTY inferred from source conversation when no scope is specified', async () => {
+  // Guest asked at a specific property → new FAQ should default to
+  // PROPERTY scoped to that property, not GLOBAL.
+  const resolved = await resolveFaqAutoCreateFields(
+    mockPrisma({
+      ownedPropertyIds: ['p1'],
+      sourceMessage: { conversationId: 'c1', sentAt: new Date('2026-01-01') },
+      conversationPropertyId: 'p1',
+    }),
+    't1',
+    {
+      overrides: {},
+      suggestion: {
+        sourceMessageId: 'm1',
+        beforeText: 'some question',
+        faqQuestion: null,
+        faqCategory: null,
+        faqScope: null,
+        faqPropertyId: null,
+      },
+    }
+  );
+  assert.equal(resolved.finalScope, 'PROPERTY');
+  assert.equal(resolved.finalPropertyId, 'p1');
+  assert.equal(resolved.scopeSource, 'inferredFromConversation');
+});
+
+test('GLOBAL defaulted when source conversation has no property', async () => {
+  const resolved = await resolveFaqAutoCreateFields(
+    mockPrisma({
+      sourceMessage: { conversationId: 'c1', sentAt: new Date('2026-01-01') },
+      conversationPropertyId: null,
+    }),
+    't1',
+    {
+      overrides: {},
+      suggestion: {
+        sourceMessageId: 'm1',
+        beforeText: 'Q',
+        faqQuestion: null,
+        faqCategory: null,
+        faqScope: null,
+        faqPropertyId: null,
+      },
+    }
+  );
+  assert.equal(resolved.finalScope, 'GLOBAL');
+  assert.equal(resolved.finalPropertyId, null);
+  assert.equal(resolved.scopeSource, 'defaulted');
+});
+
+test('GLOBAL defaulted when no source message at all', async () => {
+  const resolved = await resolveFaqAutoCreateFields(mockPrisma({}), 't1', {
+    overrides: {},
+    suggestion: {
+      sourceMessageId: null,
+      beforeText: 'Q',
+      faqQuestion: null,
+      faqCategory: null,
+      faqScope: null,
+      faqPropertyId: null,
+    },
+  });
+  assert.equal(resolved.finalScope, 'GLOBAL');
+  assert.equal(resolved.scopeSource, 'defaulted');
+});
+
+test('explicit GLOBAL override beats inferred PROPERTY', async () => {
+  // Manager explicitly wants GLOBAL even though conversation has a property.
+  const resolved = await resolveFaqAutoCreateFields(
+    mockPrisma({
+      sourceMessage: { conversationId: 'c1', sentAt: new Date('2026-01-01') },
+      conversationPropertyId: 'p1',
+    }),
+    't1',
+    {
+      overrides: { faqScope: 'GLOBAL' },
+      suggestion: {
+        sourceMessageId: 'm1',
+        beforeText: 'Q',
+        faqQuestion: null,
+        faqCategory: null,
+        faqScope: null,
+        faqPropertyId: null,
+      },
+    }
+  );
+  assert.equal(resolved.finalScope, 'GLOBAL');
+  assert.equal(resolved.finalPropertyId, null);
+  assert.equal(resolved.scopeSource, 'override');
+});
+
+test('persisted PROPERTY scope beats inferred', async () => {
+  const resolved = await resolveFaqAutoCreateFields(
+    mockPrisma({
+      ownedPropertyIds: ['p-persisted'],
+      sourceMessage: { conversationId: 'c1', sentAt: new Date('2026-01-01') },
+      conversationPropertyId: 'p-inferred',
+    }),
+    't1',
+    {
+      overrides: {},
+      suggestion: {
+        sourceMessageId: 'm1',
+        beforeText: 'Q',
+        faqQuestion: null,
+        faqCategory: null,
+        faqScope: 'PROPERTY',
+        faqPropertyId: 'p-persisted',
+      },
+    }
+  );
+  assert.equal(resolved.finalScope, 'PROPERTY');
+  assert.equal(resolved.finalPropertyId, 'p-persisted');
+  assert.equal(resolved.scopeSource, 'persisted');
+});
+
+test('inferred PROPERTY falls back to GLOBAL when property is foreign', async () => {
+  // Conversation's propertyId exists but isn't owned by this tenant (data
+  // integrity violation) — don't persist a PROPERTY FAQ to an alien
+  // property; coerce to GLOBAL.
+  const resolved = await resolveFaqAutoCreateFields(
+    mockPrisma({
+      ownedPropertyIds: [], // tenant owns no properties
+      sourceMessage: { conversationId: 'c1', sentAt: new Date('2026-01-01') },
+      conversationPropertyId: 'p-foreign',
+    }),
+    't1',
+    {
+      overrides: {},
+      suggestion: {
+        sourceMessageId: 'm1',
+        beforeText: 'Q',
+        faqQuestion: null,
+        faqCategory: null,
+        faqScope: null,
+        faqPropertyId: null,
+      },
+    }
+  );
+  assert.equal(resolved.finalScope, 'GLOBAL');
+  assert.equal(resolved.finalPropertyId, null);
+  assert.equal(resolved.scopeSource, 'defaulted');
 });
 
 test('category override wins, otherwise persisted, otherwise default', async () => {
