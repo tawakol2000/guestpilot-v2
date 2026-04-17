@@ -660,6 +660,19 @@ export async function apiTuningGraduationMetrics(): Promise<TuningGraduationMetr
   return apiFetch('/api/tuning/graduation-metrics')
 }
 
+// Sprint 08 §1 — retention surface on accepted suggestions.
+export interface TuningRetentionSummary {
+  windowDays: number
+  retained: number
+  reverted: number
+  pending: number
+  retentionRate: number | null // null when retained+reverted=0
+}
+
+export async function apiTuningRetentionSummary(): Promise<TuningRetentionSummary> {
+  return apiFetch('/api/tuning/retention-summary')
+}
+
 export type CapabilityRequestStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'WONT_FIX'
 
 export interface CapabilityRequest {

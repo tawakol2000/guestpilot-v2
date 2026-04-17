@@ -1,14 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronsRight, ChevronsLeft } from 'lucide-react'
+import { AlertTriangle, ChevronsRight, ChevronsLeft, PackageCheck } from 'lucide-react'
 import {
   apiTuningCategoryStats,
   apiTuningCoverage,
   apiTuningGraduationMetrics,
+  apiTuningRetentionSummary,
   type TuningCategoryStatsRow,
   type TuningCoverage,
   type TuningGraduationMetrics,
+  type TuningRetentionSummary,
   type TuningDiagnosticCategory,
 } from '@/lib/api'
 import { TUNING_COLORS, categoryAccent, categoryStyle } from './tokens'
@@ -211,6 +213,88 @@ function VelocityDashboard() {
   )
 }
 
+function RetentionDashboard() {
+  const [s, setS] = useState<TuningRetentionSummary | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    apiTuningRetentionSummary()
+      .then((v) => !cancelled && setS(v))
+      .catch((e) => !cancelled && setErr(e instanceof Error ? e.message : 'unavailable'))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const hasAnyAccepts = !!s && s.retained + s.reverted + s.pending > 0
+  const big =
+    s && s.retentionRate !== null
+      ? `${Math.round(s.retentionRate * 100)}%`
+      : '—'
+
+  return (
+    <section
+      className="space-y-4 border-t pt-5"
+      style={{ borderColor: TUNING_COLORS.hairlineSoft }}
+    >
+      <SectionHeader title="Retention" meta="7d after apply" />
+      <div
+        className="rounded-xl p-4"
+        style={{
+          background: TUNING_COLORS.surfaceRaised,
+          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+        }}
+      >
+        {err ? (
+          <p className="text-xs leading-5 text-[#9CA3AF]">Retention unavailable.</p>
+        ) : !s ? (
+          <p className="text-xs leading-5 text-[#9CA3AF]">Loading…</p>
+        ) : !hasAnyAccepts ? (
+          <div className="flex items-start gap-3">
+            <span
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#6C5CE7]"
+              style={{ background: TUNING_COLORS.accentSoft }}
+            >
+              <PackageCheck size={14} strokeWidth={2} aria-hidden />
+            </span>
+            <div>
+              <div className="text-sm font-medium text-[#1A1A1A]">
+                No accepted suggestions yet
+              </div>
+              <p className="mt-0.5 text-xs leading-5 text-[#6B7280]">
+                Retention will appear here once edits have settled for 7 days.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className="flex items-end justify-between"
+              title="Share of accepted suggestions still in effect seven days after apply. Measured against suggestions accepted 7–14 days ago."
+            >
+              <div>
+                <div className="text-xs font-medium text-[#6B7280]">Retained at 7d</div>
+                <div className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[#1A1A1A]">
+                  {big}
+                </div>
+              </div>
+              <div className="text-right text-xs tabular-nums text-[#9CA3AF]">
+                <div>
+                  {s.retained} retained · {s.reverted} reverted
+                </div>
+                <div>{s.pending} pending · {s.windowDays}d</div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <Bar value={s.retentionRate ?? 0} />
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function GraduationDashboard() {
   const [m, setM] = useState<TuningGraduationMetrics | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -324,6 +408,7 @@ export function DashboardsPanel({
       {open ? (
         <div className="flex-1 space-y-4 overflow-auto px-4 pb-6">
           <VelocityDashboard />
+          <RetentionDashboard />
           <GraduationDashboard />
         </div>
       ) : null}

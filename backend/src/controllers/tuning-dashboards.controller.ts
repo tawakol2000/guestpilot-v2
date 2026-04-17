@@ -81,37 +81,68 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
     },
 
     /**
-     * Sprint 05 §4: simple % of accepted suggestions in the last 14d that are
-     * still retained at 7d. Counts only suggestions accepted ≥7d ago (so the
-     * retention flag has had a chance to be set by the daily job). Surfaces
-     * an explicit "still warming up" path when no accepts qualify yet.
+     * Sprint 05 §4 / sprint 08 §1: retention surface for accepted tuning
+     * suggestions. Reads `appliedAndRetained7d` populated daily by
+     * `tuningRetention.job.ts`.
+     *
+     * Shape (sprint 08):
+     *   retained      — accepted ≥7d ago AND retention flag === true
+     *   reverted      — accepted ≥7d ago AND retention flag === false
+     *   pending       — accepted <7d ago (flag not yet set)
+     *   retentionRate — retained / (retained + reverted), null when denom=0
+     *   windowDays    — 14 (kept for wire compat)
+     *
+     * Legacy-shape fields (eligibleAccepts, evaluatedAccepts, retainedAccepts,
+     * retentionWindow) are kept for any in-flight callers. They can be dropped
+     * once the sprint 03 dashboard reads the new names.
      */
     async retentionSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;
         const now = Date.now();
-        const since = new Date(now - 14 * DAY_MS);
-        const upper = new Date(now - 7 * DAY_MS);
+        const windowStart14d = new Date(now - 14 * DAY_MS);
+        const sevenDaysAgo = new Date(now - 7 * DAY_MS);
 
+        // Accepts in the 14d window, split by "settled" (≥7d old) vs "pending".
         const accepts = await prisma.tuningSuggestion.findMany({
           where: {
             tenantId,
             status: 'ACCEPTED',
-            appliedAt: { gte: since, lte: upper },
+            appliedAt: { gte: windowStart14d },
           },
-          select: { appliedAndRetained7d: true },
+          select: { appliedAndRetained7d: true, appliedAt: true },
         });
-        const total = accepts.length;
-        const evaluated = accepts.filter((a) => a.appliedAndRetained7d !== null).length;
-        const retained = accepts.filter((a) => a.appliedAndRetained7d === true).length;
+
+        let retained = 0;
+        let reverted = 0;
+        let pending = 0;
+        for (const a of accepts) {
+          if (!a.appliedAt) continue;
+          if (a.appliedAt > sevenDaysAgo) {
+            // <7d old — flag hasn't had a chance to be set by the retention job yet.
+            pending++;
+            continue;
+          }
+          if (a.appliedAndRetained7d === true) retained++;
+          else if (a.appliedAndRetained7d === false) reverted++;
+          else pending++; // null — job hasn't run on it yet despite being eligible
+        }
+
+        const settled = retained + reverted;
+        const retentionRate = settled === 0 ? null : retained / settled;
 
         res.json({
           windowDays: 14,
+          // Sprint 08 canonical shape.
+          retained,
+          reverted,
+          pending,
+          retentionRate,
+          // Legacy shape (kept additive — sprint 05 dashboards-era callers).
           retentionWindow: '7d',
-          eligibleAccepts: total,
-          evaluatedAccepts: evaluated,
+          eligibleAccepts: retained + reverted + pending,
+          evaluatedAccepts: settled,
           retainedAccepts: retained,
-          retentionRate: evaluated === 0 ? null : retained / evaluated,
         });
       } catch (err) {
         console.error('[tuning-dashboards] retention-summary failed:', err);
