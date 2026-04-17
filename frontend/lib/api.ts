@@ -1156,6 +1156,15 @@ export async function apiSandboxChatStream(
   })
 
   if (!res.ok) {
+    // Mirror apiFetch's session-expiry behavior: on 401 clear the stored
+    // token and bounce to /login so the playground doesn't show an opaque
+    // error when the manager's JWT expires mid-session. Every other
+    // tuning page uses apiFetch; parity here keeps the session-expiry
+    // path consistent across surfaces.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      clearToken()
+      window.location.href = '/login'
+    }
     const body = await res.text()
     throw new Error(body || `API error ${res.status}`)
   }

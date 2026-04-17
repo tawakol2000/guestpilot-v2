@@ -15,6 +15,8 @@ import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { Prisma } from '@prisma/client';
 import { startAiSpan } from '../../services/observability.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
+import { invalidateSopCache } from '../../services/sop.service';
+import { invalidateToolCache } from '../../services/tool-definition.service';
 import {
   snapshotFaqEntry,
   snapshotSopVariant,
@@ -221,6 +223,10 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
               create: { sopDefinitionId, propertyId, status, content },
               select: { id: true },
             });
+            // Parity with the HTTP rollback (tuning-history.controller.ts):
+            // main AI reads SOPs through a 5-min cache and would otherwise
+            // serve the rolled-back-FROM content until the TTL expired.
+            invalidateSopCache(c.tenantId);
             const payload = { ok: true, artifactType: 'SOP_VARIANT', kind, targetId: restored.id };
             span.end(payload);
             return asCallToolResult(payload);
@@ -248,6 +254,7 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
             create: { sopDefinitionId, status, content },
             select: { id: true },
           });
+          invalidateSopCache(c.tenantId);
           const payload = { ok: true, artifactType: 'SOP_VARIANT', kind, targetId: restored.id };
           span.end(payload);
           return asCallToolResult(payload);
@@ -357,6 +364,14 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
           }
           const variant: 'coordinator' | 'screening' = hasCoord ? 'coordinator' : 'screening';
           const prev: string = target[variant] as string;
+          // Mirror tenant-config.service's 100-char floor / 50k ceiling so
+          // a legacy snapshot can't roll forward into an unusable prompt.
+          if (prev.length < 100 || prev.length > 50000) {
+            span.end({ error: 'ROLLBACK_INVALID_LENGTH' });
+            return asError(
+              `rollback: snapshot length ${prev.length} is outside the 100–50,000 char range. Refusing to restore an invalid prompt.`
+            );
+          }
           const field = variant === 'coordinator' ? 'systemPromptCoordinator' : 'systemPromptScreening';
           const newHistory = [...history];
           newHistory.push({
@@ -395,6 +410,11 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
           where: { id: t.id },
           data: { description: t.defaultDescription },
         });
+        // Parity with the HTTP rollback: tool schema is cached 5min,
+        // tenant config 60s. Without this the rolled-back description
+        // won't reach the next main-AI call until the TTL expires.
+        invalidateToolCache(c.tenantId);
+        invalidateTenantConfigCache(c.tenantId);
         const payload = { ok: true, artifactType: 'TOOL_DEFINITION', artifactId: t.id, resetToDefault: true };
         span.end(payload);
         return asCallToolResult(payload);

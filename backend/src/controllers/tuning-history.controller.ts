@@ -363,6 +363,18 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             res.status(400).json({ error: 'ROLLBACK_CONTENT_EMPTY' });
             return;
           }
+          // Mirror the 100-char floor / 50k ceiling from tenant-config.service.
+          // Without this guard a historical snapshot written before the
+          // validator existed (or via a code path that skipped it) can
+          // restore an unusably short prompt that defeats the `|| SEED`
+          // consumer fallback in ai.service.ts.
+          if (prevContent.length < 100 || prevContent.length > 50000) {
+            res.status(400).json({
+              error: 'ROLLBACK_INVALID_LENGTH',
+              detail: `Snapshot length ${prevContent.length} is outside the 100–50,000 char range. Rollback refused to prevent a broken prompt.`,
+            });
+            return;
+          }
           const field =
             variant === 'coordinator' ? 'systemPromptCoordinator' : 'systemPromptScreening';
           const newHistory = [...history];

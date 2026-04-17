@@ -86,6 +86,17 @@ export function makeTuningToolConfigController(prisma: PrismaClient) {
           res.status(400).json({ error: 'MISSING_DESCRIPTION' });
           return;
         }
+        // Mirror tool-definition.service#updateToolDefinition's 10-char floor.
+        // The direct-edit path enforces this; the tuning accept path must too,
+        // else a bad suggestion could write a near-empty description into
+        // the main AI's tool schema and degrade classification.
+        if (finalDescription.trim().length < 10) {
+          res.status(400).json({
+            error: 'TOOL_DESCRIPTION_TOO_SHORT',
+            detail: 'Tool descriptions must be at least 10 characters.',
+          });
+          return;
+        }
 
         const beforeDescription = tool.description;
 

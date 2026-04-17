@@ -402,6 +402,18 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             if (!finalText || !suggestion.sopCategory) {
               throw new RequiredFieldsError();
             }
+            // The toolDescription feeds the `get_sop` tool schema's
+            // category descriptions (sop.service.ts#buildToolDefinition).
+            // A too-short or excessively-long value degrades or breaks the
+            // classifier. Enforce 10 chars ≤ len ≤ 2000 at the apply
+            // boundary, matching the floor we apply to TOOL_CONFIG.
+            const trimmed = finalText.trim();
+            if (trimmed.length < 10 || trimmed.length > 2000) {
+              throw new ValidationError(
+                'SOP_TOOL_DESCRIPTION_INVALID_LENGTH',
+                `SOP tool description length ${trimmed.length} is outside the 10–2,000 char range. Review the proposed text.`
+              );
+            }
             const sopDef = await prisma.sopDefinition.findFirst({
               where: { tenantId, category: suggestion.sopCategory },
               select: { id: true },

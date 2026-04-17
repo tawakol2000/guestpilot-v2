@@ -162,7 +162,30 @@ export function makeTuningChatController(prisma: PrismaClient) {
         },
         onError: (err) => {
           console.error('[tuning-chat] stream error:', err);
-          return err instanceof Error ? err.message : String(err);
+          // Sprint-10 follow-up: persist a stub assistant message carrying
+          // the error so the reloaded transcript doesn't show an orphan
+          // user message with no response. Best-effort; if this write
+          // itself fails we just log — the client already got the error
+          // surfaced via the AI SDK onError channel.
+          const errorText = err instanceof Error ? err.message : String(err);
+          prisma.tuningMessage
+            .create({
+              data: {
+                conversationId,
+                role: 'assistant',
+                parts: [
+                  {
+                    type: 'data-agent-error',
+                    id: `error:${assistantMessageId}`,
+                    data: { error: errorText },
+                  },
+                ] as unknown as Prisma.InputJsonValue,
+              },
+            })
+            .catch((persistErr) =>
+              console.warn('[tuning-chat] error-stub persist failed:', persistErr),
+            );
+          return errorText;
         },
       });
 

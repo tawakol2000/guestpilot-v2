@@ -106,13 +106,19 @@ export function makeTuningConversationController(prisma: PrismaClient) {
         // result to tenant-scoped conversations, but the raw query itself
         // should not cross tenants.
         if (q) {
+          // Escape ILIKE wildcards in the user-supplied query string. Without
+          // this, a search for "100%" becomes "%100%%" and matches far more
+          // rows than intended; `_` similarly matches any single char. Not
+          // an SQLi vector (parameterised), but a user-visible correctness
+          // bug — `%`, `_`, and `\` all need escaping.
+          const escaped = q.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
           const ids = await prisma.$queryRawUnsafe<{ conversationId: string }[]>(
             `SELECT DISTINCT m."conversationId"
              FROM "TuningMessage" m
              INNER JOIN "TuningConversation" c ON c.id = m."conversationId"
-             WHERE c."tenantId" = $2 AND m."parts"::text ILIKE $1
+             WHERE c."tenantId" = $2 AND m."parts"::text ILIKE $1 ESCAPE '\\'
              LIMIT 500`,
-            `%${q}%`,
+            `%${escaped}%`,
             tenantId
           );
           where.id = { in: ids.map((r) => r.conversationId) };

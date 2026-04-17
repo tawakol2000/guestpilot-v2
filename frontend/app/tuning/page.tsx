@@ -129,8 +129,18 @@ function TuningPageInner() {
       }
     }
     socket.on('tuning_suggestion_updated', onUpdate)
+    // Sprint-10 follow-up: refetch on reconnect so we catch up on any
+    // events emitted during the disconnect window. Socket.IO without a
+    // Redis Streams adapter has no replay buffer; another tab accepting
+    // while Tab A was briefly disconnected used to leave Tab A's queue
+    // stale until manual refresh.
+    const onReconnect = () => refresh()
+    socket.on('connect', onReconnect)
+    socket.on('reconnect', onReconnect)
     return () => {
       socket.off('tuning_suggestion_updated', onUpdate)
+      socket.off('connect', onReconnect)
+      socket.off('reconnect', onReconnect)
       if (pending) clearTimeout(pending)
     }
   }, [refresh])

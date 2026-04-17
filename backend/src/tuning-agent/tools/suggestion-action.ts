@@ -482,6 +482,15 @@ async function applyArtifactWrite(
           'Could not identify which tool to update. The beforeText did not match any existing tool description. Ask the manager to clarify which tool they mean.',
       };
     }
+    // Mirror the 10-char floor from tool-definition.service#updateToolDefinition.
+    // Without this guard the agent can write an unusably short description
+    // into the main AI's tool schema.
+    if (finalText.trim().length < 10) {
+      return {
+        ok: false,
+        error: 'TOOL_DESCRIPTION_TOO_SHORT: tool descriptions must be at least 10 characters.',
+      };
+    }
     await c.prisma.toolDefinition.update({
       where: { id: target.id },
       data: { description: finalText },
@@ -664,6 +673,13 @@ async function applyArtifactWrite(
 
     case 'EDIT_SOP_ROUTING': {
       if (!suggestion.sopCategory) return { ok: false, error: 'MISSING_SOP_CATEGORY' };
+      const trimmedRoute = finalText.trim();
+      if (trimmedRoute.length < 10 || trimmedRoute.length > 2000) {
+        return {
+          ok: false,
+          error: `SOP_TOOL_DESCRIPTION_INVALID_LENGTH:${trimmedRoute.length}`,
+        };
+      }
       const sopDef = await c.prisma.sopDefinition.findFirst({
         where: { tenantId: c.tenantId, category: suggestion.sopCategory },
         select: { id: true },
