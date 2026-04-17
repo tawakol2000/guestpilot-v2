@@ -162,17 +162,33 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       });
       if (priorAccepted) {
         // Sprint 09 fix 4: when EITHER the current or prior suggestion has
-        // null confidence (legacy rows), the comparison 0 <= 0 * 1.25 is
-        // trivially true and fires a false oscillation block. Skip the
-        // check unless both sides have real confidence scores.
+        // null confidence (legacy rows), the comparison 0 < 0 * 1.25 is
+        // trivially true (or false at boundary) and fires unstable
+        // oscillation blocks. Skip the check unless both sides have real
+        // confidence scores.
         const priorConfidence = priorAccepted.confidence;
         const nowConfidence = confidence;
         const bothHaveConfidence =
           typeof priorConfidence === 'number' && typeof nowConfidence === 'number';
-        if (bothHaveConfidence && nowConfidence <= priorConfidence * OSCILLATION_CONFIDENCE_BOOST) {
-          return denyHook(
-            `Oscillation guard: an ACCEPTED suggestion (${priorAccepted.id}, confidence ${priorConfidence.toFixed(2)}) was applied to the same artifact on ${priorAccepted.appliedAt?.toISOString()}. This proposal's confidence (${nowConfidence.toFixed(2)}) does not exceed the prior by at least ${OSCILLATION_CONFIDENCE_BOOST}×. Explain to the manager and either gather stronger evidence or propose a different artifact.`
+        if (bothHaveConfidence) {
+          // Sprint 10 workstream D: invert to strict-less so a re-proposal
+          // at *exactly* the 1.25× boundary is allowed (boundary spec is
+          // "confidence ≥ priorConfidence × 1.25"). Previous `<=` denied
+          // the boundary case, treating equality as failure — fixed here.
+          const requiredFloor = priorConfidence * OSCILLATION_CONFIDENCE_BOOST;
+          const passed = nowConfidence >= requiredFloor;
+          // Observability: emit the check result either way so dashboards
+          // and Langfuse can pivot on oscillation behaviour without
+          // back-walking PreToolUse calls. Single-line console for Railway
+          // log greppability.
+          console.log(
+            `[TuningAgent] oscillation_check tenant=${c.tenantId} prior=${priorAccepted.id} prior_conf=${priorConfidence.toFixed(2)} now_conf=${nowConfidence.toFixed(2)} required_floor=${requiredFloor.toFixed(2)} boost=${OSCILLATION_CONFIDENCE_BOOST} passed=${passed}`
           );
+          if (!passed) {
+            return denyHook(
+              `Oscillation guard: an ACCEPTED suggestion (${priorAccepted.id}, confidence ${priorConfidence.toFixed(2)}) was applied to the same artifact on ${priorAccepted.appliedAt?.toISOString()}. This proposal's confidence (${nowConfidence.toFixed(2)}) does not meet the ${OSCILLATION_CONFIDENCE_BOOST}× boost floor (≥ ${requiredFloor.toFixed(2)} required). Explain to the manager and either gather stronger evidence or propose a different artifact.`
+            );
+          }
         }
       }
     }

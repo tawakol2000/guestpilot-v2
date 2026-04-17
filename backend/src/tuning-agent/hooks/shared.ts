@@ -32,9 +32,15 @@ export const COOLDOWN_WINDOW_MS = 48 * 60 * 60 * 1000;
 export const OSCILLATION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
- * Boost required for oscillation-reversal: a new suggestion whose confidence
- * exceeds the prior accepted suggestion's confidence by this factor may
- * proceed even if it reverses a recent decision.
+ * Boost required for oscillation-reversal: a re-proposal that targets the
+ * same artifact within the 14-day oscillation window must have confidence
+ * ≥ (priorAcceptedConfidence × this factor). Strictly stricter than the
+ * original — never easier — so re-entry is harder than initial entry
+ * (classic hysteresis). If the original was applied at confidence 0.70,
+ * the reversal must be ≥ 0.875.
+ *
+ * Sprint 10 workstream D: explicitly documented as the stricter side of
+ * the asymmetry per research findings on oscillation prevention.
  */
 export const OSCILLATION_CONFIDENCE_BOOST = 1.25;
 
