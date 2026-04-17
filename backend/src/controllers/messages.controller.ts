@@ -8,6 +8,16 @@ import { cancelPendingAiReply } from '../services/debounce.service';
 import { getAiConfig } from '../services/ai-config.service';
 import { createMessage, stripCodeFences } from '../services/ai.service';
 import { processFaqSuggestion } from '../services/faq-suggest.service';
+// Feature 041 — legacy copilot tuning trigger. The shadow-mode preview send
+// path (shadow-preview.controller.ts) already fires the diagnostic when the
+// manager edits a preview before sending. Without these imports the legacy
+// copilot path (PendingAiReply.suggestion → operator approves/edits → send via
+// this endpoint) would silently drop every edit, so /tuning never received a
+// suggestion for tenants without shadowModeEnabled.
+import { runDiagnostic } from '../services/tuning/diagnostic.service';
+import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
+import { semanticSimilarity } from '../services/tuning/diff.service';
+import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
@@ -75,6 +85,35 @@ export function makeMessagesController(prisma: PrismaClient) {
           deliveryStatus = 'pending';
         }
 
+        // Feature 041 — capture any pending AI suggestion BEFORE we cancel it.
+        // In legacy copilot, the AI's draft lives on PendingAiReply.suggestion
+        // (set by ai.service.ts when shadowModeEnabled is false). The worker
+        // marks fired:true after generating, so we look up by conversationId
+        // alone — not fired:false, which would miss the typical case.
+        const pendingDraft = await prisma.pendingAiReply
+          .findFirst({
+            where: { conversationId: id, suggestion: { not: null } },
+            orderBy: { scheduledAt: 'desc' },
+            select: { suggestion: true },
+          })
+          .catch(() => null);
+        const pendingSuggestion = pendingDraft?.suggestion?.trim() ? pendingDraft.suggestion : null;
+
+        // If there was an AI draft, also link the most recent AiApiLog so the
+        // diagnostic's evidence bundle can pull RAG context (mirrors the
+        // shadow-preview path which stamps aiApiLogId on the preview Message).
+        const recentAiApiLog = pendingSuggestion
+          ? await prisma.aiApiLog
+              .findFirst({
+                where: { tenantId, conversationId: id },
+                orderBy: { createdAt: 'desc' },
+                select: { id: true },
+              })
+              .catch(() => null)
+          : null;
+
+        const editorUserId = (req as any).userId ?? null;
+
         const hostCommType = channel === 'whatsapp' ? 'whatsapp'
           : channel === 'email' ? 'email'
           : 'channel';
@@ -92,6 +131,12 @@ export function makeMessagesController(prisma: PrismaClient) {
             deliveryError,
             deliveredAt,
             source: clientSource,
+            // Audit fields populated only when the manager was acting on an AI
+            // draft (legacy copilot). For a freshly typed reply with no draft,
+            // these stay null and no diagnostic fires below.
+            originalAiText: pendingSuggestion,
+            editedByUserId: pendingSuggestion ? editorUserId : null,
+            aiApiLogId: recentAiApiLog?.id ?? null,
           },
         });
 
@@ -101,6 +146,43 @@ export function makeMessagesController(prisma: PrismaClient) {
         });
 
         await cancelPendingAiReply(id, prisma);
+
+        // Feature 041 — fire the tuning diagnostic when the manager actually
+        // edited the AI draft. Same EDIT vs REJECT split as
+        // shadow-preview.controller.ts:140-174: similarity < 0.3 = wholesale
+        // replacement (stronger "AI got it wrong" signal). Fire-and-forget,
+        // deduped per-message for 60s by shouldProcessTrigger. Never blocks
+        // the response, never throws into the caller.
+        if (pendingSuggestion && pendingSuggestion !== content) {
+          const similarity = semanticSimilarity(pendingSuggestion, content);
+          const triggerType: 'EDIT_TRIGGERED' | 'REJECT_TRIGGERED' =
+            similarity < 0.3 ? 'REJECT_TRIGGERED' : 'EDIT_TRIGGERED';
+
+          if (shouldProcessTrigger(triggerType, message.id)) {
+            void (async () => {
+              try {
+                const result = await runDiagnostic(
+                  {
+                    triggerType,
+                    tenantId,
+                    messageId: message.id,
+                    note: triggerType === 'REJECT_TRIGGERED'
+                      ? 'Manager replaced the AI copilot draft wholesale (similarity < 0.3).'
+                      : 'Manager edited the AI copilot draft before sending.',
+                  },
+                  prisma
+                );
+                if (result) {
+                  await writeSuggestionFromDiagnostic(result, {}, prisma);
+                }
+              } catch (diagErr) {
+                console.error(`[Messages] [${message.id}] copilot diagnostic fire-and-forget failed:`, diagErr);
+              }
+            })();
+          } else {
+            console.log(`[Messages] [${message.id}] copilot diagnostic deduped (60s window).`);
+          }
+        }
 
         // Broadcast delivery status if failed so other devices/tabs see the failure
         if (deliveryStatus === 'failed') {
