@@ -183,6 +183,30 @@ Each entry:
 - **Status:** OPEN, post-V1.
 - **Action:** when CI grows a Postgres (e.g. a Railway-managed test database), add an integration job that runs `tsx --test src/__tests__/integration/*.integration.test.ts` against it.
 
+### C30 — Fix 10 (sopStatus cooldown narrowing) is inert until diagnostic emits sopStatus
+- **Surfaced:** sprint-09 §5 (report).
+- **Concern:** `suggestion-writer.service.ts#checkCooldown` now accepts a `sopStatus` parameter and narrows the `where` clause when supplied. The call site in `writeSuggestionFromDiagnostic` passes `sopStatus: null` because the diagnostic's `DiagnosticResult.artifactTarget` doesn't carry a status. Until the diagnostic starts emitting it, the fix is wired-but-inert — cooldown still conflates status variants.
+- **Status:** OPEN.
+- **Action:** extend `DiagnosticResult.artifactTarget` with a `sopStatus` field, have the diagnostic schema prompt the model to emit it, then pass it through in the writer call site.
+
+### C31 — appliedAt written during CAS, before artifact write succeeds
+- **Surfaced:** sprint-09 audit round 1.
+- **Concern:** Fix 8's CAS pattern (`updateMany` → `status: 'ACCEPTED', appliedAt: new Date()`) sets `appliedAt` upfront. On a failed apply the revert clears it, but during the narrow window (milliseconds to seconds) between CAS and revert, a concurrent cooldown query can observe a false-ACCEPTED row. Very small window; trade-off accepted.
+- **Status:** OPEN, low priority.
+- **Action:** in a future sprint, restructure so `appliedAt` is written only after the artifact write succeeds — requires an extra DB round-trip but closes the window.
+
+### C32 — systemPromptHistory lost-update under concurrent applies
+- **Surfaced:** sprint-09 audit round 2.
+- **Concern:** The accept controller + suggestion_action both read `systemPromptHistory`, push a snapshot, and overwrite with the new array. Two concurrent applies on the same tenant's config: both read the pre-first-commit history, both push, the second write overwrites the first's snapshot. The surviving prompt is correct, but one snapshot entry is lost. Rare (two concurrent prompt edits is unusual).
+- **Status:** OPEN, low priority.
+- **Action:** switch the history push to raw SQL `UPDATE ... SET "systemPromptHistory" = "systemPromptHistory" || $1::jsonb` for atomic append.
+
+### C33 — Tuning retention job window-math drift
+- **Surfaced:** sprint-09 audit round 2.
+- **Concern:** `tuningRetention.job.ts` uses `{gte: now-8d, lte: now-7d}`. If run intervals drift by more than the 24h spacing, rows that apply between the upper bound of run N and the lower bound of run N+1 are missed. Low impact (retention flag stays `null` indefinitely for the skipped row).
+- **Status:** OPEN, low priority.
+- **Action:** add an `appliedAndRetained7dEvaluatedAt` marker column and evaluate all unmarked rows older than 7 days on each run. Schema change — park for a future additive sprint.
+
 ---
 
 ## Resolved / archived
