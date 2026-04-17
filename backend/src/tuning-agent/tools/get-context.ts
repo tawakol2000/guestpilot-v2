@@ -20,7 +20,10 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
       const span = startAiSpan('tuning-agent.get_context', args);
       try {
         const detailed = args.verbosity === 'detailed';
-        const [conversation, pending, lastAccepted, recentMessages] = await Promise.all([
+        // Sprint 09 fix 1: the returned `total` used `pending.length` after a
+        // take:8 query, silently under-reporting a queue of any non-trivial
+        // size. Separate count() keeps detail limits while reporting truth.
+        const [conversation, pending, pendingTotal, lastAccepted, recentMessages] = await Promise.all([
           c.conversationId
             ? c.prisma.tuningConversation.findFirst({
                 where: { id: c.conversationId, tenantId: c.tenantId },
@@ -50,6 +53,9 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
               triggerType: true,
               createdAt: true,
             },
+          }),
+          c.prisma.tuningSuggestion.count({
+            where: { tenantId: c.tenantId, status: 'PENDING' },
           }),
           c.prisma.tuningSuggestion.findFirst({
             where: { tenantId: c.tenantId, status: 'ACCEPTED' },
@@ -98,7 +104,7 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
               }
             : null,
           pendingQueue: {
-            total: pending.length,
+            total: pendingTotal,
             countsByCategory,
             topSuggestions: pending.slice(0, detailed ? 8 : 3).map((s) => ({
               id: s.id,

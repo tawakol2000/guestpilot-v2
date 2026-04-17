@@ -101,7 +101,12 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
   }
 
   // ─── Assemble prompt context (memory + pending + session state) ────────
-  const [memory, pending] = await Promise.all([
+  //
+  // Sprint 09 fix 1: `pending.length` after `take: 10` hid the real queue
+  // size from the agent — 23 pending suggestions would be reported as "10".
+  // Separate `count()` call keeps the detail array capped at 10 while
+  // reporting the true total.
+  const [memory, pending, pendingTotal] = await Promise.all([
     listMemoryByPrefix(input.prisma, input.tenantId, 'preferences/', 30),
     input.prisma.tuningSuggestion.findMany({
       where: { tenantId: input.tenantId, status: 'PENDING' },
@@ -116,6 +121,9 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         createdAt: true,
       },
     }),
+    input.prisma.tuningSuggestion.count({
+      where: { tenantId: input.tenantId, status: 'PENDING' },
+    }),
   ]);
   const countsByCategory = pending.reduce<Record<string, number>>((acc, s) => {
     const k = s.diagnosticCategory ?? 'LEGACY';
@@ -129,7 +137,7 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     selectedSuggestionId: input.selectedSuggestionId,
     memorySnapshot: memory,
     pending: {
-      total: pending.length,
+      total: pendingTotal,
       countsByCategory,
       topThree: pending.slice(0, 3).map((s) => ({
         id: s.id,
@@ -145,7 +153,7 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
 
   // ─── Wire the hook + tool contexts ─────────────────────────────────────
   const lastUserSnapshot = { text: input.userMessage };
-  const compliance = { lastUserSanctionedApply: false };
+  const compliance = { lastUserSanctionedApply: false, lastUserSanctionedRollback: false };
   const persistedDataParts: Array<{ type: string; id?: string; data: unknown }> = [];
   const toolCallsInvoked: string[] = [];
 
@@ -324,6 +332,10 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
             // doesn't double-emit.
             finalText = '';
             toolCallsInvoked.length = 0;
+            // Sprint 09 fix 16: also clear persistedDataParts. Previously any
+            // data parts emitted during the failed first attempt would be
+            // persisted twice — once here, once after the successful retry.
+            persistedDataParts.length = 0;
             await runQuery(null);
           } else {
             throw err;

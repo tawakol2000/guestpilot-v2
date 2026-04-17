@@ -37,6 +37,8 @@ export interface BridgeState {
   reasoningBlockId: string | null;
   seenToolIds: Set<string>;
   finished: boolean;
+  /** Sprint 09 fix 11 — monotonically increasing index for unique text block ids. */
+  textBlockCounter: number;
 }
 
 export function makeBridgeState(assistantMessageId: string): BridgeState {
@@ -46,6 +48,7 @@ export function makeBridgeState(assistantMessageId: string): BridgeState {
     reasoningBlockId: null,
     seenToolIds: new Set(),
     finished: false,
+    textBlockCounter: 0,
   };
 }
 
@@ -76,14 +79,20 @@ export function bridgeSDKMessage(message: SDKMessage, state: BridgeState, write:
       for (const block of content) {
         if (block.type === 'text') {
           closeReasoning(state, write);
-          // If partial `stream_event` deltas already forwarded this text
+          // If partial `stream_event` deltas already forwarded THIS text
           // block live, the SDK's aggregated `assistant` message carries
-          // the same content verbatim — emitting another text-delta here
-          // would make the UI (and `onFinish`-persisted parts) show every
-          // word twice. Skip the aggregate; closeText() on a subsequent
-          // tool_use / result will end the block.
+          // the same content verbatim — emitting another text-delta would
+          // duplicate the text in the UI. Skip the aggregate in that case;
+          // closeText() on a subsequent tool_use / result ends the block.
           if (state.textBlockId) continue;
-          const id = `text:${state.assistantMessageId}:1`;
+          // Sprint 09 fix 11: after a tool_use, the next text block was
+          // silently dropped because closeText() cleared textBlockId but
+          // any subsequent text_delta / aggregate text kept re-using the
+          // SAME stream id — the UI had already closed that id and
+          // ignored it. Bump a counter so each text block gets a unique
+          // id and its own text-start.
+          state.textBlockCounter += 1;
+          const id = `text:${state.assistantMessageId}:${state.textBlockCounter}`;
           state.textBlockId = id;
           write({ type: 'text-start', id });
           write({ type: 'text-delta', id, delta: block.text });
@@ -151,8 +160,14 @@ export function bridgeSDKMessage(message: SDKMessage, state: BridgeState, write:
       // Only the most useful partial events — Anthropic native delta shapes.
       if (ev.type === 'content_block_delta' && ev.delta) {
         if (ev.delta.type === 'text_delta' && typeof ev.delta.text === 'string') {
-          const id = state.textBlockId ?? `text:${state.assistantMessageId}:1`;
-          if (!state.textBlockId) {
+          // Sprint 09 fix 11: same counter-based unique id as the
+          // aggregated-assistant path. A stream_event arriving AFTER a
+          // tool_use started the next text block needs a fresh id, not
+          // the same `text:…:1` the UI already closed.
+          let id = state.textBlockId;
+          if (!id) {
+            state.textBlockCounter += 1;
+            id = `text:${state.assistantMessageId}:${state.textBlockCounter}`;
             state.textBlockId = id;
             write({ type: 'text-start', id });
           }

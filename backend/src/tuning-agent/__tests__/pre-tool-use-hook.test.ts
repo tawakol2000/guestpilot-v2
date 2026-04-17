@@ -22,7 +22,7 @@ function ctx(overrides: any = {}) {
     userId: null,
     readLastUserMessage: overrides.readLastUserMessage ?? (() => ''),
     emitDataPart: undefined,
-    compliance: { lastUserSanctionedApply: false },
+    compliance: { lastUserSanctionedApply: false, lastUserSanctionedRollback: false },
   };
 }
 
@@ -71,7 +71,7 @@ test('denies apply without manager sanction', async () => {
 test('denies apply when cooldown is hit', async () => {
   const recent = new Date();
   const c = ctx({
-    readLastUserMessage: () => 'apply',
+    readLastUserMessage: () => 'apply it',
     prisma: {
       tuningSuggestion: {
         findFirst: async (args: any) => {
@@ -110,7 +110,7 @@ test('denies oscillation reversal without confidence boost', async () => {
   let call = 0;
   const earlier = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago
   const c = ctx({
-    readLastUserMessage: () => 'apply',
+    readLastUserMessage: () => 'apply it',
     prisma: {
       tuningSuggestion: {
         findFirst: async () => {
@@ -151,7 +151,7 @@ test('denies oscillation reversal without confidence boost', async () => {
 test('allows apply when sanction present and no cooldown/oscillation', async () => {
   let call = 0;
   const c = ctx({
-    readLastUserMessage: () => 'apply',
+    readLastUserMessage: () => 'apply it',
     prisma: {
       tuningSuggestion: {
         findFirst: async () => {
@@ -188,4 +188,34 @@ test('ignores non-suggestion_action tools', async () => {
   const hook = buildPreToolUseHook(() => c);
   const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.get_context, {});
   assert.deepEqual(res, { continue: true });
+});
+
+// Sprint 09 fix 6: compliance regex false positives.
+test('does NOT sanction "I need to apply for a visa"', async () => {
+  const { detectApplySanction } = await import('../hooks/shared');
+  assert.equal(detectApplySanction('I need to apply for a visa'), false);
+});
+
+test('does NOT sanction "Can you confirm what the SOP says?"', async () => {
+  const { detectApplySanction } = await import('../hooks/shared');
+  assert.equal(detectApplySanction('Can you confirm what the SOP says?'), false);
+});
+
+test('sanctions "apply it" and "apply the change"', async () => {
+  const { detectApplySanction } = await import('../hooks/shared');
+  assert.equal(detectApplySanction('apply it'), true);
+  assert.equal(detectApplySanction('Please apply the change'), true);
+});
+
+test('sanctions "confirm the rollback"', async () => {
+  const { detectApplySanction } = await import('../hooks/shared');
+  assert.equal(detectApplySanction('confirm the rollback'), true);
+});
+
+test('rollback sanction requires rollback-specific phrasing', async () => {
+  const { detectRollbackSanction } = await import('../hooks/shared');
+  assert.equal(detectRollbackSanction('apply it'), false);
+  assert.equal(detectRollbackSanction('revert it'), true);
+  assert.equal(detectRollbackSanction('yes, roll back'), true);
+  assert.equal(detectRollbackSanction('undo the change'), true);
 });

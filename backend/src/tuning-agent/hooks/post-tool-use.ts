@@ -40,10 +40,19 @@ export function buildPostToolUseHook(_ctx: () => HookContext): HookCallback {
 }
 
 function truncateForLog(v: unknown): unknown {
+  // Sprint 09 fix 12: the old implementation did
+  //   JSON.parse(s.slice(0, 4000) + '..."TRUNCATED"')
+  // which ALWAYS threw because slicing mid-JSON produces invalid syntax,
+  // so every over-4000-char payload fell through to
+  //   { note: 'unserializable' }
+  // losing all detail. Return a truncated string instead — the log field
+  // accepts any JSON value and a partial body is far more useful than a
+  // generic marker.
   try {
     const s = JSON.stringify(v);
-    if (s && s.length > 4000) return JSON.parse(s.slice(0, 4000) + '..."TRUNCATED"');
-    return v;
+    if (!s) return v;
+    if (s.length <= 4000) return v;
+    return s.slice(0, 4000) + '…[truncated]';
   } catch {
     return { note: 'unserializable' };
   }

@@ -22,6 +22,7 @@ import {
   OSCILLATION_WINDOW_MS,
   OSCILLATION_CONFIDENCE_BOOST,
   detectApplySanction,
+  detectRollbackSanction,
   type HookContext,
 } from './shared';
 
@@ -31,6 +32,23 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       return { continue: true } as HookJSONOutput;
     }
     const pre = input as PreToolUseHookInput;
+    const c = ctx();
+
+    // ─── Sprint 09 fix 5: rollback also writes to artifacts ───────────────
+    // The rollback tool bypassed compliance entirely, which violated the
+    // human-in-the-loop principle. Require an explicit rollback sanction
+    // before the handler runs.
+    if (pre.tool_name === TUNING_AGENT_TOOL_NAMES.rollback) {
+      const last = c.readLastUserMessage();
+      if (!detectRollbackSanction(last)) {
+        return denyHook(
+          `Compliance check failed: the manager's last turn did not explicitly sanction a rollback (e.g. "roll back", "revert it", "undo the change"). Ask for confirmation before invoking rollback.`
+        );
+      }
+      c.compliance.lastUserSanctionedRollback = true;
+      return { continue: true } as HookJSONOutput;
+    }
+
     // Only intercept suggestion_action applies; all other tools pass through.
     if (pre.tool_name !== TUNING_AGENT_TOOL_NAMES.suggestion_action) {
       return { continue: true } as HookJSONOutput;
@@ -46,6 +64,7 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         systemPromptVariant?: string;
         faqEntryId?: string;
         confidence?: number;
+        targetHint?: string;
       };
     };
     const action = toolInput.action;
@@ -54,14 +73,12 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       return { continue: true } as HookJSONOutput;
     }
 
-    const c = ctx();
-
     // ─── 1. Compliance ─────────────────────────────────────────────────────
     const last = c.readLastUserMessage();
     const sanctioned = detectApplySanction(last);
     if (!sanctioned) {
       return denyHook(
-        `Compliance check failed: the manager's last turn did not explicitly sanction an apply (e.g. "apply", "go ahead", "do it now"). Either ask the manager to confirm, or use action:'queue' instead.`
+        `Compliance check failed: the manager's last turn did not explicitly sanction an apply (e.g. "apply it", "go ahead", "do it now", "yes, apply"). Either ask the manager to confirm, or use action:'queue' instead.`
       );
     }
     c.compliance.lastUserSanctionedApply = true;
@@ -80,6 +97,7 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
           sopPropertyId: true,
           systemPromptVariant: true,
           faqEntryId: true,
+          diagnosticSubLabel: true,
           status: true,
         },
       });
@@ -92,6 +110,11 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       systemPromptVariant:
         existingSuggestion?.systemPromptVariant ?? toolInput.draft?.systemPromptVariant ?? null,
       faqEntryId: existingSuggestion?.faqEntryId ?? toolInput.draft?.faqEntryId ?? null,
+      // Sprint 09 fix 3: TOOL_CONFIG needs a target identifier too. We reuse
+      // diagnosticSubLabel (agent convention: tool name as sublabel) when
+      // available, otherwise the draft's targetHint.
+      toolTarget:
+        existingSuggestion?.diagnosticSubLabel ?? toolInput.draft?.targetHint ?? null,
     };
     const confidence = existingSuggestion?.confidence ?? toolInput.draft?.confidence ?? null;
 
@@ -130,11 +153,17 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         orderBy: { appliedAt: 'desc' },
       });
       if (priorAccepted) {
-        const prior = priorAccepted.confidence ?? 0;
-        const now = confidence ?? 0;
-        if (now <= prior * OSCILLATION_CONFIDENCE_BOOST) {
+        // Sprint 09 fix 4: when EITHER the current or prior suggestion has
+        // null confidence (legacy rows), the comparison 0 <= 0 * 1.25 is
+        // trivially true and fires a false oscillation block. Skip the
+        // check unless both sides have real confidence scores.
+        const priorConfidence = priorAccepted.confidence;
+        const nowConfidence = confidence;
+        const bothHaveConfidence =
+          typeof priorConfidence === 'number' && typeof nowConfidence === 'number';
+        if (bothHaveConfidence && nowConfidence <= priorConfidence * OSCILLATION_CONFIDENCE_BOOST) {
           return denyHook(
-            `Oscillation guard: an ACCEPTED suggestion (${priorAccepted.id}, confidence ${prior.toFixed(2)}) was applied to the same artifact on ${priorAccepted.appliedAt?.toISOString()}. This proposal's confidence (${now.toFixed(2)}) does not exceed the prior by at least ${OSCILLATION_CONFIDENCE_BOOST}×. Explain to the manager and either gather stronger evidence or propose a different artifact.`
+            `Oscillation guard: an ACCEPTED suggestion (${priorAccepted.id}, confidence ${priorConfidence.toFixed(2)}) was applied to the same artifact on ${priorAccepted.appliedAt?.toISOString()}. This proposal's confidence (${nowConfidence.toFixed(2)}) does not exceed the prior by at least ${OSCILLATION_CONFIDENCE_BOOST}×. Explain to the manager and either gather stronger evidence or propose a different artifact.`
           );
         }
       }
@@ -163,6 +192,7 @@ function artifactTargetWhere(
     sopPropertyId: string | null;
     systemPromptVariant: string | null;
     faqEntryId: string | null;
+    toolTarget: string | null;
   }
 ): Record<string, unknown> | null {
   if (category === 'SOP_CONTENT' || category === 'PROPERTY_OVERRIDE' || category === 'SOP_ROUTING') {
@@ -178,6 +208,18 @@ function artifactTargetWhere(
   }
   if (category === 'FAQ') {
     return t.faqEntryId ? { faqEntryId: t.faqEntryId } : null;
+  }
+  // Sprint 09 fix 3: TOOL_CONFIG previously had no case here, meaning zero
+  // cooldown or oscillation protection. TuningSuggestion has no dedicated
+  // tool-id column, so we scope by (diagnosticCategory = 'TOOL_CONFIG',
+  // diagnosticSubLabel = tool name / hint) — the same identifier the
+  // suggestion-action tool uses for TOOL_CONFIG targets. Same-tenant rows
+  // already filtered by the caller, so the sublabel collision window is
+  // narrow enough to serve as a dedup key.
+  if (category === 'TOOL_CONFIG') {
+    return t.toolTarget
+      ? { diagnosticCategory: 'TOOL_CONFIG', diagnosticSubLabel: t.toolTarget }
+      : null;
   }
   return null;
 }
