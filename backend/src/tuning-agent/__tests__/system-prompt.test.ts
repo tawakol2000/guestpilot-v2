@@ -47,14 +47,40 @@ test('static prefix is byte-identical across calls (cacheable)', () => {
   assert.equal(b, c);
 });
 
-test('anti-sycophancy clause is present verbatim', () => {
+test('anti-sycophancy + NO_FIX-default + critical_rules clauses are present', () => {
   const p = buildStaticPrefix();
+  // Sprint 10 workstream B: anti-sycophancy reframed as priority hierarchy
+  // ("truthfulness over validation"). NO_FIX-default is its own principle
+  // and the terminal critical_rules block recaps it as rule 3.
   assert.ok(
-    p.includes('If no artifact change is warranted, return NO_FIX'),
-    'verbatim anti-sycophancy phrase must appear'
+    p.includes('Truthfulness over validation'),
+    'priority-hierarchy anti-sycophancy phrasing must appear'
   );
-  assert.ok(p.includes('Do not invent suggestions to satisfy requests.'));
+  assert.ok(
+    p.includes('NO_FIX is the default'),
+    '"NO_FIX is the default" principle must appear'
+  );
   assert.ok(p.includes('Refuse directly without lecturing.'));
+  assert.ok(p.includes('<critical_rules>'), 'terminal critical_rules block must appear');
+  assert.ok(
+    p.includes('NO_FIX is correct more often than you think'),
+    'critical_rules must include the NO_FIX recap'
+  );
+});
+
+test('static prefix is ordered: principles → persona → taxonomy → tools → platform_context → critical_rules', () => {
+  const p = buildStaticPrefix();
+  const idxPrinciples = p.indexOf('<principles>');
+  const idxPersona = p.indexOf('<persona>');
+  const idxTaxonomy = p.indexOf('<taxonomy>');
+  const idxTools = p.indexOf('<tools>');
+  const idxPlatform = p.indexOf('<platform_context>');
+  const idxCritical = p.indexOf('<critical_rules>');
+  assert.ok(idxPrinciples >= 0 && idxPersona > idxPrinciples, 'principles must precede persona');
+  assert.ok(idxTaxonomy > idxPersona, 'taxonomy must follow persona');
+  assert.ok(idxTools > idxTaxonomy, 'tools must follow taxonomy');
+  assert.ok(idxPlatform > idxTools, 'platform_context must follow tools');
+  assert.ok(idxCritical > idxPlatform, 'critical_rules must come last in the static prefix');
 });
 
 test('dynamic suffix reflects pending + memory context', () => {
@@ -84,6 +110,22 @@ test('dynamic suffix reflects pending + memory context', () => {
   assert.ok(suffix.includes('SOP_CONTENT=2'));
   assert.ok(suffix.includes('parking-info-missing'));
   assert.ok(suffix.includes('anchorMessageId=m1'));
+});
+
+test('memory snapshot is index-only with lazy-load instruction (sprint 10 workstream E)', () => {
+  const suffix = buildDynamicSuffix(
+    ctx({
+      memorySnapshot: [
+        { key: 'preferences/tone', value: 'concise', source: null, updatedAt: '2026-04-15T00:00:00Z' },
+      ],
+      pending: { total: 0, topThree: [], countsByCategory: {} },
+    })
+  );
+  assert.ok(
+    suffix.includes("memory(op: 'view'"),
+    'memory snapshot must instruct the agent to lazy-load full values'
+  );
+  assert.ok(suffix.includes('preferences/tone'));
 });
 
 test('empty queue + empty memory produce safe fallbacks', () => {
