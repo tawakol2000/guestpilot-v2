@@ -28,8 +28,29 @@ import {
   type TuningSuggestion,
 } from '@prisma/client';
 import type { DiagnosticResult } from './diagnostic.service';
+import { getCategoryAcceptance30d } from './category-stats.service';
 
 const COOLDOWN_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+// Sprint 08 §4 — criticalFailure detection thresholds.
+// A suggestion is a critical failure iff:
+//   category ∈ { SOP_CONTENT, SOP_ROUTING, SYSTEM_PROMPT }
+//   AND confidence >= 0.85
+//   AND magnitude === 'WHOLESALE'
+// Graduation blocks while any criticalFailure row exists in the last 30d.
+const CRITICAL_FAILURE_CONFIDENCE = 0.85;
+const CRITICAL_FAILURE_CATEGORIES: ReadonlySet<string> = new Set([
+  'SOP_CONTENT',
+  'SOP_ROUTING',
+  'SYSTEM_PROMPT',
+]);
+
+// Sprint 08 §5 — per-category confidence gating thresholds. Kept in sync with
+// tuning-dashboards.controller.ts so the dashboard "gated" flag and the
+// pipeline's AUTO_SUPPRESSED writes describe the same condition.
+const CATEGORY_GATING_ACCEPTANCE_THRESHOLD = 0.3;
+const CATEGORY_GATING_CONFIDENCE_FLOOR = 0.75;
+const CATEGORY_GATING_MIN_SAMPLE = 5;
 
 export interface WriteSuggestionContext {
   // sprint-04 will populate this when the suggestion is proposed inside a
@@ -103,12 +124,47 @@ export async function writeSuggestionFromDiagnostic(
   const actionType = mapCategoryToActionType(result.category);
   const targetFields = buildTargetFields(result);
 
+  // ─── Sprint 08 §4: criticalFailure detection ────────────────────────────
+  const isCriticalFailure =
+    CRITICAL_FAILURE_CATEGORIES.has(result.category) &&
+    result.confidence >= CRITICAL_FAILURE_CONFIDENCE &&
+    result.diagMeta.magnitude === 'WHOLESALE';
+
+  // ─── Sprint 08 §5: per-category confidence gating ───────────────────────
+  // If the category's 30-day acceptance rate is below the threshold AND we
+  // have enough signal to trust it (sample size ≥ 5), require elevated
+  // confidence (≥ 0.75) to surface. Below the floor, write AUTO_SUPPRESSED
+  // instead of PENDING — the row is kept for record / DPO signal but is
+  // hidden from the default queue.
+  let status: 'PENDING' | 'AUTO_SUPPRESSED' = 'PENDING';
+  let gatingNote: string | null = null;
+  try {
+    const { acceptanceRate, sampleSize } = await getCategoryAcceptance30d(
+      prisma,
+      result.tenantId,
+      result.category as TuningDiagnosticCategory,
+    );
+    const gated =
+      acceptanceRate !== null &&
+      sampleSize >= CATEGORY_GATING_MIN_SAMPLE &&
+      acceptanceRate < CATEGORY_GATING_ACCEPTANCE_THRESHOLD;
+    if (gated && result.confidence < CATEGORY_GATING_CONFIDENCE_FLOOR) {
+      status = 'AUTO_SUPPRESSED';
+      gatingNote = `gated category acceptance=${(acceptanceRate * 100).toFixed(
+        0,
+      )}% n=${sampleSize} conf=${result.confidence.toFixed(2)} < ${CATEGORY_GATING_CONFIDENCE_FLOOR}`;
+    }
+  } catch (err) {
+    // Gating must never block writes.
+    console.warn('[SuggestionWriter] category gating lookup failed (non-fatal):', err);
+  }
+
   const suggestion = await prisma.tuningSuggestion.create({
     data: {
       tenantId: result.tenantId,
       sourceMessageId: result.sourceMessageId,
       actionType,
-      status: 'PENDING',
+      status,
       rationale: result.rationale || '',
       proposedText: result.proposedText ?? null,
       beforeText: result.diagMeta.originalText || null,
@@ -121,12 +177,18 @@ export async function writeSuggestionFromDiagnostic(
       confidence: result.confidence,
       // applyMode stays null until the sprint-03 UI writes it.
       conversationId: context.conversationId ?? null,
+      // ── sprint 08 §4 ──
+      criticalFailure: isCriticalFailure,
     },
   });
   console.log(
-    `[SuggestionWriter] wrote TuningSuggestion ${suggestion.id} category=${result.category} subLabel="${result.subLabel}" conf=${result.confidence.toFixed(2)}`
+    `[SuggestionWriter] wrote TuningSuggestion ${suggestion.id} category=${result.category} subLabel="${result.subLabel}" conf=${result.confidence.toFixed(2)} status=${status}${isCriticalFailure ? ' CRITICAL_FAILURE' : ''}${gatingNote ? ` (${gatingNote})` : ''}`,
   );
-  return { suggestion, capabilityRequestId: null, note: 'CREATED' };
+  return {
+    suggestion,
+    capabilityRequestId: null,
+    note: status === 'AUTO_SUPPRESSED' ? 'AUTO_SUPPRESSED' : 'CREATED',
+  };
 }
 
 // ─── Cooldown ────────────────────────────────────────────────────────────────

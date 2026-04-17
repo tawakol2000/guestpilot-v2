@@ -8,11 +8,27 @@
  * `TuningCategoryStats`). No schema change, no new writes.
  */
 import { Response } from 'express';
-import { PrismaClient, MessageRole } from '@prisma/client';
+import { PrismaClient, MessageRole, TuningDiagnosticCategory } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 
 const WINDOW_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Sprint 08 §4 thresholds.
+// - criticalFailure count in the last 30d must be 0 for graduation.
+// - conversationCount30d must be >= 200 to have enough volume.
+// - category gating kicks in at <30% acceptance over 30d.
+const CRIT_FAIL_WINDOW_DAYS = 30;
+const CONVERSATION_COUNT_WINDOW_DAYS = 30;
+const CATEGORY_GATING_WINDOW_DAYS = 30;
+export const GRADUATION_CRITICAL_FAILURE_TARGET = 0;
+export const GRADUATION_CONVERSATION_COUNT_TARGET = 200;
+export const CATEGORY_GATING_ACCEPTANCE_THRESHOLD = 0.3;
+
+// Sprint 08 §5 — when a category is gated, require this confidence or higher
+// to surface a new suggestion in that category. Exported so the diagnostic
+// pipeline can import the same constant and the behavior stays in sync.
+export const CATEGORY_GATING_CONFIDENCE_FLOOR = 0.75;
 
 function windowStart(): Date {
   return new Date(Date.now() - WINDOW_DAYS * DAY_MS);
@@ -213,6 +229,73 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         }
         const acceptanceRate = weightTotal === 0 ? 0 : weighted / weightTotal;
 
+        // ─── Sprint 08 §4 hardening (30-day windows) ───────────────────────
+        const critSince = new Date(Date.now() - CRIT_FAIL_WINDOW_DAYS * DAY_MS);
+        const convSince = new Date(Date.now() - CONVERSATION_COUNT_WINDOW_DAYS * DAY_MS);
+        const catGatingSince = new Date(Date.now() - CATEGORY_GATING_WINDOW_DAYS * DAY_MS);
+
+        const criticalFailures30d = await prisma.tuningSuggestion.count({
+          where: {
+            tenantId,
+            criticalFailure: true,
+            createdAt: { gte: critSince },
+          },
+        });
+
+        const conversationsWithAi30d = await prisma.message.findMany({
+          where: { tenantId, role: MessageRole.AI, sentAt: { gte: convSince } },
+          select: { conversationId: true },
+          distinct: ['conversationId'],
+        });
+        const conversationCount30d = conversationsWithAi30d.length;
+
+        // Per-category 30d acceptance rate. We compute this directly from
+        // TuningSuggestion rows (not TuningCategoryStats) so the "30 day
+        // window" matches the graduation criterion regardless of how long
+        // the EMA has been accumulating.
+        const catGroups = await prisma.tuningSuggestion.groupBy({
+          where: {
+            tenantId,
+            createdAt: { gte: catGatingSince },
+            diagnosticCategory: { not: null },
+            status: { in: ['ACCEPTED', 'REJECTED'] },
+          },
+          by: ['diagnosticCategory', 'status'],
+          _count: { _all: true },
+        });
+        const perCat: Record<string, { accepted: number; rejected: number }> = {};
+        for (const row of catGroups) {
+          const cat = row.diagnosticCategory ?? 'NO_FIX';
+          if (!perCat[cat]) perCat[cat] = { accepted: 0, rejected: 0 };
+          if (row.status === 'ACCEPTED') perCat[cat].accepted += row._count._all;
+          else if (row.status === 'REJECTED') perCat[cat].rejected += row._count._all;
+        }
+        const allCats: TuningDiagnosticCategory[] = [
+          'SOP_CONTENT',
+          'SOP_ROUTING',
+          'FAQ',
+          'SYSTEM_PROMPT',
+          'TOOL_CONFIG',
+          'MISSING_CAPABILITY',
+          'PROPERTY_OVERRIDE',
+          'NO_FIX',
+        ];
+        const categoryConfidenceGating: Record<
+          string,
+          { acceptanceRate: number | null; sampleSize: number; gated: boolean }
+        > = {};
+        for (const cat of allCats) {
+          const row = perCat[cat] ?? { accepted: 0, rejected: 0 };
+          const n = row.accepted + row.rejected;
+          const rate = n === 0 ? null : row.accepted / n;
+          // Gate only when we have enough signal to gate on. <30% over <5
+          // samples is just noise; require 5+ settled decisions in the window.
+          // Below that, emit the row with gated=false so the UI can show the
+          // category cleanly.
+          const gated = rate !== null && n >= 5 && rate < CATEGORY_GATING_ACCEPTANCE_THRESHOLD;
+          categoryConfidenceGating[cat] = { acceptanceRate: rate, sampleSize: n, gated };
+        }
+
         res.json({
           windowDays: WINDOW_DAYS,
           editRate,
@@ -224,6 +307,13 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
           escalationRate,
           acceptanceRate,
           sampleSize: total,
+          // Sprint 08 §4 additions
+          criticalFailures30d,
+          criticalFailuresTarget: GRADUATION_CRITICAL_FAILURE_TARGET,
+          conversationCount30d,
+          conversationCountTarget: GRADUATION_CONVERSATION_COUNT_TARGET,
+          categoryConfidenceGating,
+          categoryGatingThreshold: CATEGORY_GATING_ACCEPTANCE_THRESHOLD,
         });
       } catch (err) {
         console.error('[tuning-dashboards] graduation-metrics failed:', err);

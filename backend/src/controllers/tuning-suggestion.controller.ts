@@ -42,10 +42,22 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
 
         const where: any = { tenantId };
         if (statusParam !== 'ALL') {
-          const validStatuses: TuningSuggestionStatus[] = ['PENDING', 'ACCEPTED', 'REJECTED'];
+          // Sprint 08 §5: AUTO_SUPPRESSED is a valid filter value (for the
+          // "Show suppressed" toggle), not just PENDING/ACCEPTED/REJECTED.
+          const validStatuses: TuningSuggestionStatus[] = [
+            'PENDING',
+            'ACCEPTED',
+            'REJECTED',
+            'AUTO_SUPPRESSED',
+          ];
           if (validStatuses.includes(statusParam as TuningSuggestionStatus)) {
             where.status = statusParam;
           }
+        } else {
+          // `status=ALL` previously returned every row. Sprint 08 §5: hide
+          // AUTO_SUPPRESSED from the default "all" view — the dedicated
+          // toggle/filter is the only way they surface in the UI.
+          where.status = { notIn: ['AUTO_SUPPRESSED'] };
         }
 
         const rows = await prisma.tuningSuggestion.findMany({

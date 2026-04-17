@@ -499,7 +499,15 @@ export type TuningActionType =
   | 'CREATE_SOP'
   | 'CREATE_FAQ'
 
-export type TuningSuggestionStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED'
+// Sprint 08 §5 adds AUTO_SUPPRESSED — written by the diagnostic pipeline when
+// a category is under-performing and confidence isn't high enough to surface.
+// Hidden from the default queue; visible only with the "Show suppressed"
+// toggle.
+export type TuningSuggestionStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'AUTO_SUPPRESSED'
 
 // Feature 041 sprint 02 taxonomy; nullable on legacy rows written by live `main`.
 export type TuningDiagnosticCategory =
@@ -654,6 +662,16 @@ export interface TuningGraduationMetrics {
   escalationRate: number      // 0..1
   acceptanceRate: number      // 0..1 — composite across categories
   sampleSize: number
+  // Sprint 08 §4 additions
+  criticalFailures30d?: number
+  criticalFailuresTarget?: number
+  conversationCount30d?: number
+  conversationCountTarget?: number
+  categoryConfidenceGating?: Record<
+    string, // TuningDiagnosticCategory key
+    { acceptanceRate: number | null; sampleSize: number; gated: boolean }
+  >
+  categoryGatingThreshold?: number
 }
 
 export async function apiTuningGraduationMetrics(): Promise<TuningGraduationMetrics> {

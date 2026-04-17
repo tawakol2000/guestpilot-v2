@@ -8,6 +8,7 @@ import {
   apiGetSopDefinitions,
   apiGetSopPropertyOverrides,
   apiGetTenantAiConfig,
+  apiTuningGraduationMetrics,
   type ApiConversationDetail,
   type ApiMessage,
   type ApiProperty,
@@ -16,6 +17,7 @@ import {
   type SopPropertyOverrideData,
   type TenantAiConfig,
   type TuningDiagnosticCategory,
+  type TuningGraduationMetrics,
   type TuningSuggestion,
   type ToolDefinitionSummary,
 } from '@/lib/api'
@@ -46,6 +48,19 @@ export function DetailPanel({
   const [convoLoading, setConvoLoading] = useState(false)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Sprint 08 §4 — per-category gating state for the low-acceptance banner.
+  const [gradMetrics, setGradMetrics] = useState<TuningGraduationMetrics | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    apiTuningGraduationMetrics()
+      .then((m) => !cancelled && setGradMetrics(m))
+      .catch(() => {
+        /* banner just won't render — not fatal */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!suggestion?.sourceConversationId) {
@@ -145,6 +160,34 @@ export function DetailPanel({
             {title}
           </h1>
         </header>
+
+        {(() => {
+          // Sprint 08 §4 — inline warning banner for suggestions whose
+          // category is currently gated (acceptance <30% over 30d with
+          // ≥5 samples). Lets the manager know the diagnostic quality
+          // here is under scrutiny before they accept/reject.
+          if (!suggestion.diagnosticCategory || !gradMetrics?.categoryConfidenceGating) return null
+          const gating = gradMetrics.categoryConfidenceGating[suggestion.diagnosticCategory]
+          if (!gating?.gated) return null
+          const rate = gating.acceptanceRate === null ? '—' : `${Math.round(gating.acceptanceRate * 100)}%`
+          return (
+            <div
+              className="rounded-lg px-4 py-3 text-sm"
+              style={{
+                background: TUNING_COLORS.warnBg,
+                color: TUNING_COLORS.warnFg,
+              }}
+              role="status"
+            >
+              <strong className="font-semibold">Low acceptance</strong> — consider
+              reviewing diagnostic quality for{' '}
+              <span className="font-medium">
+                {suggestion.diagnosticCategory.toLowerCase().replace(/_/g, ' ')}
+              </span>
+              . 30d rate: {rate} over {gating.sampleSize} decisions.
+            </div>
+          )
+        })()}
 
         {error ? (
           <div

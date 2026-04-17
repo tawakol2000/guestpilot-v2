@@ -14,6 +14,50 @@
 import { PrismaClient, TuningDiagnosticCategory } from '@prisma/client';
 
 const ALPHA = 0.3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sprint 08 §5 — acceptance-rate lookup used by the diagnostic pipeline to
+ * decide whether a new suggestion should be AUTO_SUPPRESSED instead of
+ * PENDING. Reads directly from TuningSuggestion rows over a fixed 30-day
+ * window, so the gating signal matches the graduation dashboard regardless
+ * of how long the EMA in TuningCategoryStats has been accumulating.
+ *
+ * Returns { acceptanceRate, sampleSize }.
+ *   - acceptanceRate is null when no settled rows exist (sampleSize = 0).
+ *   - Callers gate on `sampleSize >= N && acceptanceRate < THRESHOLD` to
+ *     avoid gating on noise from 1-2 decisions in a new category.
+ */
+export async function getCategoryAcceptance30d(
+  prisma: PrismaClient,
+  tenantId: string,
+  category: TuningDiagnosticCategory,
+): Promise<{ acceptanceRate: number | null; sampleSize: number }> {
+  const since = new Date(Date.now() - 30 * DAY_MS);
+  try {
+    const rows = await prisma.tuningSuggestion.groupBy({
+      where: {
+        tenantId,
+        diagnosticCategory: category,
+        createdAt: { gte: since },
+        status: { in: ['ACCEPTED', 'REJECTED'] },
+      },
+      by: ['status'],
+      _count: { _all: true },
+    });
+    let accepted = 0;
+    let rejected = 0;
+    for (const r of rows) {
+      if (r.status === 'ACCEPTED') accepted += r._count._all;
+      else if (r.status === 'REJECTED') rejected += r._count._all;
+    }
+    const n = accepted + rejected;
+    return { acceptanceRate: n === 0 ? null : accepted / n, sampleSize: n };
+  } catch (err) {
+    console.warn('[CategoryStats] getCategoryAcceptance30d failed:', err);
+    return { acceptanceRate: null, sampleSize: 0 };
+  }
+}
 
 export async function updateCategoryStatsOnAccept(
   prisma: PrismaClient,

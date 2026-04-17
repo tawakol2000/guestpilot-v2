@@ -31,7 +31,11 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
       subLabelQuery: z.string().max(64).optional(),
       propertyId: z.string().optional(),
       sinceDays: z.number().int().min(1).max(365).optional(),
-      status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED']).optional(),
+      status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'AUTO_SUPPRESSED']).optional(),
+      // Sprint 08 §5 — include AUTO_SUPPRESSED rows (hidden from the default
+      // queue) when the agent needs to explain why a suggestion didn't
+      // surface. Defaults to false to keep existing behavior stable.
+      includeSuppressed: z.boolean().optional(),
       limit: z.number().int().min(1).max(50).optional(),
       verbosity: z.enum(['concise', 'detailed']).optional(),
     },
@@ -43,7 +47,15 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
         const detailed = args.verbosity === 'detailed';
         const where: any = { tenantId: c.tenantId };
         if (args.category) where.diagnosticCategory = args.category;
-        if (args.status) where.status = args.status;
+        if (args.status) {
+          // An explicit status filter wins — lets the agent ask specifically
+          // for AUTO_SUPPRESSED when explaining why a suggestion didn't surface.
+          where.status = args.status;
+        } else if (!args.includeSuppressed) {
+          // Hide AUTO_SUPPRESSED by default so the "recent history" view
+          // matches what the manager sees in the queue.
+          where.status = { notIn: ['AUTO_SUPPRESSED'] };
+        }
         if (args.propertyId) where.sopPropertyId = args.propertyId;
         if (args.subLabelQuery) {
           where.diagnosticSubLabel = { contains: args.subLabelQuery, mode: 'insensitive' };
@@ -80,6 +92,9 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
           subLabel: r.diagnosticSubLabel,
           confidence: r.confidence,
           status: r.status,
+          // Sprint 08 §5 — hint flag so the agent can surface "[suppressed]"
+          // in its rationale when explaining why a suggestion didn't appear.
+          suppressed: r.status === 'AUTO_SUPPRESSED',
           actionType: r.actionType,
           createdAt: r.createdAt,
           ...(detailed

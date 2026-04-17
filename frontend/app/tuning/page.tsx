@@ -50,6 +50,8 @@ function TuningPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [suggestions, setSuggestions] = useState<TuningSuggestion[]>([])
+  const [suppressed, setSuppressed] = useState<TuningSuggestion[]>([])
+  const [showSuppressed, setShowSuppressed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [queueError, setQueueError] = useState<string | null>(null)
   const [properties, setProperties] = useState<ApiProperty[]>([])
@@ -76,8 +78,17 @@ function TuningPageInner() {
     setLoading(true)
     setQueueError(null)
     try {
-      const res = await apiListTuningSuggestions({ status: 'PENDING', limit: 100 })
+      // Sprint 08 §5 — AUTO_SUPPRESSED lives in a parallel fetch so toggling
+      // "Show suppressed" is instant (no refetch). Failures on the suppressed
+      // fetch don't block the main queue.
+      const [res, supRes] = await Promise.all([
+        apiListTuningSuggestions({ status: 'PENDING', limit: 100 }),
+        apiListTuningSuggestions({ status: 'AUTO_SUPPRESSED', limit: 100 }).catch(
+          () => ({ suggestions: [] as TuningSuggestion[], nextCursor: null }),
+        ),
+      ])
       setSuggestions(res.suggestions)
+      setSuppressed(supRes.suggestions)
     } catch (e) {
       // Sprint-07 bug fix — previously the error was swallowed silently and
       // the UI fell through to the "All caught up" empty state, which is
@@ -210,6 +221,18 @@ function TuningPageInner() {
           </div>
         </div>
         <CompositionStrip suggestions={suggestions} loading={loading} />
+        {suppressed.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowSuppressed((v) => !v)}
+            aria-pressed={showSuppressed}
+            className="mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors duration-150 hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE]"
+            style={{ color: showSuppressed ? '#6C5CE7' : '#6B7280' }}
+            title="Suggestions the pipeline auto-suppressed because the category's acceptance rate is below 30% and confidence wasn't high enough to surface."
+          >
+            {showSuppressed ? 'Hide' : 'Show'} suppressed ({suppressed.length})
+          </button>
+        ) : null}
       </div>
       <ScrollShadows className="min-h-0 flex-1">
         {queueError ? (
@@ -228,7 +251,7 @@ function TuningPageInner() {
           </div>
         ) : (
           <TuningQueue
-            suggestions={suggestions}
+            suggestions={showSuppressed ? [...suggestions, ...suppressed] : suggestions}
             loading={loading}
             selectedId={selectedId}
             onSelect={(id) => {

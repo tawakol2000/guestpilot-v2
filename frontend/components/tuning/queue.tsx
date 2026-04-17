@@ -132,6 +132,10 @@ export function TuningQueue({
                     s.diagnosticSubLabel?.replace(/[-_]/g, ' ') ||
                     (s.sopCategory ?? null)?.replace(/^sop-/, '').replace(/-/g, ' ') ||
                     null
+                  // Sprint 08 §5 — AUTO_SUPPRESSED rows render muted so the
+                  // manager can see them but not confuse them with live
+                  // pending suggestions.
+                  const suppressed = s.status === 'AUTO_SUPPRESSED'
                   return (
                     <li
                       key={s.id}
@@ -147,6 +151,7 @@ export function TuningQueue({
                         }
                         style={{
                           background: active ? TUNING_COLORS.accentSoft : undefined,
+                          opacity: suppressed ? 0.6 : 1,
                         }}
                         aria-current={active ? 'true' : undefined}
                       >
@@ -172,6 +177,18 @@ export function TuningQueue({
                               category={cat}
                               subLabel={null}
                             />
+                            {suppressed ? (
+                              <span
+                                className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                                style={{
+                                  background: TUNING_COLORS.surfaceSunken,
+                                  color: TUNING_COLORS.inkMuted,
+                                }}
+                                title="Auto-suppressed: category acceptance <30% and confidence below 0.75"
+                              >
+                                suppressed
+                              </span>
+                            ) : null}
                             {sub ? (
                               <span className="truncate text-[11px] text-[#9CA3AF]">{sub}</span>
                             ) : null}

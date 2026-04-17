@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronsRight, ChevronsLeft, PackageCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronsLeft,
+  ChevronsRight,
+  MinusCircle,
+  PackageCheck,
+  XCircle,
+} from 'lucide-react'
 import {
   apiTuningCategoryStats,
   apiTuningCoverage,
@@ -295,6 +303,68 @@ function RetentionDashboard() {
   )
 }
 
+// Sprint 08 §4 — traffic-light state for a single graduation criterion.
+type TrafficLight = 'pass' | 'warn' | 'fail'
+
+function trafficLightIcon(state: TrafficLight) {
+  if (state === 'pass') {
+    return (
+      <CheckCircle2
+        size={12}
+        strokeWidth={2}
+        aria-hidden
+        style={{ color: TUNING_COLORS.successFg }}
+      />
+    )
+  }
+  if (state === 'warn') {
+    return (
+      <AlertTriangle
+        size={12}
+        strokeWidth={2}
+        aria-hidden
+        style={{ color: TUNING_COLORS.warnFg }}
+      />
+    )
+  }
+  return (
+    <XCircle
+      size={12}
+      strokeWidth={2}
+      aria-hidden
+      style={{ color: TUNING_COLORS.dangerFg }}
+    />
+  )
+}
+
+function ThresholdStat({
+  label,
+  value,
+  hint,
+  state,
+}: {
+  label: string
+  value: string
+  hint: string
+  state: TrafficLight
+}) {
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-baseline gap-1.5">
+        <span
+          className="text-2xl font-semibold tabular-nums tracking-tight"
+          style={{ color: TUNING_COLORS.ink }}
+        >
+          {value}
+        </span>
+        {trafficLightIcon(state)}
+      </div>
+      <div className="mt-1 text-xs font-medium text-[#6B7280]">{label}</div>
+      <div className="mt-0.5 text-xs text-[#9CA3AF]">{hint}</div>
+    </div>
+  )
+}
+
 function GraduationDashboard() {
   const [m, setM] = useState<TuningGraduationMetrics | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -309,6 +379,38 @@ function GraduationDashboard() {
   }, [])
 
   const meta = m ? `${m.windowDays}d · n=${m.sampleSize}` : 'Loading…'
+
+  // Sprint 08 §4 — traffic-light states.
+  const editRateState: TrafficLight = !m
+    ? 'warn'
+    : m.editRate <= 0.1
+      ? 'pass'
+      : m.editRate <= 0.15
+        ? 'warn'
+        : 'fail'
+  const escalationState: TrafficLight = !m
+    ? 'warn'
+    : m.escalationRate <= 0.05
+      ? 'pass'
+      : m.escalationRate <= 0.08
+        ? 'warn'
+        : 'fail'
+  const criticalTarget = m?.criticalFailuresTarget ?? 0
+  const criticalCount = m?.criticalFailures30d ?? 0
+  const criticalState: TrafficLight =
+    criticalCount <= criticalTarget ? 'pass' : criticalCount <= 1 ? 'warn' : 'fail'
+  const convTarget = m?.conversationCountTarget ?? 200
+  const convCount = m?.conversationCount30d ?? 0
+  const convState: TrafficLight =
+    convCount >= convTarget
+      ? 'pass'
+      : convCount >= convTarget * 0.8
+        ? 'warn'
+        : 'fail'
+
+  const gatedCategories = m?.categoryConfidenceGating
+    ? Object.entries(m.categoryConfidenceGating).filter(([, v]) => v.gated)
+    : []
 
   return (
     <section
@@ -325,29 +427,82 @@ function GraduationDashboard() {
         }}
       >
         <div className="grid grid-cols-2 gap-4 gap-y-5">
-          <Stat
+          <ThresholdStat
             label="Edit rate"
             value={fmtPct(m?.editRate, 1)}
-            warn={(m?.editRate ?? 0) > 0.1}
-            hint="target <10%"
+            hint="target ≤ 10%"
+            state={editRateState}
           />
           <Stat
             label="Edit magnitude"
             value={fmtPct(m?.editMagnitude, 1)}
             hint="avg"
           />
-          <Stat
+          <ThresholdStat
             label="Escalation rate"
             value={fmtPct(m?.escalationRate, 1)}
-            warn={(m?.escalationRate ?? 0) > 0.05}
-            hint="target ≤5%"
+            hint="target ≤ 5%"
+            state={escalationState}
           />
           <Stat
             label="Acceptance rate"
             value={fmtPct(m?.acceptanceRate, 0)}
             hint="composite"
           />
+          <ThresholdStat
+            label="Critical failures"
+            value={
+              m?.criticalFailures30d === undefined ? '—' : String(m.criticalFailures30d)
+            }
+            hint={`target: ${criticalTarget} · 30d`}
+            state={criticalState}
+          />
+          <ThresholdStat
+            label="Conversations"
+            value={
+              m?.conversationCount30d === undefined ? '—' : String(m.conversationCount30d)
+            }
+            hint={`target: ${convTarget} · 30d`}
+            state={convState}
+          />
         </div>
+
+        {gatedCategories.length > 0 ? (
+          <div
+            className="mt-4 rounded-lg px-3 py-2 text-xs"
+            style={{
+              background: TUNING_COLORS.warnBg,
+              color: TUNING_COLORS.warnFg,
+            }}
+          >
+            <div className="flex items-start gap-2">
+              <MinusCircle
+                size={12}
+                strokeWidth={2}
+                className="mt-0.5 shrink-0"
+                aria-hidden
+              />
+              <div>
+                <div className="font-medium">
+                  {gatedCategories.length}{' '}
+                  {gatedCategories.length === 1 ? 'category' : 'categories'} gated
+                </div>
+                <div className="mt-0.5 text-[11px] leading-4">
+                  {gatedCategories.map(([cat, v]) => (
+                    <span key={cat} className="mr-2">
+                      {cat.toLowerCase().replace(/_/g, ' ')} ·{' '}
+                      {v.acceptanceRate === null
+                        ? '—'
+                        : `${Math.round(v.acceptanceRate * 100)}%`}{' '}
+                      (n={v.sampleSize})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {((m?.editRate ?? 0) > 0.1 || (m?.escalationRate ?? 0) > 0.05) ? (
           <div
             className="mt-4 flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
