@@ -32,6 +32,7 @@ import {
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 import { invalidateSopCache } from '../../services/sop.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
+import { performSearchReplace } from './search-replace';
 import { mergeSystemPromptClause } from '../../services/tuning/system-prompt-merge.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
@@ -128,11 +129,13 @@ export function buildSuggestionActionTool(
           // Sprint 10 workstream A: resolve search_replace → full proposedText
           // before persisting. The apply path downstream writes proposedText
           // directly to the artifact, so we normalise edit-format here. If
-          // oldText isn't found in the current artifact, fail fast — the
-          // agent can retry with corrected oldText.
+          // oldText isn't found (or appears multiple times) in the current
+          // artifact, fail fast — the agent can retry with corrected oldText.
           let draftProposedText = args.draft.proposedText ?? null;
           let draftBeforeText = args.draft.beforeText ?? null;
-          if ((args.draft.editFormat ?? 'full_replacement') === 'search_replace') {
+          let draftEditFormat: 'search_replace' | 'full_replacement' =
+            (args.draft.editFormat as any) ?? 'full_replacement';
+          if (draftEditFormat === 'search_replace') {
             const oldText = args.draft.oldText ?? '';
             const newText = args.draft.newText ?? '';
             if (!oldText || !newText) {
@@ -152,14 +155,36 @@ export function buildSuggestionActionTool(
                 'Could not resolve current artifact text for search_replace. Check the draft target fields (e.g. sopCategory+sopStatus, systemPromptVariant, faqEntryId, or beforeText for TOOL_CONFIG).'
               );
             }
-            if (!currentText.includes(oldText)) {
+            const resolved = performSearchReplace(currentText, oldText, newText);
+            if (resolved.kind === 'not_found') {
               span.end({ error: 'SEARCH_REPLACE_OLDTEXT_NOT_FOUND' });
               return asError(
-                'search_replace failed: oldText was not found in the current artifact. Re-read the artifact via fetch_evidence_bundle and supply an exact, verbatim passage (including whitespace and punctuation).'
+                'search_replace failed: oldText was not found in the current artifact. Re-read the artifact via fetch_evidence_bundle and supply an exact, verbatim passage (including whitespace and punctuation). Newlines must match exactly (LF vs CRLF).'
               );
             }
-            draftProposedText = currentText.replace(oldText, newText);
+            if (resolved.kind === 'ambiguous') {
+              span.end({ error: 'SEARCH_REPLACE_OLDTEXT_AMBIGUOUS' });
+              return asError(
+                `search_replace failed: oldText matched ${resolved.count} occurrences in the current artifact. Extend oldText with surrounding context so the match is unique, then retry.`
+              );
+            }
+            draftProposedText = resolved.result;
             draftBeforeText = draftBeforeText ?? currentText;
+          }
+          // Sprint 10 workstream A.2 follow-up: run the same validator the
+          // PostToolUse hook runs on propose_suggestion so the agent can't
+          // bypass validation by going straight to suggestion_action({draft}).
+          const draftValidationError = validateDraftForApply({
+            category: args.draft.category,
+            editFormat: draftEditFormat,
+            proposedText: draftProposedText,
+            oldText: args.draft.oldText ?? null,
+            newText: args.draft.newText ?? null,
+            beforeText: draftBeforeText,
+          });
+          if (draftValidationError) {
+            span.end({ error: 'DRAFT_VALIDATION_FAILED' });
+            return asError(`suggestion_action draft validation failed: ${draftValidationError}`);
           }
           const actionType = CATEGORY_TO_ACTION_TYPE[args.draft.category] ?? 'EDIT_SYSTEM_PROMPT';
           const created = await c.prisma.tuningSuggestion.create({
@@ -705,6 +730,70 @@ async function applyArtifactWrite(
     default:
       return { ok: false, error: `UNSUPPORTED_ACTION_TYPE:${suggestion.actionType}` };
   }
+}
+
+/**
+ * Sprint 10 workstream A.2 follow-up: the same validator the PostToolUse
+ * hook runs on propose_suggestion, reused here so `suggestion_action({draft})`
+ * cannot bypass validation by skipping propose_suggestion entirely. Keep
+ * the rules in sync with hooks/post-tool-use.ts#validateProposeSuggestion.
+ */
+// Sprint 10 workstream A.2 follow-up: keep in sync with
+// hooks/post-tool-use.ts#ELISION_PATTERNS. Deliberately drops `[rest of …]`
+// and loose `TODO:\s*fill` because those false-positive on legitimate
+// FAQ/SOP text ("call us for the rest of your stay", "TODO: fill form").
+const DRAFT_ELISION_PATTERNS: RegExp[] = [
+  /\/\/\s*\.\.\./i,
+  /\/\/\s*rest\s+(of\s+)?unchanged/i,
+  /\/\/\s*existing\s+code/i,
+  /\/\*\s*\.\.\.\s*\*\//i,
+  /#\s*rest\s+(of\s+)?unchanged/i,
+  /#\s*existing\s+code/i,
+  /<!--\s*remaining\s*-->/i,
+  /<!--\s*\.\.\.\s*-->/i,
+  /\[\s*unchanged\s*\]/i,
+  /\[\s*rest\s+of\s+(the\s+)?(content|prompt|rules|section|file|text|code)[^\]]*\]/i,
+  /TODO:\s*fill\s+in\b/i,
+  /\.\.\.\s*existing\s+code\s*\.\.\./i,
+];
+
+function validateDraftForApply(args: {
+  category: string;
+  editFormat: 'search_replace' | 'full_replacement';
+  proposedText: string | null;
+  oldText: string | null;
+  newText: string | null;
+  beforeText: string | null;
+}): string | null {
+  if (args.category === 'NO_FIX' || args.category === 'MISSING_CAPABILITY') {
+    if (args.proposedText || args.oldText || args.newText) {
+      return `${args.category} must have proposedText/oldText/newText all null`;
+    }
+    return null;
+  }
+  if (args.editFormat === 'search_replace') {
+    if (!args.oldText || !args.newText) {
+      return 'editFormat=search_replace requires both oldText and newText (non-empty)';
+    }
+    if (args.oldText === args.newText) {
+      return 'editFormat=search_replace requires oldText !== newText';
+    }
+  } else {
+    if (!args.proposedText || args.proposedText.length === 0) {
+      return 'editFormat=full_replacement requires a non-empty proposedText';
+    }
+  }
+  const textToCheck =
+    args.editFormat === 'search_replace' ? args.newText ?? '' : args.proposedText ?? '';
+  for (const re of DRAFT_ELISION_PATTERNS) {
+    if (re.test(textToCheck)) {
+      return `proposed text contains an elision marker (${re.source}). Include the complete text, not a placeholder.`;
+    }
+  }
+  if (/^\s*\.\.\.\s*$/m.test(textToCheck)) {
+    return 'proposed text contains a bare ellipsis line. Include the complete text, not a placeholder.';
+  }
+  return null;
 }
 
 /**

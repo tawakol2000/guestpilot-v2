@@ -61,6 +61,12 @@ export function buildPostToolUseHook(_ctx: () => HookContext): HookCallback {
 
 // Sprint 10 workstream A.2 — pure-regex validator. No LLM calls, no DB.
 
+// Sprint 10 workstream A.2 follow-up: the `[rest of …]` and `TODO: fill`
+// patterns flagged legitimate SOP/FAQ content ("call them for the rest of
+// your stay", "TODO: fill out form on arrival"). Tightened to phrases that
+// clearly signal AI-elision-placeholder intent: "[rest of the content]",
+// "[rest of the prompt]", etc., and "TODO: fill in" instead of any "TODO:
+// fill" substring. Added Unicode ellipsis (U+2026) detection.
 const ELISION_PATTERNS: RegExp[] = [
   /\/\/\s*\.\.\./i,
   /\/\/\s*rest\s+(of\s+)?unchanged/i,
@@ -71,8 +77,8 @@ const ELISION_PATTERNS: RegExp[] = [
   /<!--\s*remaining\s*-->/i,
   /<!--\s*\.\.\.\s*-->/i,
   /\[\s*unchanged\s*\]/i,
-  /\[\s*rest\s+of[^\]]*\]/i,
-  /TODO:\s*fill/i,
+  /\[\s*rest\s+of\s+(the\s+)?(content|prompt|rules|section|file|text|code)[^\]]*\]/i,
+  /TODO:\s*fill\s+in\b/i,
   /\.\.\.\s*existing\s+code\s*\.\.\./i,
 ];
 
