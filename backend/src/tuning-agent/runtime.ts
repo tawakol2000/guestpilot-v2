@@ -200,6 +200,97 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
   let finalText = '';
   let runError: string | null = null;
 
+  // Hotfix — the Claude Agent SDK persists session state on the local FS.
+  // On Railway the container disk is ephemeral, so on every container
+  // restart all stored sessions vanish. The next turn passes our saved
+  // sdkSessionId as `resume`, the SDK can't find it, and the whole turn
+  // errors with "No conversation found with session ID …". Architectural
+  // fix is to stop using SDK session cache entirely and replay the
+  // TuningMessage transcript ourselves; this hotfix detects the specific
+  // "session not found" error and retries the SAME turn without resume so
+  // the user gets a working response. The prior turns' context is lost
+  // (SDK has no memory of them) — a follow-up will reconstruct context
+  // from TuningMessage rows.
+  const isSessionNotFoundError = (e: any): boolean => {
+    const msg: string = e?.message ?? String(e ?? '')
+    return /No conversation found with session ID/i.test(msg)
+        || /session.*(not found|does not exist|invalid)/i.test(msg)
+  }
+
+  const runQuery = async (resumeSessionId: string | null): Promise<void> => {
+    const span = startAiSpan('tuning-agent.query', { model, resumed: resumeSessionId !== null });
+    try {
+      const q = query({
+        prompt: input.userMessage,
+        options: {
+          model,
+          systemPrompt,
+          mcpServers: {
+            [TUNING_AGENT_SERVER_NAME]: mcpServer,
+          },
+          // Always allow our in-process MCP tools without prompting.
+          allowedTools: Object.values(TUNING_AGENT_TOOL_NAMES),
+          // Disable built-in CLI tools — agent should only use our 8.
+          tools: [],
+          hooks,
+          // Streaming + session persistence.
+          includePartialMessages: true,
+          persistSession: true,
+          ...(resumeSessionId ? { resume: resumeSessionId } : {}),
+          // Low-cost permission mode: we pre-authorize our tools and
+          // nothing else is exposed. `dontAsk` keeps accidental tool
+          // calls from hanging on a user-input prompt that can't exist
+          // in an API context.
+          permissionMode: 'dontAsk',
+          settingSources: [],
+          // Agent-proper reasoning; Stop hook will emit a follow-up.
+          effort: 'medium',
+        },
+      });
+      for await (const message of q) {
+        // Capture the SDK session id on first message.
+        if (!sdkSessionId && 'session_id' in message && typeof message.session_id === 'string') {
+          sdkSessionId = message.session_id;
+        }
+        if (message.type === 'assistant') {
+          for (const block of message.message?.content ?? []) {
+            if (block.type === 'text') finalText += block.text;
+            if (block.type === 'tool_use') toolCallsInvoked.push(block.name);
+          }
+          // Sprint 05 §8: surface prompt-cache usage on every assistant
+          // message so the deploy verification can confirm the cached-
+          // fraction target ≥ 0.70 on turn 2 without round-tripping to
+          // Langfuse. The SDK passes the underlying Anthropic usage
+          // object through verbatim on `message.message.usage`.
+          const u: any = (message as any).message?.usage;
+          if (u && (u.cache_read_input_tokens !== undefined || u.input_tokens !== undefined)) {
+            const inp = u.input_tokens ?? 0;
+            const cached = u.cache_read_input_tokens ?? 0;
+            const created = u.cache_creation_input_tokens ?? 0;
+            const out = u.output_tokens ?? 0;
+            const denom = inp + cached;
+            const frac = denom === 0 ? 0 : cached / denom;
+            console.log(
+              `[TuningAgent] usage tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
+            );
+          }
+        }
+        bridgeSDKMessage(message, state, (chunk) => {
+          try {
+            input.writer.write(chunk);
+          } catch {
+            /* swallow — stream may be closed */
+          }
+        });
+      }
+      span.end({ toolCalls: toolCallsInvoked.length, length: finalText.length });
+    } catch (err: any) {
+      runError = err?.message ?? String(err);
+      span.end({ error: runError });
+      throw err;
+    }
+  };
+
   try {
     await runWithAiTrace(
       {
@@ -209,76 +300,34 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         messageId: input.assistantMessageId,
       },
       async () => {
-        const span = startAiSpan('tuning-agent.query', { model });
         try {
-          const q = query({
-            prompt: input.userMessage,
-            options: {
-              model,
-              systemPrompt,
-              mcpServers: {
-                [TUNING_AGENT_SERVER_NAME]: mcpServer,
-              },
-              // Always allow our in-process MCP tools without prompting.
-              allowedTools: Object.values(TUNING_AGENT_TOOL_NAMES),
-              // Disable built-in CLI tools — agent should only use our 8.
-              tools: [],
-              hooks,
-              // Streaming + session persistence.
-              includePartialMessages: true,
-              persistSession: true,
-              ...(sdkSessionId ? { resume: sdkSessionId } : {}),
-              // Low-cost permission mode: we pre-authorize our tools and
-              // nothing else is exposed. `dontAsk` keeps accidental tool
-              // calls from hanging on a user-input prompt that can't exist
-              // in an API context.
-              permissionMode: 'dontAsk',
-              settingSources: [],
-              // Agent-proper reasoning; Stop hook will emit a follow-up.
-              effort: 'medium',
-            },
-          });
-          for await (const message of q) {
-            // Capture the SDK session id on first message.
-            if (!sdkSessionId && 'session_id' in message && typeof message.session_id === 'string') {
-              sdkSessionId = message.session_id;
-            }
-            if (message.type === 'assistant') {
-              for (const block of message.message?.content ?? []) {
-                if (block.type === 'text') finalText += block.text;
-                if (block.type === 'tool_use') toolCallsInvoked.push(block.name);
-              }
-              // Sprint 05 §8: surface prompt-cache usage on every assistant
-              // message so the deploy verification can confirm the cached-
-              // fraction target ≥ 0.70 on turn 2 without round-tripping to
-              // Langfuse. The SDK passes the underlying Anthropic usage
-              // object through verbatim on `message.message.usage`.
-              const u: any = (message as any).message?.usage;
-              if (u && (u.cache_read_input_tokens !== undefined || u.input_tokens !== undefined)) {
-                const inp = u.input_tokens ?? 0;
-                const cached = u.cache_read_input_tokens ?? 0;
-                const created = u.cache_creation_input_tokens ?? 0;
-                const out = u.output_tokens ?? 0;
-                const denom = inp + cached;
-                const frac = denom === 0 ? 0 : cached / denom;
-                console.log(
-                  `[TuningAgent] usage tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
-                );
-              }
-            }
-            bridgeSDKMessage(message, state, (chunk) => {
-              try {
-                input.writer.write(chunk);
-              } catch {
-                /* swallow — stream may be closed */
-              }
-            });
-          }
-          span.end({ toolCalls: toolCallsInvoked.length, length: finalText.length });
+          await runQuery(sdkSessionId);
         } catch (err: any) {
-          runError = err?.message ?? String(err);
-          span.end({ error: runError });
-          throw err;
+          // Session-not-found recovery — clear the stale id, drop our
+          // local copy, and retry the same turn fresh. Prior-turn context
+          // is lost (the SDK had no memory of it on disk), but the user's
+          // CURRENT request still gets answered.
+          if (sdkSessionId && isSessionNotFoundError(err)) {
+            console.warn(
+              `[TuningAgent] sdkSessionId=${sdkSessionId} not found on the SDK side (likely container restart). Retrying without resume.`
+            );
+            await input.prisma.tuningConversation
+              .update({
+                where: { id: input.conversationId },
+                data: { sdkSessionId: null },
+              })
+              .catch((e) =>
+                console.warn('[TuningAgent] could not clear stale sdkSessionId:', e)
+              );
+            sdkSessionId = null;
+            // Reset state we accumulated on the failed pass so the retry
+            // doesn't double-emit.
+            finalText = '';
+            toolCallsInvoked.length = 0;
+            await runQuery(null);
+          } else {
+            throw err;
+          }
         }
       }
     );
