@@ -181,12 +181,22 @@ export interface EvidenceBundle {
 
   /** System prompt assembly context for the run. Branch tags come from
    *  tenantConfig + reservation status and are meant to be fluid strings —
-   *  consumers should not pattern-match them beyond equality. */
+   *  consumers should not pattern-match them beyond equality.
+   *
+   *  Hotfix — the diagnostic used to see only the version number, so when it
+   *  was asked to fix a SYSTEM_PROMPT issue it produced a free-floating clause
+   *  with no awareness of what was already in the prompt. Apply then either
+   *  overwrote everything (pre-merge-service) or stitched the clause on at
+   *  the end with no relationship to existing rules. We now ship the full
+   *  text of both variants so the model can produce a *complete revised
+   *  prompt* — preserving every untouched section verbatim. */
   systemPromptContext: {
     version: number | null;
     agentName: string | null; // 'coordinator' | 'screening' | null when unknown
     reservationStatus: string | null;
     branchTags: string[];
+    coordinatorPrompt: string | null;
+    screeningPrompt: string | null;
   };
 }
 
@@ -362,7 +372,11 @@ export async function assembleEvidenceBundle(
   // ─── 8. System prompt assembly context ────────────────────────────────
   const tenantConfig = await prisma.tenantAiConfig.findUnique({
     where: { tenantId: triggerEvent.tenantId },
-    select: { systemPromptVersion: true },
+    select: {
+      systemPromptVersion: true,
+      systemPromptCoordinator: true,
+      systemPromptScreening: true,
+    },
   });
   const branchTags = buildBranchTags(reservationStatus, ragContext);
 
@@ -408,6 +422,8 @@ export async function assembleEvidenceBundle(
       agentName: typeof ragContext?.agentName === 'string' ? (ragContext!.agentName as string) : null,
       reservationStatus: entities.reservation?.status ?? null,
       branchTags,
+      coordinatorPrompt: tenantConfig?.systemPromptCoordinator ?? null,
+      screeningPrompt: tenantConfig?.systemPromptScreening ?? null,
     },
   };
 }

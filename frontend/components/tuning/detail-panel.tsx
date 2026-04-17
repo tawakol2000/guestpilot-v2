@@ -563,10 +563,12 @@ async function resolveFaq(s: TuningSuggestion): Promise<ArtifactResolution> {
 }
 
 async function resolveSystemPrompt(s: TuningSuggestion): Promise<ArtifactResolution> {
-  // The diagnostic doesn't currently pinpoint a section in the multi-thousand-
-  // token system prompt, so the honest UX is "here's the clause to add." We
-  // still load the variant for context (length + first line) so the user
-  // knows which prompt they'd be editing.
+  // Post-hotfix the diagnostic produces a complete revised prompt, not a
+  // free-floating clause. Show the actual before/after so the manager can see
+  // exactly what changed. The merge service still falls back to append-with-
+  // marker for old fragment-style suggestions still in the queue, so for
+  // those rows the "Proposed" pane will look short next to "Current" — that's
+  // intentional, surfaces the legacy fragment for review.
   let variantLabel = s.systemPromptVariant ?? 'Coordinator'
   let cfg: TenantAiConfig | null = null
   try {
@@ -574,20 +576,28 @@ async function resolveSystemPrompt(s: TuningSuggestion): Promise<ArtifactResolut
   } catch {
     /* swallow — we still render the proposed text */
   }
+  const variantKey = (variantLabel || '').toLowerCase().includes('coord')
+    ? 'coordinator'
+    : 'screening'
   const wholePrompt =
-    (s.systemPromptVariant === 'screening'
+    (variantKey === 'screening'
       ? cfg?.systemPromptScreening
       : cfg?.systemPromptCoordinator) ?? ''
-  const lengthHint = wholePrompt
-    ? `current prompt: ${wholePrompt.length.toLocaleString()} chars`
-    : 'current prompt unavailable'
-  variantLabel = variantLabel.charAt(0).toUpperCase() + variantLabel.slice(1)
+  variantLabel = variantKey.charAt(0).toUpperCase() + variantKey.slice(1)
+  const proposedLen = (s.proposedText ?? '').length
+  const currentLen = wholePrompt.length
+  // Replicate the merge-service auto heuristic so the subtitle accurately
+  // describes what apply will do — replace vs append-with-marker.
+  const willReplace = currentLen === 0 || proposedLen / currentLen >= 0.5
   return {
-    targetLabel: `System prompt \u00b7 ${variantLabel}`,
-    subtitle: `New clause to add to the ${variantLabel.toLowerCase()} system prompt (${lengthHint}). The insertion point is picked when you apply.`,
-    currentText: '',
-    leftPlaceholder:
-      'System-prompt edits add or replace a clause; the diff against the whole prompt would be too large to skim. Use \u201CDiscuss\u201D to negotiate the exact insertion point.',
+    targetLabel: `System prompt \u00b7 ${variantLabel} (${currentLen.toLocaleString()} chars current)`,
+    subtitle: willReplace
+      ? `Full ${variantLabel.toLowerCase()} prompt rewrite. Apply will replace the entire prompt with the proposed text (a snapshot is kept in history for rollback).`
+      : `Legacy fragment-style proposal — apply will append the clause inside marker comments at the end of the prompt rather than replacing it (the prior diagnostic produced clauses; the new one produces full rewrites).`,
+    currentText: wholePrompt,
+    leftPlaceholder: wholePrompt
+      ? undefined
+      : 'No current prompt configured for this variant.',
   }
 }
 

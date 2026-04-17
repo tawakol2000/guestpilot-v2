@@ -150,8 +150,16 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
                 : 'systemPromptScreening';
             const current = await prisma.tenantAiConfig.findUnique({ where: { tenantId } });
             const currentPromptText = ((current as any)?.[variantField] as string | null) ?? '';
-            const mergeMode: 'append' | 'replace' =
-              body && body.applyMode === 'replace' ? 'replace' : 'append';
+            // 'auto' picks replace vs append by length ratio. Diagnostic
+            // post-hotfix produces a complete revised prompt → replace; old
+            // fragment-style suggestions still in the queue → append, so they
+            // don't wipe the prompt. Manager can force either via body.applyMode.
+            const mergeMode: 'append' | 'replace' | 'auto' =
+              body && body.applyMode === 'replace'
+                ? 'replace'
+                : body && body.applyMode === 'append'
+                  ? 'append'
+                  : 'auto';
             const finalText = mergeSystemPromptClause(
               currentPromptText,
               proposedText,

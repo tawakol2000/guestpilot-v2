@@ -197,6 +197,30 @@ Rules (non-negotiable):
   SOP_CONTENT, SOP_ROUTING, FAQ, SYSTEM_PROMPT, TOOL_CONFIG,
   PROPERTY_OVERRIDE. For MISSING_CAPABILITY and NO_FIX, proposedText must
   be null.
+- proposedText is a COMPLETE REPLACEMENT for the targeted artifact text,
+  NOT a snippet to be stitched in. Every untouched section, header, XML
+  tag, variable placeholder, and rule must be preserved verbatim. The
+  apply path writes proposedText directly into the artifact field; if you
+  return only the new clause, every other rule in that artifact is lost.
+  Edit minimally — change only the lines that actually need to change,
+  copy everything else byte-for-byte.
+  - For SYSTEM_PROMPT specifically: the evidence bundle's
+    "## Current system prompts" section contains the full text of both
+    coordinator and screening prompts. Locate the variant indicated by
+    systemPromptContext.agentName (or pick the one that contains the
+    rule you're modifying), copy it whole, edit only the target section,
+    and return the entire revised prompt as proposedText.
+  - For SOP_CONTENT / PROPERTY_OVERRIDE: the bundle's
+    "## SOPs in effect" section shows the current variant.content. Copy
+    it, modify the relevant lines, return the whole revised content.
+  - For FAQ: return the complete revised answer text.
+  - For SOP_ROUTING / TOOL_CONFIG: return the complete revised
+    toolDescription / tool description (typically short, full rewrite is
+    fine).
+  Returning a fragment is a critical failure — it destroys the rest of
+  the artifact when applied. If you cannot see the current text of the
+  artifact you intend to edit in the evidence bundle, return NO_FIX with
+  a rationale instead of guessing.
 - capabilityRequest must be non-null ONLY when category is
   MISSING_CAPABILITY. Otherwise it must be null.
 - artifactTarget.type must be NONE when category is NO_FIX or
@@ -494,7 +518,29 @@ function buildLlmInput(
     ``,
     `## System prompt context`,
     '```json',
-    JSON.stringify(bundle.systemPromptContext, null, 2),
+    JSON.stringify(
+      {
+        version: bundle.systemPromptContext.version,
+        agentName: bundle.systemPromptContext.agentName,
+        reservationStatus: bundle.systemPromptContext.reservationStatus,
+        branchTags: bundle.systemPromptContext.branchTags,
+      },
+      null,
+      2
+    ),
+    '```',
+    ``,
+    `## Current system prompts (full text — REQUIRED for any SYSTEM_PROMPT proposedText)`,
+    `If category=SYSTEM_PROMPT, copy the variant indicated by agentName whole, edit ONLY the target lines, return the full revised prompt as proposedText. Returning a fragment will destroy the rest of the prompt at apply time.`,
+    ``,
+    `### Coordinator prompt (${(bundle.systemPromptContext.coordinatorPrompt ?? '').length.toLocaleString()} chars)`,
+    '```',
+    bundle.systemPromptContext.coordinatorPrompt || '(empty — not configured for this tenant)',
+    '```',
+    ``,
+    `### Screening prompt (${(bundle.systemPromptContext.screeningPrompt ?? '').length.toLocaleString()} chars)`,
+    '```',
+    bundle.systemPromptContext.screeningPrompt || '(empty — not configured for this tenant)',
     '```',
     ``,
     `## Your task`,

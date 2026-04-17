@@ -322,11 +322,14 @@ async function applyArtifactWrite(
           : 'systemPromptScreening';
       const current = await c.prisma.tenantAiConfig.findUnique({ where: { tenantId: c.tenantId } });
       const currentPromptText = ((current as any)?.[variantField] as string | null) ?? '';
+      // 'auto' lets the merge service decide replace vs append by length
+      // ratio — see system-prompt-merge.service.ts. Aligned with the controller
+      // path for consistency.
       const mergedFinalText = mergeSystemPromptClause(
         currentPromptText,
         finalText,
         suggestion.id,
-        { mode: 'append' }
+        { mode: 'auto' }
       );
       const history = Array.isArray(current?.systemPromptHistory)
         ? [...((current!.systemPromptHistory as unknown[]) || [])]

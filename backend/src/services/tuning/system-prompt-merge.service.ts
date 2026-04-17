@@ -21,16 +21,33 @@
 const MARKER_PREFIX = '<!-- tuning:'
 const MARKER_SUFFIX = ' -->'
 
-export type SystemPromptApplyMode = 'append' | 'replace'
+/**
+ * Threshold for the heuristic auto-detection in mode 'auto'. If proposedText
+ * is at least this fraction of the current prompt's length, we treat it as a
+ * complete-revised-prompt replacement. Below the threshold we fall back to
+ * append-with-marker as a safety net for pre-hotfix suggestions still in the
+ * queue (those returned a small free-floating clause). 0.5 is intentionally
+ * generous — a real revision rarely cuts more than half the prompt.
+ */
+const AUTO_REPLACE_LENGTH_RATIO = 0.5
+
+export type SystemPromptApplyMode = 'append' | 'replace' | 'auto'
 
 export interface MergeOptions {
   /**
-   * 'append' (default) — wrap the clause in marker comments and append to
-   * the end of the current prompt. Re-applying the same suggestion replaces
-   * the prior clause in-place rather than stacking.
+   * 'auto' (recommended default) — pick replace vs append based on the
+   * proposedText length relative to the current prompt. The diagnostic was
+   * updated to produce a complete revised prompt, so most new proposals will
+   * trigger replace; old fragment-style proposals still in the queue will
+   * fall through to append so they don't wipe the prompt.
    *
-   * 'replace' — write the clause verbatim, overwriting the entire prompt.
-   * Only safe when the caller has confirmed the text IS a complete prompt.
+   * 'append' — wrap the clause in marker comments and append to the end of
+   * the current prompt. Re-applying the same suggestion replaces the prior
+   * clause in-place rather than stacking.
+   *
+   * 'replace' — write the text verbatim, overwriting the entire prompt.
+   * Use when the caller has positive confirmation that proposedText is a
+   * complete prompt (e.g. manager hand-edited it in the UI).
    */
   mode?: SystemPromptApplyMode
 }
@@ -41,13 +58,22 @@ export function mergeSystemPromptClause(
   suggestionId: string,
   options: MergeOptions = {}
 ): string {
-  const mode: SystemPromptApplyMode = options.mode ?? 'append'
+  const requestedMode: SystemPromptApplyMode = options.mode ?? 'auto'
   const clause = (proposedText ?? '').trim()
   if (!clause) return currentPrompt
 
+  const current = currentPrompt ?? ''
+  // Resolve 'auto' to a concrete mode using the length heuristic.
+  let mode: 'append' | 'replace'
+  if (requestedMode === 'auto') {
+    const ratio = current.length === 0 ? 1 : clause.length / current.length
+    mode = ratio >= AUTO_REPLACE_LENGTH_RATIO ? 'replace' : 'append'
+  } else {
+    mode = requestedMode
+  }
+
   if (mode === 'replace') return clause
 
-  const current = currentPrompt ?? ''
   const marker = `${MARKER_PREFIX}${suggestionId}${MARKER_SUFFIX}`
   const block = `${marker}\n${clause}\n${marker}`
 

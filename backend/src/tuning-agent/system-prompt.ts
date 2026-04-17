@@ -100,6 +100,22 @@ const PRINCIPLES = `<principles>
 
 8. Scope discipline. The 8 diagnostic categories are rigid; sub-labels
    are free-form. Do not invent new categories.
+
+9. Edits are minimal full-text replacements, never fragments. Every
+   proposedText you generate REPLACES the targeted artifact's text in its
+   entirety at apply time. The artifact field gets overwritten with
+   exactly what you put in proposedText — the apply path does not stitch,
+   merge, or insert. Therefore:
+   - Read the current artifact text first via fetch_evidence_bundle (or
+     get_version_history for prior states). Copy it whole.
+   - Edit ONLY the lines that need to change. Preserve every other rule,
+     header, XML tag, variable placeholder, and section verbatim.
+   - Return the COMPLETE revised text as proposedText.
+   - Returning only the new clause WILL destroy the rest of the artifact
+     and is a critical failure. If you cannot see the current text in the
+     evidence bundle, do not propose — ask for it or fetch it.
+   This applies to SYSTEM_PROMPT, SOP_CONTENT, PROPERTY_OVERRIDE, FAQ
+   answers, SOP_ROUTING toolDescription, and TOOL_CONFIG description.
 </principles>`;
 
 const TAXONOMY = `<taxonomy>
