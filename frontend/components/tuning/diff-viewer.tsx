@@ -90,6 +90,16 @@ export function DiffViewer({
     return diffTokens(a, b)
   }, [before, after, plain])
 
+  // Sprint 09 fix 14: warn when either input exceeds the 1600-token
+  // internal cap so the reader knows the displayed diff may be incomplete.
+  // Count tokens on the input strings, not `tokens` (which is post-LCS).
+  const truncated = useMemo(() => {
+    if (plain) return false
+    const aCount = tokenize(before ?? '').length
+    const bCount = tokenize(after ?? '').length
+    return aCount > 1600 || bCount > 1600
+  }, [before, after, plain])
+
   const empty = !before && !after && !leftPlaceholder && !rightPlaceholder
   if (empty) {
     return (
@@ -133,6 +143,19 @@ export function DiffViewer({
           {!plain ? (
             <span className="font-mono text-[10px] text-[#9CA3AF]">word-level diff</span>
           ) : null}
+        </div>
+      ) : null}
+
+      {truncated ? (
+        <div
+          className="border-b px-3 py-2 text-xs"
+          style={{
+            background: TUNING_COLORS.warnBg,
+            color: TUNING_COLORS.warnFg,
+            borderColor: TUNING_COLORS.hairlineSoft,
+          }}
+        >
+          Diff truncated to first 1,600 tokens for performance. Full text available in the editor.
         </div>
       ) : null}
 

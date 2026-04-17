@@ -1428,11 +1428,18 @@ export default function InboxV5() {
   const [activeTab, setActiveTab] = useState<InboxTab>('All')
   const [navTab, setNavTabRaw] = useState<NavTab>(() => {
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('gp-nav-tab')
-      if (saved && [
+      // Feature 041 sprint 09 fix 13: the tuning /agent page deep-links to
+      // /?tab=sops|faqs|tools. Honor the URL query first, fall back to
+      // sessionStorage so other places preserve their last-tab behavior.
+      const validTabs = [
         'overview','inbox','calendar','analytics','tasks','settings','configure',
-        'logs','webhooks','sops','tools','sandbox','listings','faqs',
-      ].includes(saved)) return saved as NavTab
+        'logs','webhooks','sops','tools','sandbox','listings','faqs','tuning',
+      ] as const
+      const params = new URLSearchParams(window.location.search)
+      const urlTab = params.get('tab')
+      if (urlTab && (validTabs as readonly string[]).includes(urlTab)) return urlTab as NavTab
+      const saved = sessionStorage.getItem('gp-nav-tab')
+      if (saved && (validTabs as readonly string[]).includes(saved)) return saved as NavTab
     }
     return 'inbox'
   })

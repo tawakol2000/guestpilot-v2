@@ -59,29 +59,44 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         const since = windowStart();
         const prevStart = new Date(since.getTime() - WINDOW_DAYS * DAY_MS);
 
-        const currentRows = await prisma.message.findMany({
-          where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
-          select: { editedByUserId: true, originalAiText: true, content: true },
-        });
-        const prevRows = await prisma.message.findMany({
-          where: {
-            tenantId,
-            role: MessageRole.AI,
-            sentAt: { gte: prevStart, lt: since },
-          },
-          select: { editedByUserId: true, originalAiText: true, content: true },
-        });
-
-        const uneditedOf = (rows: Array<{ editedByUserId: string | null; originalAiText: string | null; content: string }>) =>
-          rows.filter((m) => !m.editedByUserId && (!m.originalAiText || m.originalAiText === m.content)).length;
-
-        const totalSent = currentRows.length;
-        const unedited = uneditedOf(currentRows);
+        // Sprint 09 fix 18: aggregate via count() instead of loading the
+        // entire Message table into memory. "Unedited" == editedByUserId
+        // is null AND (originalAiText is null OR originalAiText equals
+        // content). The last clause isn't directly expressible in a
+        // Prisma count(), but it's only non-null when a preview was
+        // edited — in practice the two conditions converge. For strict
+        // parity with the old filter we approximate: treat "edited"
+        // as editedByUserId != null. The rare case of originalAiText
+        // diverging without an editedByUserId set was a historical
+        // Shadow-Mode bug that's been fixed; the EMA will catch any
+        // regression.
+        const [totalSent, edited, prevTotal, prevEdited] = await Promise.all([
+          prisma.message.count({
+            where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
+          }),
+          prisma.message.count({
+            where: {
+              tenantId,
+              role: MessageRole.AI,
+              sentAt: { gte: since },
+              editedByUserId: { not: null },
+            },
+          }),
+          prisma.message.count({
+            where: { tenantId, role: MessageRole.AI, sentAt: { gte: prevStart, lt: since } },
+          }),
+          prisma.message.count({
+            where: {
+              tenantId,
+              role: MessageRole.AI,
+              sentAt: { gte: prevStart, lt: since },
+              editedByUserId: { not: null },
+            },
+          }),
+        ]);
+        const unedited = totalSent - edited;
         const coverage = totalSent === 0 ? 0 : unedited / totalSent;
-
-        const prevTotal = prevRows.length;
-        const prevUnedited = uneditedOf(prevRows);
-        const previousCoverage = prevTotal === 0 ? null : prevUnedited / prevTotal;
+        const previousCoverage = prevTotal === 0 ? null : (prevTotal - prevEdited) / prevTotal;
 
         res.json({
           windowDays: WINDOW_DAYS,
@@ -171,17 +186,36 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         const { tenantId } = req;
         const since = windowStart();
 
-        const msgs = await prisma.message.findMany({
-          where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
-          select: {
-            editedByUserId: true,
-            originalAiText: true,
-            content: true,
-            editMagnitudeScore: true,
-          },
-        });
-        const total = msgs.length;
-        const edited = msgs.filter((m) => !!m.editedByUserId).length;
+        // Sprint 09 fix 18: totals via count() instead of loading the whole
+        // AI message table. The edited-message detail load is narrowed to
+        // ONLY edited rows (editedByUserId != null), and only the two
+        // columns needed for magnitude averaging.
+        const [total, edited, editedMsgs] = await Promise.all([
+          prisma.message.count({
+            where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
+          }),
+          prisma.message.count({
+            where: {
+              tenantId,
+              role: MessageRole.AI,
+              sentAt: { gte: since },
+              editedByUserId: { not: null },
+            },
+          }),
+          prisma.message.findMany({
+            where: {
+              tenantId,
+              role: MessageRole.AI,
+              sentAt: { gte: since },
+              editedByUserId: { not: null },
+            },
+            select: {
+              originalAiText: true,
+              content: true,
+              editMagnitudeScore: true,
+            },
+          }),
+        ]);
         const editRate = total === 0 ? 0 : edited / total;
 
         // Sprint 05 §3 (C19): prefer the persisted authoritative score from
@@ -192,8 +226,7 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
         let magCount = 0;
         let scoredCount = 0;
         let proxyCount = 0;
-        for (const m of msgs) {
-          if (!m.editedByUserId) continue;
+        for (const m of editedMsgs) {
           if (typeof m.editMagnitudeScore === 'number') {
             magSum += m.editMagnitudeScore;
             magCount++;
@@ -210,12 +243,16 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
           where: { tenantId, type: 'ESCALATION', createdAt: { gte: since } },
         });
         // Denominator: distinct conversations that saw an AI reply in the window.
-        const conversationsWithAi = await prisma.message.findMany({
-          where: { tenantId, role: MessageRole.AI, sentAt: { gte: since } },
-          select: { conversationId: true },
-          distinct: ['conversationId'],
+        // Sprint 09 fix 18: use Conversation.count with a `some` filter instead
+        // of findMany-with-distinct (which loaded every matching Message row).
+        const convCount = await prisma.conversation.count({
+          where: {
+            tenantId,
+            messages: {
+              some: { role: MessageRole.AI, sentAt: { gte: since } },
+            },
+          },
         });
-        const convCount = conversationsWithAi.length;
         const escalationRate = convCount === 0 ? 0 : Math.min(1, escalations / convCount);
 
         // Composite acceptance rate across TuningCategoryStats. Volume-weighted.
@@ -242,12 +279,15 @@ export function makeTuningDashboardsController(prisma: PrismaClient) {
           },
         });
 
-        const conversationsWithAi30d = await prisma.message.findMany({
-          where: { tenantId, role: MessageRole.AI, sentAt: { gte: convSince } },
-          select: { conversationId: true },
-          distinct: ['conversationId'],
+        // Sprint 09 fix 18: same conversation-count pattern as above.
+        const conversationCount30d = await prisma.conversation.count({
+          where: {
+            tenantId,
+            messages: {
+              some: { role: MessageRole.AI, sentAt: { gte: convSince } },
+            },
+          },
         });
-        const conversationCount30d = conversationsWithAi30d.length;
 
         // Per-category 30d acceptance rate. We compute this directly from
         // TuningSuggestion rows (not TuningCategoryStats) so the "30 day

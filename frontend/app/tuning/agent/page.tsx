@@ -542,7 +542,7 @@ function AgentPageInner() {
               count={sopDefs.filter((s) => s.enabled).length}
               total={sopDefs.length}
               previews={sopDefs.slice(0, 3).map((s) => formatCategory(s.category))}
-              href="/"
+              href="/?tab=sops"
               hrefLabel="Edit in SOP editor"
             />
             <KnowledgeCard
@@ -552,7 +552,7 @@ function AgentPageInner() {
               // rather than 0 to avoid a misleading zero state.
               countText="Browse"
               previews={['Open the FAQ page to search and edit entries.']}
-              href="/"
+              href="/?tab=faqs"
               hrefLabel="Open FAQ"
             />
             <KnowledgeCard
@@ -561,7 +561,7 @@ function AgentPageInner() {
               count={tools.filter((t) => t.enabled).length}
               total={tools.length}
               previews={tools.slice(0, 3).map((t) => t.displayName || t.name)}
-              href="/"
+              href="/?tab=tools"
               hrefLabel="Edit tools"
             />
           </div>
@@ -633,7 +633,7 @@ function AgentPageInner() {
                 <AlertTriangle size={12} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden />
                 <span>
                   To change any of these, open the full configuration editor at{' '}
-                  <Link href="/" className="text-[#6C5CE7] hover:underline">
+                  <Link href="/?tab=configure" className="text-[#6C5CE7] hover:underline">
                     Dashboard → AI config
                   </Link>
                   .

@@ -204,6 +204,10 @@ model Message {
   @@index([conversationId])
   @@index([tenantId])
   @@index([conversationId, previewState])
+  // Sprint 09 fix 17 — dashboard coverage + graduation metrics filter by
+  // (tenantId, role=AI) then order/window by sentAt. This composite
+  // avoids an in-memory sort on the hot path.
+  @@index([tenantId, role, sentAt(sort: Desc)])
 }
 
 model PendingAiReply {
@@ -794,6 +798,13 @@ model TuningSuggestion {
   @@index([conversationId])
   @@index([evidenceBundleId])
   @@index([tenantId, diagnosticCategory])
+  // Sprint 09 fix 17 — cooldown query scans ACCEPTED rows by tenant
+  // ordered by appliedAt desc; without this index the query falls back
+  // to (tenantId, status) + an in-memory sort on appliedAt.
+  @@index([tenantId, status, appliedAt(sort: Desc)])
+  // Sprint 09 fix 17 — sprint 08 graduation metrics count criticalFailure
+  // rows in a 30d window; this composite serves that filter directly.
+  @@index([tenantId, criticalFailure, createdAt(sort: Desc)])
 }
 
 // ─── Feature 041: Conversational Tuning Agent ────────────────────────────────
