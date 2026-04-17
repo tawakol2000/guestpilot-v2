@@ -126,8 +126,12 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
         }
 
         // ── SOP variant / override snapshots (sprint 05 §2 / C17) ──────────
-        // Each snapshot row IS a rollback target (its previousContent is the
-        // prior state, which is what rollback restores).
+        // Each snapshot row stores the artifact's content RIGHT BEFORE the
+        // next write, so for THIS row's diff:
+        //   BEFORE = this row's previousContent.content
+        //   AFTER  = the next chronological snapshot (same artifact)'s
+        //            previousContent.content, OR the live artifact text if
+        //            this row is the most recent snapshot for that artifact.
         const sopHistory = await prisma.sopVariantHistory.findMany({
           where: { tenantId },
           orderBy: { editedAt: 'desc' },
@@ -148,45 +152,129 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
             })
           : [];
         const sopDefById = new Map(sopDefs.map(d => [d.id, d.category]));
+
+        // Batch-fetch live variants + overrides for all sopDefIds so the
+        // most-recent snapshot per artifact can pair with the live AFTER.
+        const liveVariants = sopDefIds.length
+          ? await prisma.sopVariant.findMany({
+              where: { sopDefinitionId: { in: sopDefIds } },
+              select: { sopDefinitionId: true, status: true, content: true },
+            })
+          : [];
+        const liveVariantByKey = new Map<string, string>();
+        for (const v of liveVariants) {
+          liveVariantByKey.set(`${v.sopDefinitionId}|${v.status}|`, v.content);
+        }
+        const liveOverrides = sopDefIds.length
+          ? await prisma.sopPropertyOverride.findMany({
+              where: { sopDefinitionId: { in: sopDefIds } },
+              select: { sopDefinitionId: true, status: true, propertyId: true, content: true },
+            })
+          : [];
+        const liveOverrideByKey = new Map<string, string>();
+        for (const o of liveOverrides) {
+          liveOverrideByKey.set(`${o.sopDefinitionId}|${o.status}|${o.propertyId}`, o.content);
+        }
+
+        // Group SOP snapshots by artifact key + sort each group asc so we
+        // can pair row[i].before with row[i+1].before for the after-text.
+        type SopRow = (typeof sopHistory)[number];
+        const sopGroups = new Map<string, SopRow[]>();
+        for (const h of sopHistory) {
+          const pc = h.previousContent as any;
+          const key = `${pc?.sopDefinitionId ?? ''}|${pc?.status ?? ''}|${pc?.propertyId ?? ''}`;
+          const arr = sopGroups.get(key) ?? [];
+          arr.push(h);
+          sopGroups.set(key, arr);
+        }
+        for (const arr of sopGroups.values()) {
+          arr.sort((a, b) => a.editedAt.getTime() - b.editedAt.getTime());
+        }
         for (const h of sopHistory) {
           const pc = h.previousContent as any;
           const category = sopDefById.get(pc?.sopDefinitionId) ?? 'unknown';
-          const status = pc?.status ?? '?';
-          const propertyId = pc?.propertyId as string | undefined;
+          const status: string = pc?.status ?? '?';
+          const propertyId: string | undefined = pc?.propertyId;
+          const key = `${pc?.sopDefinitionId ?? ''}|${status}|${propertyId ?? ''}`;
+          const group = sopGroups.get(key) ?? [];
+          const idx = group.findIndex((g) => g.id === h.id);
+          const next = idx >= 0 && idx < group.length - 1 ? group[idx + 1] : null;
+          const before: string = typeof pc?.content === 'string' ? pc.content : '';
+          let after = '';
+          if (next) {
+            const nextPc = next.previousContent as any;
+            after = typeof nextPc?.content === 'string' ? nextPc.content : '';
+          } else {
+            after = propertyId
+              ? liveOverrideByKey.get(`${pc?.sopDefinitionId}|${status}|${propertyId}`) ?? ''
+              : liveVariantByKey.get(`${pc?.sopDefinitionId}|${status}|`) ?? '';
+          }
           entries.push({
             id: `svh:${h.id}`,
             artifactType: 'SOP_VARIANT',
             artifactId: h.targetId,
-            artifactLabel: `${category} (${status})${propertyId ? ' — override' : ''}`,
+            artifactLabel: `${category} (${status})${propertyId ? ' \u2014 override' : ''}`,
             version: null,
             authorUserId: h.editedByUserId,
             note: pc?.kind === 'override' ? 'property override snapshot' : 'variant snapshot',
             sourceSuggestionId: h.triggeringSuggestionId,
-            diffPreview: null,
+            diffPreview: before || after ? { before: before || null, after: after || null } : null,
             createdAt: h.editedAt.toISOString(),
             rollbackSupported: true,
           });
         }
 
         // ── FAQ entry snapshots ────────────────────────────────────────────
+        // Same pairing as SOPs. Diff focuses on the answer text — that's
+        // where the actual edit lives 99% of the time. If the question
+        // changed too, the artifactLabel already shows it.
         const faqHistory = await prisma.faqEntryHistory.findMany({
           where: { tenantId },
           orderBy: { editedAt: 'desc' },
           take: 60,
         });
+        const faqIds = Array.from(new Set(faqHistory.map((h) => h.targetId)));
+        const liveFaqs = faqIds.length
+          ? await prisma.faqEntry.findMany({
+              where: { tenantId, id: { in: faqIds } },
+              select: { id: true, answer: true },
+            })
+          : [];
+        const liveFaqAnswerById = new Map(liveFaqs.map((f) => [f.id, f.answer]));
+        type FaqRow = (typeof faqHistory)[number];
+        const faqGroups = new Map<string, FaqRow[]>();
+        for (const h of faqHistory) {
+          const arr = faqGroups.get(h.targetId) ?? [];
+          arr.push(h);
+          faqGroups.set(h.targetId, arr);
+        }
+        for (const arr of faqGroups.values()) {
+          arr.sort((a, b) => a.editedAt.getTime() - b.editedAt.getTime());
+        }
         for (const h of faqHistory) {
           const pc = h.previousContent as any;
           const q = typeof pc?.question === 'string' ? pc.question : '(unknown question)';
+          const before: string = typeof pc?.answer === 'string' ? pc.answer : '';
+          const group = faqGroups.get(h.targetId) ?? [];
+          const idx = group.findIndex((g) => g.id === h.id);
+          const next = idx >= 0 && idx < group.length - 1 ? group[idx + 1] : null;
+          let after = '';
+          if (next) {
+            const nextPc = next.previousContent as any;
+            after = typeof nextPc?.answer === 'string' ? nextPc.answer : '';
+          } else {
+            after = liveFaqAnswerById.get(h.targetId) ?? '';
+          }
           entries.push({
             id: `feh:${h.id}`,
             artifactType: 'FAQ_ENTRY',
             artifactId: h.targetId,
-            artifactLabel: q.length > 80 ? q.slice(0, 77) + '…' : q,
+            artifactLabel: q.length > 80 ? q.slice(0, 77) + '\u2026' : q,
             version: null,
             authorUserId: h.editedByUserId,
             note: null,
             sourceSuggestionId: h.triggeringSuggestionId,
-            diffPreview: null,
+            diffPreview: before || after ? { before: before || null, after: after || null } : null,
             createdAt: h.editedAt.toISOString(),
             rollbackSupported: true,
           });

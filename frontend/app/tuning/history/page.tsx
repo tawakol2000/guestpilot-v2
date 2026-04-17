@@ -34,7 +34,11 @@ function HistoryRow({
   entry: VersionHistoryEntry & { rollbackSupported?: boolean }
   onRollback: (entry: VersionHistoryEntry) => void
 }) {
-  const [open, setOpen] = useState(false)
+  // Diff is open by default. The whole point of /tuning/history is "what
+  // changed?" — gating that behind a click made every row look identical.
+  // Toggle stays available for collapsing rows the user has already
+  // reviewed.
+  const [open, setOpen] = useState(true)
   const supportsRollback = (entry as any).rollbackSupported !== false
   const accent = ARTIFACT_ACCENT[entry.artifactType]
   return (
