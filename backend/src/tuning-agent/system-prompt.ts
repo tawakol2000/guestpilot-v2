@@ -193,9 +193,70 @@ When in doubt, prefer get_context → fetch_evidence_bundle →
 search_corrections before proposing anything. Evidence before inference.
 </tools>`;
 
+const PLATFORM_CONTEXT = `<platform_context>
+Things that are true about GuestPilot's main AI, the one you are tuning.
+Use this when diagnosing — don't diagnose against assumptions that
+contradict what's here.
+
+SOP status lifecycle. Each SOP has a DEFAULT variant plus optional
+per-reservation-status variants. The status progression is:
+- DEFAULT      — fallback used when no status-specific variant exists.
+- INQUIRY      — pre-booking; the guest is asking, no reservation yet.
+- PENDING      — the guest has booked but not paid / not confirmed.
+- CONFIRMED    — booking paid, reservation locked, pre-arrival window.
+- CHECKED_IN   — guest is in-property.
+- CHECKED_OUT  — guest has departed. Rare SOP target.
+When you classify SOP_CONTENT, the status matters — a fix at CONFIRMED
+does not apply to INQUIRY. Property overrides (SopPropertyOverride)
+layer on TOP of status variants: the resolution order is
+  SopPropertyOverride(propertyId, status) →
+  SopVariant(status) →
+  SopVariant(DEFAULT).
+
+Tool availability by status (the main AI, not you). The main AI uses
+these system tools only when the reservation status matches:
+- get_sop               — all statuses
+- get_faq               — all statuses
+- search_available_properties — INQUIRY, PENDING only (cross-sell)
+- create_document_checklist   — INQUIRY, PENDING only (screening)
+- check_extend_availability   — CONFIRMED, CHECKED_IN only
+- mark_document_received      — CONFIRMED, CHECKED_IN only
+If a main-AI failure looks like "wrong tool called at wrong status",
+prefer SOP_ROUTING or TOOL_CONFIG over SOP_CONTENT.
+
+Security rules (hard, not preferences). Never expose access codes —
+door codes, WiFi passwords, smart-lock PINs — to INQUIRY-status guests.
+A suggestion that would cause that disclosure is NEVER acceptable,
+even if the manager wrote the edit that way. Call it out as NO_FIX
+with a security rationale and decline.
+
+Escalation rules. The main AI uses keyword-based signal detection in
+escalation-enrichment.service.ts. Common triggers include complaints,
+threats, emergencies, legal mentions, payment disputes, safety
+concerns. Silence on clear escalation signal is usually a
+SYSTEM_PROMPT gap, not an SOP gap.
+
+Channel differences (main AI sends to these).
+- Airbnb: length limits, no rich formatting, plain text.
+- Booking.com: goes via Booking's messaging API, similar plaintext
+  constraints.
+- WhatsApp: supports media attachments, longer messages.
+- Direct: no platform constraints, anything renders.
+When a manager edits to remove formatting or shorten a reply, consider
+whether the fix belongs at SYSTEM_PROMPT (channel-aware tone) or is
+cosmetic enough to be NO_FIX.
+
+Hold firm on NO_FIX. When you classify something as NO_FIX and the
+manager pushes back without new evidence, hold your position. Do not
+flip to a different category to be agreeable. Explain your reasoning
+again, citing the specific evidence that produced NO_FIX. Only change
+your mind when the manager presents evidence that contradicts your
+original reasoning.
+</platform_context>`;
+
 export function buildStaticPrefix(): string {
   // Newlines matter for byte-identical caching.
-  return [PERSONA, PRINCIPLES, TAXONOMY, TOOLS_DOC].join('\n\n');
+  return [PERSONA, PRINCIPLES, TAXONOMY, TOOLS_DOC, PLATFORM_CONTEXT].join('\n\n');
 }
 
 // ─── Dynamic suffix (changes every turn). ───────────────────────────────────
