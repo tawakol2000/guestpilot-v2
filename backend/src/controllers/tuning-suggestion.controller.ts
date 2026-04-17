@@ -16,6 +16,26 @@
  */
 import { Response } from 'express';
 import { PrismaClient, TuningActionType, TuningSuggestionStatus } from '@prisma/client';
+
+// Sprint 09 fix 8: raised inside the accept dispatch when a required field is
+// missing. The outer handler catches, reverts the status claim back to
+// PENDING, and responds 400. Using an error class avoids forcing every
+// dispatch branch to thread a revert-and-return helper through.
+class RequiredFieldsError extends Error {
+  code = 'MISSING_REQUIRED_FIELDS';
+  constructor() {
+    super('MISSING_REQUIRED_FIELDS');
+  }
+}
+class NotFoundError extends Error {
+  readonly httpCode: string;
+  readonly detail?: string;
+  constructor(code: string, detail?: string) {
+    super(code);
+    this.httpCode = code;
+    this.detail = detail;
+  }
+}
 import { AuthenticatedRequest } from '../types';
 import { broadcastCritical } from '../services/socket.service';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
@@ -119,14 +139,47 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
       const { id } = req.params;
       const userId = (req as any).userId ?? null;
 
+      // Sprint 09 fix 8 + fix 9: atomic status claim.
+      //
+      // fix 8 (race): Two concurrent accepts both read PENDING, both apply
+      //   the artifact, both flip to ACCEPTED. Double-applied artifacts
+      //   can concatenate system prompts (mergeSystemPromptClause appends)
+      //   or double-bump version counters. The `updateMany` below uses
+      //   Postgres's row-level lock on UPDATE — equivalent to
+      //   SELECT FOR UPDATE in this context — to serialise the two
+      //   concurrent calls. Whichever request reaches the UPDATE first
+      //   commits the status flip; the second re-evaluates the WHERE
+      //   clause on the committed state and matches 0 rows → 409.
+      // fix 9 (AUTO_SUPPRESSED stuck): Sprint 08 §5 wrote AUTO_SUPPRESSED
+      //   rows for gated categories; the old gate only accepted PENDING,
+      //   leaving these rows unresolvable. Including AUTO_SUPPRESSED in
+      //   the claim lets the manager accept them explicitly.
+      //
+      // If the artifact write fails after the claim, we revert the status
+      // in the catch block so a retry can still succeed.
+      let claimed = false;
       try {
-        const suggestion = await prisma.tuningSuggestion.findFirst({ where: { id, tenantId } });
-        if (!suggestion) {
-          res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
+        const claim = await prisma.tuningSuggestion.updateMany({
+          where: { id, tenantId, status: { in: ['PENDING', 'AUTO_SUPPRESSED'] } },
+          data: { status: 'ACCEPTED', appliedAt: new Date(), appliedByUserId: userId },
+        });
+        if (claim.count === 0) {
+          const exists = await prisma.tuningSuggestion.findFirst({
+            where: { id, tenantId },
+            select: { id: true },
+          });
+          if (!exists) {
+            res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
+            return;
+          }
+          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
           return;
         }
-        if (suggestion.status !== 'PENDING') {
-          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
+        claimed = true;
+        const suggestion = await prisma.tuningSuggestion.findFirst({ where: { id, tenantId } });
+        if (!suggestion) {
+          // Race: deleted between claim and read. Unlikely but handle it.
+          res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
           return;
         }
 
@@ -139,8 +192,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             const proposedText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.proposedText;
             if (!proposedText || !suggestion.systemPromptVariant) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             // Hotfix — until the recent fix this branch wrote `proposedText`
             // directly into the variant field, OVERWRITING the entire system
@@ -220,8 +272,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
                 ? body.sopPropertyId
                 : suggestion.sopPropertyId;
             if (!finalText || !suggestion.sopCategory || !effectiveSopStatus) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             // Resolve the SopDefinition first — both variants and property overrides hang off it.
             const sopDef = await prisma.sopDefinition.findFirst({
@@ -229,8 +280,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               select: { id: true },
             });
             if (!sopDef) {
-              res.status(404).json({ error: 'SOP_DEFINITION_NOT_FOUND' });
-              return;
+              throw new NotFoundError('SOP_DEFINITION_NOT_FOUND');
             }
             if (effectiveSopPropertyId) {
               // Snapshot the prior content so a rollback can restore it (sprint 05 §2 / C17).
@@ -321,16 +371,14 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             const finalText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.sopToolDescription;
             if (!finalText || !suggestion.sopCategory) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             const sopDef = await prisma.sopDefinition.findFirst({
               where: { tenantId, category: suggestion.sopCategory },
               select: { id: true },
             });
             if (!sopDef) {
-              res.status(404).json({ error: 'SOP_DEFINITION_NOT_FOUND' });
-              return;
+              throw new NotFoundError('SOP_DEFINITION_NOT_FOUND');
             }
             await prisma.sopDefinition.update({
               where: { id: sopDef.id },
@@ -345,8 +393,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             const finalText: string | null =
               (typeof body.editedText === 'string' ? body.editedText : null) ?? suggestion.proposedText;
             if (!finalText || !suggestion.faqEntryId) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             let faq = await prisma.faqEntry.findFirst({
               where: { id: suggestion.faqEntryId, tenantId },
@@ -365,11 +412,10 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               }
             }
             if (!faq) {
-              res.status(404).json({
-                error: 'FAQ_NOT_FOUND',
-                detail: `FAQ entry ${suggestion.faqEntryId} no longer exists for this tenant.`,
-              });
-              return;
+              throw new NotFoundError(
+                'FAQ_NOT_FOUND',
+                `FAQ entry ${suggestion.faqEntryId} no longer exists for this tenant.`
+              );
             }
             // Snapshot the prior FAQ row so a rollback can restore it (sprint 05 §2 / C17).
             await snapshotFaqEntry(prisma, {
@@ -411,8 +457,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
               (typeof body.editedToolDescription === 'string' ? body.editedToolDescription : null) ??
               suggestion.sopToolDescription;
             if (!finalContent || !finalToolDesc || !suggestion.sopCategory || !suggestion.sopStatus) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             // Upsert SopDefinition by (tenantId, category).
             const sopDef = await prisma.sopDefinition.upsert({
@@ -515,8 +560,7 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             const finalAnswer: string | null =
               (typeof body.editedAnswer === 'string' ? body.editedAnswer : null) ?? suggestion.faqAnswer;
             if (!finalQuestion || !finalAnswer || !suggestion.faqCategory || !suggestion.faqScope) {
-              res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
-              return;
+              throw new RequiredFieldsError();
             }
             // Constitution §VIII: source=MANUAL, not AUTO_SUGGESTED — admin explicitly approved.
             const entry = await prisma.faqEntry.create({
@@ -543,13 +587,13 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
         const applyMode: 'IMMEDIATE' | 'QUEUED' =
           body.applyMode === 'QUEUED' ? 'QUEUED' : 'IMMEDIATE';
 
+        // Sprint 09 fix 8: status + appliedAt + appliedByUserId were already
+        // set by the atomic claim above. This update just stamps the payload
+        // and apply mode now that the artifact write has succeeded.
         const updated = await prisma.tuningSuggestion.update({
           where: { id: suggestion.id },
           data: {
-            status: 'ACCEPTED',
-            appliedAt: new Date(),
             appliedPayload: appliedPayload as any,
-            appliedByUserId: userId,
             applyMode,
           },
         });
@@ -587,6 +631,32 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
 
         res.json({ ok: true, suggestion: updated, targetUpdated });
       } catch (err) {
+        // Sprint 09 fix 8: if we claimed the row but the dispatch failed,
+        // revert the status back to PENDING so the manager can retry instead
+        // of having a suggestion permanently stuck in ACCEPTED without the
+        // corresponding artifact write.
+        if (claimed) {
+          await prisma.tuningSuggestion
+            .update({
+              where: { id },
+              data: {
+                status: 'PENDING',
+                appliedAt: null,
+                appliedByUserId: null,
+              },
+            })
+            .catch((revertErr) =>
+              console.error(`[tuning-suggestion] [${id}] accept revert failed:`, revertErr)
+            );
+        }
+        if (err instanceof RequiredFieldsError) {
+          res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
+          return;
+        }
+        if (err instanceof NotFoundError) {
+          res.status(404).json({ error: err.httpCode, ...(err.detail ? { detail: err.detail } : {}) });
+          return;
+        }
         console.error(`[tuning-suggestion] [${id}] accept failed:`, err);
         res.status(500).json({ error: 'INTERNAL_ERROR', detail: err instanceof Error ? err.message : String(err) });
       }
@@ -599,29 +669,42 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
       const userId = (req as any).userId ?? null;
 
       try {
-        const suggestion = await prisma.tuningSuggestion.findFirst({ where: { id, tenantId } });
-        if (!suggestion) {
-          res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
-          return;
-        }
-        if (suggestion.status !== 'PENDING') {
-          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
-          return;
-        }
         // Feature 041 sprint 03: optional one-line reason. Stored in
         // appliedPayload for reject (free-form JSON) so no schema change is needed.
         const body = req.body || {};
         const reason: string | null =
           typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null;
 
-        const updated = await prisma.tuningSuggestion.update({
-          where: { id: suggestion.id },
+        // Sprint 09 fix 8 + fix 9: atomic CAS on status, same approach as
+        // accept. Serialises concurrent rejects, and allows rejecting
+        // AUTO_SUPPRESSED suggestions (sprint 08 §5) which were otherwise
+        // stuck unresolvable.
+        const claim = await prisma.tuningSuggestion.updateMany({
+          where: { id, tenantId, status: { in: ['PENDING', 'AUTO_SUPPRESSED'] } },
           data: {
             status: 'REJECTED',
             appliedByUserId: userId,
             ...(reason ? { appliedPayload: { rejectReason: reason } as any } : {}),
           },
         });
+        if (claim.count === 0) {
+          const exists = await prisma.tuningSuggestion.findFirst({
+            where: { id, tenantId },
+            select: { id: true },
+          });
+          if (!exists) {
+            res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
+            return;
+          }
+          res.status(409).json({ error: 'SUGGESTION_NOT_PENDING' });
+          return;
+        }
+        const updated = await prisma.tuningSuggestion.findFirst({ where: { id, tenantId } });
+        if (!updated) {
+          // Race: deleted between flip and read. Treat as 404.
+          res.status(404).json({ error: 'SUGGESTION_NOT_FOUND' });
+          return;
+        }
 
         // Feature 041 sprint 02 §6: EMA update on reject too.
         await updateCategoryStatsOnReject(prisma, tenantId, updated.diagnosticCategory);

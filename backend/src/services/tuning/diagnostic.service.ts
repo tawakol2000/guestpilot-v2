@@ -108,14 +108,34 @@ function getOpenAI(): OpenAI | null {
 // once a dated GA snapshot ships.
 const DEFAULT_DIAGNOSTIC_MODEL = 'gpt-5.4';
 const FALLBACK_DIAGNOSTIC_MODEL = 'gpt-5.4-mini-2026-03-17';
+// Sprint 09 fix 7: after falling back, retry the primary model this often.
+// Five minutes is long enough to avoid hammering OpenAI during a transient
+// outage but short enough that a permanent-looking fallback doesn't end up
+// degrading every tenant's diagnostics for the rest of the process lifetime.
+const FALLBACK_RETRY_TTL_MS = 5 * 60 * 1000;
 
-let _resolvedModel: string | null = null;
-let _fallbackLogged = false;
+let _primaryModel: string | null = null;
+let _fallbackUntil: number | null = null;
+
+function getPrimaryModel(): string {
+  if (_primaryModel) return _primaryModel;
+  _primaryModel = (process.env.TUNING_DIAGNOSTIC_MODEL || DEFAULT_DIAGNOSTIC_MODEL).trim();
+  return _primaryModel;
+}
 
 function getDiagnosticModel(): string {
-  if (_resolvedModel) return _resolvedModel;
-  _resolvedModel = (process.env.TUNING_DIAGNOSTIC_MODEL || DEFAULT_DIAGNOSTIC_MODEL).trim();
-  return _resolvedModel;
+  const primary = getPrimaryModel();
+  if (_fallbackUntil !== null && Date.now() < _fallbackUntil) {
+    return FALLBACK_DIAGNOSTIC_MODEL;
+  }
+  // Window expired (or never triggered) — primary is authoritative again.
+  if (_fallbackUntil !== null && Date.now() >= _fallbackUntil) {
+    console.log(
+      `[Diagnostic] Fallback window expired, retrying primary model ${primary}.`
+    );
+    _fallbackUntil = null;
+  }
+  return primary;
 }
 
 function isModelNotFoundError(err: unknown): boolean {
@@ -128,19 +148,23 @@ function isModelNotFoundError(err: unknown): boolean {
 }
 
 function fallBackToMini(reason: string): void {
-  if (!_fallbackLogged) {
-    console.warn(
-      `[Diagnostic] Falling back from ${_resolvedModel ?? DEFAULT_DIAGNOSTIC_MODEL} to ${FALLBACK_DIAGNOSTIC_MODEL} for the rest of this process. Reason: ${reason}`
-    );
-    _fallbackLogged = true;
+  console.warn(
+    `[Diagnostic] Falling back from ${getPrimaryModel()} to ${FALLBACK_DIAGNOSTIC_MODEL} for ${FALLBACK_RETRY_TTL_MS / 1000}s. Reason: ${reason}`
+  );
+  _fallbackUntil = Date.now() + FALLBACK_RETRY_TTL_MS;
+}
+
+function clearFallbackAfterSuccess(modelThatSucceeded: string): void {
+  if (_fallbackUntil !== null && modelThatSucceeded === getPrimaryModel()) {
+    console.log(`[Diagnostic] Primary model ${modelThatSucceeded} recovered — clearing fallback window.`);
+    _fallbackUntil = null;
   }
-  _resolvedModel = FALLBACK_DIAGNOSTIC_MODEL;
 }
 
 /** Test-only reset helper — exposed for unit tests, not for callers. */
 export function __resetDiagnosticModelCacheForTests(): void {
-  _resolvedModel = null;
-  _fallbackLogged = false;
+  _primaryModel = null;
+  _fallbackUntil = null;
 }
 
 // ─── Taxonomy definitions (stable, hoisted so caching works cleanly) ─────────
@@ -380,6 +404,10 @@ export async function runDiagnostic(
       let response: any;
       try {
         response = await callDiagnosticModel(openai, modelUsed, reasoningEffort, llmInput, input.tenantId);
+        // Primary (or whatever we just tried) succeeded — clear the fallback
+        // window so subsequent calls resume using the configured primary
+        // model immediately, not after the TTL expires.
+        clearFallbackAfterSuccess(modelUsed);
       } catch (err) {
         if (isModelNotFoundError(err) && modelUsed !== FALLBACK_DIAGNOSTIC_MODEL) {
           fallBackToMini(`model_not_found for ${modelUsed}`);

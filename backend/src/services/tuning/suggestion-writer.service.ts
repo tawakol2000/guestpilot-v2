@@ -108,11 +108,17 @@ export async function writeSuggestionFromDiagnostic(
     return { suggestion: null, capabilityRequestId: null, note: 'NO_SOURCE_MESSAGE_ID' };
   }
 
-  // 3a. 48h cooldown on the same (category, target).
+  // 3a. 48h cooldown on the same (category, target, sopStatus).
+  //
+  // Sprint 09 fix 10: previously scoped only by (category, sopCategory),
+  // so a fix applied to check-in@CONFIRMED blocked a different fix on
+  // check-in@INQUIRY. Pass sopStatus through when available so the
+  // cooldown narrows to the exact variant being written.
   const cooldownHit = await checkCooldown(prisma, {
     tenantId: result.tenantId,
     category: result.category as TuningDiagnosticCategory,
     targetId: result.artifactTarget.id,
+    sopStatus: null, // Diagnostic currently doesn't emit sopStatus; placeholder for when it does.
   });
   if (cooldownHit) {
     console.log(
@@ -199,6 +205,7 @@ async function checkCooldown(
     tenantId: string;
     category: TuningDiagnosticCategory;
     targetId: string | null;
+    sopStatus?: string | null;
   }
 ): Promise<Date | null> {
   const since = new Date(Date.now() - COOLDOWN_WINDOW_MS);
@@ -218,6 +225,14 @@ async function checkCooldown(
       case 'SOP_ROUTING':
       case 'PROPERTY_OVERRIDE':
         where.sopCategory = params.targetId;
+        // Sprint 09 fix 10: also scope by sopStatus when the caller supplied
+        // it, so a suggestion for the CONFIRMED variant doesn't block a
+        // separate suggestion for the INQUIRY variant of the same SOP.
+        // Back-compat: when sopStatus is null/absent the filter is omitted
+        // and the cooldown behaves as before.
+        if (params.sopStatus) {
+          where.sopStatus = params.sopStatus;
+        }
         break;
       case 'FAQ':
         // Target id may be the FaqEntry id.

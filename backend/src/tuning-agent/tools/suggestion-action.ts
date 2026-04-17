@@ -284,20 +284,26 @@ async function applyArtifactWrite(
 
   // TOOL_CONFIG dispatch — use the ToolDefinition update pattern.
   if (suggestion.diagnosticCategory === 'TOOL_CONFIG') {
-    // finalText is the new description; we need a tool id. Look up by
-    // beforeText match if hints aren't enough. V1: require the agent to
-    // have included the tool name as the subLabel or encoded the toolId
-    // into the payload. If nothing matches, fall back to first tool for
-    // this tenant — this is intentionally conservative and logged.
+    // finalText is the new description. Resolve the target tool by exact
+    // beforeText match against ToolDefinition.description. We used to fall
+    // back to allTools[0] when the match failed — that silently corrupted a
+    // random tool's description. Sprint 09 fix 2: return an error so the
+    // agent asks the manager to clarify which tool to update.
     const allTools = await c.prisma.toolDefinition.findMany({
       where: { tenantId: c.tenantId },
       select: { id: true, description: true, name: true },
     });
-    let target = allTools.find(
+    if (allTools.length === 0) return { ok: false, error: 'NO_TOOL_DEFINITIONS_FOUND' };
+    const target = allTools.find(
       (t) => suggestion.beforeText && t.description === suggestion.beforeText
     );
-    if (!target) target = allTools[0];
-    if (!target) return { ok: false, error: 'NO_TOOL_DEFINITIONS_FOUND' };
+    if (!target) {
+      return {
+        ok: false,
+        error:
+          'Could not identify which tool to update. The beforeText did not match any existing tool description. Ask the manager to clarify which tool they mean.',
+      };
+    }
     await c.prisma.toolDefinition.update({
       where: { id: target.id },
       data: { description: finalText },
