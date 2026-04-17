@@ -72,7 +72,14 @@ export function buildSuggestionActionTool(
           subLabel: z.string().min(1).max(80),
           rationale: z.string().min(10).max(2000),
           confidence: z.number().min(0).max(1).optional(),
+          // Sprint 10: edit-format support. 'full_replacement' (default) uses
+          // proposedText as the complete new artifact body. 'search_replace'
+          // resolves oldText→newText against the current artifact text at
+          // apply time; fails fast if oldText is not found.
+          editFormat: z.enum(['search_replace', 'full_replacement']).optional(),
           proposedText: z.string().optional(),
+          oldText: z.string().optional(),
+          newText: z.string().optional(),
           beforeText: z.string().optional(),
           sopCategory: z.string().optional(),
           sopStatus: z.enum(['DEFAULT', 'INQUIRY', 'CONFIRMED', 'CHECKED_IN']).optional(),
@@ -118,6 +125,42 @@ export function buildSuggestionActionTool(
               'Cannot persist draft suggestion without sourceMessageId (either explicitly in draft or via an anchored conversation).'
             );
           }
+          // Sprint 10 workstream A: resolve search_replace → full proposedText
+          // before persisting. The apply path downstream writes proposedText
+          // directly to the artifact, so we normalise edit-format here. If
+          // oldText isn't found in the current artifact, fail fast — the
+          // agent can retry with corrected oldText.
+          let draftProposedText = args.draft.proposedText ?? null;
+          let draftBeforeText = args.draft.beforeText ?? null;
+          if ((args.draft.editFormat ?? 'full_replacement') === 'search_replace') {
+            const oldText = args.draft.oldText ?? '';
+            const newText = args.draft.newText ?? '';
+            if (!oldText || !newText) {
+              span.end({ error: 'SEARCH_REPLACE_MISSING_FIELDS' });
+              return asError(
+                'search_replace edit format requires both oldText and newText in the draft.'
+              );
+            }
+            if (oldText === newText) {
+              span.end({ error: 'SEARCH_REPLACE_NOOP' });
+              return asError('search_replace edit format requires oldText !== newText.');
+            }
+            const currentText = await resolveCurrentArtifactText(c, args.draft);
+            if (currentText == null) {
+              span.end({ error: 'SEARCH_REPLACE_TARGET_NOT_FOUND' });
+              return asError(
+                'Could not resolve current artifact text for search_replace. Check the draft target fields (e.g. sopCategory+sopStatus, systemPromptVariant, faqEntryId, or beforeText for TOOL_CONFIG).'
+              );
+            }
+            if (!currentText.includes(oldText)) {
+              span.end({ error: 'SEARCH_REPLACE_OLDTEXT_NOT_FOUND' });
+              return asError(
+                'search_replace failed: oldText was not found in the current artifact. Re-read the artifact via fetch_evidence_bundle and supply an exact, verbatim passage (including whitespace and punctuation).'
+              );
+            }
+            draftProposedText = currentText.replace(oldText, newText);
+            draftBeforeText = draftBeforeText ?? currentText;
+          }
           const actionType = CATEGORY_TO_ACTION_TYPE[args.draft.category] ?? 'EDIT_SYSTEM_PROMPT';
           const created = await c.prisma.tuningSuggestion.create({
             data: {
@@ -126,8 +169,8 @@ export function buildSuggestionActionTool(
               actionType,
               status: 'PENDING',
               rationale: args.draft.rationale,
-              beforeText: args.draft.beforeText ?? null,
-              proposedText: args.draft.proposedText ?? null,
+              beforeText: draftBeforeText,
+              proposedText: draftProposedText,
               sopCategory: args.draft.sopCategory ?? null,
               sopStatus: args.draft.sopStatus ?? null,
               sopPropertyId: args.draft.sopPropertyId ?? null,
@@ -601,4 +644,94 @@ async function applyArtifactWrite(
     default:
       return { ok: false, error: `UNSUPPORTED_ACTION_TYPE:${suggestion.actionType}` };
   }
+}
+
+/**
+ * Sprint 10 workstream A: resolve the current artifact text for a draft so we
+ * can apply a search_replace edit format. Returns null when the draft's target
+ * fields are insufficient or the target row doesn't exist. Intentionally
+ * narrow — only the fields covered by applyArtifactWrite above are supported.
+ */
+async function resolveCurrentArtifactText(
+  c: ToolContext,
+  draft: {
+    category: string;
+    sopCategory?: string;
+    sopStatus?: string;
+    sopPropertyId?: string;
+    systemPromptVariant?: string;
+    faqEntryId?: string;
+    beforeText?: string;
+  }
+): Promise<string | null> {
+  if (draft.category === 'SYSTEM_PROMPT') {
+    if (!draft.systemPromptVariant) return null;
+    const variantField = draft.systemPromptVariant.toLowerCase().includes('coord')
+      ? 'systemPromptCoordinator'
+      : 'systemPromptScreening';
+    const current = await c.prisma.tenantAiConfig.findUnique({ where: { tenantId: c.tenantId } });
+    const text = ((current as any)?.[variantField] as string | null) ?? '';
+    return text || null;
+  }
+  if (draft.category === 'SOP_CONTENT' || draft.category === 'PROPERTY_OVERRIDE') {
+    if (!draft.sopCategory || !draft.sopStatus) return null;
+    const sopDef = await c.prisma.sopDefinition.findFirst({
+      where: { tenantId: c.tenantId, category: draft.sopCategory },
+      select: { id: true },
+    });
+    if (!sopDef) return null;
+    if (draft.sopPropertyId) {
+      const override = await c.prisma.sopPropertyOverride.findUnique({
+        where: {
+          sopDefinitionId_propertyId_status: {
+            sopDefinitionId: sopDef.id,
+            propertyId: draft.sopPropertyId,
+            status: draft.sopStatus,
+          },
+        },
+        select: { content: true },
+      });
+      if (override) return override.content;
+    }
+    const variant = await c.prisma.sopVariant.findFirst({
+      where: { sopDefinitionId: sopDef.id, status: draft.sopStatus },
+      select: { content: true },
+    });
+    return variant?.content ?? null;
+  }
+  if (draft.category === 'SOP_ROUTING') {
+    if (!draft.sopCategory) return null;
+    const sopDef = await c.prisma.sopDefinition.findFirst({
+      where: { tenantId: c.tenantId, category: draft.sopCategory },
+      select: { toolDescription: true },
+    });
+    return sopDef?.toolDescription ?? null;
+  }
+  if (draft.category === 'FAQ') {
+    if (!draft.faqEntryId) return null;
+    const faq = await c.prisma.faqEntry.findFirst({
+      where: { id: draft.faqEntryId, tenantId: c.tenantId },
+      select: { question: true, answer: true },
+    });
+    if (!faq) return null;
+    // The apply path decides question-vs-answer by matching beforeText against
+    // the current question. Mirror that here so search_replace operates on the
+    // same field the apply path will write.
+    if (draft.beforeText && draft.beforeText.trim() === faq.question.trim()) {
+      return faq.question;
+    }
+    return faq.answer;
+  }
+  if (draft.category === 'TOOL_CONFIG') {
+    if (!draft.beforeText) return null;
+    const normalize = (s: string | null): string => (s ?? '').replace(/\r\n/g, '\n').trim();
+    const wanted = normalize(draft.beforeText);
+    const tools = await c.prisma.toolDefinition.findMany({
+      where: { tenantId: c.tenantId },
+      select: { description: true },
+    });
+    const match = tools.find((t) => normalize(t.description) === wanted);
+    return match?.description ?? null;
+  }
+  return null;
 }

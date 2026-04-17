@@ -22,7 +22,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'propose_suggestion',
-    'Stage a proposed artifact change as a client-side preview the manager can inspect. Does not write to the database. The manager confirms with a chat turn; you then call suggestion_action to persist + apply (or reject). Emits a data-suggestion-preview part.',
+    "Stage a proposed artifact change as a client-side preview the manager can inspect. Does not write to the database. Supports two edit formats: 'full_replacement' (default) supplies the COMPLETE revised artifact text via proposedText; 'search_replace' supplies oldText (exact, unique match from the current artifact) + newText for a literal string replacement at apply time. Use search_replace for artifacts larger than ~2,000 tokens.",
     {
       category: z.enum([
         'SOP_CONTENT',
@@ -37,7 +37,10 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
       subLabel: z.string().min(1).max(80),
       rationale: z.string().min(10).max(2000),
       confidence: z.number().min(0).max(1).optional(),
+      editFormat: z.enum(['search_replace', 'full_replacement']).optional(),
       proposedText: z.string().optional(),
+      oldText: z.string().optional(),
+      newText: z.string().optional(),
       beforeText: z.string().optional(),
       targetHint: z
         .object({
@@ -54,9 +57,11 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
     },
     async (args) => {
       const c = ctx();
+      const editFormat = args.editFormat ?? 'full_replacement';
       const span = startAiSpan('tuning-agent.propose_suggestion', {
         category: args.category,
         confidence: args.confidence,
+        editFormat,
       });
       try {
         const previewId = `preview:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
@@ -71,7 +76,10 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
               subLabel: args.subLabel,
               rationale: args.rationale,
               confidence: args.confidence ?? null,
+              editFormat,
               proposedText: args.proposedText ?? null,
+              oldText: args.oldText ?? null,
+              newText: args.newText ?? null,
               beforeText: args.beforeText ?? null,
               targetHint: args.targetHint ?? null,
               createdAt: new Date().toISOString(),
@@ -82,8 +90,9 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
         const payload = {
           previewId,
           category: args.category,
+          editFormat,
           status: 'PREVIEWED',
-          hint: 'Wait for manager to sanction apply/queue/reject, then call suggestion_action with action and the payload fields you need persisted.',
+          hint: 'Wait for manager to sanction apply/queue/reject, then call suggestion_action with action and the same edit-format fields you passed here.',
         };
         span.end(payload);
         return asCallToolResult(payload);
