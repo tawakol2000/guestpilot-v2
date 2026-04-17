@@ -14,6 +14,7 @@ import { getReservation } from '../services/hostaway.service';
 import { sendPushToTenantAll } from '../services/push.service';
 import { fetchAlteration } from '../services/hostaway-alterations.service';
 import { captionMessageImages } from '../services/image-caption.service';
+import { compactMessageAsync } from '../services/message-compaction.service';
 import { decrypt } from '../lib/encryption';
 
 interface HostawayWebhookPayload {
@@ -603,6 +604,7 @@ async function handleNewMessage(
     });
 
     savedMessageId = savedMessage.id;
+    compactMessageAsync(savedMessage.id, role, data.body || '', prisma);
 
     // Fire-and-forget: caption images so conversation history shows "[Image: description]"
     if (msgImageUrls.length > 0) {

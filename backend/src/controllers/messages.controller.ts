@@ -8,6 +8,7 @@ import { cancelPendingAiReply } from '../services/debounce.service';
 import { getAiConfig } from '../services/ai-config.service';
 import { createMessage, stripCodeFences } from '../services/ai.service';
 import { processFaqSuggestion } from '../services/faq-suggest.service';
+import { compactMessageAsync } from '../services/message-compaction.service';
 // Feature 041 — legacy copilot tuning trigger. The shadow-mode preview send
 // path (shadow-preview.controller.ts) already fires the diagnostic when the
 // manager edits a preview before sending. Without these imports the legacy
@@ -139,6 +140,7 @@ export function makeMessagesController(prisma: PrismaClient) {
             aiApiLogId: recentAiApiLog?.id ?? null,
           },
         });
+        compactMessageAsync(message.id, MessageRole.HOST, content, prisma);
 
         await prisma.conversation.updateMany({
           where: { id, tenantId },
@@ -339,6 +341,7 @@ export function makeMessagesController(prisma: PrismaClient) {
             source: clientSource,
           },
         });
+        compactMessageAsync(message.id, MessageRole.HOST, translatedContent, prisma);
 
         await prisma.conversation.updateMany({
           where: { id, tenantId },

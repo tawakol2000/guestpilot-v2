@@ -171,6 +171,7 @@ model Message {
   tenantId            String
   role                MessageRole
   content             String
+  compactedContent    String?              @db.Text // Nano-compressed version of long automated HOST/AI messages, used in conversation history to save tokens. Null = fall back to `content`.
   channel             Channel              @default(OTHER)
   communicationType   String               @default("")
   sentAt              DateTime             @default(now())

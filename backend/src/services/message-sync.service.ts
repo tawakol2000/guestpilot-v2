@@ -18,6 +18,7 @@
 import { PrismaClient, MessageRole, Channel } from '@prisma/client';
 import * as hostawayService from './hostaway.service';
 import { broadcastCritical } from './socket.service';
+import { compactMessageAsync } from './message-compaction.service';
 
 // ── Stats tracking ───────────────────────────────────────────────────────────
 
@@ -248,6 +249,7 @@ export async function syncConversationMessages(
             imageUrls: (hwMsg.imagesUrls as string[] | undefined) || [],
           },
         });
+        compactMessageAsync(created.id, role, content, prisma);
 
         newMessages++;
         if (role === MessageRole.GUEST) newGuestMessages++;

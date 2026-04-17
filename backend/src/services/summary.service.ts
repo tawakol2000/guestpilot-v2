@@ -20,21 +20,38 @@ Extract ONLY the following critical context:
 - Expressed dissatisfaction: complaints or negative experiences (e.g. "apartment wasn't clean on arrival")
 - Key decisions: important commitments or agreements made
 
-EXCLUDE all of the following (these are tracked separately in open tasks):
-- Cleaning requests and scheduling
-- WiFi password or door code exchanges
-- Amenity deliveries and requests
-- Check-in/checkout logistics and instructions
+EXCLUDE routine, resolved exchanges:
+- Routine cleaning/amenity scheduling that was completed
+- WiFi password or door code exchanges (already in reservation details)
+- Check-in/checkout logistics that went smoothly
 - Routine acknowledgments ("thanks", "ok", "got it")
-- Resolved escalations and manager responses
+- Resolved escalations where the issue was fully addressed
+
+INCLUDE even if the topic seems routine:
+- Complaints or dissatisfaction about ANY topic (including cleaning, amenities, WiFi)
+- Unresolved issues where the guest is still waiting
+- Promises made by Omar that haven't been fulfilled yet
+- Any negative emotional tone, frustration, or repeated requests
 
 Output a plain text summary in third person. Maximum ${MAX_SUMMARY_WORDS} words. No bullet points, no headers, no formatting. If there is nothing critical to summarize, output "No critical context."`;
 
 const EXTEND_PROMPT = `You are updating a conversation summary for a hotel AI assistant. You have the existing summary and new messages that were not previously covered.
 
-Merge the new information into the existing summary. Keep only critical context:
-- Guest identity, special arrangements, preferences, dissatisfaction, key decisions
-- Drop routine service exchanges (cleaning, WiFi, amenities, check-in logistics)
+Merge the new information into the existing summary. Keep critical context:
+- Guest identity, special arrangements, preferences, key decisions
+
+EXCLUDE routine, resolved exchanges:
+- Routine cleaning/amenity scheduling that was completed
+- WiFi password or door code exchanges (already in reservation details)
+- Check-in/checkout logistics that went smoothly
+- Routine acknowledgments ("thanks", "ok", "got it")
+- Resolved escalations where the issue was fully addressed
+
+INCLUDE even if the topic seems routine:
+- Complaints or dissatisfaction about ANY topic (including cleaning, amenities, WiFi)
+- Unresolved issues where the guest is still waiting
+- Promises made by Omar that haven't been fulfilled yet
+- Any negative emotional tone, frustration, or repeated requests
 
 Output the updated summary as plain text. Maximum ${MAX_SUMMARY_WORDS} words. No bullet points, no headers, no formatting.`;
 

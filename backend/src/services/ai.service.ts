@@ -29,9 +29,11 @@ import { detectEscalationSignals } from './escalation-enrichment.service';
 import { createChecklist, updateChecklist, hasPendingItems, type DocumentChecklist } from './document-checklist.service';
 import { getToolDefinitions } from './tool-definition.service';
 import { resolveVariables, applyPropertyOverrides } from './template-variable.service';
+import { BAKED_IN_SOPS_TEXT } from '../config/baked-in-sops';
 import { callWebhook } from './webhook-tool.service';
 import { sendPushToTenantAll } from './push.service';
 import { generateOrExtendSummary } from './summary.service';
+import { compactMessageAsync } from './message-compaction.service';
 import { syncConversationMessages } from './message-sync.service';
 import { lockOlderPreviews } from './shadow-preview.service';
 
@@ -81,6 +83,28 @@ function sleep(ms: number): Promise<void> {
 }
 
 type ContentBlock = { type: 'text'; text: string };
+
+// ─── Conversation history timestamp formatting ───────────────────────────────
+// Same-day messages: [h:mm A]  —  older messages: [MMM DD, h:mm A]
+// Timezone resolution: tenant.workingHoursTimezone → fallback 'Africa/Cairo'.
+function formatHistoryTimestamp(sentAt: Date, now: Date, timeZone: string): string {
+  try {
+    const dayKey = (d: Date) => new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(d);
+    const sameDay = dayKey(sentAt) === dayKey(now);
+    const timePart = new Intl.DateTimeFormat('en-US', {
+      timeZone, hour: 'numeric', minute: '2-digit', hour12: true,
+    }).format(sentAt);
+    if (sameDay) return `[${timePart}]`;
+    const datePart = new Intl.DateTimeFormat('en-US', {
+      timeZone, month: 'short', day: '2-digit',
+    }).format(sentAt);
+    return `[${datePart}, ${timePart}]`;
+  } catch {
+    return '';
+  }
+}
 
 // ─── Image handling instructions (injected only when guest sends an image) ───
 // Used as default when tenant hasn't customized via Configure AI
@@ -1593,16 +1617,43 @@ export async function generateAndSendAiReply(
       effectiveSystemPrompt += `\n\n## TENANT-SPECIFIC INSTRUCTIONS\nThe following instructions are specific to this property and override general guidelines where they conflict:\n${tenantConfig.customInstructions}`;
     }
 
+    // D.1 — Inject baked-in SOPs as the last static section before <!-- CONTENT_BLOCKS -->.
+    // These are universal procedures (working hours, house rules, escalation tiers) that
+    // the classifier used to retrieve every call — baking them into the cached prefix is
+    // cheaper and more reliable. Coordinator only; screening agent's scope doesn't need them.
+    if (!isInquiry) {
+      const marker = '<!-- CONTENT_BLOCKS -->';
+      const markerIdx = effectiveSystemPrompt.indexOf(marker);
+      if (markerIdx >= 0) {
+        effectiveSystemPrompt =
+          effectiveSystemPrompt.slice(0, markerIdx) +
+          `\n${BAKED_IN_SOPS_TEXT}\n\n` +
+          effectiveSystemPrompt.slice(markerIdx);
+      } else {
+        // Legacy prompts without the delimiter: append to the tail (still cacheable).
+        effectiveSystemPrompt += `\n\n${BAKED_IN_SOPS_TEXT}`;
+      }
+    }
+
     // SOP content is now injected via the get_sop tool handler in the main tool loop.
     // No pre-injection needed — the AI calls get_sop when it needs guidance.
 
     let guestMessage = '';
 
     // Build conversation history text — last 10 messages as labeled lines
+    // Each line is prefixed with a `[MMM DD, h:mm A]` timestamp (short `[h:mm A]` for same-day)
+    // using the tenant's workingHoursTimezone, falling back to Africa/Cairo.
+    const historyTimeZone = (tenantConfig as any)?.workingHoursTimezone || 'Africa/Cairo';
+    const historyNow = new Date();
     const currentMsgIds = new Set(currentMsgs.map(m => m.id));
     const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-10);
     const historyText = historyMsgs.length > 0
-      ? historyMsgs.map(m => `${m.role === 'GUEST' ? 'Guest' : 'Omar'}: ${m.content}`).join('\n')
+      ? historyMsgs.map(m => {
+          const stamp = formatHistoryTimestamp(m.sentAt, historyNow, historyTimeZone);
+          const speaker = m.role === 'GUEST' ? 'Guest' : 'Omar';
+          const body = (m as any).compactedContent || m.content;
+          return `${stamp ? stamp + ' ' : ''}${speaker}: ${body}`;
+        }).join('\n')
       : '';
 
     // Apply per-listing variable overrides if configured
@@ -1740,6 +1791,16 @@ export async function generateAndSendAiReply(
       userContent.push({
         type: 'text',
         text: `### PENDING DOCUMENTS ###\n${variableDataMap.DOCUMENT_CHECKLIST}`,
+      });
+    }
+
+    // D.2 — Image handling instructions live as a dynamic content block (not appended
+    // to the cacheable system prompt) so image turns don't bust the cache prefix.
+    if (hasImages) {
+      const imageInstructions = (tenantConfig as any)?.imageHandlingInstructions || DEFAULT_IMAGE_HANDLING;
+      userContent.push({
+        type: 'text',
+        text: `<image_instructions>\n${imageInstructions}\n</image_instructions>`,
       });
     }
 
@@ -1925,19 +1986,20 @@ export async function generateAndSendAiReply(
       }
 
       // Determine reasoning effort: tenant config > minimum 'low' for tool reliability
+      // D.3 — Screening defaults to 'low' (was 'none'). Multi-hop nationality × party ×
+      // gender decisions benefit from even minimal reasoning; cost on gpt-5.4-mini is
+      // negligible and accuracy on edge cases is meaningful.
       const tenantReasoning = isInquiry
-        ? (tenantConfig as any)?.reasoningScreening || 'none'
+        ? (tenantConfig as any)?.reasoningScreening || 'low'
         : (tenantConfig as any)?.reasoningCoordinator || 'auto';
       // Minimum 'low' when auto — GPT-5.4 Mini needs reasoning budget to reliably decide on tool calls
       const reasoningEffort: 'none' | 'low' | 'medium' | 'high' = tenantReasoning === 'auto'
         ? 'low'
         : tenantReasoning;
 
-      // ─── Image handling: append instructions to system prompt tail + attach ALL images ───
+      // ─── Image attachment: download all images and inject into the last user turn ───
+      // Image instructions already live in userContent (see D.2 content block above).
       if (hasImages) {
-        // Append image handling to END of system prompt (static prefix stays cached)
-        const imageInstructions = (tenantConfig as any)?.imageHandlingInstructions || DEFAULT_IMAGE_HANDLING;
-        effectiveSystemPrompt += `\n\n${imageInstructions}`;
 
         // Collect ALL image URLs from ALL current messages
         const allImageUrls: string[] = [];
@@ -2074,6 +2136,17 @@ export async function generateAndSendAiReply(
               parsed.escalation.note = parsed.escalation.note.slice(0, 2000);
             }
           }
+          // D.4 — Telemetry: flag info_request escalations that skipped get_faq.
+          // Code-level safety net alongside the prompt-level instruction. Does NOT
+          // block the response — we only log so we can measure how often the AI
+          // skips the FAQ lookup before escalating a factual question.
+          if (parsed.escalation?.urgency === 'info_request') {
+            const toolsCalled = (ragContext.toolNames || []) as string[];
+            if (!toolsCalled.includes('get_faq')) {
+              console.warn(`[AI] [${conversationId}] info_request escalation without get_faq call`);
+            }
+          }
+
           // Handle task resolve/update even when escalation is null
           if (parsed.escalation) {
             await handleEscalation(
@@ -2172,6 +2245,7 @@ export async function generateAndSendAiReply(
           },
         });
         stampAiTrace({ messageId: previewMessage.id, mode: 'shadow-preview' });
+        compactMessageAsync(previewMessage.id, MessageRole.AI, guestMessage, prisma);
 
         // Update conversation lastMessageAt so the inbox list re-sorts to top.
         await prisma.conversation
@@ -2237,6 +2311,7 @@ export async function generateAndSendAiReply(
       },
     });
     stampAiTrace({ messageId: savedMessage.id });
+    compactMessageAsync(savedMessage.id, MessageRole.AI, guestMessage, prisma);
 
     // Update conversation lastMessageAt
     await prisma.conversation.update({
