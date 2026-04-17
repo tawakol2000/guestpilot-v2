@@ -19,6 +19,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { TUNING_AGENT_TOOL_NAMES } from '../tools/names';
+import { detectElisionMarker } from '../validators/elision-patterns';
 import type { HookContext } from './shared';
 
 export function buildPostToolUseHook(_ctx: () => HookContext): HookCallback {
@@ -60,35 +61,8 @@ export function buildPostToolUseHook(_ctx: () => HookContext): HookCallback {
 }
 
 // Sprint 10 workstream A.2 — pure-regex validator. No LLM calls, no DB.
-
-// Sprint 10 workstream A.2 follow-up: the `[rest of …]` and `TODO: fill`
-// patterns flagged legitimate SOP/FAQ content ("call them for the rest of
-// your stay", "TODO: fill out form on arrival"). Tightened to phrases that
-// clearly signal AI-elision-placeholder intent: "[rest of the content]",
-// "[rest of the prompt]", etc., and "TODO: fill in" instead of any "TODO:
-// fill" substring. Added Unicode ellipsis (U+2026) detection.
-const ELISION_PATTERNS: RegExp[] = [
-  /\/\/\s*\.\.\./i,
-  /\/\/\s*rest\s+(of\s+)?unchanged/i,
-  /\/\/\s*existing\s+code/i,
-  /\/\*\s*\.\.\.\s*\*\//i,
-  /#\s*rest\s+(of\s+)?unchanged/i,
-  /#\s*existing\s+code/i,
-  /<!--\s*remaining\s*-->/i,
-  /<!--\s*\.\.\.\s*-->/i,
-  /\[\s*unchanged\s*\]/i,
-  /\[\s*rest\s+of\s+(the\s+)?(content|prompt|rules|section|file|text|code)[^\]]*\]/i,
-  /TODO:\s*fill\s+in\b/i,
-  /\.\.\.\s*existing\s+code\s*\.\.\./i,
-];
-
-function containsElisionMarker(text: string): string | null {
-  for (const re of ELISION_PATTERNS) {
-    if (re.test(text)) return re.source;
-  }
-  if (/^\s*\.\.\.\s*$/m.test(text)) return 'bare-ellipsis-line';
-  return null;
-}
+// Patterns live in ../validators/elision-patterns so the draft-apply
+// path in tools/suggestion-action.ts shares the same source of truth.
 
 function countXmlTags(text: string): Map<string, number> {
   const counts = new Map<string, number>();
@@ -140,7 +114,7 @@ function validateProposeSuggestion(toolInput: unknown): string | null {
   }
 
   const textToCheck = editFormat === 'search_replace' ? args.newText ?? '' : args.proposedText ?? '';
-  const elision = containsElisionMarker(textToCheck);
+  const elision = detectElisionMarker(textToCheck);
   if (elision) {
     return `proposed text contains an elision marker (${elision}). Include the complete text, not a placeholder`;
   }

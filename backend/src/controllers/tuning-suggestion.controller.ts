@@ -41,6 +41,10 @@ import { broadcastCritical } from '../services/socket.service';
 import { invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { invalidateSopCache } from '../services/sop.service';
 import {
+  findDuplicateFaqEntry,
+  resolveFaqAutoCreateFields,
+} from '../services/tuning/faq-auto-create';
+import {
   updateCategoryStatsOnAccept,
   updateCategoryStatsOnReject,
 } from '../services/tuning/category-stats.service';
@@ -400,97 +404,97 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
             }
             // Hotfix — the diagnostic pipeline writes FAQ suggestions with
             // actionType=EDIT_FAQ and a null faqEntryId when the fix is
-            // "there should be a FAQ entry for this topic" (new-entry case).
-            // Prior code rejected these with MISSING_REQUIRED_FIELDS even
-            // though the UI shows "Apply will create it." Auto-promote to
-            // a create path: use the guest's triggering question as the
-            // FAQ question (truncated), the proposed text as the answer,
-            // and sensible defaults for category + scope.
+            // "there should be an FAQ entry for this topic" (new-entry
+            // case). Prior code rejected these with MISSING_REQUIRED_FIELDS
+            // even though the UI displays "Apply will create it." Auto-
+            // promote to a create path, sharing precedence resolution with
+            // the agent's suggestion_action tool so the same suggestion
+            // dedups to the same FAQ row regardless of which apply surface
+            // the manager used.
             if (!suggestion.faqEntryId) {
-              // Pull the most-recent GUEST message at/before the trigger to
-              // use as the question; falls back to the disputed AI message's
-              // conversation context if needed. Kept narrow to avoid
-              // blowing up the transaction timeout.
-              const srcMsg = await prisma.message.findFirst({
-                where: { id: suggestion.sourceMessageId, tenantId },
-                select: { conversationId: true, sentAt: true },
-              });
-              let inferredQuestion: string | null = null;
-              if (srcMsg?.conversationId && srcMsg.sentAt) {
-                const priorGuest = await prisma.message.findFirst({
-                  where: {
-                    conversationId: srcMsg.conversationId,
-                    tenantId,
-                    role: 'GUEST',
-                    sentAt: { lte: srcMsg.sentAt },
-                  },
-                  orderBy: { sentAt: 'desc' },
-                  select: { content: true },
-                });
-                if (priorGuest?.content) {
-                  inferredQuestion = priorGuest.content.trim().slice(0, 500);
-                }
-              }
-              const finalQuestion: string =
-                (typeof body.editedQuestion === 'string' && body.editedQuestion.trim())
-                  ? body.editedQuestion.trim()
-                  : (suggestion.faqQuestion?.trim() || inferredQuestion || '(question — please edit)');
-              const finalAnswer: string = finalText;
-              const finalCategory: string =
-                (typeof body.faqCategory === 'string' && body.faqCategory.trim())
-                  ? body.faqCategory.trim()
-                  : (suggestion.faqCategory || 'property-neighborhood');
-              const finalScope: 'GLOBAL' | 'PROPERTY' =
-                body.faqScope === 'PROPERTY' || suggestion.faqScope === 'PROPERTY'
-                  ? 'PROPERTY'
-                  : 'GLOBAL';
-              const finalPropertyId: string | null =
-                finalScope === 'PROPERTY'
-                  ? (typeof body.faqPropertyId === 'string' && body.faqPropertyId) ||
-                    suggestion.faqPropertyId
-                  : null;
-              // Avoid duplicate inserts if the manager accepts twice — match
-              // on exact question text within tenant (+ property when scoped).
-              const duplicate = await prisma.faqEntry.findFirst({
-                where: {
-                  tenantId,
-                  question: finalQuestion,
-                  ...(finalScope === 'PROPERTY' && finalPropertyId
-                    ? { propertyId: finalPropertyId }
-                    : { propertyId: null }),
+              const resolved = await resolveFaqAutoCreateFields(prisma, tenantId, {
+                overrides: {
+                  editedQuestion:
+                    typeof body.editedQuestion === 'string' ? body.editedQuestion : null,
+                  faqCategory:
+                    typeof body.faqCategory === 'string' ? body.faqCategory : null,
+                  faqScope: body.faqScope === 'PROPERTY' || body.faqScope === 'GLOBAL'
+                    ? body.faqScope
+                    : null,
+                  faqPropertyId:
+                    typeof body.faqPropertyId === 'string' ? body.faqPropertyId : null,
                 },
-                select: { id: true },
+                suggestion: {
+                  sourceMessageId: suggestion.sourceMessageId ?? null,
+                  beforeText: suggestion.beforeText,
+                  faqQuestion: suggestion.faqQuestion,
+                  faqCategory: suggestion.faqCategory,
+                  faqScope: suggestion.faqScope,
+                  faqPropertyId: suggestion.faqPropertyId,
+                },
               });
+              const finalAnswer: string = finalText;
+              // Dedup + create, with a retry-on-P2002 for the case where a
+              // concurrent apply landed the same question between our
+              // findFirst and create (the @@unique([tenantId, propertyId,
+              // question]) index will reject the second insert).
               let createdId: string;
+              let wasCreated: boolean;
+              const duplicate = await findDuplicateFaqEntry(prisma, {
+                tenantId,
+                question: resolved.finalQuestion,
+                propertyId: resolved.finalPropertyId,
+              });
               if (duplicate) {
-                // Update answer on the duplicate — preserves the manager's
-                // intent without violating any implicit uniqueness.
                 await prisma.faqEntry.update({
                   where: { id: duplicate.id },
                   data: { answer: finalAnswer, status: 'ACTIVE' as any },
                 });
                 createdId = duplicate.id;
+                wasCreated = false;
               } else {
-                const entry = await prisma.faqEntry.create({
-                  data: {
-                    tenantId,
-                    question: finalQuestion,
-                    answer: finalAnswer,
-                    category: finalCategory,
-                    scope: finalScope as any,
-                    propertyId: finalPropertyId,
-                    status: 'ACTIVE' as any,
-                    source: 'MANUAL',
-                  },
-                });
-                createdId = entry.id;
+                try {
+                  const entry = await prisma.faqEntry.create({
+                    data: {
+                      tenantId,
+                      question: resolved.finalQuestion,
+                      answer: finalAnswer,
+                      category: resolved.finalCategory,
+                      scope: resolved.finalScope as any,
+                      propertyId: resolved.finalPropertyId,
+                      status: 'ACTIVE' as any,
+                      source: 'MANUAL',
+                    },
+                  });
+                  createdId = entry.id;
+                  wasCreated = true;
+                } catch (err: any) {
+                  if (err?.code === 'P2002') {
+                    // Concurrent accept beat us. Re-resolve and update.
+                    const now = await findDuplicateFaqEntry(prisma, {
+                      tenantId,
+                      question: resolved.finalQuestion,
+                      propertyId: resolved.finalPropertyId,
+                    });
+                    if (!now) throw err;
+                    await prisma.faqEntry.update({
+                      where: { id: now.id },
+                      data: { answer: finalAnswer, status: 'ACTIVE' as any },
+                    });
+                    createdId = now.id;
+                    wasCreated = false;
+                  } else {
+                    throw err;
+                  }
+                }
               }
               appliedPayload = {
-                question: finalQuestion,
+                question: resolved.finalQuestion,
                 answer: finalAnswer,
-                category: finalCategory,
-                scope: finalScope,
-                created: !duplicate,
+                category: resolved.finalCategory,
+                scope: resolved.finalScope,
+                created: wasCreated,
+                questionSource: resolved.sourceHint,
               };
               targetUpdated = { kind: 'faq_entry_new', id: createdId };
               break;

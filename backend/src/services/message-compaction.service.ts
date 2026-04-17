@@ -14,6 +14,17 @@ import { PrismaClient, MessageRole } from '@prisma/client';
 const COMPACTION_MODEL = 'gpt-5-nano';
 // Rough heuristic: 1 token ≈ 4 chars. 300-token threshold → 1200 chars.
 const COMPACTION_CHAR_THRESHOLD = 1200;
+// Manager-typed HOST messages are usually short; if a HOST message is this
+// long we assume it's a templated automation (pre-arrival pack, check-in
+// instructions, etc.). Compacting manager-typed prose would lose nuance
+// (phrasing, tone) that the history builder relies on to evaluate if the
+// AI's later replies diverged. 3000 chars is generous — no real human
+// types that much in one turn.
+const COMPACTION_HOST_CHAR_THRESHOLD = 3000;
+// Hard ceiling so a hung OpenAI request doesn't leave a pending promise
+// forever. Compaction is fire-and-forget; if this timer fires the
+// compactedContent stays null and the pipeline falls back to full content.
+const COMPACTION_TIMEOUT_MS = 30_000;
 
 const COMPACTION_PROMPT = `Compress this automated guest message into 2-3 sentences preserving:
 - Any access codes, passwords, WiFi info, or door codes
@@ -26,11 +37,22 @@ Output plain text only, no formatting.`;
 
 /**
  * Decide whether a message qualifies for compaction.
- * Only HOST / AI messages over the char threshold.
+ * AI messages: over the standard 1,200-char threshold (templated by
+ * definition — they come from the coordinator with a full SOP-assembled
+ * reply).
+ * HOST messages: over a higher 3,000-char threshold. Below that we assume
+ * manager-typed prose where exact phrasing matters for tuning signal;
+ * above, we assume a Hostaway automation blast.
  */
 export function shouldCompactMessage(role: MessageRole | string, content: string): boolean {
-  if (!content || content.length < COMPACTION_CHAR_THRESHOLD) return false;
-  return role === MessageRole.HOST || role === MessageRole.AI || role === 'HOST' || role === 'AI';
+  if (!content) return false;
+  if (role === MessageRole.AI || role === 'AI') {
+    return content.length >= COMPACTION_CHAR_THRESHOLD;
+  }
+  if (role === MessageRole.HOST || role === 'HOST') {
+    return content.length >= COMPACTION_HOST_CHAR_THRESHOLD;
+  }
+  return false;
 }
 
 /**
@@ -56,7 +78,14 @@ async function runCompaction(
   prisma: PrismaClient,
 ): Promise<void> {
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      // Hard timeout so a hung Responses API call doesn't leave a pending
+      // promise for the lifetime of the process. Fire-and-forget semantics
+      // stay intact; on timeout the caller's .catch logs and moves on.
+      timeout: COMPACTION_TIMEOUT_MS,
+      maxRetries: 0,
+    });
     const response = await (openai.responses as any).create({
       model: COMPACTION_MODEL,
       instructions: COMPACTION_PROMPT,

@@ -33,6 +33,11 @@ import { invalidateTenantConfigCache } from '../../services/tenant-config.servic
 import { invalidateSopCache } from '../../services/sop.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
 import { performSearchReplace } from './search-replace';
+import {
+  findDuplicateFaqEntry,
+  resolveFaqAutoCreateFields,
+} from '../../services/tuning/faq-auto-create';
+import { detectElisionMarker } from '../validators/elision-patterns';
 import { mergeSystemPromptClause } from '../../services/tuning/system-prompt-merge.service';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
@@ -630,65 +635,86 @@ async function applyArtifactWrite(
     }
 
     case 'EDIT_FAQ': {
-      // Hotfix (mirrors tuning-suggestion.controller.ts): the diagnostic
-      // pipeline writes FAQ suggestions with actionType=EDIT_FAQ and a null
-      // faqEntryId when the fix is "there should be an FAQ entry for this
-      // topic" (new-entry case). Promote to create rather than failing.
+      // Hotfix (shares resolver with tuning-suggestion.controller.ts): the
+      // diagnostic pipeline writes FAQ suggestions with actionType=EDIT_FAQ
+      // and a null faqEntryId when the fix is "there should be an FAQ
+      // entry for this topic" (new-entry case). Promote to create rather
+      // than failing. Same precedence order as the HTTP endpoint so a
+      // single suggestion dedups to the same FAQ row regardless of which
+      // apply surface the manager used.
       if (!suggestion.faqEntryId) {
-        const srcMsg = suggestion.sourceMessageId
-          ? await c.prisma.message.findFirst({
-              where: { id: suggestion.sourceMessageId, tenantId: c.tenantId },
-              select: { conversationId: true, sentAt: true },
-            })
-          : null;
-        let inferredQuestion: string | null = null;
-        if (srcMsg?.conversationId && srcMsg.sentAt) {
-          const priorGuest = await c.prisma.message.findFirst({
-            where: {
-              conversationId: srcMsg.conversationId,
-              tenantId: c.tenantId,
-              role: 'GUEST',
-              sentAt: { lte: srcMsg.sentAt },
-            },
-            orderBy: { sentAt: 'desc' },
-            select: { content: true },
-          });
-          if (priorGuest?.content) {
-            inferredQuestion = priorGuest.content.trim().slice(0, 500);
-          }
-        }
-        const finalQuestion: string =
-          (suggestion.beforeText?.trim() || inferredQuestion || '(question — please edit)');
-        const duplicate = await c.prisma.faqEntry.findFirst({
-          where: { tenantId: c.tenantId, question: finalQuestion, propertyId: null },
-          select: { id: true },
+        const resolved = await resolveFaqAutoCreateFields(c.prisma, c.tenantId, {
+          overrides: {},
+          suggestion: {
+            sourceMessageId: suggestion.sourceMessageId ?? null,
+            beforeText: suggestion.beforeText,
+            // `suggestion` here is the ToolDefinition-shaped view, which
+            // omits FAQ-create fields. Pass null — the resolver falls
+            // through to beforeText → inferred → placeholder.
+            faqQuestion: null,
+            faqCategory: null,
+            faqScope: null,
+            faqPropertyId: null,
+          },
         });
         let createdId: string;
+        let wasCreated: boolean;
+        const duplicate = await findDuplicateFaqEntry(c.prisma, {
+          tenantId: c.tenantId,
+          question: resolved.finalQuestion,
+          propertyId: resolved.finalPropertyId,
+        });
         if (duplicate) {
           await c.prisma.faqEntry.update({
             where: { id: duplicate.id },
             data: { answer: finalText, status: 'ACTIVE' as any },
           });
           createdId = duplicate.id;
+          wasCreated = false;
         } else {
-          const entry = await c.prisma.faqEntry.create({
-            data: {
-              tenantId: c.tenantId,
-              question: finalQuestion,
-              answer: finalText,
-              category: 'property-neighborhood',
-              scope: 'GLOBAL' as any,
-              propertyId: null,
-              status: 'ACTIVE' as any,
-              source: 'MANUAL',
-            },
-          });
-          createdId = entry.id;
+          try {
+            const entry = await c.prisma.faqEntry.create({
+              data: {
+                tenantId: c.tenantId,
+                question: resolved.finalQuestion,
+                answer: finalText,
+                category: resolved.finalCategory,
+                scope: resolved.finalScope as any,
+                propertyId: resolved.finalPropertyId,
+                status: 'ACTIVE' as any,
+                source: 'MANUAL',
+              },
+            });
+            createdId = entry.id;
+            wasCreated = true;
+          } catch (err: any) {
+            if (err?.code === 'P2002') {
+              const now = await findDuplicateFaqEntry(c.prisma, {
+                tenantId: c.tenantId,
+                question: resolved.finalQuestion,
+                propertyId: resolved.finalPropertyId,
+              });
+              if (!now) throw err;
+              await c.prisma.faqEntry.update({
+                where: { id: now.id },
+                data: { answer: finalText, status: 'ACTIVE' as any },
+              });
+              createdId = now.id;
+              wasCreated = false;
+            } else {
+              throw err;
+            }
+          }
         }
         return {
           ok: true,
           target: { kind: 'faq_entry_new', id: createdId },
-          appliedPayload: { question: finalQuestion, answer: finalText, created: !duplicate },
+          appliedPayload: {
+            question: resolved.finalQuestion,
+            answer: finalText,
+            created: wasCreated,
+            questionSource: resolved.sourceHint,
+          },
         };
       }
       const faq = await c.prisma.faqEntry.findFirst({
@@ -738,25 +764,6 @@ async function applyArtifactWrite(
  * cannot bypass validation by skipping propose_suggestion entirely. Keep
  * the rules in sync with hooks/post-tool-use.ts#validateProposeSuggestion.
  */
-// Sprint 10 workstream A.2 follow-up: keep in sync with
-// hooks/post-tool-use.ts#ELISION_PATTERNS. Deliberately drops `[rest of …]`
-// and loose `TODO:\s*fill` because those false-positive on legitimate
-// FAQ/SOP text ("call us for the rest of your stay", "TODO: fill form").
-const DRAFT_ELISION_PATTERNS: RegExp[] = [
-  /\/\/\s*\.\.\./i,
-  /\/\/\s*rest\s+(of\s+)?unchanged/i,
-  /\/\/\s*existing\s+code/i,
-  /\/\*\s*\.\.\.\s*\*\//i,
-  /#\s*rest\s+(of\s+)?unchanged/i,
-  /#\s*existing\s+code/i,
-  /<!--\s*remaining\s*-->/i,
-  /<!--\s*\.\.\.\s*-->/i,
-  /\[\s*unchanged\s*\]/i,
-  /\[\s*rest\s+of\s+(the\s+)?(content|prompt|rules|section|file|text|code)[^\]]*\]/i,
-  /TODO:\s*fill\s+in\b/i,
-  /\.\.\.\s*existing\s+code\s*\.\.\./i,
-];
-
 function validateDraftForApply(args: {
   category: string;
   editFormat: 'search_replace' | 'full_replacement';
@@ -785,13 +792,9 @@ function validateDraftForApply(args: {
   }
   const textToCheck =
     args.editFormat === 'search_replace' ? args.newText ?? '' : args.proposedText ?? '';
-  for (const re of DRAFT_ELISION_PATTERNS) {
-    if (re.test(textToCheck)) {
-      return `proposed text contains an elision marker (${re.source}). Include the complete text, not a placeholder.`;
-    }
-  }
-  if (/^\s*\.\.\.\s*$/m.test(textToCheck)) {
-    return 'proposed text contains a bare ellipsis line. Include the complete text, not a placeholder.';
+  const elision = detectElisionMarker(textToCheck);
+  if (elision) {
+    return `proposed text contains an elision marker (${elision}). Include the complete text, not a placeholder.`;
   }
   return null;
 }
