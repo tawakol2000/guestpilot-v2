@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import * as taskService from '../services/task.service';
 import { broadcastToTenant } from '../services/socket.service';
 import { AuthenticatedRequest } from '../types';
+import { maybeFireEscalationTrigger } from '../services/tuning/escalation-trigger.service';
 
 export function taskController(prisma: PrismaClient) {
   return {
@@ -140,6 +141,22 @@ export function taskController(prisma: PrismaClient) {
         if (!existing) { res.status(404).json({ error: 'Task not found' }); return; }
         const task = await prisma.task.update({ where: { id }, data });
         broadcastToTenant(tenantId, 'task_updated', { conversationId: task.conversationId, task });
+        // Feature 041 sprint 08 §2 — escalation-resolution → ESCALATION_TRIGGERED.
+        // Fire-and-forget; must never block or fail the HTTP response.
+        if (status !== undefined) {
+          maybeFireEscalationTrigger(prisma, {
+            tenantId,
+            newStatus: String(status),
+            previous: {
+              id: existing.id,
+              type: existing.type,
+              status: existing.status,
+              conversationId: existing.conversationId,
+              createdAt: existing.createdAt,
+              title: existing.title,
+            },
+          });
+        }
         res.json(task);
       } catch (err) { next(err); }
     },

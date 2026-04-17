@@ -171,6 +171,12 @@ Each entry:
 - **Status:** RESOLVED in sprint-05 §8 — runtime now logs the Anthropic usage object on every assistant message. Two `/api/tuning/chat` POSTs on the same `conversationId` against Railway preview produced `cache_read_input_tokens` of 2482 → 4474 → 4597 → 5275 with `input_tokens` of 1–3, yielding `cached_fraction = 0.999–1.000` on every turn. The target was ≥0.70.
 - **Action:** none. Cache is healthy. If post-deploy Langfuse traces ever show the fraction collapsing, the runtime log line is the first place to look.
 
+### C29 — D6 escalation trigger gated on `shadowModeEnabled` as a proxy
+- **Surfaced:** sprint-08 §2 implementation.
+- **Concern:** The sprint brief asked for a "tuningEnabled (or equivalent config flag)" gate on the escalation trigger. The schema has no `tuningEnabled` field, so sprint 08 uses `TenantAiConfig.shadowModeEnabled` as the nearest equivalent — tenants not using shadow mode don't get ESCALATION_TRIGGERED suggestions even when an escalation is closed with a host reply. This is deliberately conservative.
+- **Status:** OPEN — revisit when a dedicated tuning-feature-flag is added.
+- **Action:** if we introduce `TenantAiConfig.tuningEnabled` in a later sprint, swap the gate in `escalation-trigger.service.ts`.
+
 ### C28 — Integration tests not yet wired into CI
 - **Surfaced:** sprint-05 §7.
 - **Concern:** The four new integration tests (`backend/src/__tests__/integration/`) require `DATABASE_URL` and pass on demand via `npx tsx --test`, but no CI job runs them. CI in this repo has no Postgres provisioned.
