@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Puzzle } from 'lucide-react'
 import {
   apiListCapabilityRequests,
   apiUpdateCapabilityRequest,
@@ -172,12 +172,20 @@ function CapabilityRequestsInner() {
               </button>
             </li>
           ) : requests.length === 0 ? (
-            <li className="py-10 text-center">
-              <p className="text-base font-medium text-[#6B7280]">No requests yet</p>
-              <p className="mt-1 text-sm text-[#9CA3AF]">
-                The diagnostic pipeline files one here when the AI needs a tool
-                that doesn&rsquo;t exist.
-              </p>
+            <li className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <span
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#6C5CE7]"
+                style={{ background: TUNING_COLORS.accentSoft }}
+              >
+                <Puzzle size={18} strokeWidth={2} aria-hidden />
+              </span>
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight text-[#1A1A1A]">No requests yet</h2>
+                <p className="mt-1.5 max-w-prose text-sm leading-6 text-[#6B7280]">
+                  The diagnostic pipeline files one here when the AI needs a tool
+                  that doesn&rsquo;t exist.
+                </p>
+              </div>
             </li>
           ) : (
             requests.map((r) => <CapabilityRow key={r.id} req={r} onChange={load} />)

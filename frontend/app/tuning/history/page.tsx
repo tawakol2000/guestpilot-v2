@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { Clock, ExternalLink } from 'lucide-react'
 import {
   apiListTuningHistory,
   apiRollbackVersion,
@@ -232,11 +232,19 @@ function HistoryPageInner() {
               </button>
             </li>
           ) : entries.length === 0 ? (
-            <li className="py-10 text-center">
-              <p className="text-base font-medium text-[#6B7280]">No edits yet</p>
-              <p className="mt-1 text-sm text-[#9CA3AF]">
-                Accept a tuning suggestion to start the history.
-              </p>
+            <li className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <span
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#6C5CE7]"
+                style={{ background: TUNING_COLORS.accentSoft }}
+              >
+                <Clock size={18} strokeWidth={2} aria-hidden />
+              </span>
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight text-[#1A1A1A]">No edits yet</h2>
+                <p className="mt-1.5 max-w-prose text-sm leading-6 text-[#6B7280]">
+                  Accept a tuning suggestion to start the history.
+                </p>
+              </div>
             </li>
           ) : (
             entries.map((e) => <HistoryRow key={e.id} entry={e} onRollback={setConfirmEntry} />)

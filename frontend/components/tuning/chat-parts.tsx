@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Check, ChevronRight, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react'
 import { TUNING_COLORS, categoryStyle } from './tokens'
 import { DiffViewer } from './diff-viewer'
 import type {
@@ -178,6 +178,54 @@ export function SuggestionCard({
   const style = categoryStyle(data.category)
   const confPct =
     typeof data.confidence === 'number' ? Math.round(data.confidence * 100) : null
+  const [acted, setActed] = useState<'apply' | 'queue' | 'reject' | 'edit' | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const ACTION_LABELS: Record<string, string> = {
+    apply: 'Applied',
+    queue: 'Queued',
+    reject: 'Dismissed',
+    edit: 'Sent for editing',
+  }
+
+  function handleAction(action: 'apply' | 'queue' | 'reject' | 'edit') {
+    setActed(action)
+    onAction?.(action)
+  }
+
+  // Collapsed one-liner after the user has acted.
+  if (acted && !expanded) {
+    return (
+      <article
+        className="w-full max-w-full overflow-hidden rounded-lg bg-white transition-all duration-300"
+        style={{ border: `1px solid ${TUNING_COLORS.hairlineSoft}` }}
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-[#F9FAFB]"
+        >
+          <Sparkles size={12} strokeWidth={2} className="shrink-0 text-[#9CA3AF]" aria-hidden />
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: style.bg, color: style.fg }}
+          >
+            {style.label}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-[#6B7280]">
+            {data.rationale.slice(0, 80)}{data.rationale.length > 80 ? '…' : ''}
+          </span>
+          <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium text-[#9CA3AF]"
+            style={{ background: TUNING_COLORS.surfaceSunken }}
+          >
+            {ACTION_LABELS[acted] ?? acted}
+          </span>
+          <ChevronDown size={12} strokeWidth={2} className="shrink-0 text-[#9CA3AF]" aria-hidden />
+        </button>
+      </article>
+    )
+  }
+
   return (
     <article
       className="w-full max-w-full overflow-hidden rounded-lg bg-white shadow-sm transition-shadow duration-200 hover:shadow-md"
@@ -233,21 +281,21 @@ export function SuggestionCard({
       >
         <button
           type="button"
-          onClick={() => onAction?.('apply')}
+          onClick={() => handleAction('apply')}
           className="inline-flex items-center justify-center rounded-lg bg-[#6C5CE7] px-4 py-1.5 text-xs font-medium text-white shadow-sm transition-all duration-200 hover:bg-[#5B4CDB] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A29BFE] focus-visible:ring-offset-2"
         >
           Apply now
         </button>
         <button
           type="button"
-          onClick={() => onAction?.('queue')}
+          onClick={() => handleAction('queue')}
           className="inline-flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#1A1A1A] transition-colors duration-200 hover:bg-[#F3F4F6]"
         >
           Queue
         </button>
         <button
           type="button"
-          onClick={() => onAction?.('edit')}
+          onClick={() => handleAction('edit')}
           className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium text-[#6B7280] transition-colors duration-200 hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
         >
           Edit
@@ -255,7 +303,7 @@ export function SuggestionCard({
         <span className="ml-auto" />
         <button
           type="button"
-          onClick={() => onAction?.('reject')}
+          onClick={() => handleAction('reject')}
           className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium text-[#6B7280] transition-all duration-200 hover:bg-[#FEF2F2] hover:text-[#B91C1C]"
         >
           Dismiss

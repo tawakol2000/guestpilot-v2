@@ -411,7 +411,7 @@ function AgentPageInner() {
 
         {/* System prompt editor */}
         <section
-          className="mt-6 overflow-hidden rounded-xl bg-white"
+          className="mt-6 rounded-xl bg-white"
           style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)' }}
         >
           <div
@@ -494,12 +494,20 @@ function AgentPageInner() {
           </div>
 
           <footer
-            className="flex flex-wrap items-center gap-3 border-t px-5 py-3"
+            className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t bg-white px-5 py-3"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
             <span className="font-mono text-xs tabular-nums text-[#9CA3AF]">
               {draft.length.toLocaleString()} chars · {draft.split(/\s+/).filter(Boolean).length.toLocaleString()} words
             </span>
+            {dirty ? (
+              <span
+                className="rounded-full px-2 py-0.5 text-xs font-medium"
+                style={{ background: TUNING_COLORS.warnBg, color: TUNING_COLORS.warnFg }}
+              >
+                Unsaved changes
+              </span>
+            ) : null}
             <span className="ml-auto" />
             <button
               type="button"

@@ -142,6 +142,7 @@ function ChatPanelInner({
 
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)
+  const [scrollShadows, setScrollShadows] = useState({ top: false, bottom: false })
 
   useEffect(() => {
     if (!scrollerRef.current) return
@@ -223,9 +224,17 @@ function ChatPanelInner({
         </div>
       ) : null}
 
+      <div className="relative min-h-0 flex-1">
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-6 md:py-5"
+        onScroll={(e) => {
+          const el = e.currentTarget
+          setScrollShadows({
+            top: el.scrollTop > 4,
+            bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 4,
+          })
+        }}
+        className="h-full overflow-auto px-4 py-4 md:px-6 md:py-5"
         style={{ background: TUNING_COLORS.canvas }}
       >
         {messages.length === 0 ? (
@@ -272,6 +281,24 @@ function ChatPanelInner({
             {error.message}
           </div>
         ) : null}
+      </div>
+      {/* Scroll shadow overlays */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-8 transition-opacity duration-200"
+        style={{
+          background: `linear-gradient(to bottom, ${TUNING_COLORS.canvas}, rgba(249,250,251,0))`,
+          opacity: scrollShadows.top ? 1 : 0,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-8 transition-opacity duration-200"
+        style={{
+          background: `linear-gradient(to top, ${TUNING_COLORS.canvas}, rgba(249,250,251,0))`,
+          opacity: scrollShadows.bottom ? 1 : 0,
+        }}
+      />
       </div>
 
       <form

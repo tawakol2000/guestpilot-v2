@@ -21,6 +21,7 @@ import { ConversationList } from '@/components/tuning/conversation-list'
 import { ChatPanel } from '@/components/tuning/chat-panel'
 import { Quickstart } from '@/components/tuning/quickstart'
 import { categoryAccent, CATEGORY_STYLES, TUNING_COLORS } from '@/components/tuning/tokens'
+import { ScrollShadows } from '@/components/tuning/scroll-shadows'
 import type { TuningDiagnosticCategory } from '@/lib/api'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { ArrowLeft } from 'lucide-react'
@@ -210,7 +211,7 @@ function TuningPageInner() {
         </div>
         <CompositionStrip suggestions={suggestions} loading={loading} />
       </div>
-      <div className="flex-1 overflow-auto">
+      <ScrollShadows className="min-h-0 flex-1">
         {queueError ? (
           <div className="mx-3 mt-3 rounded-lg bg-white p-4 text-center">
             <p className="text-xs text-[#6B7280]">Couldn&rsquo;t load suggestions.</p>
@@ -236,7 +237,7 @@ function TuningPageInner() {
             }}
           />
         )}
-      </div>
+      </ScrollShadows>
       <div className="border-t border-[#E5E7EB]">
         <ConversationList
           selectedId={conversationId}

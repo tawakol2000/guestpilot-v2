@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { CheckCircle2, ChevronDown } from 'lucide-react'
 import type { TuningSuggestion, TuningTriggerType } from '@/lib/api'
 import { CategoryPill } from './category-pill'
 import { ConfidenceBar } from './confidence-bar'
@@ -66,11 +66,19 @@ export function TuningQueue({
 
   if (groups.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-        <p className="text-base font-medium text-[#6B7280]">All caught up</p>
-        <p className="mt-1 text-xs text-[#9CA3AF]">
-          We&rsquo;ll surface the next suggestion when one&rsquo;s ready.
-        </p>
+      <div className="flex flex-col items-center justify-center gap-4 px-6 py-14 text-center">
+        <span
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#6C5CE7]"
+          style={{ background: TUNING_COLORS.accentSoft }}
+        >
+          <CheckCircle2 size={18} strokeWidth={2} aria-hidden />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-[#1A1A1A]">All caught up</h2>
+          <p className="mt-1 text-xs text-[#9CA3AF]">
+            We&rsquo;ll surface the next suggestion when one&rsquo;s ready.
+          </p>
+        </div>
       </div>
     )
   }
