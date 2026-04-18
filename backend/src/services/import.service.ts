@@ -8,6 +8,7 @@ import { PrismaClient, Prisma, Channel, ReservationStatus, MessageRole } from '@
 import * as hostawayService from './hostaway.service';
 import { ImportResult } from '../types';
 import { setProgress } from './progress.service';
+import { mapHostawayChannel } from '../lib/channel-mapper';
 
 type ProgressFn = (update: { phase?: string; completed?: number; total?: number; message?: string; lastSyncedAt?: string }) => void;
 
@@ -27,14 +28,7 @@ function parseHostawayDate(val: unknown): Date {
   return new Date();
 }
 
-function mapChannel(channelName?: string): Channel {
-  if (!channelName) return Channel.OTHER;
-  const name = channelName.toLowerCase();
-  if (name.includes('airbnb')) return Channel.AIRBNB;
-  if (name.includes('booking')) return Channel.BOOKING;
-  if (name.includes('direct')) return Channel.DIRECT;
-  return Channel.OTHER;
-}
+const mapChannel = mapHostawayChannel;
 
 function mapReservationStatus(status?: string): ReservationStatus {
   // SECURITY: Default to INQUIRY (most restrictive) — never default to CONFIRMED.
@@ -363,7 +357,7 @@ export async function runImport(
           checkIn,
           checkOut,
           guestCount: res.numberOfGuests || 1,
-          channel: mapChannel(res.channelName),
+          channel: mapChannel(res.channelName, res.channelId),
           status: mapReservationStatus(res.status),
           aiEnabled: true,
           aiMode: 'copilot',
@@ -372,7 +366,7 @@ export async function runImport(
           checkIn,
           checkOut,
           guestCount: res.numberOfGuests || 1,
-          channel: mapChannel(res.channelName),
+          channel: mapChannel(res.channelName, res.channelId),
           status: mapReservationStatus(res.status),
         },
       });

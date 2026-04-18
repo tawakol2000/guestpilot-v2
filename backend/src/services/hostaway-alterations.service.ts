@@ -89,6 +89,36 @@ export async function fetchAlteration(
 }
 
 /**
+ * Look up the current status of a specific alteration by id.
+ * Used to reconcile local DB state when an alteration was actioned externally
+ * (e.g. the host accepted it inside Hostaway's dashboard) and we need to flip
+ * our PENDING row to ACCEPTED / REJECTED / EXPIRED.
+ *
+ * Hostaway status values observed: 'pending', 'ACCEPTED', 'DECLINED'. The list
+ * endpoint eventually drops accepted rows entirely on some channels, so a
+ * not-found result is equally a signal that the alteration is no longer pending.
+ */
+export async function getAlterationStatusById(
+  dashboardJwt: string,
+  hostawayReservationId: string,
+  hostawayAlterationId: string,
+): Promise<{ status: string } | { notFound: true } | { error: string }> {
+  try {
+    const client = createClient(dashboardJwt);
+    const res = await client.get(`/reservations/${hostawayReservationId}/alterations`);
+    const result = res.data?.result;
+    if (!Array.isArray(result)) return { notFound: true };
+    const match = result.find((a: any) => String(a.id) === String(hostawayAlterationId));
+    if (!match) return { notFound: true };
+    return { status: String(match.status ?? '') };
+  } catch (err) {
+    const axiosErr = err as AxiosError<{ message?: string }>;
+    const message = axiosErr?.response?.data?.message || axiosErr?.message || 'Unknown error';
+    return { error: message };
+  }
+}
+
+/**
  * Accept a pending alteration.
  * Real endpoint: PUT /reservations/{id}/alterations/{altId} with body {"status":"ACCEPTED"}
  */

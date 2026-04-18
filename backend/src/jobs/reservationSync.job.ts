@@ -11,6 +11,7 @@
 import { PrismaClient, ReservationStatus, Channel } from '@prisma/client';
 import * as hostawayService from '../services/hostaway.service';
 import { broadcastToTenant } from '../services/socket.service';
+import { mapHostawayChannel } from '../lib/channel-mapper';
 
 function mapStatus(status?: string): ReservationStatus {
   if (!status) return ReservationStatus.INQUIRY;
@@ -32,15 +33,7 @@ function mapStatus(status?: string): ReservationStatus {
   }
 }
 
-function mapChannel(channelName?: string): Channel {
-  if (!channelName) return Channel.OTHER;
-  const lower = channelName.toLowerCase();
-  if (lower.includes('airbnb')) return Channel.AIRBNB;
-  if (lower.includes('booking')) return Channel.BOOKING;
-  if (lower.includes('whatsapp')) return Channel.WHATSAPP;
-  if (lower === 'direct') return Channel.DIRECT;
-  return Channel.OTHER;
-}
+const mapChannel = mapHostawayChannel;
 
 export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log('[ReservationSync] Background sync job started (interval: 120s, lookback: 24h)');
@@ -125,7 +118,7 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     checkIn: res.arrivalDate ? new Date(res.arrivalDate) : new Date(),
                     checkOut: res.departureDate ? new Date(res.departureDate) : new Date(),
                     guestCount: res.numberOfGuests || 1,
-                    channel: mapChannel(res.channelName),
+                    channel: mapChannel(res.channelName, res.channelId),
                     status,
                     aiEnabled: inheritedAiEnabled,
                     aiMode: inheritedAiMode,
@@ -142,7 +135,7 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     data: {
                       tenantId: tenant.id, reservationId: reservation.id,
                       guestId: guest.id, propertyId: property.id,
-                      channel: mapChannel(res.channelName),
+                      channel: mapChannel(res.channelName, res.channelId),
                       lastMessageAt: new Date(),
                     },
                   });

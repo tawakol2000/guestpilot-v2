@@ -16,6 +16,7 @@ import { fetchAlteration } from '../services/hostaway-alterations.service';
 import { captionMessageImages } from '../services/image-caption.service';
 import { compactMessageAsync } from '../services/message-compaction.service';
 import { decrypt } from '../lib/encryption';
+import { mapHostawayChannel } from '../lib/channel-mapper';
 
 interface HostawayWebhookPayload {
   event: string;
@@ -39,20 +40,13 @@ interface HostawayWebhookPayload {
     departureDate?: string;
     numberOfGuests?: number;
     channelName?: string;
+    channelId?: number;
     status?: string;
     [key: string]: unknown;
   };
 }
 
-function mapChannel(channelName?: string): Channel {
-  if (!channelName) return Channel.OTHER;
-  const name = channelName.toLowerCase();
-  if (name.includes('airbnb')) return Channel.AIRBNB;
-  if (name.includes('booking')) return Channel.BOOKING;
-  if (name.includes('direct')) return Channel.DIRECT;
-  if (name.includes('whatsapp')) return Channel.WHATSAPP;
-  return Channel.OTHER;
-}
+const mapChannel = mapHostawayChannel;
 
 function toHostawayCommunicationType(channel: Channel): string {
   if (channel === Channel.WHATSAPP) return 'whatsapp';
@@ -848,7 +842,7 @@ async function handleNewReservation(
       checkIn: enrichedCheckIn ?? (data.arrivalDate ? new Date(data.arrivalDate) : new Date('2999-01-01')),
       checkOut: enrichedCheckOut ?? (data.departureDate ? new Date(data.departureDate) : new Date('2999-12-31')),
       guestCount: data.numberOfGuests || 1,
-      channel: mapChannel(data.channelName),
+      channel: mapChannel(data.channelName, data.channelId),
       status: mapReservationStatus(data.status),
       aiEnabled: true,
       // Inherit AI mode from property's most recent reservation (so property-level toggle persists)
@@ -885,7 +879,7 @@ async function handleNewReservation(
         reservationId: reservation.id,
         guestId: guest.id,
         propertyId: property.id,
-        channel: mapChannel(data.channelName),
+        channel: mapChannel(data.channelName, data.channelId),
         hostawayConversationId: '', // backfilled on first message (G3)
         unreadCount: 0,
         lastMessageAt: new Date(),

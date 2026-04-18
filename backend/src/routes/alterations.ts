@@ -8,6 +8,7 @@ import {
   fetchAlteration,
   acceptAlteration,
   rejectAlteration,
+  getAlterationStatusById,
 } from '../services/hostaway-alterations.service';
 import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../types';
@@ -52,6 +53,55 @@ export function alterationsRouter(prisma: PrismaClient) {
     });
   }
 
+  /** Map a Hostaway-side alteration status string to our enum. Returns null
+   * when the value is still pending (or unrecognized — in which case we leave
+   * the DB row as-is). */
+  function mapHostawayAlterationStatus(raw: string): AlterationStatus | null {
+    const s = raw.toLowerCase();
+    if (s === 'accepted') return AlterationStatus.ACCEPTED;
+    if (s === 'declined' || s === 'rejected') return AlterationStatus.REJECTED;
+    if (s === 'expired' || s === 'cancelled' || s === 'canceled') return AlterationStatus.EXPIRED;
+    return null;
+  }
+
+  /** Reconcile a local PENDING alteration against Hostaway. If Hostaway no
+   * longer shows it as pending (accepted from their dashboard, expired, etc.)
+   * update our DB status so the UI stops asking the host to action something
+   * that is already resolved. Best-effort; swallows errors. */
+  async function reconcileAlterationStatus(
+    tenantId: string,
+    alteration: { id: string; hostawayAlterationId: string; status: AlterationStatus },
+    hostawayReservationId: string,
+    decryptedJwt: string,
+  ): Promise<AlterationStatus> {
+    if (alteration.status !== AlterationStatus.PENDING) return alteration.status;
+    try {
+      const lookup = await getAlterationStatusById(
+        decryptedJwt,
+        hostawayReservationId,
+        alteration.hostawayAlterationId,
+      );
+      let nextStatus: AlterationStatus | null = null;
+      if ('notFound' in lookup) {
+        // Hostaway dropped the row — treat as accepted, the most common outcome.
+        nextStatus = AlterationStatus.ACCEPTED;
+      } else if ('status' in lookup) {
+        nextStatus = mapHostawayAlterationStatus(lookup.status);
+      }
+      if (nextStatus && nextStatus !== AlterationStatus.PENDING) {
+        await prisma.bookingAlteration.update({
+          where: { id: alteration.id },
+          data: { status: nextStatus },
+        });
+        console.log(`[Alterations] Reconciled ${alteration.hostawayAlterationId}: PENDING → ${nextStatus}`);
+        return nextStatus;
+      }
+    } catch (err: any) {
+      console.warn(`[Alterations] Reconcile failed for ${alteration.hostawayAlterationId} (non-fatal): ${err.message}`);
+    }
+    return alteration.status;
+  }
+
   // ── GET /api/reservations/:reservationId/alteration ───────────────────────
 
   router.get('/:reservationId/alteration', async (req: any, res) => {
@@ -68,11 +118,37 @@ export function alterationsRouter(prisma: PrismaClient) {
         return;
       }
 
+      // Reconcile stale PENDING rows against Hostaway: when the host accepts
+      // an alteration inside Hostaway directly, we never get a webhook, so the
+      // DB keeps showing PENDING until a fetch hits. Best-effort — missing
+      // dashboard JWT just skips the reconciliation rather than failing the GET.
+      let currentStatus = alteration.status;
+      if (alteration.status === AlterationStatus.PENDING) {
+        const reservation = await prisma.reservation.findFirst({
+          where: { id: reservationId, tenantId },
+          select: { hostawayReservationId: true },
+        });
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { dashboardJwt: true, dashboardJwtExpiresAt: true },
+        });
+        const jwtUsable = tenant?.dashboardJwt
+          && (!tenant.dashboardJwtExpiresAt || tenant.dashboardJwtExpiresAt > new Date());
+        if (reservation && jwtUsable && tenant?.dashboardJwt) {
+          currentStatus = await reconcileAlterationStatus(
+            tenantId,
+            alteration,
+            reservation.hostawayReservationId,
+            decrypt(tenant.dashboardJwt),
+          );
+        }
+      }
+
       res.json({
         alteration: {
           id: alteration.id,
           hostawayAlterationId: alteration.hostawayAlterationId,
-          status: alteration.status,
+          status: currentStatus,
           originalCheckIn: alteration.originalCheckIn?.toISOString() ?? null,
           originalCheckOut: alteration.originalCheckOut?.toISOString() ?? null,
           originalGuestCount: alteration.originalGuestCount,
@@ -179,11 +255,25 @@ export function alterationsRouter(prisma: PrismaClient) {
       }
 
       if (result.httpStatus === 409 || result.httpStatus === 400) {
+        // Hostaway says this alteration is no longer pending — almost always
+        // because the host accepted/declined it from Hostaway's own dashboard
+        // since we rendered the card. Reconcile our DB so the next fetch
+        // returns the correct status and the UI stops showing a pending card.
+        const reconciled = await reconcileAlterationStatus(
+          tenantId,
+          alteration,
+          reservation.hostawayReservationId,
+          jwtResult.decryptedJwt,
+        );
         await prisma.alterationActionLog.update({
           where: { id: log.id },
           data: { status: AlterationActionStatus.FAILED, errorMessage: result.error },
         });
-        res.status(409).json({ success: false, error: 'This alteration may have already been actioned. Please refresh to see the latest status.' });
+        res.status(409).json({
+          success: false,
+          error: 'This alteration may have already been actioned. Please refresh to see the latest status.',
+          reconciledStatus: reconciled,
+        });
         return;
       }
 
@@ -297,11 +387,22 @@ export function alterationsRouter(prisma: PrismaClient) {
       }
 
       if (result.httpStatus === 409 || result.httpStatus === 400) {
+        // See accept branch for rationale — reconcile DB before returning.
+        const reconciled = await reconcileAlterationStatus(
+          tenantId,
+          alteration,
+          reservation.hostawayReservationId,
+          jwtResult.decryptedJwt,
+        );
         await prisma.alterationActionLog.update({
           where: { id: log.id },
           data: { status: AlterationActionStatus.FAILED, errorMessage: result.error },
         });
-        res.status(409).json({ success: false, error: 'This alteration may have already been actioned. Please refresh to see the latest status.' });
+        res.status(409).json({
+          success: false,
+          error: 'This alteration may have already been actioned. Please refresh to see the latest status.',
+          reconciledStatus: reconciled,
+        });
         return;
       }
 

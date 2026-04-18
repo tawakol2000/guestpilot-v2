@@ -909,6 +909,10 @@ function AlterationPanel({
 
   if (alteration === 'loading') return null
   if (!alteration) return null
+  // Only show the panel for alterations that still need the host to act.
+  // Once Hostaway (or the host via Hostaway's own dashboard) resolves it,
+  // the GET endpoint reconciles the status and we hide the card.
+  if (alteration.status !== 'PENDING') return null
 
   const hasDetails = alteration.originalCheckIn || alteration.proposedCheckIn || alteration.originalGuestCount !== null
 
@@ -916,9 +920,7 @@ function AlterationPanel({
   const checkOutChanged = alteration.originalCheckOut !== alteration.proposedCheckOut
   const guestCountChanged = alteration.originalGuestCount !== alteration.proposedGuestCount
 
-  const panelColor = alteration.status === 'ACCEPTED' ? T.status.green
-    : alteration.status === 'REJECTED' ? T.status.red
-    : T.status.amber
+  const panelColor = T.status.amber
 
   return (
     <div style={{
@@ -957,7 +959,7 @@ function AlterationPanel({
           textTransform: 'uppercase' as const,
           letterSpacing: '0.04em',
         }}>
-          {alteration.status === 'ACCEPTED' ? 'Accepted' : alteration.status === 'REJECTED' ? 'Rejected' : 'Pending'}
+          Pending
         </span>
       </div>
 

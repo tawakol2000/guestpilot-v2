@@ -352,6 +352,40 @@ export function makeConversationsController(prisma: PrismaClient) {
           data: { status: newStatus },
         });
 
+        // After acceptance, Airbnb releases phone/email that were hidden during inquiry.
+        // Pull the fresh reservation from Hostaway and update the Guest record so the
+        // inspector panel stops showing blank fields. Non-fatal — the accept already
+        // succeeded; enrichment is best-effort.
+        if (action === 'accept') {
+          try {
+            const { result: fresh } = await hostawayService.getReservation(
+              conversation.tenant.hostawayAccountId,
+              conversation.tenant.hostawayApiKey,
+              conversation.reservation.hostawayReservationId
+            );
+            const guestUpdate: { phone?: string; email?: string; nationality?: string; name?: string } = {};
+            if (fresh.guestPhone) guestUpdate.phone = fresh.guestPhone;
+            if (fresh.guestEmail && !fresh.guestEmail.includes('@guest.hostaway')) guestUpdate.email = fresh.guestEmail;
+            if (fresh.guestCountry) guestUpdate.nationality = fresh.guestCountry;
+            const freshName = fresh.guestName
+              || [fresh.guestFirstName, fresh.guestLastName].filter(Boolean).join(' ');
+            if (freshName) guestUpdate.name = freshName;
+            if (Object.keys(guestUpdate).length > 0) {
+              await prisma.guest.update({
+                where: { id: conversation.guestId },
+                data: guestUpdate,
+              });
+              broadcastToTenant(tenantId, 'guest_updated', {
+                conversationId: conversation.id,
+                guest: guestUpdate,
+              });
+            }
+          } catch (enrichErr: unknown) {
+            const msg = enrichErr instanceof Error ? enrichErr.message : String(enrichErr);
+            console.warn(`[Conversations] inquiryAction guest enrichment failed (non-fatal): ${msg}`);
+          }
+        }
+
         res.json({ ok: true, status: newStatus });
       } catch (err) {
         console.error('[Conversations] inquiryAction error:', err);
