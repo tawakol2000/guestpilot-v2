@@ -59,6 +59,7 @@ import {
   apiToggleAI,
   apiSetAiMode,
   apiSendThroughAI,
+  apiTranslateMessage,
   apiApproveSuggestion,
   apiGetConversationSuggestion,
   apiSendNote,
@@ -162,6 +163,10 @@ interface Message {
   previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING'
   originalAiText?: string
   editedByUserId?: string
+  // Feature 042: server-persisted English translation (inbound guest messages only).
+  // Null/undefined = not yet translated. Hydrated from the API response and
+  // from successful translate-endpoint calls while the Translate toggle is on.
+  contentTranslationEn?: string | null
 }
 
 interface Guest {
@@ -373,6 +378,8 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
           ...(m.previewState ? { previewState: m.previewState } : {}),
           ...(m.originalAiText ? { originalAiText: m.originalAiText } : {}),
           ...(m.editedByUserId ? { editedByUserId: m.editedByUserId } : {}),
+          // Feature 042: server-persisted English translation (guest messages only).
+          ...(m.contentTranslationEn ? { contentTranslationEn: m.contentTranslationEn } : {}),
         }]
       })
       // Preserve SSE-appended messages not yet in the API response (e.g., arrived during the fetch window).
@@ -1461,7 +1468,31 @@ export default function InboxV5() {
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
   // Streaming text accumulator: conversationId → partial text received so far
   const [streamingText, setStreamingText] = useState<Record<string, string>>({})
-  const [translateActive, setTranslateActive] = useState(false)
+  // Feature 042 — per-conversation Translate toggle. Map keyed by conversation id.
+  // Seeded from localStorage (key: `gp-translate-on:<convId>` → '1') on mount so
+  // the preference survives reloads within the same browser (FR-003). Cleared
+  // keys mean off.
+  const [translateActiveMap, setTranslateActiveMap] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const out: Record<string, boolean> = {}
+      const prefix = 'gp-translate-on:'
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i)
+        if (key && key.startsWith(prefix) && window.localStorage.getItem(key) === '1') {
+          out[key.slice(prefix.length)] = true
+        }
+      }
+      return out
+    } catch {
+      return {}
+    }
+  })
+  // Feature 042 — per-message translation lifecycle. 'idle' = not yet requested,
+  // 'loading' = in flight, 'error' = last attempt failed (retryable).
+  const [translations, setTranslations] = useState<
+    Record<string, { text?: string; status: 'idle' | 'loading' | 'error' }>
+  >({})
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false)
   const [filterStep, setFilterStep] = useState<'root' | 'status' | 'aiMode'>('root')
   const [filterSearch, setFilterSearch] = useState('')
@@ -1535,6 +1566,101 @@ export default function InboxV5() {
   const sendChannelDropdownRef = useRef<HTMLDivElement>(null)
 
   const selectedConv = conversations.find(c => c.id === selectedId) ?? conversations[0]
+
+  // Feature 042 — translation toggle state, scoped to currently-selected conversation.
+  const translateActive = !!(selectedConv?.id && translateActiveMap[selectedConv.id])
+  const toggleTranslate = useCallback(() => {
+    const convId = selectedConv?.id
+    if (!convId) return
+    setTranslateActiveMap(prev => {
+      const next = !prev[convId]
+      const updated = { ...prev }
+      if (next) updated[convId] = true
+      else delete updated[convId]
+      try {
+        if (typeof window !== 'undefined') {
+          const key = `gp-translate-on:${convId}`
+          if (next) window.localStorage.setItem(key, '1')
+          else window.localStorage.removeItem(key)
+        }
+      } catch { /* ignore quota / private-mode errors */ }
+      return updated
+    })
+  }, [selectedConv?.id])
+
+  // Feature 042 — set of message ids currently being translated, across all
+  // conversations. Serves two purposes: prevents duplicate in-flight requests
+  // for the same message, and caps total concurrent provider calls at 4 so the
+  // free Google endpoint doesn't get hammered when a long history is opened.
+  const translateInFlightIds = useRef<Set<string>>(new Set())
+
+  const enqueueTranslation = useCallback((messageId: string) => {
+    if (translateInFlightIds.current.has(messageId)) return
+    if (translateInFlightIds.current.size >= 4) return
+    translateInFlightIds.current.add(messageId)
+    setTranslations(prev => ({ ...prev, [messageId]: { status: 'loading' } }))
+    apiTranslateMessage(messageId)
+      .then(res => {
+        setTranslations(prev => ({ ...prev, [messageId]: { text: res.translated, status: 'idle' } }))
+        setConversations(prev =>
+          prev.map(c => ({
+            ...c,
+            messages: c.messages.map(m =>
+              m.id === messageId ? { ...m, contentTranslationEn: res.translated } : m
+            ),
+          }))
+        )
+      })
+      .catch(() => {
+        setTranslations(prev => ({ ...prev, [messageId]: { status: 'error' } }))
+      })
+      .finally(() => {
+        translateInFlightIds.current.delete(messageId)
+      })
+  }, [])
+
+  // Feature 042 — when toggle is on for the current conversation, bulk-fetch
+  // translations for every inbound guest message missing one. Newest-first,
+  // concurrency-capped at 4 (FR-007, research Decision 6).
+  useEffect(() => {
+    if (!translateActive || !selectedConv) return
+    const candidates = [...selectedConv.messages]
+      .filter(m =>
+        m.sender === 'guest' &&
+        !m.contentTranslationEn &&
+        !translateInFlightIds.current.has(m.id) &&
+        translations[m.id]?.status !== 'error' // errors require an explicit retry click
+      )
+      .reverse() // messages are stored asc by sentAt — reverse to prioritize newest
+
+    for (const msg of candidates) {
+      if (translateInFlightIds.current.size >= 4) break
+      enqueueTranslation(msg.id)
+    }
+  }, [translateActive, selectedConv?.id, selectedConv?.messages, enqueueTranslation, translations])
+
+  // Feature 042 — prune orphan localStorage keys for conversations that no
+  // longer appear in this user's list. Runs once after the conversation list
+  // first populates. Prevents unbounded growth for long-lived browser sessions.
+  const translatePruneRan = useRef(false)
+  useEffect(() => {
+    if (translatePruneRan.current) return
+    if (conversations.length === 0) return
+    if (typeof window === 'undefined') return
+    translatePruneRan.current = true
+    try {
+      const alive = new Set(conversations.map(c => c.id))
+      const prefix = 'gp-translate-on:'
+      const toRemove: string[] = []
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i)
+        if (!key?.startsWith(prefix)) continue
+        const convId = key.slice(prefix.length)
+        if (!alive.has(convId)) toRemove.push(key)
+      }
+      toRemove.forEach(k => window.localStorage.removeItem(k))
+    } catch { /* ignore */ }
+  }, [conversations])
 
   // Glow banner as soon as last message is from guest + AI is on autopilot
   const isAiWaiting = !!(
@@ -3687,7 +3813,7 @@ export default function InboxV5() {
                   </button>
                   {/* Translate */}
                   <button
-                    onClick={() => setTranslateActive(v => !v)}
+                    onClick={toggleTranslate}
                     aria-label={translateActive ? 'Disable translation' : 'Enable translation'}
                     title={translateActive ? 'Translation on' : 'Translate'}
                     style={{
@@ -4068,6 +4194,107 @@ export default function InboxV5() {
                             )}
                             {isPreview && <br />}
                             {msg.text}
+                            {/* Feature 042: inline translation block — inbound guest messages only,
+                                rendered directly below the original in the same bubble (FR-011, FR-012). */}
+                            {isGuest && translateActive && (() => {
+                              const tx = translations[msg.id]
+                              const translated = msg.contentTranslationEn || tx?.text
+                              const isSameAsOriginal =
+                                translated &&
+                                translated.trim().toLowerCase() === (msg.text || '').trim().toLowerCase()
+                              // Skip entirely for already-English sources (FR-006).
+                              if (translated && isSameAsOriginal) return null
+                              if (translated) {
+                                return (
+                                  <>
+                                    <div
+                                      style={{
+                                        marginTop: 6,
+                                        paddingTop: 6,
+                                        borderTop: `1px solid ${T.border.default}`,
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                        color: T.text.secondary,
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          display: 'inline-block',
+                                          fontSize: 9,
+                                          fontWeight: 700,
+                                          textTransform: 'uppercase',
+                                          letterSpacing: 0.4,
+                                          color: T.text.tertiary,
+                                          marginRight: 6,
+                                          verticalAlign: 'middle',
+                                        }}
+                                      >
+                                        Translated
+                                      </span>
+                                      {translated}
+                                    </div>
+                                  </>
+                                )
+                              }
+                              if (tx?.status === 'loading') {
+                                return (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      paddingTop: 6,
+                                      borderTop: `1px solid ${T.border.default}`,
+                                      fontSize: 11,
+                                      color: T.text.tertiary,
+                                      fontStyle: 'italic',
+                                    }}
+                                  >
+                                    Translating…
+                                  </div>
+                                )
+                              }
+                              if (tx?.status === 'error') {
+                                return (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      paddingTop: 6,
+                                      borderTop: `1px solid ${T.border.default}`,
+                                      fontSize: 11,
+                                      color: T.status.red,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <span>Translation unavailable</span>
+                                    <button
+                                      onClick={() => {
+                                        setTranslations(prev => {
+                                          const next = { ...prev }
+                                          delete next[msg.id]
+                                          return next
+                                        })
+                                        enqueueTranslation(msg.id)
+                                      }}
+                                      style={{
+                                        background: 'transparent',
+                                        border: `1px solid ${T.border.default}`,
+                                        borderRadius: 4,
+                                        padding: '1px 6px',
+                                        fontSize: 10,
+                                        color: T.text.secondary,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Retry
+                                    </button>
+                                  </div>
+                                )
+                              }
+                              return null
+                            })()}
                           </div>
                           {/* Below bubble: logo + timestamp + rating */}
                           <div

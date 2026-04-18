@@ -54,6 +54,7 @@ frontend/
 | queue.service.ts | BullMQ wrapper (graceful fallback to polling if no Redis) |
 | shadow-preview.service.ts | Feature 040 — lockOlderPreviews helper for Shadow Mode preview lifecycle |
 | tuning-analyzer.service.ts | Feature 040 — fire-and-forget analyzer for edited shadow previews (gpt-5.4-mini, reasoning: high) |
+| translation.service.ts | Feature 042 — inbound message translation to English (cached on Message.contentTranslationEn). Provider-abstracted (TranslationProvider interface) for easy swap. |
 
 ## AI Pipeline Flow
 ```
@@ -167,6 +168,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL (existing Property model with `customKnowledgeBase` JSON field, `listingDescription` text field) (031-ai-property-search)
 - TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, OpenAI SDK (Responses API), Socket.IO, BullMQ (optional); React 19, Tailwind 4, shadcn/ui (040-autopilot-shadow-mode)
 - PostgreSQL via Prisma. Schema changes applied with `npx prisma db push` per constitution §Development Workflow. (040-autopilot-shadow-mode)
+- TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios (backend); React 19, Tailwind 4, existing inbox-v5 bubble rendering (frontend) (042-translation-toggle)
+- PostgreSQL via Prisma — one new nullable column `Message.contentTranslationEn String?`. Applied with `npx prisma db push` per constitution §Development Workflow. No migration of existing rows required (null = not yet translated, lazily filled). (042-translation-toggle)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui

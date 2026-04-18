@@ -148,6 +148,9 @@ export interface ApiMessage {
   deliveryError?: string | null
   deliveredAt?: string | null
   source?: 'web' | 'ios' | 'ai' | 'system' | null
+  // Feature 042: server-persisted English translation for inbound guest messages.
+  // Null = not yet translated OR not a guest message. Shared across all managers/devices.
+  contentTranslationEn?: string | null
 }
 
 export interface ApiConversationDetail {
@@ -843,6 +846,17 @@ export async function apiSendThroughAI(
   return apiFetch<ApiMessage>(`/api/conversations/${conversationId}/messages/translate`, {
     method: 'POST',
     body: JSON.stringify({ content, channel }),
+  })
+}
+
+// Feature 042 — translate a single inbound guest message to English.
+// Served from cache (Message.contentTranslationEn) if present; otherwise
+// translated by the server, persisted, and returned.
+export async function apiTranslateMessage(
+  messageId: string
+): Promise<{ messageId: string; translated: string; cached: boolean; sourceLanguage?: string }> {
+  return apiFetch(`/api/messages/${messageId}/translate`, {
+    method: 'POST',
   })
 }
 

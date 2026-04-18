@@ -25,7 +25,6 @@ export function conversationsRouter(prisma: PrismaClient): Router {
   router.post('/:id/messages', messageSendLimiter as any, ((req, res) => msgCtrl.send(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/notes', messageSendLimiter as any, ((req, res) => msgCtrl.sendNote(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/messages/translate', messageSendLimiter as any, ((req, res) => msgCtrl.translateAndSend(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
-  router.post('/:id/translate-message', ((req, res) => msgCtrl.translateMessage(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/inquiry-action', ((req, res) => convCtrl.inquiryAction(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/cancel-ai', ((req, res) => convCtrl.cancelPendingAi(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.post('/:id/send-ai-now', ((req, res) => convCtrl.sendAiNow(req as unknown as AuthenticatedRequest, res)) as RequestHandler);

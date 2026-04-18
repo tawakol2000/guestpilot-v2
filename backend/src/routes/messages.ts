@@ -1,7 +1,10 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
+import { messageSendLimiter } from '../middleware/rate-limit';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
+import { makeMessagesController } from '../controllers/messages.controller';
+import { AuthenticatedRequest } from '../types';
 import { runDiagnostic } from '../services/tuning/diagnostic.service';
 import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
@@ -10,6 +13,17 @@ export function messagesRouter(prisma: PrismaClient): Router {
   const router = Router();
   const auth = authMiddleware as unknown as RequestHandler;
   const knowledgeCtrl = makeKnowledgeController(prisma);
+  const msgCtrl = makeMessagesController(prisma);
+
+  // Feature 042 — POST /api/messages/:messageId/translate
+  // Message-scoped translation with server-side cache on Message.contentTranslationEn.
+  router.post(
+    '/:messageId/translate',
+    auth,
+    messageSendLimiter as any,
+    ((req, res) =>
+      msgCtrl.translateMessageById(req as unknown as AuthenticatedRequest, res)) as RequestHandler
+  );
 
   // POST /api/messages/:id/rate — rate a message (was inlined in app.ts)
   router.post('/:id/rate', auth, (req: any, res: any) => {

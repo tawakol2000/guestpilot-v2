@@ -197,6 +197,12 @@ model Message {
   // came from the structured-output pipeline. Null for pre-feature rows,
   // non-AI messages, and rows where parsing failed.
   aiConfidence        Float?
+  // ─── Feature 042: inbound translation cache ───
+  // English translation of `content`, populated lazily on first demand by the
+  // /api/messages/:id/translate endpoint. Shared across all managers, devices,
+  // and the iOS app. Only inbound (role = GUEST) messages are ever translated;
+  // null for outbound/system/AI messages and for untouched inbound messages.
+  contentTranslationEn String?             @db.Text
   conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?

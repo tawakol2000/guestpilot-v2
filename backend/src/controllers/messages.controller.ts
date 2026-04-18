@@ -1,6 +1,5 @@
 import { Response } from 'express';
 import { z } from 'zod';
-import axios from 'axios';
 import { PrismaClient, MessageRole } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import * as hostawayService from '../services/hostaway.service';
@@ -9,6 +8,7 @@ import { getAiConfig } from '../services/ai-config.service';
 import { createMessage, stripCodeFences } from '../services/ai.service';
 import { processFaqSuggestion } from '../services/faq-suggest.service';
 import { compactMessageAsync } from '../services/message-compaction.service';
+import { translationService } from '../services/translation.service';
 // Feature 041 — legacy copilot tuning trigger. The shadow-mode preview send
 // path (shadow-preview.controller.ts) already fires the diagnostic when the
 // manager edits a preview before sending. Without these imports the legacy
@@ -443,23 +443,84 @@ export function makeMessagesController(prisma: PrismaClient) {
       }
     },
 
-    async translateMessage(req: AuthenticatedRequest, res: Response): Promise<void> {
+    // Feature 042 — message-scoped translation with server-side persistence.
+    // Translates ONE inbound guest message to English, caches the result on
+    // Message.contentTranslationEn so subsequent calls (from any manager, any
+    // device, incl. the iOS app) serve from cache without re-hitting the
+    // provider.
+    async translateMessageById(req: AuthenticatedRequest, res: Response): Promise<void> {
+      const t0 = Date.now();
+      const { tenantId } = req;
+      const { messageId } = req.params;
+      let cached = false;
+      let ok = false;
       try {
-        const { content } = req.body as { content?: string };
-        if (!content?.trim()) {
-          res.status(400).json({ error: 'content required' });
+        const message = await prisma.message.findFirst({
+          where: { id: messageId, tenantId },
+          select: { id: true, role: true, content: true, contentTranslationEn: true },
+        });
+
+        if (!message) {
+          res.status(404).json({ error: 'Message not found' });
+          return;
+        }
+        if (message.role !== MessageRole.GUEST) {
+          res.status(400).json({ error: 'Only inbound guest messages can be translated' });
+          return;
+        }
+        if (!message.content?.trim()) {
+          res.status(400).json({ error: 'Message has no content to translate' });
           return;
         }
 
-        // Free Google Translate — no API key needed
-        const params = new URLSearchParams({ client: 'gtx', sl: 'auto', tl: 'en', dt: 't', q: content });
-        const gtRes = await axios.get(`https://translate.googleapis.com/translate_a/single?${params.toString()}`);
-        const translated = (gtRes.data[0] as Array<[string]>).map(part => part[0]).join('').trim();
+        if (message.contentTranslationEn) {
+          cached = true;
+          ok = true;
+          res.json({
+            messageId: message.id,
+            translated: message.contentTranslationEn,
+            cached: true,
+          });
+          return;
+        }
 
-        res.json({ translated });
+        let translated: string;
+        let detectedSourceLang: string | undefined;
+        try {
+          const result = await translationService.translate(message.content, { targetLang: 'en' });
+          translated = result.translated;
+          detectedSourceLang = result.detectedSourceLang;
+        } catch (providerErr: any) {
+          console.warn(`[Messages] translate provider failed for ${messageId}: ${providerErr?.message}`);
+          res.status(502).json({ error: 'Translation provider unavailable' });
+          return;
+        }
+
+        // Best-effort persist — if the DB write fails we still return the
+        // translation so the manager isn't blocked on a transient DB issue.
+        try {
+          await prisma.message.update({
+            where: { id: messageId },
+            data: { contentTranslationEn: translated },
+          });
+        } catch (dbErr: any) {
+          console.warn(`[Messages] translate persist failed for ${messageId} (non-fatal): ${dbErr?.message}`);
+        }
+
+        ok = true;
+        res.json({
+          messageId: message.id,
+          translated,
+          cached: false,
+          sourceLanguage: detectedSourceLang,
+        });
       } catch (err) {
-        console.error('[Messages] translate error:', err);
+        console.error('[Messages] translateMessageById error:', err);
         res.status(500).json({ error: 'Internal server error' });
+      } finally {
+        console.log(
+          `[Messages] translate messageId=${messageId} tenantId=${tenantId} ms=${Date.now() - t0} cached=${cached} ok=${ok}`
+        );
       }
     },
   };
