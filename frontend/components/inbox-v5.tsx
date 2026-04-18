@@ -157,7 +157,7 @@ interface Message {
   channel?: Channel
   fromSelf?: boolean
   imageUrls?: string[]
-  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[]; confidence?: number; autopilotDowngraded?: boolean }
   // Feature 040: Copilot Shadow Mode preview fields (nullable — only present on shadow-mode previews)
   previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING'
   originalAiText?: string
@@ -1816,6 +1816,9 @@ export default function InboxV5() {
           previewState: msg.previewState,
           originalAiText: msg.originalAiText,
           editedByUserId: msg.editedByUserId,
+          // AI metadata (confidence, autopilotDowngraded, etc.) — passed through
+          // so the confidence badge renders instantly instead of only after refresh.
+          ...(msg.aiMeta ? { aiMeta: msg.aiMeta } : {}),
         })
       }
       // Extract visible text for lastMessage preview
@@ -4136,6 +4139,46 @@ export default function InboxV5() {
                                 ))}
                               </span>
                             ) : null}
+                            {/* Confidence badge — self-rated by the AI per reply (0-1) */}
+                            {isAI && typeof msg.aiMeta?.confidence === 'number' ? (() => {
+                              const c = msg.aiMeta.confidence as number
+                              const pct = Math.round(c * 100)
+                              const tier = c >= 0.90 ? 'high' : c >= 0.70 ? 'good' : c >= 0.50 ? 'fair' : 'low'
+                              const palette = tier === 'high'
+                                ? { fg: T.status.green, bg: T.status.green + '18' }
+                                : tier === 'good'
+                                  ? { fg: '#0891B2', bg: '#0891B218' }
+                                  : tier === 'fair'
+                                    ? { fg: T.status.amber, bg: T.status.amber + '18' }
+                                    : { fg: T.status.red, bg: T.status.red + '18' }
+                              const tip = msg.aiMeta?.autopilotDowngraded
+                                ? `Confidence ${pct}% — below your autopilot threshold, so this reply is held for review`
+                                : `Self-rated confidence: ${pct}% (${tier === 'high' ? 'unambiguous' : tier === 'good' ? 'minor uncertainty' : tier === 'fair' ? 'material uncertainty' : 'high uncertainty'})`
+                              return (
+                                <span
+                                  title={tip}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                    fontSize: 9,
+                                    fontFamily: T.font.mono,
+                                    fontWeight: 700,
+                                    color: palette.fg,
+                                    background: palette.bg,
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    marginLeft: 3,
+                                  }}
+                                >
+                                  <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 3, background: palette.fg }} />
+                                  {pct}%
+                                  {msg.aiMeta?.autopilotDowngraded && (
+                                    <span style={{ marginLeft: 2, opacity: 0.8 }}>• held</span>
+                                  )}
+                                </span>
+                              )
+                            })() : null}
                             {/* AI message rating buttons */}
                             {isAI && (
                               <span style={{ display: 'flex', gap: 2, marginLeft: 2, alignItems: 'center' }}>

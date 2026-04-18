@@ -193,6 +193,10 @@ model Message {
   // rows (pre sprint-05) stay null; the graduation dashboard averages only
   // non-null values, so legacy rows are excluded cleanly.
   editMagnitudeScore  Float?
+  // AI self-rated confidence for this reply (0-1). Populated when the reply
+  // came from the structured-output pipeline. Null for pre-feature rows,
+  // non-AI messages, and rows where parsing failed.
+  aiConfidence        Float?
   conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rating              MessageRating?
@@ -467,6 +471,9 @@ model TenantAiConfig {
   systemPromptHistory       Json     @default("[]") // Array of {version, timestamp, coordinator?, screening?, note?}
   // ─── Feature 040: Copilot Shadow Mode (safe to drop on retirement) ───
   shadowModeEnabled         Boolean  @default(false) // When true, copilot replies render as in-chat preview bubbles + fire tuning analyzer on edited sends. Autopilot unaffected.
+  // Autopilot: minimum self-rated confidence (0-1) required to auto-send. Below
+  // this threshold, the reply is downgraded to a shadow preview so a human reviews it.
+  autopilotMinConfidence    Float    @default(0.75)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 

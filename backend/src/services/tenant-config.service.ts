@@ -106,6 +106,14 @@ export async function updateTenantAiConfig(
     err.field = 'temperature';
     throw err;
   }
+  if (
+    (updates as any).autopilotMinConfidence !== undefined &&
+    ((updates as any).autopilotMinConfidence < 0 || (updates as any).autopilotMinConfidence > 1)
+  ) {
+    const err = new Error('autopilotMinConfidence must be 0.0–1.0') as any;
+    err.field = 'autopilotMinConfidence';
+    throw err;
+  }
   if (updates.model !== undefined && !ALLOWED_MODELS.includes(updates.model)) {
     const err = new Error(`model must be one of: ${ALLOWED_MODELS.join(', ')}`) as any;
     err.field = 'model';

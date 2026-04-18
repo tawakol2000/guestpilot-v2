@@ -945,6 +945,7 @@ function TenantConfigSection({
         reasoningCoordinator: local.reasoningCoordinator,
         reasoningScreening: local.reasoningScreening,
         shadowModeEnabled: local.shadowModeEnabled,
+        autopilotMinConfidence: local.autopilotMinConfidence,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -1176,6 +1177,40 @@ function TenantConfigSection({
               Boolean(local.shadowModeEnabled),
               'shadowModeEnabled'
             )}
+          </div>
+        </div>
+
+        {/* Autopilot confidence threshold */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Autopilot Confidence Threshold</label>
+          <div style={{ fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans, marginBottom: 10, lineHeight: 1.5 }}>
+            On autopilot, if the AI self-rates its confidence below this threshold, the reply is held as a preview for human review instead of auto-sending. Higher = safer, more human review. Lower = more autonomy.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={local.autopilotMinConfidence ?? 0.75}
+              onChange={e => setLocal(prev => ({ ...prev, autopilotMinConfidence: parseFloat(e.target.value) }))}
+              style={{ flex: 1, accentColor: T.accent }}
+            />
+            <span style={{
+              minWidth: 64,
+              textAlign: 'right',
+              fontSize: 13,
+              fontWeight: 700,
+              fontFamily: T.font.mono,
+              color: T.accent,
+            }}>
+              {(Math.round((local.autopilotMinConfidence ?? 0.75) * 100))}%
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, fontFamily: T.font.mono, color: T.text.tertiary }}>
+            <span>0% (always send)</span>
+            <span>50%</span>
+            <span>100% (never send)</span>
           </div>
         </div>
 

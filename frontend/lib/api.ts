@@ -138,7 +138,7 @@ export interface ApiMessage {
   channel: string
   sentAt: string
   imageUrls?: string[]
-  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[] }
+  aiMeta?: { sopCategories?: string[]; toolName?: string; toolNames?: string[]; confidence?: number; autopilotDowngraded?: boolean }
   // Feature 040: Copilot Shadow Mode preview state (null for normal sent messages)
   previewState?: 'PREVIEW_PENDING' | 'PREVIEW_LOCKED' | 'PREVIEW_SENDING' | null
   originalAiText?: string | null
@@ -459,6 +459,7 @@ export interface TenantAiConfig {
   systemPromptScreening: string | null
   systemPromptVersion: number
   shadowModeEnabled: boolean // Feature 040: Copilot Shadow Mode
+  autopilotMinConfidence: number // 0-1 — minimum AI self-rated confidence required to auto-send in autopilot
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {

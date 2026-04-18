@@ -102,7 +102,7 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         // Build a lookup: for each AI message, find the closest AiApiLog by timestamp
         const aiMessages = conversation.messages.filter(m => m.role === 'AI');
-        const aiMetaMap = new Map<string, { sopCategories?: string[]; toolName?: string; toolNames?: string[] }>();
+        const aiMetaMap = new Map<string, { sopCategories?: string[]; toolName?: string; toolNames?: string[]; confidence?: number; autopilotDowngraded?: boolean }>();
         for (const aiMsg of aiMessages) {
           let bestLog: (typeof aiLogs)[0] | null = null;
           let bestDiff = Infinity;
@@ -122,6 +122,8 @@ export function makeConversationsController(prisma: PrismaClient) {
                 sopCategories: rc.sopCategories || rc.classifierLabels || undefined,
                 toolName: toolNames[0] || undefined,
                 toolNames: toolNames.length > 0 ? toolNames : undefined,
+                confidence: typeof rc.confidence === 'number' ? rc.confidence : undefined,
+                autopilotDowngraded: rc.autopilotDowngraded === true ? true : undefined,
               });
             }
           }
@@ -158,21 +160,34 @@ export function makeConversationsController(prisma: PrismaClient) {
             aiMode: conversation.reservation.aiMode,
           },
           documentChecklist: ((conversation.reservation.screeningAnswers as any)?.documentChecklist) || null,
-          messages: conversation.messages.map(m => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            channel: m.channel,
-            sentAt: m.sentAt,
-            imageUrls: m.imageUrls,
-            // Feature 040: Copilot Shadow Mode preview fields — without these the
-            // frontend renders preview bubbles as normal sent messages and the
-            // Send/Edit buttons never appear after a page refresh.
-            previewState: m.previewState,
-            originalAiText: m.originalAiText,
-            editedByUserId: m.editedByUserId,
-            ...(aiMetaMap.has(m.id) ? { aiMeta: aiMetaMap.get(m.id) } : {}),
-          })),
+          messages: conversation.messages.map(m => {
+            // Merge ragContext-derived aiMeta with the Message.aiConfidence column.
+            // The column is authoritative for confidence (persisted at send time);
+            // ragContext is authoritative for sopCategories/toolNames (populated
+            // during the generation turn).
+            const logMeta = aiMetaMap.get(m.id);
+            const mergedAiMeta = (logMeta || (m as any).aiConfidence != null)
+              ? {
+                  ...(logMeta || {}),
+                  ...((m as any).aiConfidence != null ? { confidence: (m as any).aiConfidence } : {}),
+                }
+              : undefined;
+            return {
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              channel: m.channel,
+              sentAt: m.sentAt,
+              imageUrls: m.imageUrls,
+              // Feature 040: Copilot Shadow Mode preview fields — without these the
+              // frontend renders preview bubbles as normal sent messages and the
+              // Send/Edit buttons never appear after a page refresh.
+              previewState: m.previewState,
+              originalAiText: m.originalAiText,
+              editedByUserId: m.editedByUserId,
+              ...(mergedAiMeta ? { aiMeta: mergedAiMeta } : {}),
+            };
+          }),
         });
       } catch (err) {
         console.error('[Conversations] get error:', err);

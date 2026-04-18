@@ -24,6 +24,8 @@ import { runDiagnostic } from '../services/tuning/diagnostic.service';
 import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
+import { compactMessageAsync } from '../services/message-compaction.service';
+import { MessageRole } from '@prisma/client';
 
 export function makeShadowPreviewController(prisma: PrismaClient) {
   return {
@@ -59,11 +61,14 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
 
         // Atomic state transition: PREVIEW_PENDING → PREVIEW_SENDING, optionally writing the edited text.
         // If updateMany returns count 0, another request already flipped the state.
+        // When the manager edits, null out compactedContent so next AI turn's
+        // history block doesn't inject a summary of the *original* AI draft.
+        // Re-compaction for the new content fires after the Hostaway send commits.
         const transitionResult = await prisma.message.updateMany({
           where: { id: messageId, tenantId, previewState: 'PREVIEW_PENDING' },
           data: {
             previewState: 'PREVIEW_SENDING',
-            ...(editedText !== undefined ? { content: editedText, editedByUserId: (req as any).userId ?? null } : {}),
+            ...(editedText !== undefined ? { content: editedText, editedByUserId: (req as any).userId ?? null, compactedContent: null } : {}),
           },
         });
 
@@ -108,6 +113,14 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
               sentAt,
             },
           });
+
+          // Re-fire compaction for the final sent text. Gated internally by
+          // length threshold; safe to call for short messages. Fires only
+          // when the manager edited — unedited sends still have the original
+          // compactedContent (or none, if under the threshold).
+          if (editedText !== undefined) {
+            compactMessageAsync(updated.id, MessageRole.AI, finalContent, prisma);
+          }
 
           // Update conversation lastMessageAt so inbox list re-sorts
           await prisma.conversation

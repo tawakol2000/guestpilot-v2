@@ -192,8 +192,12 @@ const COORDINATOR_SCHEMA = {
       },
       resolveTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when guest confirms issue resolved' },
       updateTaskId: { type: ['string', 'null'] as any, description: 'Task ID from open tasks when adding new details to existing escalation' },
+      confidence: {
+        type: 'number',
+        description: 'Self-rated confidence (0-1). 0.90+ unambiguous rule/SOP match · 0.70-0.89 minor uncertainty · 0.50-0.69 material uncertainty · <0.50 high uncertainty. Be honest — low confidence routes this response for human review.',
+      },
     },
-    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId'],
+    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId', 'confidence'],
     additionalProperties: false,
   },
 };
@@ -217,8 +221,12 @@ const SCREENING_SCHEMA = {
         required: ['needed', 'title', 'note'],
         additionalProperties: false,
       },
+      confidence: {
+        type: 'number',
+        description: 'Self-rated confidence (0-1). 0.90+ unambiguous rule/SOP match · 0.70-0.89 minor uncertainty · 0.50-0.69 material uncertainty · <0.50 high uncertainty. Be honest — low confidence routes this response for human review.',
+      },
     },
-    required: ['guest message', 'manager'],
+    required: ['guest message', 'manager', 'confidence'],
     additionalProperties: false,
   },
 };
@@ -2081,13 +2089,20 @@ export async function generateAndSendAiReply(
 
       console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
 
+      // Confidence score parsed from the structured JSON (0-1). Used to gate
+      // autopilot sends below and surfaced to the inbox UI via ragContext.
+      let confidence: number | null = null;
       try {
         if (isInquiry) {
           const parsed = JSON.parse(rawResponse) as {
             'guest message': string;
             manager?: { needed: boolean; title: string; note: string };
+            confidence?: number;
           };
           guestMessage = parsed['guest message'] || '';
+          if (typeof parsed.confidence === 'number' && isFinite(parsed.confidence)) {
+            confidence = Math.max(0, Math.min(1, parsed.confidence));
+          }
           // Handle screening escalation — derive urgency from title
           if (parsed.manager?.needed) {
             // Fallback: AI sometimes returns "reason" instead of "note" after tool use
@@ -2113,8 +2128,12 @@ export async function generateAndSendAiReply(
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
             escalation: { title: string; note: string; urgency: string } | null;
+            confidence?: number;
           };
           guestMessage = parsed.guest_message || '';
+          if (typeof parsed.confidence === 'number' && isFinite(parsed.confidence)) {
+            confidence = Math.max(0, Math.min(1, parsed.confidence));
+          }
           // T019: Validate AI output escalation fields before use
           if (parsed.escalation) {
             const validUrgencies = ['immediate', 'scheduled', 'info_request'];
@@ -2198,13 +2217,41 @@ export async function generateAndSendAiReply(
       return;
     }
 
+    // Stamp confidence on the log's ragContext so the inbox UI (aiMeta) and
+    // any downstream analytics can see it. Safe when confidence is null.
+    if (confidence !== null) {
+      ragContext.confidence = confidence;
+    }
+
+    // ─── Autopilot confidence gate ──────────────────────────────────────────
+    // If the AI self-rates confidence below the tenant's autopilot threshold,
+    // downgrade this turn to copilot so a human reviews before sending. The
+    // preview bubble / suggestion card still gets created and the operator can
+    // Send as-is, edit, or discard. Only applies in autopilot; copilot is
+    // already manual review.
+    const autopilotMinConfidence = tenantConfig?.autopilotMinConfidence ?? 0.75;
+    let autopilotDowngraded = false;
+    if (
+      context.aiMode === 'autopilot' &&
+      confidence !== null &&
+      confidence < autopilotMinConfidence
+    ) {
+      autopilotDowngraded = true;
+      ragContext.autopilotDowngraded = true;
+      ragContext.autopilotMinConfidence = autopilotMinConfidence;
+      console.log(`[AI] [${conversationId}] Confidence ${confidence.toFixed(2)} < ${autopilotMinConfidence} — downgrading autopilot to copilot for this turn`);
+    }
+    const effectiveMode = autopilotDowngraded ? 'copilot' : context.aiMode;
+
     // Copilot mode: hold suggestion for host approval
-    if (context.aiMode === 'copilot') {
+    if (effectiveMode === 'copilot') {
       // ─── Feature 040: Shadow Mode preview flow ──────────────────────────
       // When the tenant has shadowModeEnabled, copilot replies render as
       // in-chat preview bubbles instead of the legacy suggestion-card UI.
-      // Autopilot is never touched — this branch is inside the copilot guard.
-      if (tenantConfig?.shadowModeEnabled) {
+      // A downgraded autopilot turn always takes the preview path, so the
+      // manager sees the proposed reply inline (the autopilot inbox UI has
+      // no legacy suggestion card).
+      if (tenantConfig?.shadowModeEnabled || autopilotDowngraded) {
         const lastGuestMsgShadow = allMsgs.filter(m => m.role === 'GUEST').at(-1);
         const previewChannel = lastGuestMsgShadow?.channel ?? Channel.OTHER;
         const previewCommType = previewChannel === Channel.WHATSAPP ? 'whatsapp' : 'channel';
@@ -2242,6 +2289,7 @@ export async function generateAndSendAiReply(
             originalAiText: guestMessage,
             aiApiLogId,
             source: 'ai',
+            ...(confidence !== null ? { aiConfidence: confidence } : {}),
           },
         });
         stampAiTrace({ messageId: previewMessage.id, mode: 'shadow-preview' });
@@ -2270,6 +2318,10 @@ export async function generateAndSendAiReply(
             imageUrls: [],
             previewState: 'PREVIEW_PENDING',
             originalAiText: guestMessage,
+            aiMeta: {
+              ...(confidence !== null ? { confidence } : {}),
+              ...(autopilotDowngraded ? { autopilotDowngraded: true } : {}),
+            },
           },
           lastMessageRole: 'AI',
           lastMessageAt: previewSentAt.toISOString(),
@@ -2308,6 +2360,7 @@ export async function generateAndSendAiReply(
         hostawayMessageId: '',
         source: 'ai',
         deliveryStatus: 'pending',
+        ...(confidence !== null ? { aiConfidence: confidence } : {}),
       },
     });
     stampAiTrace({ messageId: savedMessage.id });
@@ -2322,7 +2375,15 @@ export async function generateAndSendAiReply(
     // Push AI message to browser in real-time
     broadcastCritical(tenantId, 'message', {
       conversationId,
-      message: { id: savedMessage.id, role: 'AI', content: guestMessage, sentAt: sentAt.toISOString(), channel: String(lastMsgChannel), imageUrls: [] },
+      message: {
+        id: savedMessage.id,
+        role: 'AI',
+        content: guestMessage,
+        sentAt: sentAt.toISOString(),
+        channel: String(lastMsgChannel),
+        imageUrls: [],
+        ...(confidence !== null ? { aiMeta: { confidence } } : {}),
+      },
       lastMessageRole: 'AI',
       lastMessageAt: sentAt.toISOString(),
     });
