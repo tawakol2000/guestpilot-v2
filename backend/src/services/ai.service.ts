@@ -1476,8 +1476,15 @@ export async function generateAndSendAiReply(
 
     // Current messages = GUEST messages the AI needs to respond to.
     // Both copilot and autopilot: ALL unanswered guest messages since the last AI/HOST reply.
-    const lastReplyIdx = allMsgs.reduce((idx, m, i) =>
-      (m.role === 'AI' || m.role === 'HOST') ? i : idx, -1);
+    // A PREVIEW_PENDING AI row is an unsent draft (Shadow Mode) — it is NOT a reply,
+    // so it must not close the window. Otherwise a follow-up guest message whose
+    // Hostaway sentAt precedes the preview's sentAt (common — webhooks arrive late)
+    // would be filtered out and the AI would skip generating a fresh suggestion.
+    const lastReplyIdx = allMsgs.reduce((idx, m, i) => {
+      if (m.role === 'HOST') return i;
+      if (m.role === 'AI' && m.previewState !== 'PREVIEW_PENDING') return i;
+      return idx;
+    }, -1);
     const currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
     const currentMsgsText = currentMsgs
       .map(m => `Guest: ${m.content}`)
