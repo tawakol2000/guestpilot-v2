@@ -119,6 +119,8 @@ export function propertiesRouter(prisma: PrismaClient): Router {
 
   router.get('/:id', ((req, res) => ctrl.get(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.put('/:id/knowledge-base', ((req, res) => ctrl.updateKnowledgeBase(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  // Feature 043 — per-property auto-accept thresholds
+  router.patch('/:id/auto-accept', ((req, res) => ctrl.updateAutoAcceptThresholds(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   // POST /api/properties/summarize-all — batch summarize all tenant property descriptions (T009)
   router.post('/summarize-all', (async (req: any, res) => {

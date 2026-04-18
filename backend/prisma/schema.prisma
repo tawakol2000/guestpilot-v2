@@ -56,25 +56,36 @@ model Tenant {
   dashboardJwtIssuedAt  DateTime?
   dashboardJwtExpiresAt DateTime?
   dashboardConnectedBy  String?
+
+  // ─── Feature 043: tenant-level defaults for per-property auto-accept thresholds ───
+  defaultAutoAcceptLateCheckoutUntil String?
+  defaultAutoAcceptEarlyCheckinFrom  String?
+
+  // ─── Feature 043 relations ───
+  automatedReplyTemplates AutomatedReplyTemplate[]
+  taskActionLogs          TaskActionLog[]
 }
 
 model Property {
-  id                   String                @id @default(cuid())
-  tenantId             String
-  hostawayListingId    String
-  name                 String
-  address              String                @default("")
-  listingDescription   String                @default("")
-  customKnowledgeBase  Json                  @default("{}")
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  conversations        Conversation[]
-  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  reservations         Reservation[]
-  tasks                Task[]
-  faqEntries           FaqEntry[]
-  knowledgeSuggestions KnowledgeSuggestion[]
-  sopPropertyOverrides SopPropertyOverride[]
+  id                          String                @id @default(cuid())
+  tenantId                    String
+  hostawayListingId           String
+  name                        String
+  address                     String                @default("")
+  listingDescription          String                @default("")
+  customKnowledgeBase         Json                  @default("{}")
+  // ─── Feature 043: per-property auto-accept thresholds (HH:MM, null = off, fall back to tenant default) ───
+  autoAcceptLateCheckoutUntil String?
+  autoAcceptEarlyCheckinFrom  String?
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+  conversations               Conversation[]
+  tenant                      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservations                Reservation[]
+  tasks                       Task[]
+  faqEntries                  FaqEntry[]
+  knowledgeSuggestions        KnowledgeSuggestion[]
+  sopPropertyOverrides        SopPropertyOverride[]
 
   @@unique([tenantId, hostawayListingId])
   @@index([tenantId])
@@ -115,6 +126,10 @@ model Reservation {
   hostPayout            Decimal?
   cleaningFee           Decimal?
   currency              String?
+  // ─── Feature 043: per-reservation HH:MM overrides of the property default check-in/out times ───
+  // Written only by scheduled-time.service.ts (auto-accept) and task-actions.controller.ts (manual Accept).
+  scheduledCheckInAt    String?
+  scheduledCheckOutAt   String?
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
   conversations         Conversation[]
@@ -166,49 +181,49 @@ model Conversation {
 }
 
 model Message {
-  id                  String               @id @default(cuid())
-  conversationId      String
-  tenantId            String
-  role                MessageRole
-  content             String
-  compactedContent    String?              @db.Text // Nano-compressed version of long automated HOST/AI messages, used in conversation history to save tokens. Null = fall back to `content`.
-  channel             Channel              @default(OTHER)
-  communicationType   String               @default("")
-  sentAt              DateTime             @default(now())
-  hostawayMessageId   String               @default("")
-  imageUrls           String[]             @default([])
+  id                   String               @id @default(cuid())
+  conversationId       String
+  tenantId             String
+  role                 MessageRole
+  content              String
+  compactedContent     String?              @db.Text // Nano-compressed version of long automated HOST/AI messages, used in conversation history to save tokens. Null = fall back to `content`.
+  channel              Channel              @default(OTHER)
+  communicationType    String               @default("")
+  sentAt               DateTime             @default(now())
+  hostawayMessageId    String               @default("")
+  imageUrls            String[]             @default([])
   // ─── Feature 040: Copilot Shadow Mode (nullable; safe to drop on retirement) ───
-  previewState        PreviewState? // null for normal messages; set for shadow-mode previews
-  originalAiText      String?              @db.Text // AI's original generated text (present for previews and kept after Send for audit)
-  editedByUserId      String? // Populated on Send if the admin edited before sending
-  aiApiLogId          String? // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
+  previewState         PreviewState? // null for normal messages; set for shadow-mode previews
+  originalAiText       String?              @db.Text // AI's original generated text (present for previews and kept after Send for audit)
+  editedByUserId       String? // Populated on Send if the admin edited before sending
+  aiApiLogId           String? // FK to AiApiLog for the generation turn (lets tuning analyzer pull full context)
   // ─── iOS readiness: delivery tracking + client source audit trail ───
-  deliveryStatus      String? // 'sent' | 'pending' | 'failed' | null (null for inbound/guest messages)
-  deliveryError       String? // Error message when deliveryStatus = 'failed'
-  deliveredAt         DateTime? // Timestamp of successful Hostaway delivery
-  source              String? // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
+  deliveryStatus       String? // 'sent' | 'pending' | 'failed' | null (null for inbound/guest messages)
+  deliveryError        String? // Error message when deliveryStatus = 'failed'
+  deliveredAt          DateTime? // Timestamp of successful Hostaway delivery
+  source               String? // 'web' | 'ios' | 'ai' | 'system' | null (audit trail for who sent)
   // ─── Feature 041 sprint 05 §3 (C19): authoritative edit-magnitude score ───
   // Persisted at trigger time (manager-edited copilot send) by the diagnostic
   // pipeline. Float in [0,1] = 1 - semanticSimilarity(original, final). Old
   // rows (pre sprint-05) stay null; the graduation dashboard averages only
   // non-null values, so legacy rows are excluded cleanly.
-  editMagnitudeScore  Float?
+  editMagnitudeScore   Float?
   // AI self-rated confidence for this reply (0-1). Populated when the reply
   // came from the structured-output pipeline. Null for pre-feature rows,
   // non-AI messages, and rows where parsing failed.
-  aiConfidence        Float?
+  aiConfidence         Float?
   // ─── Feature 042: inbound translation cache ───
   // English translation of `content`, populated lazily on first demand by the
   // /api/messages/:id/translate endpoint. Shared across all managers, devices,
   // and the iOS app. Only inbound (role = GUEST) messages are ever translated;
   // null for outbound/system/AI messages and for untouched inbound messages.
-  contentTranslationEn String?             @db.Text
-  conversation        Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  rating              MessageRating?
-  tuningSuggestions   TuningSuggestion[]   @relation("SourcePreview")
-  tuningConversations TuningConversation[] @relation("AnchorMessage") // Feature 041
-  evidenceBundles     EvidenceBundle[] // Feature 041
+  contentTranslationEn String?              @db.Text
+  conversation         Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rating               MessageRating?
+  tuningSuggestions    TuningSuggestion[]   @relation("SourcePreview")
+  tuningConversations  TuningConversation[] @relation("AnchorMessage") // Feature 041
+  evidenceBundles      EvidenceBundle[] // Feature 041
 
   // Partial unique index exists in DB: CREATE UNIQUE INDEX "Message_conv_hostaway_msg_unique" ON "Message" ("conversationId", "hostawayMessageId") WHERE "hostawayMessageId" != ''
   // Applied via prisma/migrations/add_audit_constraints.sql — Prisma 5.x does not support partial indexes in schema
@@ -237,28 +252,67 @@ model PendingAiReply {
 }
 
 model Task {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   tenantId       String
   conversationId String?
   propertyId     String?
   title          String
   note           String?
   urgency        String
-  type           String        @default("other")
-  status         String        @default("open")
-  source         String        @default("ai")
+  type           String          @default("other")
+  status         String          @default("open")
+  source         String          @default("ai")
   dueDate        DateTime?
   assignee       String?
   completedAt    DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  conversation   Conversation? @relation(fields: [conversationId], references: [id])
-  property       Property?     @relation(fields: [propertyId], references: [id])
-  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // ─── Feature 043: per-type structured payload for typed escalations (e.g., { requestedTime: "13:00", kind: "check_out" }) ───
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  conversation   Conversation?   @relation(fields: [conversationId], references: [id])
+  property       Property?       @relation(fields: [propertyId], references: [id])
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actionLogs     TaskActionLog[]
 
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([conversationId])
+}
+
+// ─── Feature 043: per-tenant reply templates for action-card escalations ──────
+// Tenant can edit approve/reject copy per escalation type; system defaults fall
+// back when no row exists.
+model AutomatedReplyTemplate {
+  id             String   @id @default(cuid())
+  tenantId       String
+  escalationType String // 'late_checkout_request' | 'early_checkin_request' | future types
+  decision       String // 'approve' | 'reject'
+  body           String   @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, escalationType, decision])
+  @@index([tenantId])
+}
+
+// ─── Feature 043: immutable audit log of every manager / auto-accept action ──
+model TaskActionLog {
+  id            String   @id @default(cuid())
+  tenantId      String
+  taskId        String
+  action        String // 'accepted' | 'rejected' | 'auto_accepted'
+  actorKind     String // 'manager' | 'ai_autoaccept'
+  actorUserId   String?
+  deliveredBody String   @db.Text
+  requestedTime String? // HH:MM echo of what the guest asked for
+  appliedTime   String? // HH:MM of what we actually wrote (accept only)
+  createdAt     DateTime @default(now())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([taskId])
 }
 
 model MessageTemplate {

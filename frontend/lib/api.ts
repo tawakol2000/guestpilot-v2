@@ -182,6 +182,9 @@ export interface ApiConversationDetail {
     status: string
     aiEnabled: boolean
     aiMode: string
+    // Feature 043 — per-reservation HH:MM overrides of property default check-in/out times
+    scheduledCheckInAt?: string | null
+    scheduledCheckOutAt?: string | null
   }
   messages: ApiMessage[]
   documentChecklist?: {
@@ -296,6 +299,9 @@ export interface ApiProperty {
   address: string
   listingDescription: string
   customKnowledgeBase: Record<string, unknown>
+  // Feature 043 — per-property auto-accept thresholds (HH:MM or null=off)
+  autoAcceptLateCheckoutUntil?: string | null
+  autoAcceptEarlyCheckinFrom?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -311,6 +317,17 @@ export async function apiUpdateKnowledgeBase(
   return apiFetch(`/api/properties/${id}/knowledge-base`, {
     method: 'PUT',
     body: JSON.stringify({ customKnowledgeBase }),
+  })
+}
+
+// Feature 043 — update per-property auto-accept thresholds. Empty string or null clears.
+export async function apiUpdatePropertyAutoAccept(
+  id: string,
+  data: { autoAcceptLateCheckoutUntil?: string | null; autoAcceptEarlyCheckinFrom?: string | null }
+): Promise<{ id: string; autoAcceptLateCheckoutUntil: string | null; autoAcceptEarlyCheckinFrom: string | null; updatedAt: string }> {
+  return apiFetch(`/api/properties/${id}/auto-accept`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   })
 }
 
@@ -860,6 +877,87 @@ export async function apiTranslateMessage(
   })
 }
 
+// ─── Feature 043: Task Actions (Accept/Reject/Preview) ──────────────────────
+
+export interface TaskActionMessage {
+  id: string
+  role: string
+  content: string
+  sentAt: string
+  deliveryStatus?: string | null
+}
+
+export interface TaskActionReservation {
+  id: string
+  scheduledCheckInAt: string | null
+  scheduledCheckOutAt: string | null
+}
+
+export async function apiListConversationTasks(conversationId: string): Promise<ApiTask[]> {
+  return apiFetch(`/api/conversations/${conversationId}/tasks`)
+}
+
+export async function apiPreviewTaskReply(
+  taskId: string,
+  decision: 'approve' | 'reject'
+): Promise<{ body: string }> {
+  return apiFetch(`/api/tasks/${taskId}/preview?decision=${decision}`)
+}
+
+export async function apiAcceptTask(
+  taskId: string,
+  body: string
+): Promise<{ message: TaskActionMessage; reservation: TaskActionReservation | null }> {
+  return apiFetch(`/api/tasks/${taskId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  })
+}
+
+export async function apiRejectTask(
+  taskId: string,
+  body: string
+): Promise<{ message: TaskActionMessage; reservation: TaskActionReservation | null }> {
+  return apiFetch(`/api/tasks/${taskId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  })
+}
+
+// ─── Feature 043: Automated Reply Templates (settings CRUD) ─────────────────
+
+export interface ReplyTemplate {
+  escalationType: string
+  decision: 'approve' | 'reject'
+  body: string
+  isDefault: boolean
+  updatedAt: string | null
+}
+
+export async function apiListReplyTemplates(): Promise<{ templates: ReplyTemplate[] }> {
+  return apiFetch('/api/tenant-config/reply-templates')
+}
+
+export async function apiUpdateReplyTemplate(
+  escalationType: string,
+  decision: 'approve' | 'reject',
+  body: string
+): Promise<ReplyTemplate> {
+  return apiFetch(`/api/tenant-config/reply-templates/${escalationType}/${decision}`, {
+    method: 'PUT',
+    body: JSON.stringify({ body }),
+  })
+}
+
+export async function apiDeleteReplyTemplate(
+  escalationType: string,
+  decision: 'approve' | 'reject'
+): Promise<void> {
+  await apiFetch(`/api/tenant-config/reply-templates/${escalationType}/${decision}`, {
+    method: 'DELETE',
+  })
+}
+
 // ─── AI Logs ─────────────────────────────────────────────────────────────────
 export interface AiApiLogEntry {
   id: string
@@ -956,6 +1054,8 @@ export interface ApiTask {
   propertyId?: string
   guestName?: string
   propertyName?: string
+  // Feature 043 — per-type structured payload (present for time-request tasks)
+  metadata?: { kind?: 'check_in' | 'check_out'; requestedTime?: string } | null
 }
 
 export async function apiGetConversationTasks(convId: string): Promise<ApiTask[]> {

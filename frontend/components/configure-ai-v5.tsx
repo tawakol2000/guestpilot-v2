@@ -18,6 +18,7 @@ import {
   type TenantAiConfig,
   type TemplateVariableInfo,
 } from '@/lib/api'
+import AutomatedRepliesSection from '@/components/settings/automated-replies-section'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -899,6 +900,20 @@ export function ConfigureAiV5(): React.ReactElement {
               escalation={config.escalation ?? { confidenceThreshold: 70, triggerKeywords: [], maxConsecutiveAiReplies: 5 }}
               onChange={next => setConfig(prev => prev ? { ...prev, escalation: next } : prev)}
             />
+
+            {/* Feature 043 — Automated Replies for action-card escalations */}
+            <div style={{
+              marginTop: 24,
+              padding: 16,
+              background: '#fff',
+              border: '1px solid #e5e5e5',
+              borderRadius: 8,
+            }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 12px', color: '#0C0A09' }}>
+                Automated Replies
+              </h3>
+              <AutomatedRepliesSection />
+            </div>
 
             {/* Version History */}
             <VersionHistory configVersion={configVersion} onRevert={reloadConfig} />

@@ -196,8 +196,22 @@ const COORDINATOR_SCHEMA = {
         type: 'number',
         description: 'Self-rated confidence (0-1). 0.90+ unambiguous rule/SOP match · 0.70-0.89 minor uncertainty · 0.50-0.69 material uncertainty · <0.50 high uncertainty. Be honest — low confidence routes this response for human review.',
       },
+      // ─── Feature 043: scheduled-time request (late checkout / early check-in) ───
+      // Populate when the guest's message names a specific HH:MM for check-in or
+      // check-out. Pipeline evaluates property threshold and either auto-accepts
+      // or creates an action-card escalation. Leave null for all other turns.
+      scheduledTime: {
+        type: ['object', 'null'] as any,
+        description: 'Set when the guest requests a specific check-in or check-out time. Null otherwise. Pipeline decides auto-accept vs escalation.',
+        properties: {
+          kind: { type: 'string', enum: ['check_in', 'check_out'], description: 'Whether the request is about check-in or check-out.' },
+          time: { type: 'string', pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$', description: '24-hour HH:MM time from the guest message.' },
+        },
+        required: ['kind', 'time'],
+        additionalProperties: false,
+      },
     },
-    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId', 'confidence'],
+    required: ['guest_message', 'escalation', 'resolveTaskId', 'updateTaskId', 'confidence', 'scheduledTime'],
     additionalProperties: false,
   },
 };
@@ -805,6 +819,14 @@ Before creating any new escalation, check open_tasks AND scan conversation histo
 4. Don't mention open tasks unless the guest brings them up.
 </task_management>
 
+<scheduled_time>
+When the guest names a specific HH:MM time for check-in or check-out (e.g., "can we check out at 1pm?", "is 10am check-in possible?"), populate scheduledTime: { kind: "check_in" | "check_out", time: "HH:MM" } (24-hour). This is in ADDITION to your normal reply/escalation — still call get_sop first, still send a holding message, still escalate. The pipeline decides whether to auto-accept (per property policy) or surface the request to the manager.
+
+- Only set scheduledTime when the time is UNAMBIGUOUS. "Late checkout?" with no specific time → scheduledTime: null, escalate normally. "Check out at 1pm" → scheduledTime: { kind: "check_out", time: "13:00" }.
+- For "3pm" default to 24-hour form → "15:00". For "noon" → "12:00". For "midnight" → "00:00".
+- Leave scheduledTime null for every other kind of conversation.
+</scheduled_time>
+
 <documents>
 {DOCUMENT_CHECKLIST}
 
@@ -840,19 +862,19 @@ Professional concierge, not a call-center script. Lead with the answer. Contract
 <example>
 Guest: "Can we get the apartment cleaned today?"
 → Call get_sop(sop-cleaning). SOP says extra cleaning 10am–5pm, ask preferred time.
-{"guest_message":"Sure, extra cleaning is available between 10am and 5pm. What time works best for you?","confidence":0.95,"escalation":null,"resolveTaskId":null,"updateTaskId":null}
+{"guest_message":"Sure, extra cleaning is available between 10am and 5pm. What time works best for you?","confidence":0.95,"escalation":null,"resolveTaskId":null,"updateTaskId":null,"scheduledTime":null}
 </example>
 
 <example>
 Guest: "ok thanks 👍"
 → Conversation-ending, nothing to action.
-{"guest_message":"","confidence":0.98,"escalation":null,"resolveTaskId":null,"updateTaskId":null}
+{"guest_message":"","confidence":0.98,"escalation":null,"resolveTaskId":null,"updateTaskId":null,"scheduledTime":null}
 </example>
 
 <example>
 Guest: "What time is checkout, and can we get extra coffee pods tomorrow?"
 → Two distinct issues. Checkout → get_sop(sop-checkout). Coffee pods → get_sop(sop-amenities), ask preferred time.
-{"guest_message":"Checkout is at 11am. For the coffee pods, what time between 10am and 5pm works tomorrow?","confidence":0.93,"escalation":null,"resolveTaskId":null,"updateTaskId":null}
+{"guest_message":"Checkout is at 11am. For the coffee pods, what time between 10am and 5pm works tomorrow?","confidence":0.93,"escalation":null,"resolveTaskId":null,"updateTaskId":null,"scheduledTime":null}
 </example>
 
 <example>
@@ -2162,6 +2184,8 @@ export async function generateAndSendAiReply(
             updateTaskId?: string | null;
             escalation: { title: string; note: string; urgency: string } | null;
             confidence?: number;
+            // Feature 043 — optional scheduled-time request
+            scheduledTime?: { kind: 'check_in' | 'check_out'; time: string } | null;
           };
           guestMessage = parsed.guest_message || '';
           if (typeof parsed.confidence === 'number' && isFinite(parsed.confidence)) {
@@ -2196,6 +2220,74 @@ export async function generateAndSendAiReply(
             const toolsCalled = (ragContext.toolNames || []) as string[];
             if (!toolsCalled.includes('get_faq')) {
               console.warn(`[AI] [${conversationId}] info_request escalation without get_faq call`);
+            }
+          }
+
+          // ─── Feature 043: scheduled-time (late checkout / early check-in) ───
+          // The AI emits parsed.scheduledTime when the guest named a specific time.
+          // Policy evaluator (Phase 4) decides auto-accept; until then, every
+          // parsed.scheduledTime falls through to create an action-card Task so
+          // the manager sees an Accept/Reject card in the inbox.
+          if (parsed.scheduledTime?.kind && parsed.scheduledTime?.time) {
+            const { kind, time } = parsed.scheduledTime;
+            const taskType = kind === 'check_in' ? 'early_checkin_request' : 'late_checkout_request';
+            let autoAccepted = false;
+            try {
+              // Phase 4: evaluate policy + apply auto-accept. Returns true if
+              // the pipeline handled the request fully (no task to create).
+              const { evaluateAndMaybeApply } = await import('./scheduled-time.service');
+              autoAccepted = await evaluateAndMaybeApply({
+                tenantId,
+                conversationId,
+                propertyId: context.propertyId,
+                scheduledTime: parsed.scheduledTime,
+              }, prisma);
+            } catch (err: any) {
+              console.warn(`[AI] [${conversationId}] scheduled-time policy check failed (non-fatal): ${err?.message}`);
+              autoAccepted = false;
+            }
+
+            if (!autoAccepted) {
+              // Dedup: if an OPEN task of the same type exists for this
+              // conversation, update its requestedTime rather than creating
+              // a second card (spec edge case: guest says "actually 2pm").
+              try {
+                const existing = await prisma.task.findFirst({
+                  where: {
+                    tenantId,
+                    conversationId,
+                    type: taskType,
+                    status: 'open',
+                  },
+                  select: { id: true },
+                });
+                if (existing) {
+                  await prisma.task.update({
+                    where: { id: existing.id },
+                    data: {
+                      metadata: { kind, requestedTime: time },
+                      updatedAt: new Date(),
+                    },
+                  });
+                } else {
+                  await prisma.task.create({
+                    data: {
+                      tenantId,
+                      conversationId,
+                      propertyId: context.propertyId,
+                      title: taskType,
+                      note: '',
+                      urgency: 'scheduled',
+                      type: taskType,
+                      status: 'open',
+                      source: 'ai',
+                      metadata: { kind, requestedTime: time },
+                    },
+                  });
+                }
+              } catch (err: any) {
+                console.warn(`[AI] [${conversationId}] scheduled-time task create/update failed (non-fatal): ${err?.message}`);
+              }
             }
           }
 

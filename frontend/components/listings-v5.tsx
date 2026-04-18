@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   apiGetProperties,
   apiUpdateKnowledgeBase,
+  apiUpdatePropertyAutoAccept,
   apiResyncProperty,
   apiSummarizeDescription,
   apiSummarizeAll,
@@ -896,6 +897,14 @@ function PropertyCard({
           </div>
         </Section>
 
+        {/* ── Feature 043 — Auto-accept thresholds ── */}
+        <Section title="Auto-accept (Feature 043)" defaultOpen={false}>
+          <div style={{ fontSize: 12, color: T.text.secondary, marginBottom: 10, lineHeight: 1.5 }}>
+            When set, guest requests at or within this time are approved automatically (templated reply sent, reservation updated). Outside the threshold, the request is sent to your Actions card. Leave blank to always escalate.
+          </div>
+          <AutoAcceptThresholdsForm property={property} />
+        </Section>
+
         {/* ── Property Details ── */}
         <Section title="Property Details">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
@@ -1636,6 +1645,80 @@ export default function ListingsV5(): React.ReactElement {
           </div>
         )
       })()}
+    </div>
+  )
+}
+
+// ─── Feature 043 — Auto-accept thresholds form ────────────────────────────────
+function AutoAcceptThresholdsForm({ property }: { property: ApiProperty }): React.ReactElement {
+  const [lateUntil, setLateUntil] = useState(property.autoAcceptLateCheckoutUntil || '')
+  const [earlyFrom, setEarlyFrom] = useState(property.autoAcceptEarlyCheckinFrom || '')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const origLate = property.autoAcceptLateCheckoutUntil || ''
+  const origEarly = property.autoAcceptEarlyCheckinFrom || ''
+  const dirty = lateUntil !== origLate || earlyFrom !== origEarly
+  const validHHMM = (v: string) => v === '' || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v)
+  const canSave = dirty && validHHMM(lateUntil) && validHHMM(earlyFrom)
+
+  async function onSave() {
+    if (!canSave) return
+    setSaving(true)
+    setError(null)
+    try {
+      await apiUpdatePropertyAutoAccept(property.id, {
+        autoAcceptLateCheckoutUntil: lateUntil || null,
+        autoAcceptEarlyCheckinFrom: earlyFrom || null,
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <FieldRow
+          label="Auto-accept late checkout until"
+          value={lateUntil}
+          onChange={setLateUntil}
+          placeholder="e.g. 13:00 — blank to disable"
+        />
+        <FieldRow
+          label="Auto-accept early check-in from"
+          value={earlyFrom}
+          onChange={setEarlyFrom}
+          placeholder="e.g. 12:00 — blank to disable"
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+        <button
+          onClick={onSave}
+          disabled={!canSave || saving}
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            border: 'none',
+            borderRadius: T.radius.sm,
+            background: !canSave || saving ? T.bg.tertiary : T.accent,
+            color: !canSave || saving ? T.text.tertiary : T.text.inverse,
+            cursor: !canSave || saving ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {saving ? 'Saving...' : 'Save thresholds'}
+        </button>
+        {saved && <span style={{ fontSize: 11, color: T.status.green }}>Saved</span>}
+        {error && <span style={{ fontSize: 11, color: T.status.red }}>{error}</span>}
+        {!validHHMM(lateUntil) && <span style={{ fontSize: 11, color: T.status.red }}>Late: use HH:MM (24h)</span>}
+        {!validHHMM(earlyFrom) && <span style={{ fontSize: 11, color: T.status.red }}>Early: use HH:MM (24h)</span>}
+      </div>
     </div>
   )
 }

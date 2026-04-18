@@ -7,6 +7,52 @@
  */
 
 // ════════════════════════════════════════════════════════════════════════════
+// Feature 043 — effective check-in / check-out time resolvers.
+// Precedence: reservation override (scheduledCheckInAt/scheduledCheckOutAt)
+// → property.customKnowledgeBase.{checkInTime|checkOutTime} → hard default.
+// Used by the reply-template renderer and anywhere downstream needs the
+// agreed-upon time for a specific reservation.
+// ════════════════════════════════════════════════════════════════════════════
+
+type ReservationLike = {
+  scheduledCheckInAt?: string | null;
+  scheduledCheckOutAt?: string | null;
+};
+type PropertyLike = {
+  customKnowledgeBase?: unknown;
+};
+
+function readKb(property: PropertyLike | null | undefined, key: string): string | undefined {
+  const kb = (property?.customKnowledgeBase ?? {}) as Record<string, unknown>;
+  const v = kb?.[key];
+  return typeof v === 'string' && v.trim() ? v : undefined;
+}
+
+export function resolveCheckInTime(
+  reservation: ReservationLike | null | undefined,
+  property: PropertyLike | null | undefined
+): string {
+  return (
+    reservation?.scheduledCheckInAt?.trim() ||
+    readKb(property, 'checkInTime') ||
+    readKb(property, 'check_in_time') ||
+    '15:00'
+  );
+}
+
+export function resolveCheckOutTime(
+  reservation: ReservationLike | null | undefined,
+  property: PropertyLike | null | undefined
+): string {
+  return (
+    reservation?.scheduledCheckOutAt?.trim() ||
+    readKb(property, 'checkOutTime') ||
+    readKb(property, 'check_out_time') ||
+    '11:00'
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // §1  Variable Registry
 // ════════════════════════════════════════════════════════════════════════════
 

@@ -158,6 +158,9 @@ export function makeConversationsController(prisma: PrismaClient) {
             status: conversation.reservation.status,
             aiEnabled: conversation.reservation.aiEnabled,
             aiMode: conversation.reservation.aiMode,
+            // Feature 043 — per-reservation scheduled time overrides
+            scheduledCheckInAt: conversation.reservation.scheduledCheckInAt,
+            scheduledCheckOutAt: conversation.reservation.scheduledCheckOutAt,
           },
           documentChecklist: ((conversation.reservation.screeningAnswers as any)?.documentChecklist) || null,
           messages: conversation.messages.map(m => {

@@ -60,6 +60,7 @@ import {
   apiSetAiMode,
   apiSendThroughAI,
   apiTranslateMessage,
+  apiListConversationTasks,
   apiApproveSuggestion,
   apiGetConversationSuggestion,
   apiSendNote,
@@ -115,6 +116,7 @@ import FaqV5 from '@/components/faq-v5'
 // placeholder below.
 import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { getActionCardFor } from '@/components/actions/action-card-registry'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -195,6 +197,11 @@ interface Property {
   wifiPassword: string
   checkInTime: string
   checkOutTime: string
+  // Feature 043 — per-reservation scheduled overrides surfaced onto the
+  // Property card with a visually-distinct "Modified" treatment. Null/empty
+  // = no override, render default checkInTime/checkOutTime.
+  scheduledCheckInAt?: string | null
+  scheduledCheckOutAt?: string | null
 }
 
 interface Conversation {
@@ -415,6 +422,9 @@ function mergeDetail(conv: Conversation, detail: ApiConversationDetail): Convers
       wifiPassword: ((kb.wifiPassword || kb.wifi_password || '') as string),
       checkInTime: ((kb.checkInTime || kb.check_in_time || '') as string),
       checkOutTime: ((kb.checkOutTime || kb.check_out_time || '') as string),
+      // Feature 043 — scheduled overrides from reservation
+      scheduledCheckInAt: res?.scheduledCheckInAt ?? null,
+      scheduledCheckOutAt: res?.scheduledCheckOutAt ?? null,
     },
     documentChecklist: detail.documentChecklist ?? null,
   }
@@ -617,6 +627,20 @@ function PanelSection({
 
 // ─── Data Row ─────────────────────────────────────────────────────────────────
 
+// Feature 043 — format "HH:MM" (24h) → friendly "h:mm AM/PM"; pass-through unparseable.
+function friendlyTime(time: string | null | undefined): string {
+  if (!time) return ''
+  const m = time.trim().match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) return time
+  let h = parseInt(m[1], 10)
+  const min = m[2]
+  if (Number.isNaN(h) || h < 0 || h > 23) return time
+  const period = h >= 12 ? 'PM' : 'AM'
+  h = h % 12
+  if (h === 0) h = 12
+  return `${h}:${min} ${period}`
+}
+
 function DataRow({
   label,
   value,
@@ -624,11 +648,11 @@ function DataRow({
   last = false,
 }: {
   label: string
-  value: string
+  value: string | React.ReactNode
   mono?: boolean
   last?: boolean
 }) {
-  if (!value) return null
+  if (value === null || value === undefined || value === '') return null
   return (
     <div
       style={{
@@ -1493,6 +1517,9 @@ export default function InboxV5() {
   const [translations, setTranslations] = useState<
     Record<string, { text?: string; status: 'idle' | 'loading' | 'error' }>
   >({})
+  // Feature 043 — open action-card tasks for the currently-selected conversation.
+  // Fetched when selectedConv changes; mutated in-place via Socket.IO events.
+  const [conversationTasks, setConversationTasks] = useState<ApiTask[]>([])
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false)
   const [filterStep, setFilterStep] = useState<'root' | 'status' | 'aiMode'>('root')
   const [filterSearch, setFilterSearch] = useState('')
@@ -1638,6 +1665,81 @@ export default function InboxV5() {
       enqueueTranslation(msg.id)
     }
   }, [translateActive, selectedConv?.id, selectedConv?.messages, enqueueTranslation, translations])
+
+  // Feature 043 — fetch open action-card tasks for the selected conversation.
+  useEffect(() => {
+    if (!selectedConv?.id) {
+      setConversationTasks([])
+      return
+    }
+    let cancelled = false
+    apiListConversationTasks(selectedConv.id)
+      .then(tasks => {
+        if (cancelled) return
+        // Only show OPEN tasks of types the registry renders.
+        setConversationTasks(
+          tasks.filter(t =>
+            t.status === 'open' &&
+            (t.type === 'late_checkout_request' || t.type === 'early_checkin_request')
+          )
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setConversationTasks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedConv?.id])
+
+  // Feature 043 — Socket.IO listeners: task_resolved removes cards; new_task
+  // appends them; reservation_scheduled_updated refreshes the Property card.
+  useEffect(() => {
+    function onTaskResolved(data: { taskId: string; conversationId: string }) {
+      if (!data?.taskId) return
+      setConversationTasks(prev => prev.filter(t => t.id !== data.taskId))
+    }
+    function onNewTask(data: { conversationId: string; task: ApiTask }) {
+      if (!data?.task) return
+      if (selectedConv?.id !== data.conversationId) return
+      if (data.task.type !== 'late_checkout_request' && data.task.type !== 'early_checkin_request') return
+      setConversationTasks(prev => {
+        if (prev.some(t => t.id === data.task.id)) return prev
+        return [data.task, ...prev]
+      })
+    }
+    function onReservationScheduledUpdated(data: {
+      reservationId: string
+      conversationId: string
+      scheduledCheckInAt: string | null
+      scheduledCheckOutAt: string | null
+    }) {
+      if (!data?.conversationId) return
+      setConversations(prev =>
+        prev.map(c => {
+          if (c.id !== data.conversationId) return c
+          return {
+            ...c,
+            property: {
+              ...c.property,
+              scheduledCheckInAt: data.scheduledCheckInAt,
+              scheduledCheckOutAt: data.scheduledCheckOutAt,
+            },
+          }
+        })
+      )
+    }
+
+    socket.on('task_resolved', onTaskResolved)
+    socket.on('new_task', onNewTask)
+    socket.on('reservation_scheduled_updated', onReservationScheduledUpdated)
+
+    return () => {
+      socket.off('task_resolved', onTaskResolved)
+      socket.off('new_task', onNewTask)
+      socket.off('reservation_scheduled_updated', onReservationScheduledUpdated)
+    }
+  }, [selectedConv?.id])
 
   // Feature 042 — prune orphan localStorage keys for conversations that no
   // longer appear in this user's list. Runs once after the conversation list
@@ -2772,8 +2874,64 @@ export default function InboxV5() {
             <DataRow label="Door Code" value={selectedConv.property.doorCode} mono />
             <DataRow label="Wi-Fi Network" value={selectedConv.property.wifiName} mono />
             <DataRow label="Wi-Fi Password" value={selectedConv.property.wifiPassword} mono />
-            <DataRow label="Check-in Time" value={selectedConv.property.checkInTime} />
-            <DataRow label="Check-out Time" value={selectedConv.property.checkOutTime} last />
+            {/* Feature 043 — scheduled override replaces default with green "Modified" pill */}
+            {(() => {
+              const override = selectedConv.property.scheduledCheckInAt
+              const defaultTime = selectedConv.property.checkInTime
+              if (override) {
+                return (
+                  <DataRow
+                    label="Check-in Time"
+                    value={
+                      <span title={`Default: ${defaultTime || '—'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: T.status.green, fontWeight: 600 }}>{friendlyTime(override)}</span>
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          color: T.status.green,
+                          background: T.status.green + '1A',
+                          border: `1px solid ${T.status.green}33`,
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                        }}>Modified</span>
+                      </span>
+                    }
+                  />
+                )
+              }
+              return <DataRow label="Check-in Time" value={defaultTime} />
+            })()}
+            {(() => {
+              const override = selectedConv.property.scheduledCheckOutAt
+              const defaultTime = selectedConv.property.checkOutTime
+              if (override) {
+                return (
+                  <DataRow
+                    label="Check-out Time"
+                    last
+                    value={
+                      <span title={`Default: ${defaultTime || '—'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: T.status.green, fontWeight: 600 }}>{friendlyTime(override)}</span>
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          color: T.status.green,
+                          background: T.status.green + '1A',
+                          border: `1px solid ${T.status.green}33`,
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                        }}>Modified</span>
+                      </span>
+                    }
+                  />
+                )
+              }
+              return <DataRow label="Check-out Time" value={defaultTime} last />
+            })()}
           </PanelSection>
         ))
 
@@ -5441,6 +5599,41 @@ export default function InboxV5() {
                 key={`alteration-${selectedConv.reservationId}`}
                 reservationId={selectedConv.reservationId}
               />
+              {/* Feature 043 — action-card registry renders late-checkout /
+                   early-check-in tasks alongside alteration actions. Other
+                   escalation types plug in via action-card-registry.ts. */}
+              {conversationTasks.length > 0 && (
+                <div style={{ padding: '0 12px 12px' }}>
+                  {conversationTasks.map(task => {
+                    const Renderer = getActionCardFor(task)
+                    if (!Renderer) return null
+                    return (
+                      <Renderer
+                        key={task.id}
+                        task={task}
+                        onResolved={(taskId) => {
+                          setConversationTasks(prev => prev.filter(t => t.id !== taskId))
+                        }}
+                        onReservationUpdated={(reservation) => {
+                          setConversations(prev =>
+                            prev.map(c => {
+                              if (c.id !== selectedConv.id) return c
+                              return {
+                                ...c,
+                                property: {
+                                  ...c.property,
+                                  scheduledCheckInAt: reservation.scheduledCheckInAt,
+                                  scheduledCheckOutAt: reservation.scheduledCheckOutAt,
+                                },
+                              }
+                            })
+                          )
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+              )}
               {panelOrder.map(id => renderPanelSection(id))}
             </div>
           ) : (

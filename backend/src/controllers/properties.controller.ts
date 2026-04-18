@@ -7,6 +7,19 @@ const knowledgeBaseSchema = z.object({
   customKnowledgeBase: z.record(z.unknown()),
 });
 
+// Feature 043 — HH:MM (24h) validator; null/empty-string clears the threshold.
+const hhmm = z
+  .string()
+  .regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'must be HH:MM (24-hour)')
+  .or(z.literal(''))
+  .nullable()
+  .optional();
+
+const autoAcceptThresholdsSchema = z.object({
+  autoAcceptLateCheckoutUntil: hhmm,
+  autoAcceptEarlyCheckinFrom: hhmm,
+});
+
 export function makePropertiesController(prisma: PrismaClient) {
   return {
     async list(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -23,6 +36,9 @@ export function makePropertiesController(prisma: PrismaClient) {
           address: p.address,
           listingDescription: p.listingDescription,
           customKnowledgeBase: p.customKnowledgeBase,
+          // Feature 043 — per-property auto-accept thresholds
+          autoAcceptLateCheckoutUntil: p.autoAcceptLateCheckoutUntil,
+          autoAcceptEarlyCheckinFrom: p.autoAcceptEarlyCheckinFrom,
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         })));
@@ -112,6 +128,54 @@ export function makePropertiesController(prisma: PrismaClient) {
         res.json({ id: updated.id, customKnowledgeBase: updated.customKnowledgeBase, updatedAt: updated.updatedAt });
       } catch (err) {
         console.error('[Properties] updateKnowledgeBase error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
+    // Feature 043 — update the per-property auto-accept thresholds. Empty
+    // string or null clears a threshold (= fall back to tenant default = off).
+    async updateAutoAcceptThresholds(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+
+        const parsed = autoAcceptThresholdsSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: parsed.error.flatten() });
+          return;
+        }
+
+        const property = await prisma.property.findFirst({ where: { id, tenantId } });
+        if (!property) {
+          res.status(404).json({ error: 'Property not found' });
+          return;
+        }
+
+        const data: {
+          autoAcceptLateCheckoutUntil?: string | null;
+          autoAcceptEarlyCheckinFrom?: string | null;
+        } = {};
+        if (parsed.data.autoAcceptLateCheckoutUntil !== undefined) {
+          data.autoAcceptLateCheckoutUntil = parsed.data.autoAcceptLateCheckoutUntil || null;
+        }
+        if (parsed.data.autoAcceptEarlyCheckinFrom !== undefined) {
+          data.autoAcceptEarlyCheckinFrom = parsed.data.autoAcceptEarlyCheckinFrom || null;
+        }
+
+        const updated = await prisma.property.update({
+          where: { id },
+          data,
+          select: {
+            id: true,
+            autoAcceptLateCheckoutUntil: true,
+            autoAcceptEarlyCheckinFrom: true,
+            updatedAt: true,
+          },
+        });
+
+        res.json(updated);
+      } catch (err) {
+        console.error('[Properties] updateAutoAcceptThresholds error:', err);
         res.status(500).json({ error: 'Internal server error' });
       }
     },

@@ -55,6 +55,8 @@ frontend/
 | shadow-preview.service.ts | Feature 040 — lockOlderPreviews helper for Shadow Mode preview lifecycle |
 | tuning-analyzer.service.ts | Feature 040 — fire-and-forget analyzer for edited shadow previews (gpt-5.4-mini, reasoning: high) |
 | translation.service.ts | Feature 042 — inbound message translation to English (cached on Message.contentTranslationEn). Provider-abstracted (TranslationProvider interface) for easy swap. |
+| reply-template.service.ts | Feature 043 — render tenant-editable approval/rejection templates with {GUEST_FIRST_NAME}, {REQUESTED_TIME}, {PROPERTY_NAME}, {CHECK_IN_TIME}, {CHECK_OUT_TIME} substitution. Falls back to system defaults in config/reply-template-defaults.ts. |
+| scheduled-time.service.ts | Feature 043 — policy evaluator + auto-accept applier for late-checkout/early-check-in time requests. Within-threshold → auto-approve, send template, write Reservation.scheduledCheckInAt/Out, resolved Task + TaskActionLog. Outside threshold → falls through to manual escalation path. |
 
 ## AI Pipeline Flow
 ```
@@ -170,6 +172,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL via Prisma. Schema changes applied with `npx prisma db push` per constitution §Development Workflow. (040-autopilot-shadow-mode)
 - TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios (backend); React 19, Tailwind 4, existing inbox-v5 bubble rendering (frontend) (042-translation-toggle)
 - PostgreSQL via Prisma — one new nullable column `Message.contentTranslationEn String?`. Applied with `npx prisma db push` per constitution §Development Workflow. No migration of existing rows required (null = not yet translated, lazily filled). (042-translation-toggle)
+- TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend) — same as CLAUDE.md. + Express 4.x, Prisma ORM, OpenAI SDK (Responses API + strict json_schema), Socket.IO, axios (backend); React 19, Tailwind 4, shadcn/ui, existing `inbox-v5.tsx` Actions-card region (frontend). (043-checkin-checkout-actions)
+- PostgreSQL via Prisma. New fields on `Property` (×2), `Tenant` (×2 fallback), `Reservation` (×2 override). Extend `Task` with `metadata Json?` + new values for the existing `type String` column. One new table `AutomatedReplyTemplate`. (043-checkin-checkout-actions)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui
