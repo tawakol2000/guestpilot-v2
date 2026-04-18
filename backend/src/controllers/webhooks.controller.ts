@@ -36,6 +36,7 @@ interface HostawayWebhookPayload {
     guestLastName?: string;
     guestEmail?: string;
     guestPhone?: string;
+    phone?: string; // some Hostaway payloads put it under `phone` instead of `guestPhone`
     arrivalDate?: string;
     departureDate?: string;
     numberOfGuests?: number;
@@ -155,7 +156,7 @@ async function enrichGuestFromHostaway(
     return {
       name: name || undefined,
       email: res.guestEmail || undefined,
-      phone: res.guestPhone || undefined,
+      phone: res.phone || res.guestPhone || undefined,
       checkIn: res.arrivalDate ? new Date(res.arrivalDate) : undefined,
       checkOut: res.departureDate ? new Date(res.departureDate) : undefined,
       numberOfGuests: res.numberOfGuests || undefined,
@@ -825,9 +826,9 @@ async function handleNewReservation(
       hostawayGuestId,
       name: guestName,
       email: data.guestEmail || '',
-      phone: data.guestPhone || '',
+      phone: data.phone || data.guestPhone || '',
     },
-    update: { name: guestName, email: data.guestEmail || '', phone: data.guestPhone || '' },
+    update: { name: guestName, email: data.guestEmail || '', phone: data.phone || data.guestPhone || '' },
   });
 
   const reservation = await prisma.reservation.upsert({
@@ -991,13 +992,14 @@ async function handleReservationUpdated(
   const newGuestName = data.guestName
     || [data.guestFirstName, data.guestLastName].filter(Boolean).join(' ')
     || '';
-  if (newGuestName || data.guestEmail || data.guestPhone) {
+  const phoneFromWebhook = data.phone || data.guestPhone;
+  if (newGuestName || data.guestEmail || phoneFromWebhook) {
     await prisma.guest.update({
       where: { id: reservation.guestId },
       data: {
         ...(newGuestName && { name: newGuestName }),
         ...(data.guestEmail && { email: data.guestEmail }),
-        ...(data.guestPhone && { phone: data.guestPhone }),
+        ...(phoneFromWebhook && { phone: phoneFromWebhook }),
       },
     });
   }

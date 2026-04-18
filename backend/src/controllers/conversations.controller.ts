@@ -364,7 +364,8 @@ export function makeConversationsController(prisma: PrismaClient) {
               conversation.reservation.hostawayReservationId
             );
             const guestUpdate: { phone?: string; email?: string; nationality?: string; name?: string } = {};
-            if (fresh.guestPhone) guestUpdate.phone = fresh.guestPhone;
+            const freshPhone = fresh.phone || fresh.guestPhone;
+            if (freshPhone) guestUpdate.phone = freshPhone;
             if (fresh.guestEmail && !fresh.guestEmail.includes('@guest.hostaway')) guestUpdate.email = fresh.guestEmail;
             if (fresh.guestCountry) guestUpdate.nationality = fresh.guestCountry;
             const freshName = fresh.guestName

@@ -321,7 +321,7 @@ export async function runImport(
       const guestName = res.guestName || [res.guestFirstName, res.guestLastName].filter(Boolean).join(' ') || 'Unknown Guest';
       const hostawayGuestId = String(res.id);
       const guestEmail = res.guestEmail || '';
-      const guestPhone = res.guestPhone || '';
+      const guestPhone = res.phone || res.guestPhone || '';
       // Skip Hostaway proxy emails (they are useless — real guest email not shared)
       const realEmail = guestEmail.includes('@guest.hostaway') ? '' : guestEmail;
       const nationality = res.guestCountry || '';

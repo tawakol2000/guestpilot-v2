@@ -52,6 +52,7 @@ export interface HostawayReservation {
   guestLastName?: string;
   guestEmail?: string;
   guestPhone?: string;
+  phone?: string; // Hostaway's full reservation GET returns the phone here (not guestPhone); confirmed 2026-04-18 on an airbnbOfficial reservation.
   guestPicture?: string;
   guestCountry?: string;
   guestLocale?: string;

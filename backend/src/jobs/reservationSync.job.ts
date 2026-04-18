@@ -89,9 +89,9 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                 create: {
                   tenantId: tenant.id, hostawayGuestId: hwResId,
                   name: guestName, email: guestEmail,
-                  phone: res.guestPhone || '', nationality: res.guestCountry || '',
+                  phone: res.phone || res.guestPhone || '', nationality: res.guestCountry || '',
                 },
-                update: { name: guestName, email: guestEmail, phone: res.guestPhone || '', nationality: res.guestCountry || '' },
+                update: { name: guestName, email: guestEmail, phone: res.phone || res.guestPhone || '', nationality: res.guestCountry || '' },
               });
 
               try {
