@@ -21,6 +21,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   assembleSystemPrompt,
@@ -30,10 +32,13 @@ import {
 } from '../system-prompt';
 import { SHARED_MODE_BOUNDARY_MARKER } from '../config';
 
-// Minimum for automatic prefix caching on Sonnet/Opus per Anthropic's
-// prompt-caching docs. Prefixes under this threshold will not be cached
-// as an independent layer (the cumulative prefix may still hit cache).
-const CACHE_MIN_TOKENS = 1024;
+// Anthropic's prompt-caching minimum is model-dependent. Sonnet/Opus
+// 4.5 and 4.6 (the tuning-agent's generator) require ≥2048 tokens for
+// an independent cached layer; the earlier 1024-token floor applies to
+// older Sonnet/Opus families we no longer target. Bumped 2026-04-19
+// (sprint 045, session 3) after the user flagged the older threshold
+// was stale — see PROGRESS.md Decisions.
+const CACHE_MIN_TOKENS = 2048;
 
 // Character-count heuristic. Anthropic's own estimate for English text
 // is ~4 chars/token. Good enough for order-of-magnitude regression.
@@ -124,6 +129,61 @@ for (const mode of ['TUNE', 'BUILD'] as const) {
   });
 }
 
+/**
+ * Tools-only token estimate. Scrapes the tool descriptions from each
+ * `src/build-tune-agent/tools/*.ts` source file (every tool is wired up
+ * with `tool('name', 'description', schema, handler)`) and sums their
+ * character weight. Not byte-exact — the real `tools` array sent to
+ * Anthropic also includes the zod schema's JSONSchema serialisation,
+ * which this heuristic ignores. Good enough for order-of-magnitude
+ * regression detection.
+ *
+ * We log the number in CI so PROGRESS.md can record it; we deliberately
+ * do NOT assert a floor — the tools array is permitted to be below the
+ * 2048-token per-layer cache minimum (the cumulative prefix still caches).
+ */
+function estimateToolsOnly(): { chars: number; toolCount: number } {
+  const toolsDir = join(__dirname, '..', 'tools');
+  // Case 1: inline string description — `tool('name',\n    'description',`
+  const inlineSingle = /\btool\(\s*\n\s*'([a-z_]+)'\s*,\s*\n\s*'([\s\S]*?)'\s*,/g;
+  const inlineDouble = /\btool\(\s*\n\s*'([a-z_]+)'\s*,\s*\n\s*"([\s\S]*?)"\s*,/g;
+  // Case 2: named constant — `const DESCRIPTION = \`...\`` (+ `tool('name', DESCRIPTION, ...)`)
+  const describedCall = /\btool\(\s*\n?\s*'([a-z_]+)'\s*,\s*\n?\s*([A-Z_]+)\s*,/g;
+  const describedConst = (id: string) =>
+    new RegExp(`\\bconst\\s+${id}\\s*=\\s*\`([\\s\\S]*?)\`;`, 'g');
+
+  let totalChars = 0;
+  let count = 0;
+  for (const entry of readdirSync(toolsDir)) {
+    if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
+    if (entry === 'names.ts' || entry === 'types.ts' || entry === 'index.ts') continue;
+    if (entry === 'build-transaction.ts') continue;
+    const src = readFileSync(join(toolsDir, entry), 'utf8');
+
+    for (const pattern of [inlineSingle, inlineDouble]) {
+      pattern.lastIndex = 0;
+      let hit: RegExpMatchArray | null;
+      while ((hit = pattern.exec(src)) !== null) {
+        totalChars += hit[1].length + hit[2].length;
+        count++;
+      }
+    }
+
+    describedCall.lastIndex = 0;
+    let call: RegExpMatchArray | null;
+    while ((call = describedCall.exec(src)) !== null) {
+      const [, name, constName] = call;
+      const constRe = describedConst(constName);
+      const constMatch = constRe.exec(src);
+      if (constMatch) {
+        totalChars += name.length + constMatch[1].length;
+        count++;
+      }
+    }
+  }
+  return { chars: totalChars, toolCount: count };
+}
+
 // Emit the baseline numbers to stdout so PROGRESS.md can record them.
 // Not an assertion — informational only, won't fail the run.
 test('record baseline token counts', () => {
@@ -135,6 +195,8 @@ test('record baseline token counts', () => {
   const buildCacheable = buildFull.slice(0, buildFull.indexOf(dynamicMarker));
   const sharedEnd = tuneFull.indexOf(SHARED_MODE_BOUNDARY_MARKER);
   const sharedOnly = tuneFull.slice(0, sharedEnd);
+  const toolsOnly = estimateToolsOnly();
+  const toolsTokens = estimateTokens('x'.repeat(toolsOnly.chars));
 
   // Single structured line — easy to grep out of CI logs into PROGRESS.md.
   // eslint-disable-next-line no-console
@@ -142,7 +204,18 @@ test('record baseline token counts', () => {
     `[prompt-cache-stability] baseline chars/tokens:` +
       ` shared_prefix=${sharedOnly.length}/${estimateTokens(sharedOnly)}` +
       ` tune_cacheable=${tuneCacheable.length}/${estimateTokens(tuneCacheable)}` +
-      ` build_cacheable=${buildCacheable.length}/${estimateTokens(buildCacheable)}`
+      ` build_cacheable=${buildCacheable.length}/${estimateTokens(buildCacheable)}` +
+      ` tools_only=${toolsOnly.chars}/${toolsTokens}` +
+      ` tools_count=${toolsOnly.toolCount}`
   );
+  if (toolsTokens < CACHE_MIN_TOKENS) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[prompt-cache-stability] NOTE: tools_only (${toolsTokens} tokens) is below the ` +
+        `${CACHE_MIN_TOKENS}-token per-layer cache minimum for Sonnet 4.5/4.6. This is NOT a bug — ` +
+        `the cumulative system+tools prefix still caches once the boundary numbers above ` +
+        `(shared_prefix + mode-addendum) clear the threshold.`
+    );
+  }
   assert.ok(shared.length > 0);
 });
