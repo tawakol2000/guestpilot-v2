@@ -23,13 +23,31 @@ const ALLOWED_MODELS = [
   'gpt-5-nano',
 ];
 
+/**
+ * Options for {@link getTenantAiConfig}.
+ *
+ * `bypassCache` skips the in-memory TTL cache for this one lookup AND
+ * re-populates it with the fresh read. This is BUILD-MODE-ONLY —
+ * specifically the sprint-045 `test_pipeline` tool needs to see a
+ * just-written system prompt before the ≤60s cache TTL would otherwise
+ * expose it. MUST NOT be used from the production hot path
+ * (`generateAndSendAiReply`) — doing so would destroy the cache-hit
+ * rate that the whole 60s TTL is optimising for.
+ */
+export interface GetTenantAiConfigOptions {
+  bypassCache?: boolean;
+}
+
 export async function getTenantAiConfig(
   tenantId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  options?: GetTenantAiConfigOptions
 ): Promise<TenantAiConfig> {
-  const cached = _cache.get(tenantId);
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-    return cached.config;
+  if (!options?.bypassCache) {
+    const cached = _cache.get(tenantId);
+    if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+      return cached.config;
+    }
   }
 
   let config = await prisma.tenantAiConfig.upsert({

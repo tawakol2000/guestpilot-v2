@@ -17,6 +17,14 @@ export interface ToolContext {
   emitDataPart?: (part: { type: string; id?: string; data: unknown; transient?: boolean }) => void;
   /** Signals last user turn explicitly sanctioned an apply. Read by suggestion_action. */
   lastUserSanctionedApply: boolean;
+  /**
+   * Sprint 045 Gate 3 — per-turn tracker for tools that should run at
+   * most once per agent turn. Currently only `test_pipeline` uses it
+   * (to prevent a second identical-input call in the same turn from
+   * burning budget on a cache-warm repeat). Populated by the runtime
+   * per turn; tool handlers set and check their own keys.
+   */
+  turnFlags?: Record<string, boolean>;
 }
 
 export type Verbosity = 'concise' | 'detailed';

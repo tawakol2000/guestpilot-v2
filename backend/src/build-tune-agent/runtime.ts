@@ -104,22 +104,21 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.search_corrections,
       TUNING_AGENT_TOOL_NAMES.get_version_history,
       TUNING_AGENT_TOOL_NAMES.rollback,
-      // Gate 2 BUILD-path creators (registered as they land):
+      // Gate 2 BUILD-path creators:
       TUNING_AGENT_TOOL_NAMES.create_faq,
       TUNING_AGENT_TOOL_NAMES.create_sop,
       TUNING_AGENT_TOOL_NAMES.create_tool_definition,
       TUNING_AGENT_TOOL_NAMES.write_system_prompt,
       TUNING_AGENT_TOOL_NAMES.plan_build_changes,
-      // preview_ai_response lands in Gate 3 once its subsystem is green.
+      // Gate 3 single-message verification tool (also in TUNE below):
+      TUNING_AGENT_TOOL_NAMES.test_pipeline,
     ];
   }
   // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
-  // (callable in both modes — multi-artifact TUNE corrections sometimes
-  // span SOPs + FAQs + system prompt together). preview_ai_response will
-  // join this list in Gate 3. Deliberately does NOT include the BUILD
-  // create_* tools; if the agent attempts one in TUNE mode, the SDK
-  // denies it and the system-prompt instructs the agent to advise
-  // switching modes rather than fabricate a workaround.
+  // and test_pipeline (both callable in both modes). Deliberately does
+  // NOT include the BUILD create_* tools; if the agent attempts one in
+  // TUNE mode, the SDK denies it and the system-prompt instructs the
+  // agent to advise switching modes rather than fabricate a workaround.
   return [
     TUNING_AGENT_TOOL_NAMES.get_context,
     TUNING_AGENT_TOOL_NAMES.search_corrections,
@@ -130,6 +129,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.get_version_history,
     TUNING_AGENT_TOOL_NAMES.rollback,
     TUNING_AGENT_TOOL_NAMES.plan_build_changes,
+    TUNING_AGENT_TOOL_NAMES.test_pipeline,
   ];
 }
 
@@ -288,6 +288,10 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     }
   };
 
+  // Sprint 045 Gate 3: per-turn flags (test_pipeline hasRunThisTurn).
+  // A fresh `{}` per `runTuningAgentTurn` invocation means the guard is
+  // scoped to one user turn — a new turn resets it automatically.
+  const turnFlags: Record<string, boolean> = {};
   const toolCtx: ToolContext = {
     prisma: input.prisma,
     tenantId: input.tenantId,
@@ -295,6 +299,7 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     userId: input.userId,
     lastUserSanctionedApply: false,
     emitDataPart,
+    turnFlags,
   };
   const hookCtx: HookContext = {
     prisma: input.prisma,

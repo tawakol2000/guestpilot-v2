@@ -20,4 +20,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   create_tool_definition: `mcp__${TUNING_AGENT_SERVER_NAME}__create_tool_definition`,
   write_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__write_system_prompt`,
   plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__plan_build_changes`,
+  // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
+  test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__test_pipeline`,
 } as const;
