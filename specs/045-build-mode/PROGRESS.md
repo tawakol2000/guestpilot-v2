@@ -32,6 +32,24 @@ through as many gates as it can, updates this doc, and hands off via
 
 ## Decisions made this sprint (explicitly out of spec scope)
 
+- **Prefix-stability baseline (Gate 2, session 2, 2026-04-19).**
+  `backend/src/build-tune-agent/__tests__/prompt-cache-stability.test.ts`
+  locks down byte-identical renders per mode + a shared Region A
+  across modes. Baseline character / estimated-token counts on a
+  GREENFIELD fixture tenant (chars × 0.25 heuristic):
+
+  | Slice                        | Chars   | Est. tokens |
+  |------------------------------|---------|-------------|
+  | Region A (shared prefix)     | 11,422  | 2,856       |
+  | TUNE cacheable (A + addendum)| 13,900  | 3,475       |
+  | BUILD cacheable (A + addendum)| 14,991 | 3,748       |
+
+  All three comfortably exceed Anthropic's 1,024-token cache minimum,
+  so Region A caches as an independent layer; mode-addendum regions
+  cache on the cumulative prefix. Regression guard: if any of these
+  numbers drift ≥10% or the byte-identity assertions fail in CI,
+  someone has injected drift into the shared system section.
+
 - **V2 skipped.** Terminal-recap location defaults to `dynamic_suffix` per
   the spec's own tiebreaker rule. Deferred to sprint 046 with a
   Langfuse-adherence trigger.
