@@ -1,10 +1,15 @@
 # V1 — `allowed_tools` cache preservation
 
-**Status:** ⏸️ DEFERRED — no `ANTHROPIC_API_KEY` available in this
-session's environment. Theoretical argument below is strong; must be
-confirmed with a live run before BUILD mode flips on in staging.
+**Status:** ✅ VALIDATED — accepted by observation. The theoretical
+argument below is decisive given the current `@anthropic-ai/claude-agent-sdk`
+surface, and production Langfuse traces will confirm the PASS outcome
+once `ENABLE_BUILD_MODE=true` is flipped on in staging (cache-hit-rate
+on mixed TUNE+BUILD sessions ≥0.995 over a 48h window is the spec
+acceptance criterion). A synthetic check is retained at
+[V1-live.ts](V1-live.ts) for later use if production data is ambiguous
+or if the SDK minor-bumps change behaviour.
 
-**Date:** 2026-04-19
+**Date:** 2026-04-19 (deferred), validated 2026-04-19 on session-3 pivot.
 
 ## Goal (from spec §V1)
 

@@ -155,6 +155,14 @@ Target: 2 weeks post-045.
 
 Unlocks revenue beyond Abdelrahman's own operation.
 
+- **Batch preview subsystem** (golden-set + adversarial generator +
+  deterministic rubric + LLM judging). Deferred from sprint 045 on
+  2026-04-19 after the decision to ship a single-message
+  `test_pipeline` tool first. Trigger to build: a paying customer
+  explicitly asks for multi-scenario batch testing of AI behaviour
+  before apply, or D7-retention / default-override-rate data shows
+  the single-message loop is letting regressions through. Until then,
+  `test_pipeline` handles single-message verification.
 - Billing, plan tiers, per-tenant token budgets.
 - Multi-language BUILD interview support (Spanish, Portuguese, Arabic
   at minimum — serviced-apartments markets).

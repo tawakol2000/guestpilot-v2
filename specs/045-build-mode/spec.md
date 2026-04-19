@@ -110,7 +110,9 @@ One new orchestration tool (this sprint, callable in both modes):
 `plan_build_changes`.
 
 One new eval tool (this sprint, callable in both modes):
-`preview_ai_response`.
+`test_pipeline`. (Previously scoped as `preview_ai_response` with a
+batch subsystem — re-scoped 2026-04-19; the batch subsystem is deferred
+to sprint 047+, see MASTER_PLAN.md.)
 
 That's 14 total in the cached `tools` array (or 15 if search_replace
 has landed). Verify count before setting `allowed_tools` allow-lists.
@@ -119,8 +121,8 @@ has landed). Verify count before setting `allowed_tools` allow-lists.
 
 | Mode  | Allowed                                                       |
 |-------|---------------------------------------------------------------|
-| BUILD | get_context, memory, search_corrections, **create_sop, create_faq, write_system_prompt, create_tool_definition, plan_build_changes, preview_ai_response**, get_version_history |
-| TUNE  | all existing TUNE tools (8 or 9 per verified inventory), plus `plan_build_changes` and `preview_ai_response` |
+| BUILD | get_context, memory, search_corrections, **create_sop, create_faq, write_system_prompt, create_tool_definition, plan_build_changes, test_pipeline**, get_version_history |
+| TUNE  | all existing TUNE tools (8 or 9 per verified inventory), plus `plan_build_changes` and `test_pipeline` |
 
 Cross-mode escalation (e.g. a TUNE session realises a whole SOP is missing
 and wants to call `create_sop`) is denied by `allowed_tools` in that request.
@@ -260,8 +262,10 @@ Orchestration:
   transaction_id. On error, the next user turn should summarise partial
   progress and offer retry or skip.
 - After a meaningful set of `create_*` calls (or on user request), run
-  `preview_ai_response` against the property's golden set + 5-10
-  agent-generated adversarial messages per new SOP. Surface failures only.
+  `test_pipeline` with a representative guest message so the manager
+  can see how the pipeline responds. One message, one graded reply.
+  Batch testing against a golden set or adversarial messages is
+  deferred (see MASTER_PLAN.md).
 </build_mode>
 ```
 
@@ -559,42 +563,57 @@ RETURNS: {
 }
 ```
 
-#### `preview_ai_response`
+#### `test_pipeline`
+
+> Rewritten 2026-04-19 (session 3). Replaces the deferred batch-preview
+> tool that previously sat here (`preview_ai_response`). See
+> `MASTER_PLAN.md` → Sprint 047+ for the batch-preview deferral entry
+> and `PROGRESS.md` → session-3 pivot for the rationale.
 
 ```
-preview_ai_response: Run the tenant's current production pipeline against
-  a set of test messages and return both the replies and rubric scores.
-  Use after significant BUILD changes or on manager request in either mode.
-WHEN TO USE: After a create_sop / write_system_prompt / create_tool
-  call (or a plan transaction completing). Also on manager request
-  ("what would the AI say if..."). In TUNE mode, after an apply on a
-  non-trivial artifact.
-WHEN NOT TO USE: Do NOT use mid-interview with no artifacts yet. Do NOT
-  use more than once per BUILD turn without new context — results will
-  be identical.
+test_pipeline: Run one test message through the tenant's pipeline and
+  get back both the reply and an LLM-graded score. Use after any
+  create_* or write_system_prompt call to confirm the change behaves
+  as intended.
+WHEN TO USE: After a create_sop / create_faq / create_tool_definition /
+  write_system_prompt call (or a plan transaction completing) to verify
+  the freshly-written artifact is reflected in pipeline output. Also on
+  manager request ("what would the AI say if a guest asked X?"). In
+  TUNE mode, after an apply on a non-trivial artifact to confirm the
+  correction landed.
+WHEN NOT TO USE: Do NOT use to test the same change twice in one turn
+  — results will be identical (the tool enforces a hasRunThisTurn
+  guard). Do NOT use to stress-test with dozens of messages — batch
+  scenario testing is deferred to a future tool. Do NOT use
+  mid-interview with no artifacts yet.
 PARAMETERS:
-  testMessages (array of {
-    guestPersona: string (e.g. "Airbnb guest, 3-night stay, CONFIRMED"),
-    message: string,
-    expectedShape?: string (free-text hint for judge)
-  })
-  includeGoldenSet (bool, default true) — if true, prepends the 30-message
-    hospitality golden set
-  includeAdversarial (bool, default true) — if true, generates 5-10
-    adversarial messages against the most recent create_* artifacts
-  judgeModel (enum 'rubric'|'opus', default 'rubric') — rubric is
-    deterministic; opus is Opus 4.6 with a grading prompt
+  testMessage (string, 1-1000 chars) — the guest message to run through
+    the pipeline
+  testContext (optional { reservationStatus?: 'INQUIRY'|'PENDING'|
+    'CONFIRMED'|'CHECKED_IN'|'CHECKED_OUT'|'CANCELLED',
+    channel?: 'AIRBNB'|'BOOKING'|'DIRECT'|'WHATSAPP'|'OTHER' }) —
+    per-call overrides for the synthetic reservation context the
+    pipeline runs against. Defaults to CONFIRMED + DIRECT.
 RETURNS: {
-  runId,
-  replies: Array<{ testId, reply, replyLatencyMs, sopHits, faqHits,
-                   toolCalls, classifierDecision, judgeScore, judgeRubric }>,
-  summary: {
-    total, passed, failed,
-    failureCategories: Record<string, number>,
-    oneLineFailureSummaries: string[]
-  }
+  reply (string) — the AI's generated reply text,
+  judgeScore (number, 0..1) — Sonnet-4.6 grader score,
+  judgeRationale (string) — one-paragraph explanation of the score,
+  judgeFailureCategory (string, optional) — short tag when score <0.7
+    (e.g. "missing-sop-reference", "policy-violation", "channel-tone"),
+  judgePromptVersion (string) — version stamp of the grading prompt used,
+  latencyMs (number) — pipeline call wall-clock,
+  replyModel (string) — the pipeline model that produced the reply
 }
 ```
+
+The judge is Sonnet 4.6, deliberately cross-family to the GPT pipeline
+generator. This keeps the "judge ≠ generator" principle intact (no
+self-enhancement bias per Zheng et al.) without requiring Opus. The
+grading prompt is version-stamped in source so later edits don't
+silently re-score old runs.
+
+A PostToolUse emission of `data-test-pipeline-result` surfaces the
+whole return shape in the frontend preview panel when it lands (Gate 6).
 
 ### 12. Transaction-ID extension to `rollback`
 
@@ -633,15 +652,16 @@ Minimum-invasive changes only:
   in this sprint. Cooldown semantics for net-new artifacts are different
   from edits-to-existing and need a separate design pass. We will add
   BUILD-mode cooldown in sprint 046 once we have real usage data.
-- NEW: `plan_build_changes` and `preview_ai_response` are both unguarded —
+- NEW: `plan_build_changes` and `test_pipeline` are both unguarded —
   they don't mutate artifacts directly.
 
 ### 14. PostToolUse hook updates
 
 - Log all new tools to Langfuse with the shared transactionId (if present).
 - Capture preference pairs for edit_then_apply paths as today; no change.
-- For `preview_ai_response` failures, emit a `data-preview-failure` SSE
-  event so the frontend can surface failures in the side panel.
+- For `test_pipeline` results, emit a `data-test-pipeline-result` SSE
+  event so the frontend can render the reply + judge score inline.
+  Low-score results (judgeScore < 0.7) should be visually distinct.
 
 ---
 
@@ -658,11 +678,14 @@ backend/src/build-tune-agent/tools/create-faq.ts
 backend/src/build-tune-agent/tools/write-system-prompt.ts
 backend/src/build-tune-agent/tools/create-tool-definition.ts
 backend/src/build-tune-agent/tools/plan-build-changes.ts
-backend/src/build-tune-agent/tools/preview-ai-response.ts
-backend/src/build-tune-agent/preview/golden-set.ts      # 30 canonical hospitality messages
-backend/src/build-tune-agent/preview/adversarial.ts     # generator for 5-10 per new SOP
-backend/src/build-tune-agent/preview/judge-rubric.ts    # deterministic rubric
-backend/src/build-tune-agent/preview/judge-opus.ts      # Opus 4.6 grading
+backend/src/build-tune-agent/tools/test-pipeline.ts       # single-message test tool (sprint 045, session 3)
+backend/src/build-tune-agent/preview/test-judge.ts        # Sonnet 4.6 grader (sprint 045, session 3)
+backend/src/build-tune-agent/preview/test-pipeline-runner.ts  # dry pipeline invocation helper
+# ↓ Deferred to sprint 047+ (batch-preview subsystem; see MASTER_PLAN.md):
+# backend/src/build-tune-agent/preview/golden-set.ts
+# backend/src/build-tune-agent/preview/adversarial.ts
+# backend/src/build-tune-agent/preview/judge-rubric.ts
+# backend/src/build-tune-agent/preview/judge-opus.ts
 backend/src/controllers/build-controller.ts             # /api/build/* endpoints
 backend/src/routes/build.ts
 ```
@@ -743,7 +766,7 @@ frontend/components/build/activity-bar.tsx              # left 56px bar
 frontend/components/build/left-rail.tsx                 # 288px dynamic left rail (history, suggestions, progress widget)
 frontend/components/build/preview-panel.tsx             # 440px right panel (system prompt preview, plan, preview-result)
 frontend/components/build/plan-checklist.tsx            # UI for plan_build_changes result
-frontend/components/build/preview-result.tsx            # UI for preview_ai_response summary
+frontend/components/build/preview-result.tsx            # UI for test_pipeline single-message result
 frontend/components/build/tenant-state-banner.tsx       # GREENFIELD / BROWNFIELD opening banner
 frontend/components/build/tokens.ts                     # re-export of tuning tokens.ts (same palette)
 frontend/lib/build-api.ts                               # client for /api/build/*
@@ -886,10 +909,12 @@ robust.
 - [ ] `rollback` extended with `transactionId` mode. Existing rollback
       paths unchanged. Integration test: plan 3 artifacts, create all 3,
       rollback by transactionId, all 3 revert in reverse dependency order.
-- [ ] `preview_ai_response` tool implemented with golden set (30 messages),
-      adversarial generator (5-10 per new SOP), rubric judge, and Opus
-      judge. Judge is Opus 4.6 or the rubric — NEVER the generator (Sonnet
-      4.6) grading itself.
+- [ ] `test_pipeline` tool implemented — single-message verification
+      with a Sonnet-4.6 judge (cross-family to the GPT pipeline
+      generator; never same-family grading). Includes a hasRunThisTurn
+      guard and tenant-config cache bypass. (Batch preview subsystem —
+      golden set + adversarial + rubric + LLM judging — is deferred to
+      sprint 047+ per MASTER_PLAN.md.)
 - [ ] `GENERIC_HOSPITALITY_SEED.md` written with all 20 slots, guidance
       comments, default markers. A fully-filled render produces
       1,500–2,500 tokens.
@@ -900,8 +925,9 @@ robust.
       all 6 load-bearing slots via incident-based probes → `plan_build_changes`
       surfaces approvable plan → approved → 3 SOPs + 2 FAQs + 1
       write_system_prompt complete under one transactionId →
-      `preview_ai_response` runs on golden set → results render in preview
-      panel → 0 critical failures (≥0.85 pass rate).
+      `test_pipeline` run on at least one representative guest message →
+      reply references the tenant's new artifacts and the Sonnet-4.6
+      judge returns a score ≥0.7 with a non-empty rationale.
 - [ ] `ENABLE_BUILD_MODE` env flag gates the /build route on the backend.
       Default off in prod config.
 - [ ] BUILD addendum rules are live — verify in Langfuse traces that
@@ -912,13 +938,10 @@ robust.
 
 ### Red-team / preview quality
 
-- [ ] Internal golden set of 30 hospitality messages passes with ≥0.85
-      rubric score on a BUILD-graduated test tenant.
-- [ ] Adversarial suite of 50 messages per property type (Ship 3 / sprint
-      046 will expand to 100) runs on graduation. Failures surface in UI
-      with plain-language summaries.
-- [ ] Judge bias check: Opus judge agrees with rubric judge on ≥75% of
-      cases. Where they disagree, surface both.
+Deferred to sprint 047+ (see MASTER_PLAN.md). Sprint 045 ships the
+single-message `test_pipeline` tool as the manager's verification
+primitive; the batch golden-set + adversarial + rubric infrastructure
+is added when there's commercial demand for multi-scenario testing.
 
 ### Non-regression
 
@@ -962,9 +985,13 @@ threshold, cap surfaced failures at 5, plain-language summaries not raw
 transcripts.
 
 **R4. `create_*` tools fabricate slop.** Sonnet 4.6 + 14 loaded tools +
-interview context might generate low-quality SOPs. Mitigation: `preview_ai_response`
-is the done-oracle — if the golden set passes at ≥0.85, the SOPs work.
-If not, the interview rounds continue. Do not graduate below threshold.
+interview context might generate low-quality SOPs. Mitigation:
+`test_pipeline` is the done-oracle — the manager runs a representative
+guest message after each meaningful `create_*` and confirms the judge
+score is ≥0.7 with a rationale that references the freshly-written
+artifact. If not, the interview rounds continue. (Batch golden-set
+validation is deferred to sprint 047+; until then, the single-message
+loop is the quality gate.)
 
 **R5. Template renderer strips default markers.** V3 catches this early.
 If it fails, fall back to XML-tag default markers and re-test.
