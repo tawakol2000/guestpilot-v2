@@ -27,6 +27,27 @@ import { runWithAiTrace, startAiSpan } from '../services/observability.service';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
 
+/**
+ * Resolve the path to the Claude Agent SDK's bundled `cli.js` so we can pass
+ * it explicitly as `options.pathToClaudeCodeExecutable`. The SDK tries to
+ * auto-resolve this via `require.resolve` against its own `import.meta.url`,
+ * which on some hosts (e.g. Railway / nixpacks) fails even though the file is
+ * present on disk. Resolving it ourselves from the backend's own require()
+ * root is robust to whatever the SDK's internal detection gets wrong.
+ * Returns undefined if resolution fails — the SDK will then attempt its own
+ * discovery (which may still work on well-behaved environments).
+ */
+function resolveAgentSdkCliPath(): string | undefined {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const r = require as unknown as { resolve: (id: string) => string };
+    return r.resolve('@anthropic-ai/claude-agent-sdk/cli.js');
+  } catch {
+    return undefined;
+  }
+}
+const RESOLVED_SDK_CLI_PATH = resolveAgentSdkCliPath();
+
 export interface RunTurnInput {
   prisma: PrismaClient;
   tenantId: string;
@@ -233,6 +254,10 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         options: {
           model,
           systemPrompt,
+          // See resolveAgentSdkCliPath above — bypasses the SDK's own CLI
+          // discovery when the hosting environment's require.resolve is
+          // confused (seen on Railway with "Native CLI binary ... not found").
+          ...(RESOLVED_SDK_CLI_PATH ? { pathToClaudeCodeExecutable: RESOLVED_SDK_CLI_PATH } : {}),
           mcpServers: {
             [TUNING_AGENT_SERVER_NAME]: mcpServer,
           },
