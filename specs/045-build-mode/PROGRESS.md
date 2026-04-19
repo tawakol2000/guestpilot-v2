@@ -23,12 +23,18 @@ through as many gates as it can, updates this doc, and hands off via
 | 1    | `BuildTransaction` model + nullable FKs | ✅ | Applied via `prisma db push`. New table + 5 nullable FK columns (SopVariant, SopPropertyOverride, FaqEntry, ToolDefinition, AiConfigVersion). |
 | 1    | `rollback` extended with `transactionId` | ✅ | Reverts in order tools → system_prompt → faq → sop. Per-artifact mode unchanged. |
 | 1    | Runtime mode + `allowed_tools` + `ENABLE_BUILD_MODE` | ✅ | `RunTurnInput.mode` + `resolveAllowedTools(mode)`; BUILD requests short-circuit when `ENABLE_BUILD_MODE` unset. |
-| 2    | 6 new tools                            | ⏳ session 2 | `create_sop`, `create_faq`, `create_tool_definition`, `write_system_prompt`, `plan_build_changes`, `preview_ai_response`. |
-| 3    | Preview subsystem                      | ⏳ session 2 | Golden set, adversarial, rubric, Opus judge. |
-| 4    | `GENERIC_HOSPITALITY_SEED.md`          | ⏳ session 2 | 20 slots, 1,500–2,500 tokens fully filled. |
-| 5    | Backend `/api/build/*`                 | ⏳ session 2 | Controller, routes, `ENABLE_BUILD_MODE` gate. |
-| 6    | Frontend `/build` page                 | ⏳ session 2 | 3-pane layout, tuning tokens palette. |
-| 7    | End-to-end test + final handoff    | ⏳ session 2 | |
+| 2    | Prefix-stability + token-budget test   | ✅ | `prompt-cache-stability.test.ts`; baselines recorded below. |
+| 2    | `create_faq`                           | ✅ | Writes FaqEntry. 6 unit tests. |
+| 2    | `create_sop`                           | ✅ | SopDefinition upsert + SopVariant/SopPropertyOverride; kebab-case validation. 7 unit tests. |
+| 2    | `create_tool_definition`               | ✅ | snake_case name + https:// webhook. 5 unit tests. |
+| 2    | `write_system_prompt`                  | ✅ | Coverage ≥0.7 + 6 load-bearing non-default + managerSanctioned. 7 unit tests. |
+| 2    | `plan_build_changes`                   | ✅ | PLANNED BuildTransaction + data-build-plan SSE part. 4 unit tests. |
+| 2    | `preview_ai_response`                  | ⏭️ → Gate 3 | Re-scoped per NEXT.md session 1 — depends on preview subsystem. |
+| 3    | Preview subsystem + `preview_ai_response` | ⏳ session 3 | Golden set, adversarial, rubric, Opus judge, wire tool. |
+| 4    | `GENERIC_HOSPITALITY_SEED.md`          | ⏳ session 3 | 20 slots, 1,500–2,500 tokens fully filled. |
+| 5    | Backend `/api/build/*`                 | ⏳ session 3 | Controller, routes, `ENABLE_BUILD_MODE` gate. |
+| 6    | Frontend `/build` page                 | ⏳ session 3 | 3-pane layout, tuning tokens palette. |
+| 7    | End-to-end test + final handoff        | ⏳ session 3 | |
 
 ## Decisions made this sprint (explicitly out of spec scope)
 
@@ -49,6 +55,20 @@ through as many gates as it can, updates this doc, and hands off via
   cache on the cumulative prefix. Regression guard: if any of these
   numbers drift ≥10% or the byte-identity assertions fail in CI,
   someone has injected drift into the shared system section.
+
+- **tenant-config cache invalidation deferred to 60s TTL on
+  `write_system_prompt` (Gate 2, session 2).** `tenant-config.service.ts`
+  transitively imports `ai.service.ts`, which eager-initialises the
+  OpenAI client and pulls `socket.service.ts` → `middleware/auth.ts`
+  (which `process.exit(1)`s without JWT_SECRET). Importing that graph
+  from the BUILD tool layer is a bigger dependency change than Gate 2
+  should make. Impact: main-AI picks up a newly-written system prompt
+  after ≤60s rather than immediately. Acceptable because the manager is
+  still in BUILD/preview during this window. Sprint 046 should extract
+  `invalidateTenantConfigCache` into a leaner module so tools can call
+  it without dragging OpenAI init along. `create_tool_definition` makes
+  the same call-out; `create_faq` / `create_sop` don't need tenant-config
+  invalidation (sop + tool caches are separate).
 
 - **V2 skipped.** Terminal-recap location defaults to `dynamic_suffix` per
   the spec's own tiebreaker rule. Deferred to sprint 046 with a
@@ -84,3 +104,12 @@ through as many gates as it can, updates this doc, and hands off via
 - 2026-04-19 — **Session 1 close.** Gates 0 + 1 complete. TUNE behaviour
   intact (13/13 system-prompt tests, 59/59 agent module tests pass).
   Two commits on branch. NEXT.md written for session 2 handoff.
+- 2026-04-19 — **Session 2 close.** Gate 2 complete (5/5 tools shipped;
+  `preview_ai_response` re-scoped into Gate 3 per session-1 NEXT.md).
+  6 commits added on branch. Full build-tune-agent suite 95/95 green
+  (was 59 → prefix-stability +7, create_faq +6, create_sop +7,
+  create_tool_definition +5, write_system_prompt +7, plan_build_changes
+  +4 = 95). TUNE allow-list is now explicit so BUILD create_* tools
+  never leak into TUNE dispatch. `ANTHROPIC_API_KEY` was not in the
+  session shell, so V1 remains ⏸️ deferred. NEXT.md rewritten for
+  session 3 (Gate 3 preview subsystem onwards).
