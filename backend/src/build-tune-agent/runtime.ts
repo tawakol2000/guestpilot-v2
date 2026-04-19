@@ -107,8 +107,9 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       // Gate 2 BUILD-path creators (registered as they land):
       TUNING_AGENT_TOOL_NAMES.create_faq,
       TUNING_AGENT_TOOL_NAMES.create_sop,
+      TUNING_AGENT_TOOL_NAMES.create_tool_definition,
       // Remaining Gate 2 tools append here:
-      //   create_tool_definition, write_system_prompt, plan_build_changes.
+      //   write_system_prompt, plan_build_changes.
       // preview_ai_response lands in Gate 3 once its subsystem is green.
     ];
   }
