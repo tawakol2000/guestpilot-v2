@@ -109,11 +109,28 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.create_sop,
       TUNING_AGENT_TOOL_NAMES.create_tool_definition,
       TUNING_AGENT_TOOL_NAMES.write_system_prompt,
-      // Remaining Gate 2 tool appends here:  plan_build_changes.
+      TUNING_AGENT_TOOL_NAMES.plan_build_changes,
       // preview_ai_response lands in Gate 3 once its subsystem is green.
     ];
   }
-  return Object.values(TUNING_AGENT_TOOL_NAMES);
+  // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
+  // (callable in both modes — multi-artifact TUNE corrections sometimes
+  // span SOPs + FAQs + system prompt together). preview_ai_response will
+  // join this list in Gate 3. Deliberately does NOT include the BUILD
+  // create_* tools; if the agent attempts one in TUNE mode, the SDK
+  // denies it and the system-prompt instructs the agent to advise
+  // switching modes rather than fabricate a workaround.
+  return [
+    TUNING_AGENT_TOOL_NAMES.get_context,
+    TUNING_AGENT_TOOL_NAMES.search_corrections,
+    TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
+    TUNING_AGENT_TOOL_NAMES.propose_suggestion,
+    TUNING_AGENT_TOOL_NAMES.suggestion_action,
+    TUNING_AGENT_TOOL_NAMES.memory,
+    TUNING_AGENT_TOOL_NAMES.get_version_history,
+    TUNING_AGENT_TOOL_NAMES.rollback,
+    TUNING_AGENT_TOOL_NAMES.plan_build_changes,
+  ];
 }
 
 export interface RunTurnResult {
