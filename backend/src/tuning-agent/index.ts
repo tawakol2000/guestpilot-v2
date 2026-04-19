@@ -1,28 +1,12 @@
 /**
- * Public API of the tuning-agent module.
+ * Back-compat shim for sprint 045's rename `tuning-agent/ → build-tune-agent/`.
  *
- * Importers outside this directory should use only the entry points re-
- * exported here. That way the module can be lifted wholesale into Anthropic
- * Managed Agents or a split backend later (deferred.md D16).
+ * External callers importing `'…/tuning-agent'` continue to work via this
+ * re-export. Sub-path imports (e.g. `'…/tuning-agent/tools/foo'`) must be
+ * updated directly; this shim covers the public API surface from
+ * `build-tune-agent/index.ts` only.
+ *
+ * Slated for removal in sprint 046. When that happens, all remaining
+ * callers must import from `'…/build-tune-agent'`.
  */
-
-export { runTuningAgentTurn } from './runtime';
-export type { RunTurnInput, RunTurnResult } from './runtime';
-
-export { assembleSystemPrompt } from './system-prompt';
-export type { SystemPromptContext } from './system-prompt';
-
-export {
-  viewMemory,
-  createMemory,
-  updateMemory,
-  deleteMemory,
-  listMemoryByPrefix,
-} from './memory/service';
-
-export {
-  isTuningAgentEnabled,
-  tuningAgentDisabledReason,
-  resolveTuningAgentModel,
-  DYNAMIC_BOUNDARY_MARKER,
-} from './config';
+export * from '../build-tune-agent';

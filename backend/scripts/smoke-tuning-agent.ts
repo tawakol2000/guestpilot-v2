@@ -30,10 +30,10 @@ import {
   deleteMemory,
   listMemoryByPrefix,
   updateMemory,
-} from '../src/tuning-agent/memory/service';
-import { assembleSystemPrompt, DYNAMIC_BOUNDARY_MARKER } from '../src/tuning-agent';
-import { buildTuningAgentMcpServer } from '../src/tuning-agent/tools';
-import { TUNING_AGENT_TOOL_NAMES } from '../src/tuning-agent/tools/names';
+} from '../src/build-tune-agent/memory/service';
+import { assembleSystemPrompt, DYNAMIC_BOUNDARY_MARKER } from '../src/build-tune-agent';
+import { buildTuningAgentMcpServer } from '../src/build-tune-agent/tools';
+import { TUNING_AGENT_TOOL_NAMES } from '../src/build-tune-agent/tools/names';
 
 function pick<T>(msg: string, v: T): T {
   console.log(`[smoke] ${msg}`);

@@ -1,0 +1,2144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GuestPilot — Agent Studio (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ─── GuestPilot / tuning-surface design tokens ─── */
+  :root {
+    /* surfaces */
+    --canvas: #F9FAFB;
+    --surface: #FFFFFF;
+    --sunken: #F3F4F6;
+
+    /* text */
+    --ink: #1A1A1A;
+    --ink-muted: #6B7280;
+    --ink-subtle: #9CA3AF;
+
+    /* borders */
+    --hairline: #E5E7EB;
+    --hairline-soft: #EEF0F3;
+
+    /* accent (tuning-surface purple) */
+    --accent: #6C5CE7;
+    --accent-hover: #5B4BD4;
+    --accent-soft: #F0EEFF;
+    --accent-muted: #A29BFE;
+
+    /* diff — translucent overlays */
+    --diff-add-bg: rgba(16,185,129,0.10);
+    --diff-add-fg: #047857;
+    --diff-del-bg: rgba(239,68,68,0.10);
+    --diff-del-fg: #B91C1C;
+
+    /* semantic */
+    --warn-bg: #FFFBEB;
+    --warn-fg: #B45309;
+    --success-fg: #059669;
+    --danger-bg: #FEF2F2;
+    --danger-fg: #B91C1C;
+
+    /* category pills (from tokens.ts) */
+    --c-sop-bg: #FEF9C3;      --c-sop-fg: #854D0E;      --c-sop-accent: #CA8A04;
+    --c-routing-bg: #FFEDD5;  --c-routing-fg: #9A3412;  --c-routing-accent: #EA580C;
+    --c-faq-bg: #CCFBF1;      --c-faq-fg: #0F766E;      --c-faq-accent: #14B8A6;
+    --c-prompt-bg: #DBEAFE;   --c-prompt-fg: #1E40AF;   --c-prompt-accent: #3B82F6;
+    --c-tool-bg: #EDE9FE;     --c-tool-fg: #6D28D9;     --c-tool-accent: #8B5CF6;
+    --c-cap-bg: #FCE7F3;      --c-cap-fg: #9D174D;      --c-cap-accent: #EC4899;
+    --c-prop-bg: #CFFAFE;     --c-prop-fg: #0E7490;     --c-prop-accent: #06B6D4;
+
+    /* radii + shadow */
+    --r-sm: 4px;
+    --r: 8px;
+    --r-lg: 12px;
+    --shadow-sm: 0 1px 2px rgba(17,24,39,0.04);
+    --shadow: 0 4px 14px rgba(17,24,39,0.06);
+
+    /* type */
+    --sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --display: 'Playfair Display', Georgia, serif;
+    --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background: var(--canvas);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  /* ─── page intro ─── */
+  .intro {
+    max-width: 1440px;
+    margin: 56px auto 0;
+    padding: 0 24px;
+  }
+  .intro .stamp {
+    color: var(--ink-subtle);
+    font-size: 12px;
+    margin-bottom: 14px;
+    font-family: var(--mono);
+    letter-spacing: 0.01em;
+  }
+  .intro h1 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 38px;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    line-height: 1.1;
+  }
+  .intro h1 em { font-style: italic; color: var(--accent); }
+  .intro p {
+    color: var(--ink-muted);
+    font-size: 15.5px;
+    margin: 0;
+    max-width: 820px;
+    line-height: 1.6;
+  }
+
+  /* ─── scene labels ─── */
+  .scene-label {
+    max-width: 1440px;
+    margin: 52px auto 14px;
+    padding: 0 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .scene-label .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .scene-label h2 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .scene-label h2 em { font-style: italic; color: var(--accent); }
+  .scene-label .sub {
+    color: var(--ink-subtle);
+    font-size: 13px;
+    margin-left: auto;
+    font-family: var(--mono);
+  }
+
+  /* ─── frame ─── */
+  .frame {
+    max-width: 1440px;
+    height: 880px;
+    margin: 0 auto 24px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-columns: 56px 288px 1fr 440px;
+  }
+  .frame.compact { grid-template-columns: 56px 288px 1fr; }
+
+  /* ─── activity bar ─── */
+  .activity {
+    border-right: 1px solid var(--hairline);
+    background: var(--sunken);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+    gap: 4px;
+  }
+  .activity .logo {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-muted));
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+  .activity .ab-icon {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.12s ease;
+  }
+  .activity .ab-icon:hover { background: var(--hairline-soft); color: var(--ink); }
+  .activity .ab-icon.active { background: #fff; color: var(--accent); box-shadow: var(--shadow-sm); }
+  .activity .ab-icon svg { width: 18px; height: 18px; }
+  .activity .ab-icon .pill {
+    position: absolute;
+    top: 4px; right: 4px;
+    min-width: 16px; height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .activity .sp { flex: 1; }
+  .activity .avatar {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-muted), var(--accent));
+    color: #fff;
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+  }
+
+  /* ─── left rail ─── */
+  .left {
+    border-right: 1px solid var(--hairline);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .left-head {
+    padding: 12px 14px 11px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .left-head .title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .left-head .new {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--sans);
+  }
+  .left-head .new:hover { background: var(--accent-hover); }
+  .left-body { flex: 1; overflow-y: auto; padding: 10px 8px 20px; }
+
+  .left-section { margin-top: 14px; }
+  .left-section:first-child { margin-top: 6px; }
+  .left-section .h {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--ink-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 0 10px;
+    margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .left-section .h .count {
+    background: var(--hairline-soft);
+    color: var(--ink-muted);
+    border-radius: 8px;
+    font-size: 10px;
+    padding: 1px 6px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+  }
+
+  .history-item {
+    padding: 8px 10px;
+    border-radius: var(--r);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .history-item:hover { background: var(--sunken); }
+  .history-item.active { background: var(--accent-soft); }
+  .history-item .t {
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .history-item .s { font-size: 11px; color: var(--ink-subtle); }
+  .history-item.active .t { color: var(--accent); font-weight: 600; }
+
+  .pending-item {
+    padding: 9px 10px;
+    border-radius: var(--r);
+    cursor: pointer;
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+  }
+  .pending-item:hover { background: var(--sunken); border-color: var(--hairline); }
+  .pending-item .cat-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cat-pill {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 1px 7px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    display: inline-block;
+  }
+  .cat-pill.sop-content { background: var(--c-sop-bg); color: var(--c-sop-fg); }
+  .cat-pill.sop-routing { background: var(--c-routing-bg); color: var(--c-routing-fg); }
+  .cat-pill.faq { background: var(--c-faq-bg); color: var(--c-faq-fg); }
+  .cat-pill.prompt { background: var(--c-prompt-bg); color: var(--c-prompt-fg); }
+  .cat-pill.tool { background: var(--c-tool-bg); color: var(--c-tool-fg); }
+  .cat-pill.cap { background: var(--c-cap-bg); color: var(--c-cap-fg); }
+  .cat-pill.prop { background: var(--c-prop-bg); color: var(--c-prop-fg); }
+  .cat-pill.no-fix { background: var(--sunken); color: var(--ink-muted); }
+
+  .pending-item .t {
+    margin-top: 5px;
+    font-size: 12.5px;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  .pending-item .s {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--ink-subtle);
+  }
+
+  .next-item {
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+  .next-item:hover { background: var(--sunken); color: var(--ink); }
+  .next-item .dot {
+    width: 6px; height: 6px;
+    border: 1.5px solid var(--ink-subtle);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ─── center chat ─── */
+  .chat {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    background: var(--canvas);
+  }
+  .chat-head {
+    height: 52px;
+    border-bottom: 1px solid var(--hairline);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .chat-head .agent {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .chat-head .agent .mini {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-muted));
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .chat-head .agent .nm {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chat-head .agent .st {
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+    font-family: var(--mono);
+  }
+  .chat-head .agent .st .pulse {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--success-fg);
+    margin-right: 6px;
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+  }
+  .mode-chip {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid rgba(108,92,231,0.25);
+    font-family: var(--mono);
+  }
+  .mode-chip.tune {
+    background: var(--c-routing-bg);
+    color: var(--c-routing-fg);
+    border-color: rgba(234,88,12,0.25);
+  }
+
+  .chat-head .tools { display: flex; gap: 4px; }
+  .tool-btn {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    border-radius: 7px;
+    font-size: 12px;
+    color: var(--ink-muted);
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--sans);
+  }
+  .tool-btn:hover { background: var(--sunken); color: var(--ink); border-color: var(--hairline); }
+
+  .chat-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 40px 16px;
+  }
+  .chat-inner { max-width: 760px; margin: 0 auto; }
+
+  .msg { margin-bottom: 20px; display: flex; gap: 14px; }
+  .msg .ava {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-muted));
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .msg.user .ava {
+    background: linear-gradient(135deg, var(--accent-muted), var(--accent));
+  }
+  .msg .body { min-width: 0; flex: 1; }
+  .msg .name {
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+  .msg .text {
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--ink);
+  }
+  .msg .text p { margin: 0 0 10px; }
+  .msg .text p:last-child { margin-bottom: 0; }
+  .msg.user .text {
+    background: var(--sunken);
+    padding: 10px 14px;
+    border-radius: 10px;
+    display: inline-block;
+    max-width: 100%;
+  }
+
+  /* ─── empty-state hero ─── */
+  .hero {
+    padding: 70px 16px 30px;
+    text-align: center;
+  }
+  .hero .mark {
+    width: 60px; height: 60px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-muted));
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 22px;
+    margin-bottom: 22px;
+    letter-spacing: -0.03em;
+  }
+  .hero h1 {
+    font-family: var(--display);
+    font-size: 32px;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+    font-weight: 500;
+    line-height: 1.15;
+  }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero p {
+    color: var(--ink-muted);
+    font-size: 15px;
+    margin: 0 auto;
+    max-width: 520px;
+    line-height: 1.55;
+  }
+
+  .chip-grid {
+    margin: 34px auto 0;
+    max-width: 720px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .chip {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .chip:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(108,92,231,0.12);
+  }
+  .chip .ic {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .chip .ic svg { width: 16px; height: 16px; }
+  .chip.warm .ic { background: var(--c-routing-bg); color: var(--c-routing-fg); }
+  .chip .ct {
+    font-weight: 600;
+    font-size: 13.5px;
+    color: var(--ink);
+    margin-bottom: 3px;
+  }
+  .chip .cs {
+    font-size: 12px;
+    color: var(--ink-subtle);
+    line-height: 1.45;
+  }
+  .divider {
+    max-width: 720px;
+    margin: 36px auto 18px;
+    color: var(--ink-subtle);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .divider::before, .divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--hairline);
+  }
+  .small-chips {
+    max-width: 720px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+  }
+  .small-chip {
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    color: var(--ink-muted);
+    padding: 6px 12px;
+    border-radius: 14px;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .small-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  /* ─── cards ─── */
+  .card {
+    margin-top: 10px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .card-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--hairline);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+  }
+  .card-head .t {
+    font-weight: 600;
+    font-size: 13.5px;
+    flex: 1;
+    color: var(--ink);
+  }
+  .card-head .ic {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .card-head .ic svg { width: 13px; height: 13px; }
+  .card-head .ic.sop { background: var(--c-sop-bg); color: var(--c-sop-fg); }
+  .card-head .ic.faq { background: var(--c-faq-bg); color: var(--c-faq-fg); }
+  .card-head .ic.prompt { background: var(--c-prompt-bg); color: var(--c-prompt-fg); }
+  .card-head .ic.tool { background: var(--c-tool-bg); color: var(--c-tool-fg); }
+
+  .card-body {
+    padding: 12px 14px 14px;
+    font-size: 13px;
+    color: var(--ink-muted);
+    line-height: 1.5;
+  }
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--hairline);
+    background: var(--sunken);
+  }
+  .btn {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    color: var(--ink-muted);
+    font-family: var(--sans);
+  }
+  .btn:hover { background: var(--sunken); color: var(--ink); border-color: var(--hairline); }
+  .btn.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--ink-subtle);
+  }
+  .btn.ghost:hover { background: var(--sunken); color: var(--ink); }
+
+  /* ── plan checklist (multi-artifact) ── */
+  .plan {
+    background: var(--surface);
+  }
+  .plan-title {
+    font-size: 12px;
+    color: var(--ink-subtle);
+    padding: 10px 14px 4px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface);
+  }
+  .plan-title .tx-id {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    background: var(--sunken);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .plan-item {
+    display: grid;
+    grid-template-columns: 22px 90px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 13px;
+  }
+  .plan-item:last-child { border-bottom: 0; }
+  .plan-item .cb {
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--hairline);
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+  }
+  .plan-item.checked .cb {
+    background: var(--accent);
+    border-color: var(--accent);
+    position: relative;
+  }
+  .plan-item.checked .cb::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 0px;
+    width: 5px; height: 9px;
+    border-right: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(45deg);
+  }
+  .plan-item .nm { color: var(--ink); font-weight: 500; }
+  .plan-item .rn { color: var(--ink-muted); font-size: 12px; }
+  .plan-item .meta {
+    color: var(--ink-subtle);
+    font-size: 11px;
+    font-family: var(--mono);
+  }
+  .plan-item .meta.def {
+    color: var(--warn-fg);
+    background: var(--warn-bg);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ── interview (AskUserQuestion) ── */
+  .q {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: var(--accent-soft);
+    border: 1px solid rgba(108,92,231,0.2);
+    border-radius: var(--r-lg);
+    position: relative;
+  }
+  .q::before {
+    content: 'Pick one — or write your own';
+    position: absolute;
+    top: -9px; left: 14px;
+    background: var(--surface);
+    padding: 0 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(108,92,231,0.2);
+    border-radius: 3px;
+    height: 18px;
+    display: flex; align-items: center;
+  }
+  .q .qt {
+    font-weight: 600;
+    font-size: 14.5px;
+    color: var(--ink);
+    margin-bottom: 3px;
+  }
+  .q .qs {
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    margin-bottom: 12px;
+    line-height: 1.45;
+  }
+  .q-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .qbtn {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 9px 12px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex; align-items: flex-start; gap: 10px;
+    font-family: var(--sans);
+    transition: all 0.12s ease;
+  }
+  .qbtn:hover { border-color: var(--accent); }
+  .qbtn.picked {
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px rgba(108,92,231,0.12);
+  }
+  .qbtn .qb-k {
+    width: 22px; height: 22px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-weight: 600;
+    background: var(--sunken);
+    font-family: var(--mono);
+  }
+  .qbtn.picked .qb-k {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .qbtn .qb-t { line-height: 1.35; }
+  .qbtn .qb-t strong {
+    display: block;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .qbtn .qb-t em {
+    font-style: normal;
+    color: var(--ink-subtle);
+    font-size: 11.5px;
+    display: block;
+    margin-top: 1px;
+  }
+  .q-other {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(108,92,231,0.25);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .q-other input {
+    flex: 1;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    font-family: var(--sans);
+    color: var(--ink);
+  }
+  .q-other input:focus {
+    outline: 3px solid rgba(108,92,231,0.18);
+    border-color: var(--accent);
+  }
+
+  /* ── diff inline ── */
+  .diff {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    background: var(--sunken);
+    border-top: 1px solid var(--hairline);
+    padding: 8px 12px;
+  }
+  .diff .line { display: flex; gap: 8px; padding: 0 4px; }
+  .diff .line .ln {
+    color: var(--ink-subtle);
+    min-width: 22px;
+    text-align: right;
+    user-select: none;
+  }
+  .diff .line.add {
+    background: var(--diff-add-bg);
+    color: var(--diff-add-fg);
+  }
+  .diff .line.rm {
+    background: var(--diff-del-bg);
+    color: var(--diff-del-fg);
+    text-decoration: line-through;
+    text-decoration-color: rgba(185,28,28,0.4);
+  }
+  .diff .line .sign { width: 10px; color: var(--ink-subtle); }
+  .diff .line.add .sign { color: var(--diff-add-fg); }
+  .diff .line.rm .sign { color: var(--diff-del-fg); }
+
+  /* ── preview-reply card ── */
+  .reply-msg {
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--surface);
+    margin: 4px 0 10px;
+  }
+  .reply-msg .rh {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+    margin-bottom: 5px;
+  }
+  .reply-msg .rh .src {
+    background: var(--sunken);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 10.5px;
+    color: var(--ink-muted);
+    font-weight: 600;
+    font-family: var(--mono);
+    letter-spacing: 0.01em;
+  }
+  .reply-msg .rb {
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .reply-msg.simulated {
+    background: rgba(16,185,129,0.04);
+    border-color: rgba(16,185,129,0.3);
+  }
+  .reply-msg.simulated .rh .src {
+    background: rgba(16,185,129,0.08);
+    color: var(--diff-add-fg);
+    border-color: rgba(16,185,129,0.25);
+  }
+  .reply-msg.edit .rh .src {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    border-color: rgba(245,158,11,0.25);
+  }
+  .trace {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .tr {
+    background: var(--sunken);
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-size: 11px;
+    color: var(--ink-muted);
+    line-height: 1.3;
+  }
+  .tr strong {
+    display: block;
+    color: var(--ink);
+    font-size: 11.5px;
+    margin-bottom: 2px;
+    font-weight: 600;
+  }
+
+  /* ── progress checklist ── */
+  .progress {
+    padding: 12px 14px;
+  }
+  .progress .pg-h {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin-bottom: 8px;
+  }
+  .progress .pg-h strong {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .progress .bar {
+    height: 5px;
+    background: var(--hairline);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress .bar > div {
+    height: 100%;
+    width: 58%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-muted));
+    border-radius: 3px;
+  }
+  .progress .items {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px 14px;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+  .progress .items .it {
+    display: flex; align-items: center; gap: 7px;
+    padding: 3px 0;
+  }
+  .progress .items .it .cb {
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--hairline);
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: #fff;
+  }
+  .progress .items .it.done .cb {
+    background: var(--accent);
+    border-color: var(--accent);
+    position: relative;
+  }
+  .progress .items .it.done .cb::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 0px;
+    width: 4px; height: 8px;
+    border-right: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(45deg);
+  }
+  .progress .items .it.done {
+    color: var(--ink-subtle);
+    text-decoration: line-through;
+    text-decoration-color: var(--ink-subtle);
+  }
+
+  /* ── evidence row ── */
+  .evidence-list {
+    display: grid;
+    gap: 0;
+    margin-top: 6px;
+    font-size: 12px;
+    background: var(--sunken);
+    border-top: 1px solid var(--hairline);
+    padding: 4px 14px 8px;
+  }
+  .ev-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px dashed var(--hairline);
+  }
+  .ev-row:last-child { border-bottom: 0; }
+  .ev-row .k {
+    color: var(--ink-subtle);
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .ev-row .v { color: var(--ink); font-size: 12.5px; }
+  .ev-row .v code {
+    font-family: var(--mono);
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+  }
+  .ev-row .v.danger { color: var(--danger-fg); font-weight: 500; }
+
+  /* ── red team result ── */
+  .red-team {
+    display: flex; gap: 12px; align-items: center;
+    padding: 12px 14px;
+    background: linear-gradient(90deg, rgba(16,185,129,0.06), transparent);
+    border-top: 1px solid var(--hairline);
+  }
+  .red-team .rt-score {
+    display: flex; flex-direction: column;
+    font-family: var(--mono);
+    min-width: 80px;
+  }
+  .red-team .rt-score .big {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .red-team .rt-score .big .sl { color: var(--ink-subtle); font-weight: 400; }
+  .red-team .rt-score .lbl { font-size: 10.5px; color: var(--ink-subtle); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .red-team .rt-body { flex: 1; font-size: 12.5px; color: var(--ink-muted); line-height: 1.45; }
+  .red-team .rt-body strong { color: var(--ink); font-weight: 600; }
+
+  /* ─── input bar ─── */
+  .input-area {
+    padding: 14px 40px 18px;
+    background: var(--canvas);
+    border-top: 1px solid var(--hairline);
+    flex-shrink: 0;
+  }
+  .input-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 8px 10px 6px;
+    box-shadow: var(--shadow-sm);
+  }
+  .input-inner:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(108,92,231,0.1); }
+  .input-inner .ctx {
+    display: flex; gap: 4px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .ctx-tag {
+    font-size: 11.5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 11px;
+    padding: 2px 8px 2px 6px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono);
+    border: 1px solid rgba(108,92,231,0.15);
+  }
+  .ctx-tag.bundle {
+    background: var(--c-routing-bg);
+    color: var(--c-routing-fg);
+    border-color: rgba(234,88,12,0.2);
+  }
+  .ctx-tag .x { opacity: 0.55; cursor: pointer; }
+  .input-inner textarea {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    resize: none;
+    font-family: var(--sans);
+    font-size: 14px;
+    background: transparent;
+    padding: 6px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .input-inner textarea::placeholder { color: var(--ink-subtle); }
+  .input-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 4px 0;
+  }
+  .input-foot .hints {
+    display: flex; gap: 4px; align-items: center;
+    color: var(--ink-subtle);
+    font-size: 11px;
+  }
+  .input-foot .pill {
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-muted);
+  }
+  .input-foot .send {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .input-foot .send:hover { background: var(--accent-hover); }
+  .input-foot .send svg { width: 14px; height: 14px; }
+
+  /* ─── preview panel ─── */
+  .preview {
+    border-left: 1px solid var(--hairline);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .preview-head {
+    height: 52px;
+    border-bottom: 1px solid var(--hairline);
+    display: flex; align-items: center;
+    padding: 0 14px;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .preview-head .pcrumb {
+    font-size: 12px;
+    color: var(--ink-subtle);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .preview-head .pcrumb .sep { color: var(--ink-subtle); }
+  .preview-head .pcrumb strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .preview-head .ver {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--ink-subtle);
+    font-family: var(--mono);
+    background: var(--sunken);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .preview-head .close {
+    width: 26px; height: 26px;
+    border: 0; background: transparent;
+    border-radius: 6px;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .preview-head .close:hover { background: var(--sunken); color: var(--ink); }
+
+  .preview-tabs {
+    display: flex;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--hairline);
+    gap: 2px;
+    height: 36px;
+    align-items: stretch;
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  .ptab {
+    padding: 0 12px;
+    font-size: 12px;
+    color: var(--ink-subtle);
+    cursor: pointer;
+    display: flex; align-items: center;
+    border-bottom: 2px solid transparent;
+    font-weight: 500;
+    margin-bottom: -1px;
+  }
+  .ptab:hover { color: var(--ink); }
+  .ptab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .ptab .dot {
+    margin-left: 6px;
+    font-size: 10px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 8px;
+    padding: 1px 5px;
+    font-weight: 700;
+  }
+
+  .preview-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    background: var(--canvas);
+  }
+  .prompt-code {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+    padding: 14px 18px 18px;
+    color: var(--ink);
+    white-space: pre-wrap;
+  }
+  .prompt-code .tag { color: var(--accent); font-weight: 500; }
+  .prompt-code .cm { color: var(--ink-subtle); font-style: italic; }
+  .prompt-code .hl-add {
+    background: var(--diff-add-bg);
+    display: inline-block;
+    width: 100%;
+    box-shadow: -6px 0 0 var(--diff-add-bg);
+  }
+  .prompt-code .hl-rm {
+    background: var(--diff-del-bg);
+    display: inline-block;
+    width: 100%;
+    box-shadow: -6px 0 0 var(--diff-del-bg);
+    text-decoration: line-through;
+    text-decoration-color: rgba(185,28,28,0.4);
+  }
+  .prompt-code .default-marker {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    margin-left: 4px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+  }
+  .section-label {
+    color: var(--ink-subtle);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    background: var(--surface);
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    padding: 7px 18px;
+    display: block;
+    font-family: var(--sans);
+  }
+
+  .preview-foot {
+    border-top: 1px solid var(--hairline);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .preview-foot .meta {
+    flex: 1;
+    font-size: 11.5px;
+    color: var(--ink-subtle);
+  }
+
+  /* ─── artifact tree (scene 3) ─── */
+  .tree {
+    font-size: 12.5px;
+  }
+  .tree .tree-grp { margin-bottom: 10px; }
+  .tree .tree-h {
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 700;
+    padding: 4px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .tree .tree-h .ct {
+    color: var(--ink-muted);
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .tree .tree-i {
+    padding: 5px 10px 5px 22px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+    color: var(--ink-muted);
+    border-radius: var(--r);
+    position: relative;
+    margin: 0 4px;
+  }
+  .tree .tree-i:hover { background: var(--sunken); color: var(--ink); }
+  .tree .tree-i.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .tree .tree-i .ic {
+    color: var(--ink-subtle);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+  .tree .tree-i .tag {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--ink-subtle);
+    background: var(--sunken);
+    border-radius: 8px;
+    padding: 0 6px;
+    font-weight: 500;
+    font-family: var(--mono);
+  }
+  .tree .tree-i.active .tag { background: #fff; color: var(--accent); }
+
+  /* ─── footer ─── */
+  footer {
+    padding: 40px 24px 60px;
+    text-align: center;
+    color: var(--ink-subtle);
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+
+<section class="intro">
+  <div class="stamp">specs/045-build-mode/ui-mockup.html · concept · v2</div>
+  <h1>Agent Studio — <em>build</em> and <em>tune</em> in one surface.</h1>
+  <p>Three scenes stacked below: a fresh tenant mid-build with the agent running a scaffolded plan and interview, the empty state a new manager first sees after signup, and tune mode triggered by a manager edit in the inbox. Same chat, same agent, same persona — the work changes, the surface doesn't. Colors inherited from the existing tuning design tokens; typography uses Plus Jakarta Sans with Playfair Display for scene titles.</p>
+</section>
+
+<!-- ════════════════════════════════ SCENE 1 ════════════════════════════════ -->
+<div class="scene-label">
+  <span class="num">1</span>
+  <h2>Mid-<em>build</em> — agent scaffolded a plan, interview continues.</h2>
+  <span class="sub">mayfair-suites · 5 properties</span>
+</div>
+
+<section class="frame">
+  <nav class="activity">
+    <div class="logo">gp</div>
+    <div class="ab-icon active" title="Chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="ab-icon" title="Artifacts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h10"/></svg>
+      <span class="pill">14</span>
+    </div>
+    <div class="ab-icon" title="Inbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v12H4zM4 16l4 4h8l4-4"/></svg>
+      <span class="pill">3</span>
+    </div>
+    <div class="ab-icon" title="Analytics">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>
+    </div>
+    <div class="ab-icon" title="Properties">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg>
+    </div>
+    <div class="sp"></div>
+    <div class="ab-icon" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6m11-11h-6M7 12H1m17-5l-4 4M7 17l-4 4m0-18l4 4m10 10l4 4"/></svg>
+    </div>
+    <div class="avatar">AT</div>
+  </nav>
+
+  <aside class="left">
+    <div class="left-head">
+      <span class="title">Conversations</span>
+      <button class="new">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+        New
+      </button>
+    </div>
+    <div class="left-body">
+      <div class="left-section">
+        <div class="h">Recent <span class="count">3</span></div>
+        <div class="history-item active">
+          <span class="t">Build Mayfair Suites AI</span>
+          <span class="s">Active · 12 min ago</span>
+        </div>
+        <div class="history-item">
+          <span class="t">Refine screening for long-stays</span>
+          <span class="s">Yesterday · 4:12 pm</span>
+        </div>
+        <div class="history-item">
+          <span class="t">Check-out reminder tone fix</span>
+          <span class="s">2 days ago</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="h">Pending suggestions <span class="count">2</span></div>
+        <div class="pending-item">
+          <div class="cat-row"><span class="cat-pill sop-content">SOP content</span></div>
+          <span class="t">Late arrival policy conflicts with apply from Tuesday.</span>
+          <span class="s">Oscillation guard · 48h</span>
+        </div>
+        <div class="pending-item">
+          <div class="cat-row"><span class="cat-pill faq">FAQ</span></div>
+          <span class="t">"Is there a lift?" — auto-suggested from manager reply</span>
+          <span class="s">Confidence 0.82</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="h">What's next <span class="count">5</span></div>
+        <div class="next-item"><span class="dot"></span>Describe escalation triggers</div>
+        <div class="next-item"><span class="dot"></span>Set your cancellation policy</div>
+        <div class="next-item"><span class="dot"></span>Add pet rules (if different per property)</div>
+        <div class="next-item"><span class="dot"></span>Connect a cleaner-notify webhook</div>
+        <div class="next-item"><span class="dot"></span>Run 10 canonical tests</div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="chat">
+    <div class="chat-head">
+      <div class="agent">
+        <div class="mini">gp</div>
+        <div>
+          <div class="nm">Agent Studio <span class="mode-chip">Build</span></div>
+          <div class="st"><span class="pulse"></span>14 artifacts planned · 0 applied</div>
+        </div>
+      </div>
+      <div class="tools">
+        <button class="tool-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg>
+          Test a message
+        </button>
+        <button class="tool-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v16M4 12h16"/></svg>
+          Add artifact
+        </button>
+        <button class="tool-btn" title="More">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-body">
+      <div class="chat-inner">
+
+        <div class="msg user">
+          <div class="ava">AT</div>
+          <div class="body">
+            <div class="name">You</div>
+            <div class="text"><p>I run 5 short-let apartments in Mayfair. Mostly Airbnb, some Booking.com, and direct bookings through my own site. Self check-in via smart lock, no front desk. Help me build this.</p></div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="ava">gp</div>
+          <div class="body">
+            <div class="name">Agent</div>
+            <div class="text">
+              <p>Urban short-let, self-service, three channels. Matching the <strong>London short-let</strong> archetype — I've drafted a plan before writing anything. 14 artifacts, nothing applied yet. Three are filled with template defaults where I'm guessing — marked below, we'll tune those first.</p>
+            </div>
+
+            <!-- plan card -->
+            <div class="card">
+              <div class="card-head">
+                <div class="ic prompt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M3 11v8a2 2 0 0 0 2 2h14"/></svg>
+                </div>
+                <div class="t">Proposed build plan</div>
+                <span class="cat-pill prompt">14 items · 1 transaction</span>
+              </div>
+              <div class="plan">
+                <div class="plan-title">
+                  <span>Applied atomically — revert any one, revert all.</span>
+                  <span class="tx-id">tx_0h3kpk…m</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill prompt">System prompt</span>
+                  <div>
+                    <div class="nm">Coordinator prompt</div>
+                    <div class="rn">Seeded from archetype · 2,140 tokens · 4 slots to verify</div>
+                  </div>
+                  <span class="meta">v1</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill prompt">System prompt</span>
+                  <div>
+                    <div class="nm">Screening prompt</div>
+                    <div class="rn">Inquiry-stage classifier with confidence field</div>
+                  </div>
+                  <span class="meta">v1</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill sop-content">SOP</span>
+                  <div>
+                    <div class="nm">Check-in</div>
+                    <div class="rn">DEFAULT + INQUIRY + CONFIRMED variants</div>
+                  </div>
+                  <span class="meta">3 variants</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill sop-content">SOP</span>
+                  <div>
+                    <div class="nm">Check-out</div>
+                    <div class="rn">DEFAULT + CHECKED_IN</div>
+                  </div>
+                  <span class="meta">2 variants</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill sop-content">SOP</span>
+                  <div>
+                    <div class="nm">Cleaning &amp; turnover</div>
+                    <div class="rn">Standard mid-stay + exit cleaning</div>
+                  </div>
+                  <span class="meta def">DEFAULT</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill sop-content">SOP</span>
+                  <div>
+                    <div class="nm">Escalation</div>
+                    <div class="rn">Complaint / legal / payment / safety triggers</div>
+                  </div>
+                  <span class="meta def">DEFAULT</span>
+                </div>
+                <div class="plan-item">
+                  <div class="cb"></div>
+                  <span class="cat-pill faq">FAQ</span>
+                  <div>
+                    <div class="nm">7 FAQs · Wi-Fi, parking, smoking, pets, luggage, noise, lift</div>
+                    <div class="rn">Global scope · property overrides empty</div>
+                  </div>
+                  <span class="meta def">2 DEFAULT</span>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="btn primary">Apply plan (14)</button>
+                <button class="btn">Review one-by-one</button>
+                <button class="btn ghost">Discard plan</button>
+                <div style="flex:1"></div>
+                <span style="font-size:11px;color:var(--ink-subtle);font-family:var(--mono)">Sanction · 48h cooldown · atomic rollback</span>
+              </div>
+            </div>
+
+            <div class="text" style="margin-top:14px">
+              <p>Two things I guessed at <em>default</em> — I want to verify before you ship.</p>
+            </div>
+
+            <!-- interview question -->
+            <div class="q">
+              <div class="qt">How do guests check in?</div>
+              <div class="qs">This drives the check-in SOP, the access-code security rule, and whether screening can auto-send smart-lock codes at CONFIRMED status. Tell me about the last guest arrival that was unusual — I'll infer the rest.</div>
+              <div class="q-grid">
+                <button class="qbtn picked">
+                  <div class="qb-k">1</div>
+                  <div class="qb-t">
+                    <strong>Smart lock — self-service</strong>
+                    <em>Guest gets a code at check-in window</em>
+                  </div>
+                </button>
+                <button class="qbtn">
+                  <div class="qb-k">2</div>
+                  <div class="qb-t">
+                    <strong>Lockbox / key safe</strong>
+                    <em>Physical code on-site</em>
+                  </div>
+                </button>
+                <button class="qbtn">
+                  <div class="qb-k">3</div>
+                  <div class="qb-t">
+                    <strong>Meet &amp; greet</strong>
+                    <em>Host or agent on arrival</em>
+                  </div>
+                </button>
+                <button class="qbtn">
+                  <div class="qb-k">4</div>
+                  <div class="qb-t">
+                    <strong>Mixed — depends on property</strong>
+                    <em>Some self, some staffed</em>
+                  </div>
+                </button>
+              </div>
+              <div class="q-other">
+                <input placeholder="Or tell me about your setup in your own words…" />
+                <button class="btn">Use this</button>
+              </div>
+            </div>
+
+            <!-- progress widget -->
+            <div class="card" style="margin-top:14px">
+              <div class="progress">
+                <div class="pg-h">
+                  <strong>Setup progress</strong>
+                  <span>7 of 12 areas covered · graduation ready at 10</span>
+                </div>
+                <div class="bar"><div></div></div>
+                <div class="items">
+                  <div class="it done"><span class="cb"></span>Business basics</div>
+                  <div class="it done"><span class="cb"></span>Properties</div>
+                  <div class="it done"><span class="cb"></span>Channels</div>
+                  <div class="it done"><span class="cb"></span>Check-in</div>
+                  <div class="it done"><span class="cb"></span>Check-out</div>
+                  <div class="it done"><span class="cb"></span>Cleaning</div>
+                  <div class="it done"><span class="cb"></span>House rules</div>
+                  <div class="it"><span class="cb"></span>Escalation</div>
+                  <div class="it"><span class="cb"></span>Cancellation</div>
+                  <div class="it"><span class="cb"></span>Payments</div>
+                  <div class="it"><span class="cb"></span>Language coverage</div>
+                  <div class="it"><span class="cb"></span>Custom tools</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-inner">
+        <div class="ctx">
+          <span class="ctx-tag">@coordinator_prompt <span class="x">×</span></span>
+          <span class="ctx-tag">@sop:check-in <span class="x">×</span></span>
+        </div>
+        <textarea rows="2" placeholder="Reply, or tell me what to change — use @ to pull an artifact into context"></textarea>
+        <div class="input-foot">
+          <div class="hints">
+            <span class="pill">/</span> commands &nbsp; <span class="pill">@</span> context &nbsp; <span class="pill">⇧ ⏎</span> newline
+          </div>
+          <button class="send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="preview">
+    <div class="preview-head">
+      <div class="pcrumb">
+        System prompts <span class="sep">/</span> <strong>Coordinator</strong>
+      </div>
+      <span class="ver">v1 · draft</span>
+      <button class="close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="preview-tabs">
+      <div class="ptab active">Preview <span class="dot">draft</span></div>
+      <div class="ptab">Diff</div>
+      <div class="ptab">History</div>
+      <div class="ptab">Test run</div>
+    </div>
+    <div class="preview-body">
+      <span class="section-label">persona · principles</span>
+<div class="prompt-code"><span class="tag">&lt;persona&gt;</span>
+You are Mayfair Suites' front-of-house AI. You reply to guests across
+Airbnb, Booking.com, and direct-website messages. Your job is to
+answer clearly, keep bookings moving, and escalate anything you are
+not sure about. Helpful, concise, trustworthy — not chatty. <span class="cm">// seeded
+from "London short-let" archetype</span>
+<span class="tag">&lt;/persona&gt;</span>
+
+<span class="tag">&lt;principles&gt;</span>
+1. Evidence before promise. If a policy isn't in the SOPs or FAQs,
+   say so and escalate. Never invent an answer.
+<span class="hl-add">2. Access codes are never sent to INQUIRY-status guests — door codes,</span>
+<span class="hl-add">   lock PINs, Wi-Fi credentials, safe combinations. Wait for CONFIRMED.</span>
+3. Channel tone: Airbnb short and plain; Booking.com plaintext;
+   direct is unrestricted.
+4. Escalate on complaints, legal mentions, payment disputes, safety.
+<span class="tag">&lt;/principles&gt;</span>
+</div>
+      <span class="section-label">scheduled_time</span>
+<div class="prompt-code"><span class="tag">&lt;scheduled_time&gt;</span>
+<span class="cm">// policy threshold — fill with check-in/out policy from interview</span>
+Late check-in window:  <span class="default-marker">default</span> guest may self-enter any time after 3pm
+Early check-in:        <span class="default-marker">default</span> not available; offer luggage drop
+Late check-out:        <span class="default-marker">default</span> free up to 12pm, then £40 flat
+
+If a guest requests outside the window, open a time-request action
+card — do not promise anything you can't honor.
+<span class="tag">&lt;/scheduled_time&gt;</span>
+</div>
+      <span class="section-label">channel adaptation</span>
+<div class="prompt-code"><span class="tag">&lt;channel_rules&gt;</span>
+- Airbnb: max ~400 chars per reply. No formatting. No outbound links
+  where avoidable; use Airbnb's in-app tools instead.
+- Booking.com: plaintext only. The Booking Chat API strips markdown.
+<span class="hl-rm">- WhatsApp: supports media.</span>
+<span class="hl-add">- Direct: no platform constraints. You may link the guest portal.</span>
+<span class="tag">&lt;/channel_rules&gt;</span>
+
+<span class="cm">// 6 more sections below — escalation, tools doc, SOP routing,
+// screening handoff, compaction, output schema</span>
+</div>
+    </div>
+    <div class="preview-foot">
+      <div class="meta">3 slots flagged <span class="default-marker">default</span> — surface in tune on first correction</div>
+      <button class="btn">Edit in full editor</button>
+      <button class="btn primary">Apply v1</button>
+    </div>
+  </aside>
+</section>
+
+<!-- ════════════════════════════════ SCENE 2 ════════════════════════════════ -->
+<div class="scene-label">
+  <span class="num">2</span>
+  <h2>Empty state — <em>fresh signup</em>, no artifacts yet.</h2>
+  <span class="sub">first screen after account creation</span>
+</div>
+
+<section class="frame compact">
+  <nav class="activity">
+    <div class="logo">gp</div>
+    <div class="ab-icon active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h10"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v12H4zM4 16l4 4h8l4-4"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></div>
+    <div class="sp"></div>
+    <div class="avatar">AT</div>
+  </nav>
+
+  <aside class="left">
+    <div class="left-head">
+      <span class="title">Conversations</span>
+      <button class="new">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+        New
+      </button>
+    </div>
+    <div class="left-body">
+      <div class="left-section">
+        <div class="h">Get started</div>
+        <div class="next-item"><span class="dot"></span>Watch a 90-second intro</div>
+        <div class="next-item"><span class="dot"></span>Browse archetypes</div>
+        <div class="next-item"><span class="dot"></span>Import from a Google Doc</div>
+      </div>
+      <div class="left-section">
+        <div class="h">Recent</div>
+        <div style="padding:12px 10px;color:var(--ink-subtle);font-size:12px;line-height:1.5">No conversations yet — start one to the right.</div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="chat">
+    <div class="chat-head">
+      <div class="agent">
+        <div class="mini">gp</div>
+        <div>
+          <div class="nm">Agent Studio</div>
+          <div class="st">Ready when you are</div>
+        </div>
+      </div>
+      <div class="tools">
+        <button class="tool-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+          Connect Hostaway
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-body">
+      <div class="hero">
+        <div class="mark">gp</div>
+        <h1>What do you want to <em>build</em>?</h1>
+        <p>I can scaffold a full guest-messaging AI from a few sentences, or jump straight to editing one piece. No forms, no wizards — just tell me what you need.</p>
+
+        <div class="chip-grid">
+          <div class="chip">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></div>
+            <div>
+              <div class="ct">Build my AI from scratch</div>
+              <div class="cs">Describe your business in 2–3 lines. I'll draft the system prompt, SOPs, and FAQs ready to test.</div>
+            </div>
+          </div>
+          <div class="chip warm">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4zM4 9h16M9 4v16"/></svg></div>
+            <div>
+              <div class="ct">Start from an archetype</div>
+              <div class="cs">Short-let urban · holiday villa · serviced aparthotel · student residence.</div>
+            </div>
+          </div>
+          <div class="chip">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+            <div>
+              <div class="ct">I already have rules written somewhere</div>
+              <div class="cs">Paste a guest-handbook or FAQ doc. I'll turn it into SOPs and FAQs.</div>
+            </div>
+          </div>
+          <div class="chip">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H4zM4 16l4 4h8l4-4"/></svg></div>
+            <div>
+              <div class="ct">Connect Hostaway first</div>
+              <div class="cs">Pull your properties, listings, and recent messages. I can infer a lot from what you already say.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider">Or start with something specific</div>
+        <div class="small-chips">
+          <button class="small-chip">Write a check-in SOP</button>
+          <button class="small-chip">Add a Wi-Fi FAQ</button>
+          <button class="small-chip">Create a custom tool</button>
+          <button class="small-chip">Describe my tone rules</button>
+          <button class="small-chip">Set escalation keywords</button>
+          <button class="small-chip">Test a message first</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-inner">
+        <textarea rows="2" placeholder="Tell me about your business, or ask me anything…"></textarea>
+        <div class="input-foot">
+          <div class="hints">
+            <span class="pill">/</span> commands &nbsp; <span class="pill">@</span> context &nbsp; <span class="pill">⌘K</span> actions
+          </div>
+          <button class="send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+
+<!-- ════════════════════════════════ SCENE 3 ════════════════════════════════ -->
+<div class="scene-label">
+  <span class="num">3</span>
+  <h2><em>Tune</em> — AI replied wrong, manager opens conversation from inbox.</h2>
+  <span class="sub">same agent · evidence bundle in scope</span>
+</div>
+
+<section class="frame">
+  <nav class="activity">
+    <div class="logo">gp</div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+    <div class="ab-icon active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h18M3 12h18M3 17h10"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v12H4zM4 16l4 4h8l4-4"/></svg><span class="pill">1</span></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></div>
+    <div class="ab-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></div>
+    <div class="sp"></div>
+    <div class="avatar">AT</div>
+  </nav>
+
+  <aside class="left">
+    <div class="left-head">
+      <span class="title">Artifact tree</span>
+      <button class="new" style="background:transparent;color:var(--ink-muted);border:1px solid var(--hairline)">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 21l-6-6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"/></svg>
+        Search
+      </button>
+    </div>
+    <div class="left-body tree">
+      <div class="tree-grp">
+        <div class="tree-h">System <span class="ct">2</span></div>
+        <div class="tree-i"><span class="ic">&lt;/&gt;</span>Coordinator <span class="tag">v28</span></div>
+        <div class="tree-i"><span class="ic">&lt;/&gt;</span>Screening <span class="tag">v28</span></div>
+      </div>
+      <div class="tree-grp">
+        <div class="tree-h">SOPs <span class="ct">8</span></div>
+        <div class="tree-i active"><span class="ic">≡</span>Check-in <span class="tag">edit</span></div>
+        <div class="tree-i"><span class="ic">≡</span>Check-out</div>
+        <div class="tree-i"><span class="ic">≡</span>Cleaning</div>
+        <div class="tree-i"><span class="ic">≡</span>Escalation</div>
+        <div class="tree-i"><span class="ic">≡</span>Cancellation</div>
+        <div class="tree-i"><span class="ic">≡</span>Pets</div>
+        <div class="tree-i"><span class="ic">≡</span>House rules</div>
+        <div class="tree-i"><span class="ic">≡</span>Payment</div>
+      </div>
+      <div class="tree-grp">
+        <div class="tree-h">FAQs <span class="ct">31</span></div>
+        <div class="tree-i"><span class="ic">·</span>Wi-Fi</div>
+        <div class="tree-i"><span class="ic">·</span>Parking</div>
+        <div class="tree-i"><span class="ic">·</span>Pets <span class="tag">override</span></div>
+        <div class="tree-i"><span class="ic">·</span>Noise / quiet hours</div>
+        <div class="tree-i"><span class="ic">·</span>… 27 more</div>
+      </div>
+      <div class="tree-grp">
+        <div class="tree-h">Tools <span class="ct">9</span></div>
+        <div class="tree-i"><span class="ic">◇</span>get_sop</div>
+        <div class="tree-i"><span class="ic">◇</span>get_faq</div>
+        <div class="tree-i"><span class="ic">◇</span>notify_cleaner <span class="tag">custom</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="chat">
+    <div class="chat-head">
+      <div class="agent">
+        <div class="mini">gp</div>
+        <div>
+          <div class="nm">Agent Studio <span class="mode-chip tune">Tune</span></div>
+          <div class="st"><span class="pulse" style="background:var(--c-routing-accent)"></span>Evidence loaded · #A4F · Airbnb · INQUIRY</div>
+        </div>
+      </div>
+      <div class="tools">
+        <button class="tool-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          Evidence
+        </button>
+        <button class="tool-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg>
+          Re-run
+        </button>
+      </div>
+    </div>
+
+    <div class="chat-body">
+      <div class="chat-inner">
+
+        <div class="msg">
+          <div class="ava">gp</div>
+          <div class="body">
+            <div class="name">Agent</div>
+            <div class="text">
+              <p>You edited the AI's reply on Airbnb conversation <strong>#A4F</strong> about two minutes ago. Before I propose anything, here's what the main AI actually saw.</p>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                <div class="t">Guest message → AI reply → your edit</div>
+                <span class="cat-pill prop">INQUIRY</span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <div class="reply-msg" style="margin:10px 14px 0">
+                  <div class="rh"><span class="src">Guest · Airbnb</span> 10:14 am</div>
+                  <div class="rb">hey! booked for next friday. what's the wifi password so i can set up my laptop on arrival?</div>
+                </div>
+                <div class="reply-msg" style="margin:10px 14px 0;background:var(--sunken)">
+                  <div class="rh"><span class="src">AI reply (sent)</span> 10:14 am</div>
+                  <div class="rb">Hi! The Wi-Fi is <strong>MayfairGuest</strong> and the password is <strong>suites2024!</strong> — you can connect as soon as you walk in. See you Friday!</div>
+                </div>
+                <div class="reply-msg edit" style="margin:10px 14px 14px">
+                  <div class="rh"><span class="src">Your edit</span> 10:16 am</div>
+                  <div class="rb">Hi! I'll share Wi-Fi details a couple of days before your arrival — once your booking is confirmed. Anything else I can help with?</div>
+                </div>
+                <div class="evidence-list">
+                  <div class="ev-row"><div class="k">Status</div><div class="v"><code>INQUIRY</code> · guest has not booked yet</div></div>
+                  <div class="ev-row"><div class="k">SOP retrieved</div><div class="v"><code>check-in (DEFAULT)</code> · conf 0.71</div></div>
+                  <div class="ev-row"><div class="k">FAQ hits</div><div class="v"><code>wifi.network</code>, <code>wifi.password</code></div></div>
+                  <div class="ev-row"><div class="k">Security rule</div><div class="v danger">Never expose access codes at INQUIRY — rule was NOT applied</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="text" style="margin-top:14px">
+              <p>The AI handed out Wi-Fi credentials to an unconfirmed guest. Not a tone problem, not a missing FAQ — the security rule in the system prompt exists but the coordinator didn't treat Wi-Fi as an "access code." It classified this as a generic information request.</p>
+              <p>One narrow SOP edit solves this and the same failure class for door codes and safe combinations.</p>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="ic sop">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.2 16.2l2.9 2.9M2 12h4M18 12h4M4.9 19.1l2.8-2.9M16.2 7.8l2.9-2.9"/></svg>
+                </div>
+                <div class="t">Proposed fix — SOP: Check-in (INQUIRY)</div>
+                <span class="cat-pill sop-content">SOP content</span>
+              </div>
+              <div class="card-body">
+                <div style="font-size:11.5px;color:var(--ink-subtle);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Why this fix</div>
+                <div style="font-size:13px;color:var(--ink);line-height:1.5">Extend the access-code rule to include Wi-Fi credentials. Airbnb, Booking, and direct channels all surface Wi-Fi questions at INQUIRY — the current rule only mentions door codes. Confidence 0.88.</div>
+              </div>
+              <div class="diff">
+                <div class="line"><span class="ln">14</span><span class="sign">·</span><span>When a guest asks about arrival logistics at INQUIRY status:</span></div>
+                <div class="line rm"><span class="ln">15</span><span class="sign">–</span><span>- Do not share door codes or lock PINs. Confirm booking first.</span></div>
+                <div class="line add"><span class="ln">15</span><span class="sign">+</span><span>- Do not share access information — door codes, lock PINs,</span></div>
+                <div class="line add"><span class="ln">16</span><span class="sign">+</span><span>&nbsp;&nbsp;Wi-Fi credentials, or safe combinations — until the booking</span></div>
+                <div class="line add"><span class="ln">17</span><span class="sign">+</span><span>&nbsp;&nbsp;is CONFIRMED. Offer to share them closer to arrival instead.</span></div>
+                <div class="line"><span class="ln">18</span><span class="sign">·</span><span>- You may share general arrival info: address, nearest station,</span></div>
+                <div class="line"><span class="ln">19</span><span class="sign">·</span><span>&nbsp;&nbsp;check-in time window, and what to do on arrival.</span></div>
+              </div>
+              <div class="card-actions">
+                <button class="btn primary">Apply — security fix</button>
+                <button class="btn">Queue for review</button>
+                <button class="btn">Edit before applying</button>
+                <button class="btn ghost">Reject · NO_FIX</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="ic faq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4V8z" fill="currentColor"/></svg></div>
+                <div class="t">What the AI would say now — same message, post-fix</div>
+                <span class="cat-pill faq">preview</span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <div class="reply-msg" style="margin:10px 14px 0">
+                  <div class="rh"><span class="src">Test · Airbnb · INQUIRY</span></div>
+                  <div class="rb">hey! booked for next friday. what's the wifi password so i can set up my laptop on arrival?</div>
+                </div>
+                <div class="reply-msg simulated" style="margin:10px 14px 12px">
+                  <div class="rh"><span class="src">AI reply · simulated</span></div>
+                  <div class="rb">Hi! Just to flag — your booking isn't confirmed yet, so I'll share Wi-Fi details a couple of days before arrival once everything's locked in. Anything else I can help with in the meantime?</div>
+                </div>
+                <div class="trace" style="margin:0 14px 12px">
+                  <div class="tr"><strong>SOP</strong>check-in INQUIRY v5</div>
+                  <div class="tr"><strong>FAQ hits</strong>0 · suppressed</div>
+                  <div class="tr"><strong>Escalation</strong>none</div>
+                  <div class="tr"><strong>Confidence</strong>0.92</div>
+                </div>
+                <div class="red-team">
+                  <div class="rt-score">
+                    <div class="big">48<span class="sl">/50</span></div>
+                    <div class="lbl">red team</div>
+                  </div>
+                  <div class="rt-body">
+                    Ran <strong>50 adversarial messages</strong> against the proposed SOP — payment disputes, escalation bait, PII solicitation, prompt-injection probes. 2 failures, both non-security (verbose replies on "what's breakfast like"). <strong>No regressions</strong> on the 12 access-code edge cases.
+                    <a style="color:var(--accent);text-decoration:none">View the 2 failures →</a>
+                  </div>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="btn">Try another message</button>
+                <button class="btn">Open full test run</button>
+                <div style="flex:1"></div>
+                <span style="font-size:11px;color:var(--ink-subtle);font-family:var(--mono)">Judged by a different model · simulated, no write</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-inner">
+        <div class="ctx">
+          <span class="ctx-tag">@sop:check-in <span class="x">×</span></span>
+          <span class="ctx-tag bundle">#bundle:A4F <span class="x">×</span></span>
+        </div>
+        <textarea rows="2" placeholder="Apply the fix, or ask me to broaden it to other properties…"></textarea>
+        <div class="input-foot">
+          <div class="hints">
+            Sanction: type <span class="pill">apply</span>, <span class="pill">queue</span>, or <span class="pill">reject</span>
+          </div>
+          <button class="send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="preview">
+    <div class="preview-head">
+      <div class="pcrumb">
+        SOPs <span class="sep">/</span> Check-in <span class="sep">/</span> <strong>INQUIRY</strong>
+      </div>
+      <span class="ver">v4 → v5</span>
+      <button class="close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="preview-tabs">
+      <div class="ptab">Current (v4)</div>
+      <div class="ptab active">Diff <span class="dot">1</span></div>
+      <div class="ptab">History</div>
+      <div class="ptab">Test run</div>
+    </div>
+    <div class="preview-body">
+      <span class="section-label">Variant · INQUIRY</span>
+<div class="prompt-code"><span class="cm">// Fires when the guest has no confirmed booking yet.
+// Tool access at this status: get_sop, get_faq,
+// search_available_properties, create_document_checklist.</span>
+
+When a guest asks about arrival logistics at INQUIRY status:
+
+<span class="hl-rm">- Do not share door codes or lock PINs. Confirm booking first.</span>
+<span class="hl-add">- Do not share access information — door codes, lock PINs,</span>
+<span class="hl-add">  Wi-Fi credentials, or safe combinations — until the booking</span>
+<span class="hl-add">  is CONFIRMED. Offer to share them closer to arrival instead.</span>
+
+- You may share general arrival info: address, nearest station,
+  check-in time window, and what to do on arrival.
+
+- If the guest presses on timing ("I'm arriving very late"), offer
+  the late-arrival policy and open an extend_check_in action card.
+
+- Never fabricate an access detail. If the FAQ doesn't have it and
+  the property has no override, say "I'll confirm and come back to
+  you" and escalate.
+</div>
+      <span class="section-label">Impact analysis</span>
+<div class="prompt-code"><span class="cm">// Run against the last 30 days of conversations</span>
+
+- <span style="color:var(--ink)">14 conversations</span> matched the pre-fix pattern (Wi-Fi share at INQUIRY)
+- Estimated policy violations prevented going forward: ~6 per week
+- No existing FAQ conflicts
+- Two property overrides exist · neither touches access rules
+
+<span class="cm">// Red-team ran 50 adversarial messages — 48 pass, 2 unrelated misses.
+// Click "Open full test run" in chat to browse each case.</span>
+</div>
+    </div>
+    <div class="preview-foot">
+      <div class="meta">Authored by Agent Studio · requires explicit sanction</div>
+      <button class="btn">Reject</button>
+      <button class="btn primary">Apply v5</button>
+    </div>
+  </aside>
+</section>
+
+<footer>
+  mockup · no functionality · sample data · built from specs/045-build-mode/
+</footer>
+
+</body>
+</html>

@@ -13,8 +13,8 @@ import './_env-bootstrap';
 import { test, after, before } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { PrismaClient, TuningActionType } from '@prisma/client';
-import { buildSuggestionActionTool } from '../../tuning-agent/tools/suggestion-action';
-import type { ToolContext } from '../../tuning-agent/tools/types';
+import { buildSuggestionActionTool } from '../../build-tune-agent/tools/suggestion-action';
+import type { ToolContext } from '../../build-tune-agent/tools/types';
 import { buildFixture, type IntegrationFixture } from './_fixture';
 
 const prisma = new PrismaClient();
