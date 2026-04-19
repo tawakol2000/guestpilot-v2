@@ -26,6 +26,7 @@ import { shadowPreviewRouter } from './routes/shadow-preview';
 import { tuningSuggestionRouter } from './routes/tuning-suggestion';
 import { tuningComplaintRouter } from './routes/tuning-complaint';
 import { tuningChatRouter } from './routes/tuning-chat';
+import { buildRouter } from './routes/build';
 import {
   tuningDashboardsRouter,
   tuningHistoryRouter,
@@ -104,6 +105,10 @@ export function createApp(prisma: PrismaClient) {
   app.use('/api/tuning', tuningHistoryRouter(prisma));
   // Feature 041 sprint 04: conversational agent (SSE chat + conversation CRUD)
   app.use('/api/tuning', tuningChatRouter(prisma));
+  // Feature 045 sprint Gate 5: BUILD-mode controller. The router itself
+  // 404s every path when ENABLE_BUILD_MODE is unset, so it stays
+  // unreachable in production until the flag is flipped on.
+  app.use('/api/build', buildRouter(prisma));
   // Sprint 08 §3 — preference pair viewer.
   app.use('/api/tuning', preferencePairsRouter(prisma));
   app.use('/api/evidence-bundles', evidenceBundleRouter(prisma));

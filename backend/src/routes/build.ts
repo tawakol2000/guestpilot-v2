@@ -1,0 +1,47 @@
+/**
+ * /api/build/* routes (sprint 045, Gate 5).
+ *
+ * Hard switch: the entire router is gated behind `ENABLE_BUILD_MODE`. If
+ * the env var is unset / falsy, every path under `/api/build/*` returns
+ * 404 — the BUILD surface is unreachable in production until the flag
+ * is flipped on (after Gate 7 passes per spec §"Out of scope").
+ *
+ * The 404 (rather than 403/501) is deliberate: production crawlers and
+ * security scans should see no evidence the route family exists. This
+ * matches the spec's "feature flag default off in all environments"
+ * constraint.
+ *
+ * All routes are JWT-gated (reuse existing `authMiddleware`) and tenant-
+ * scoped via `req.tenantId` populated by that middleware.
+ */
+import { Router, RequestHandler } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { authMiddleware } from '../middleware/auth';
+import { makeBuildController } from '../controllers/build-controller';
+import { isBuildModeEnabled } from '../build-tune-agent/config';
+
+export function buildRouter(prisma: PrismaClient): Router {
+  const router = Router();
+
+  // Hard 404 gate — must run BEFORE auth, so an unauthenticated probe
+  // still gets a generic 404 and can't infer the route exists from the
+  // 401 it would otherwise see.
+  router.use((_req, res, next) => {
+    if (!isBuildModeEnabled()) {
+      res.status(404).json({ error: `No route: ${_req.method} ${_req.path}` });
+      return;
+    }
+    next();
+  });
+
+  router.use(authMiddleware as unknown as RequestHandler);
+
+  const ctl = makeBuildController(prisma);
+
+  router.get('/tenant-state', (req: any, res) => ctl.tenantState(req, res));
+  router.post('/turn', (req: any, res) => ctl.turn(req, res));
+  router.post('/plan/:id/approve', (req: any, res) => ctl.approvePlan(req, res));
+  router.post('/plan/:id/rollback', (req: any, res) => ctl.rollbackPlan(req, res));
+
+  return router;
+}

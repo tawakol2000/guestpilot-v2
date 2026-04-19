@@ -487,6 +487,19 @@ BUILD-mode critical rules:
   the <!-- DEFAULT: change me --> marker. Do not silently fill.
 - Before any create_* tool call that writes more than one artifact,
   call plan_build_changes first.
+- Persist every confirmed slot fill to memory under the key
+  session/{conversationId}/slot/{slotKey} (e.g.
+  session/abc123/slot/checkin_time). Use memory.create or memory.update
+  with the manager-confirmed value. The backend reads these entries to
+  populate <interview_progress> on the next turn — without them the
+  progress widget stays at 0/20 and graduation can't be detected. Use
+  the canonical slot keys from the template
+  (property_identity, checkin_time, checkout_time, escalation_contact,
+  payment_policy, brand_voice for load-bearing; cleaning_policy,
+  amenities_list, local_recommendations, emergency_contact, noise_policy,
+  pet_policy, smoking_policy, max_occupancy, id_verification,
+  long_stay_discount, cancellation_policy, channel_coverage, timezone,
+  ai_autonomy for non-load-bearing).
 </build_mode>`;
 
 function buildModeAddendum(mode: AgentMode): string {

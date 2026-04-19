@@ -675,14 +675,16 @@ model SopPropertyOverride {
 // PARTIAL = some items succeeded, some failed; rollback reverts what did
 // land.
 model BuildTransaction {
-  id             String    @id @default(cuid())
-  tenantId       String
-  conversationId String?
-  plannedItems   Json // Array<{ type: 'sop'|'faq'|'system_prompt'|'tool_definition', name, rationale }>
-  status         String // PLANNED | EXECUTING | COMPLETED | PARTIAL | ROLLED_BACK
-  rationale      String?
-  createdAt      DateTime  @default(now())
-  completedAt    DateTime?
+  id               String    @id @default(cuid())
+  tenantId         String
+  conversationId   String?
+  plannedItems     Json // Array<{ type: 'sop'|'faq'|'system_prompt'|'tool_definition', name, rationale }>
+  status           String // PLANNED | EXECUTING | COMPLETED | PARTIAL | ROLLED_BACK
+  rationale        String?
+  approvedByUserId String? // sprint 045 Gate 5 — set by POST /api/build/plan/:id/approve
+  approvedAt       DateTime? // ditto — null until the manager confirms in the UI
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sopVariants          SopVariant[]

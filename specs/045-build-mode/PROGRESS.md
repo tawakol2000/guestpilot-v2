@@ -31,12 +31,33 @@ through as many gates as it can, updates this doc, and hands off via
 | 2    | `plan_build_changes`                   | ✅ | PLANNED BuildTransaction + data-build-plan SSE part. 4 unit tests. |
 | 2    | `preview_ai_response`                  | ⏭️ → Gate 3 | Re-scoped per NEXT.md session 1 — depends on preview subsystem. |
 | 3    | `test_pipeline` tool (re-scoped from preview subsystem) | ✅ | Sonnet-4.6 judge + dry pipeline runner + bypassCache flag. Batch subsystem deferred to sprint 047+ (see MASTER_PLAN.md). |
-| 4    | `GENERIC_HOSPITALITY_SEED.md`          | ⏳ session 3 | 20 slots, 1,500–2,500 tokens fully filled. |
-| 5    | Backend `/api/build/*`                 | ⏳ session 3 | Controller, routes, `ENABLE_BUILD_MODE` gate. |
-| 6    | Frontend `/build` page                 | ⏳ session 3 | 3-pane layout, tuning tokens palette. |
-| 7    | End-to-end test + final handoff        | ⏳ session 3 | |
+| 4    | `generic-hospitality-seed.md`          | ✅ | 20 slots, fully-filled render = 2,494 tokens (within 1,500–2,500). `templates/index.ts` exports `GENERIC_HOSPITALITY_SEED`, `GENERIC_HOSPITALITY_SEED_VERSION`, `loadSeed()`, `renderSeed()`. `template.test.ts` (9 tests) locks slot-key alignment with write_system_prompt's constants, default-marker presence, and the token-range guard. |
+| 5    | Backend `/api/build/*`                 | ✅ | `services/tenant-state.service.ts` (getTenantStateSummary + getInterviewProgressSummary), `controllers/build-controller.ts` (4 handlers), `routes/build.ts` (router with ENABLE_BUILD_MODE hard 404 gate before auth), mounted in `app.ts`. `build-controller.integration.test.ts` (5 cases) green. Schema: `BuildTransaction` gained `approvedByUserId String?` + `approvedAt DateTime?` columns; pushed via `prisma db push`. |
+| 6    | Frontend `/build` page                 | ⏳ session 5 | 3-pane layout, tuning tokens palette. |
+| 7    | End-to-end test + final handoff        | ⏳ session 5 | |
 
 ## Decisions made this sprint (explicitly out of spec scope)
+
+- **Cache architecture validated (Gate 5 prep, session 4, 2026-04-20).**
+  tools_only=2,399, shared=2,856, BUILD/TUNE addenda 892/619 all above
+  Sonnet 4.6's 2048 minimum. All three layers cache independently under
+  automatic prefix caching. SDK `cache_control` divergence flagged in
+  session 1 is functionally closed — the Region-A + mode-addendum +
+  tools-array layout reaches the per-layer floor without explicit
+  breakpoints. Future revisits only needed if Langfuse shows
+  sub-0.995 hit on mixed sessions.
+
+- **Interview-progress slot persistence (Gate 4 + Gate 5 prep, session
+  4, 2026-04-20).** The BUILD addendum now instructs the agent to
+  persist extracted slot values to `memory` under
+  `session/{conversationId}/slot/{slotKey}` after every confirmed slot
+  fill. `tenant-state.service.ts#getInterviewProgressSummary` reads
+  those entries with `listMemoryByPrefix(..., "session/{conv}/slot/")`
+  and derives `loadBearingFilled / coveragePercent` server-side at
+  turn-build time. This is the simpler of the two options floated in
+  session-3 NEXT.md: no separate `data-slot-filled` SSE part, no
+  parsing of `plan_build_changes` rationales — single source of truth
+  in `AgentMemory`.
 
 - **Prefix-stability baseline + threshold bump (Gate 2 → Gate 3, session
   3, 2026-04-19).** `backend/src/build-tune-agent/__tests__/prompt-cache-stability.test.ts`
@@ -129,6 +150,26 @@ through as many gates as it can, updates this doc, and hands off via
   as validated via production Langfuse traces once BUILD is enabled in
   staging, with `validation/V1-live.ts` retained as the deterministic
   fallback check.
+- 2026-04-20 — **Session 4 close.** Gates 4 + 5 complete.
+  - Gate 4: `templates/generic-hospitality-seed.md` (20 slots, slot keys
+    aligned with write_system_prompt's LOAD_BEARING + NON_LOAD_BEARING
+    constants), `templates/index.ts` (loader + renderer + version stamp),
+    `__tests__/template.test.ts` (9 tests). Fully-filled render baseline
+    = 2,494 tokens / 9,976 chars / version `seed-v1-ba207591dda8c8bc`.
+  - Gate 5: `services/tenant-state.service.ts`,
+    `controllers/build-controller.ts`, `routes/build.ts` mounted in
+    `app.ts` under `/api/build/*` with hard 404 gate when
+    ENABLE_BUILD_MODE is unset. Schema: 2 nullable cols added to
+    `BuildTransaction` (`approvedByUserId`, `approvedAt`), pushed to
+    Railway DB. `build-controller.integration.test.ts` 5/5 green.
+    Full build-tune-agent suite 125/125 green (was 116, +9 from
+    template.test.ts). TUNE behaviour intact at every commit.
+  - BUILD addendum: added explicit instruction for the agent to persist
+    confirmed slot fills under `session/{conversationId}/slot/{slotKey}`
+    so `getInterviewProgressSummary` can derive the widget server-side.
+  - ENABLE_BUILD_MODE remains off in `.env.example` and any config
+    defaults; only flipped on locally for the integration-test run.
+    NEXT.md rewritten for session 5 (Gate 6 frontend + Gate 7 E2E).
 - 2026-04-19 — **Session 3 close.** Gate 3 complete. `test_pipeline`
   tool shipped with Sonnet-4.6 grader, dry pipeline runner, per-turn
   hasRunThisTurn guard, and a BUILD-only `bypassCache` flag on
