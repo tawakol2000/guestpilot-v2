@@ -166,17 +166,160 @@ export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => 
 export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'rollback',
-    "Revert an artifact to a previous version. Supported: SYSTEM_PROMPT (creates a new history entry pointing at the prior content), TOOL_DEFINITION (resets to defaultDescription), SOP_VARIANT (restores from SopVariantHistory snapshot — sprint 05 §2), FAQ_ENTRY (restores from FaqEntryHistory snapshot — sprint 05 §2). Always explain what you're rolling back and why before calling.",
+    "Revert artifact state. Two modes: (1) PER-ARTIFACT — pass artifactType + versionId to roll a single artifact back to a prior version. Supported types: SYSTEM_PROMPT, TOOL_DEFINITION, SOP_VARIANT, FAQ_ENTRY. (2) TRANSACTION — pass transactionId to revert ALL artifacts written under a BUILD-mode plan, in reverse dependency order (tool_definitions → system_prompt → faq → sop). Exactly one mode per call — passing both is an error. Always explain what you're rolling back and why before calling.",
     {
-      artifactType: z.enum(['SYSTEM_PROMPT', 'SOP_VARIANT', 'FAQ_ENTRY', 'TOOL_DEFINITION']),
-      versionId: z.string().min(1),
+      artifactType: z.enum(['SYSTEM_PROMPT', 'SOP_VARIANT', 'FAQ_ENTRY', 'TOOL_DEFINITION']).optional(),
+      versionId: z.string().min(1).optional(),
+      transactionId: z.string().min(1).optional(),
     },
     async (args) => {
       const c = ctx();
       const span = startAiSpan('tuning-agent.rollback', args);
       try {
-        if (args.artifactType === 'SOP_VARIANT') {
-          const historyId = args.versionId.startsWith('svh:') ? args.versionId.slice(4) : args.versionId;
+        // Mode validation — exactly one of the two rollback modes.
+        const hasArtifactMode = Boolean(args.artifactType && args.versionId);
+        const hasPartialArtifact = Boolean(args.artifactType) !== Boolean(args.versionId);
+        const hasTxMode = Boolean(args.transactionId);
+        if (hasPartialArtifact) {
+          span.end({ error: 'INVALID_ARGS' });
+          return asError(
+            'rollback: artifactType and versionId must be passed together. Pass both for per-artifact rollback, or pass transactionId alone for transaction rollback.'
+          );
+        }
+        if (hasArtifactMode && hasTxMode) {
+          span.end({ error: 'INVALID_ARGS' });
+          return asError(
+            'rollback: cannot combine per-artifact and transaction modes in one call. Pick one — either (artifactType + versionId) OR transactionId.'
+          );
+        }
+        if (!hasArtifactMode && !hasTxMode) {
+          span.end({ error: 'INVALID_ARGS' });
+          return asError(
+            'rollback: nothing to roll back. Pass either (artifactType + versionId) for a single artifact or transactionId for a whole BUILD plan.'
+          );
+        }
+
+        // ─── Transaction mode (sprint 045) ─────────────────────────────
+        if (hasTxMode) {
+          const txId = args.transactionId!;
+          const tx = await c.prisma.buildTransaction.findFirst({
+            where: { id: txId, tenantId: c.tenantId },
+          });
+          if (!tx) {
+            span.end({ error: 'TX_NOT_FOUND' });
+            return asError(`rollback: BuildTransaction ${txId} not found for this tenant.`);
+          }
+          if (tx.status === 'ROLLED_BACK') {
+            span.end({ error: 'ALREADY_ROLLED_BACK' });
+            return asError(`rollback: BuildTransaction ${txId} is already rolled back.`);
+          }
+          const reverted = {
+            toolDefinitions: 0,
+            systemPromptVersions: 0,
+            faqEntries: 0,
+            sopVariants: 0,
+            sopPropertyOverrides: 0,
+          };
+          // Reverse dependency order: tools → system_prompt → faq → sop.
+          // Each branch is a soft delete: BUILD-created artifacts didn't
+          // exist before the transaction, so the revert is a DELETE (or
+          // for AiConfigVersion, a restore of TenantAiConfig to the
+          // previous version's content).
+          await c.prisma.$transaction(async (db) => {
+            // 1. Tool definitions
+            const toolDels = await db.toolDefinition.deleteMany({
+              where: { buildTransactionId: txId, tenantId: c.tenantId },
+            });
+            reverted.toolDefinitions = toolDels.count;
+            if (toolDels.count > 0) {
+              invalidateToolCache(c.tenantId);
+              invalidateTenantConfigCache(c.tenantId);
+            }
+
+            // 2. System prompt (AiConfigVersion) — restore TenantAiConfig
+            //    to the prior version's config values.
+            const txVersions = await db.aiConfigVersion.findMany({
+              where: { buildTransactionId: txId, tenantId: c.tenantId },
+              orderBy: { version: 'asc' },
+            });
+            if (txVersions.length > 0) {
+              const firstTxVersion = txVersions[0].version;
+              const prior = await db.aiConfigVersion.findFirst({
+                where: {
+                  tenantId: c.tenantId,
+                  version: { lt: firstTxVersion },
+                },
+                orderBy: { version: 'desc' },
+              });
+              if (prior) {
+                const priorCfg = (prior.config ?? {}) as {
+                  systemPromptCoordinator?: string;
+                  systemPromptScreening?: string;
+                };
+                const updateData: Record<string, string> = {};
+                if (typeof priorCfg.systemPromptCoordinator === 'string') {
+                  updateData.systemPromptCoordinator = priorCfg.systemPromptCoordinator;
+                }
+                if (typeof priorCfg.systemPromptScreening === 'string') {
+                  updateData.systemPromptScreening = priorCfg.systemPromptScreening;
+                }
+                if (Object.keys(updateData).length > 0) {
+                  await db.tenantAiConfig.update({
+                    where: { tenantId: c.tenantId },
+                    data: updateData,
+                  });
+                }
+              }
+              // Keep AiConfigVersion rows for audit — don't delete them.
+              // Future inspection of "what did this transaction do" depends
+              // on the history trail. The rollback-to-prior above is
+              // sufficient to restore runtime behaviour.
+              reverted.systemPromptVersions = txVersions.length;
+              invalidateTenantConfigCache(c.tenantId);
+            }
+
+            // 3. FAQ entries
+            const faqDels = await db.faqEntry.deleteMany({
+              where: { buildTransactionId: txId, tenantId: c.tenantId },
+            });
+            reverted.faqEntries = faqDels.count;
+
+            // 4. SOP variants + property overrides
+            const sopVarDels = await db.sopVariant.deleteMany({
+              where: { buildTransactionId: txId },
+            });
+            reverted.sopVariants = sopVarDels.count;
+            const sopOverrideDels = await db.sopPropertyOverride.deleteMany({
+              where: { buildTransactionId: txId },
+            });
+            reverted.sopPropertyOverrides = sopOverrideDels.count;
+            if (sopVarDels.count > 0 || sopOverrideDels.count > 0) {
+              invalidateSopCache(c.tenantId);
+            }
+
+            await db.buildTransaction.update({
+              where: { id: txId },
+              data: { status: 'ROLLED_BACK', completedAt: new Date() },
+            });
+          });
+
+          const payload = {
+            ok: true,
+            mode: 'transaction',
+            transactionId: txId,
+            reverted,
+            plannedItems: tx.plannedItems,
+          };
+          span.end(payload);
+          return asCallToolResult(payload);
+        }
+
+        // ─── Per-artifact mode (pre-045 behaviour, unchanged below) ────
+        // After the guards above, both fields are set — narrow for TS.
+        const artifactType = args.artifactType!;
+        const versionId = args.versionId!;
+        if (artifactType === 'SOP_VARIANT') {
+          const historyId = versionId.startsWith('svh:') ? versionId.slice(4) : versionId;
           const snap = await c.prisma.sopVariantHistory.findFirst({
             where: { id: historyId, tenantId: c.tenantId },
           });
@@ -260,8 +403,8 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
           return asCallToolResult(payload);
         }
 
-        if (args.artifactType === 'FAQ_ENTRY') {
-          const historyId = args.versionId.startsWith('feh:') ? args.versionId.slice(4) : args.versionId;
+        if (artifactType === 'FAQ_ENTRY') {
+          const historyId = versionId.startsWith('feh:') ? versionId.slice(4) : versionId;
           const snap = await c.prisma.faqEntryHistory.findFirst({
             where: { id: historyId, tenantId: c.tenantId },
           });
@@ -325,8 +468,8 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
           return asCallToolResult(payload);
         }
 
-        if (args.artifactType === 'SYSTEM_PROMPT') {
-          const parts = args.versionId.split(':');
+        if (artifactType === 'SYSTEM_PROMPT') {
+          const parts = versionId.split(':');
           const version = parseInt(parts[1], 10);
           if (!Number.isFinite(version)) {
             span.end({ error: 'INVALID_VERSION_ID' });
@@ -396,7 +539,7 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
         }
 
         // TOOL_DEFINITION
-        const parts = args.versionId.split(':');
+        const parts = versionId.split(':');
         const toolId = parts[1];
         if (!toolId) return asError('rollback: invalid versionId format (expected tool:<id>:<ts>).');
         const t = await c.prisma.toolDefinition.findFirst({

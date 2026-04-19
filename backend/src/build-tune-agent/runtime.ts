@@ -16,13 +16,25 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import type { UIMessageStreamWriter } from 'ai';
-import { assembleSystemPrompt, type SystemPromptContext } from './system-prompt';
+import {
+  assembleSystemPrompt,
+  type AgentMode,
+  type SystemPromptContext,
+  type TenantStateSummary,
+  type InterviewProgressSummary,
+} from './system-prompt';
 import { buildTuningAgentMcpServer, type ToolContext } from './tools';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './tools/names';
 import { buildTuningAgentHooks, type HookContext } from './hooks';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import { listMemoryByPrefix } from './memory/service';
-import { isTuningAgentEnabled, tuningAgentDisabledReason, resolveTuningAgentModel } from './config';
+import {
+  isTuningAgentEnabled,
+  tuningAgentDisabledReason,
+  isBuildModeEnabled,
+  buildModeDisabledReason,
+  resolveTuningAgentModel,
+} from './config';
 import { runWithAiTrace, startAiSpan } from '../services/observability.service';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
@@ -63,6 +75,39 @@ export interface RunTurnInput {
   writer: UIMessageStreamWriter;
   /** Optional model override (falls back to TUNING_AGENT_MODEL / sonnet default). */
   modelOverride?: string;
+  /**
+   * Sprint 045: agent mode. Defaults to 'TUNE' for back-compat. BUILD
+   * mode requires `ENABLE_BUILD_MODE` env flag; otherwise the runtime
+   * short-circuits with a data-agent-disabled part.
+   */
+  mode?: AgentMode;
+  /** BUILD only: tenant-state summary for dynamic suffix (spec §9). */
+  tenantState?: TenantStateSummary | null;
+  /** BUILD only: in-session interview progress. */
+  interviewProgress?: InterviewProgressSummary | null;
+}
+
+/**
+ * Sprint 045 per-mode allow-lists. The tools array sent to the SDK is
+ * always the full MCP server (cache-preserving); `allowedTools` gates
+ * which tool_use blocks the SDK permits the agent to emit.
+ *
+ * Gate 2 (create_sop etc.) will append the BUILD-path tool names as
+ * they're registered. Until then BUILD mode can only call read-only
+ * tools + plan/preview when those land.
+ */
+function resolveAllowedTools(mode: AgentMode): string[] {
+  if (mode === 'BUILD') {
+    return [
+      TUNING_AGENT_TOOL_NAMES.get_context,
+      TUNING_AGENT_TOOL_NAMES.memory,
+      TUNING_AGENT_TOOL_NAMES.search_corrections,
+      TUNING_AGENT_TOOL_NAMES.get_version_history,
+      // Gate 2 will append BUILD create_* tools + plan_build_changes +
+      // preview_ai_response here once registered in names.ts.
+    ];
+  }
+  return Object.values(TUNING_AGENT_TOOL_NAMES);
 }
 
 export interface RunTurnResult {
@@ -76,6 +121,8 @@ export interface RunTurnResult {
 }
 
 export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnResult> {
+  const mode: AgentMode = input.mode ?? 'TUNE';
+
   if (!isTuningAgentEnabled()) {
     const reason = tuningAgentDisabledReason();
     input.writer.write({
@@ -94,6 +141,26 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
       toolCallsInvoked: [],
       persistedDataParts: [],
       error: reason ?? 'disabled',
+    };
+  }
+
+  // Sprint 045: BUILD requests require ENABLE_BUILD_MODE. TUNE requests
+  // are unaffected.
+  if (mode === 'BUILD' && !isBuildModeEnabled()) {
+    const reason = buildModeDisabledReason() ?? 'build mode disabled';
+    input.writer.write({ type: 'start', messageId: input.assistantMessageId });
+    input.writer.write({
+      type: 'data-agent-disabled',
+      id: `disabled:${input.assistantMessageId}`,
+      data: { reason, mode: 'BUILD' },
+    } as any);
+    input.writer.write({ type: 'finish', finishReason: 'error' });
+    return {
+      sdkSessionId: null,
+      finalAssistantText: '',
+      toolCallsInvoked: [],
+      persistedDataParts: [],
+      error: reason,
     };
   }
 
@@ -169,8 +236,12 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         createdAt: s.createdAt.toISOString(),
       })),
     },
+    mode,
+    tenantState: input.tenantState ?? null,
+    interviewProgress: input.interviewProgress ?? null,
   };
   const systemPrompt = assembleSystemPrompt(promptCtx);
+  const allowedTools = resolveAllowedTools(mode);
 
   // ─── Wire the hook + tool contexts ─────────────────────────────────────
   const lastUserSnapshot = { text: input.userMessage };
@@ -261,8 +332,10 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
           mcpServers: {
             [TUNING_AGENT_SERVER_NAME]: mcpServer,
           },
-          // Always allow our in-process MCP tools without prompting.
-          allowedTools: Object.values(TUNING_AGENT_TOOL_NAMES),
+          // Sprint 045: per-mode allow-list (TUNE: all 9 today; BUILD: subset
+          // until Gate 2 tools land). The underlying MCP tools array is
+          // unchanged between modes so the prompt cache stays warm.
+          allowedTools,
           // Disable built-in CLI tools — agent should only use our 8.
           tools: [],
           hooks,

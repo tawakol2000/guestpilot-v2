@@ -68,10 +68,11 @@ model Tenant {
   // ─── Feature 044: WhatsApp doc-handoff config ───
   docHandoffManagerRecipient  String?
   docHandoffSecurityRecipient String?
-  docHandoffReminderTime      String  @default("22:00")
-  docHandoffTime              String  @default("10:00")
-  docHandoffEnabled           Boolean @default(false)
+  docHandoffReminderTime      String                 @default("22:00")
+  docHandoffTime              String                 @default("10:00")
+  docHandoffEnabled           Boolean                @default(false)
   documentHandoffStates       DocumentHandoffState[]
+  buildTransactions           BuildTransaction[] // Feature 045: BUILD mode
 }
 
 model Property {
@@ -415,22 +416,25 @@ enum MessageRole {
 // ─── FAQ Knowledge System ────────────────────────────────────────────────────
 
 model FaqEntry {
-  id                   String    @id @default(cuid())
+  id                   String            @id @default(cuid())
   tenantId             String
   propertyId           String?
   question             String
-  answer               String    @db.Text
+  answer               String            @db.Text
   category             String
-  scope                FaqScope  @default(PROPERTY)
-  status               FaqStatus @default(SUGGESTED)
-  source               FaqSource @default(MANUAL)
-  usageCount           Int       @default(0)
+  scope                FaqScope          @default(PROPERTY)
+  status               FaqStatus         @default(SUGGESTED)
+  source               FaqSource         @default(MANUAL)
+  usageCount           Int               @default(0)
   lastUsedAt           DateTime?
   sourceConversationId String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  property             Property? @relation(fields: [propertyId], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  // Feature 045: set when this FAQ was created as part of a BUILD-mode plan.
+  buildTransactionId   String?
+  buildTransaction     BuildTransaction? @relation(fields: [buildTransactionId], references: [id])
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property             Property?         @relation(fields: [propertyId], references: [id])
 
   @@unique([tenantId, propertyId, question])
   @@index([tenantId, propertyId, status])
@@ -556,15 +560,19 @@ model TenantAiConfig {
 // ─── AI Config Version History ───────────────────────────────────────────────
 
 model AiConfigVersion {
-  id             String   @id @default(cuid())
-  tenantId       String
-  version        Int
-  config         Json
-  note           String?
-  createdAt      DateTime @default(now())
+  id                 String            @id @default(cuid())
+  tenantId           String
+  version            Int
+  config             Json
+  note               String?
+  createdAt          DateTime          @default(now())
   // ─── Feature 041 pre-wire (D4 A/B testing); unused in V1 ───
-  experimentId   String?
-  trafficPercent Int?
+  experimentId       String?
+  trafficPercent     Int?
+  // Feature 045: set when this version was written by write_system_prompt
+  // under a BUILD-mode plan.
+  buildTransactionId String?
+  buildTransaction   BuildTransaction? @relation(fields: [buildTransactionId], references: [id])
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -574,20 +582,24 @@ model AiConfigVersion {
 // ─── Tool Definitions (per-tenant, system + custom) ─────────────────────────
 
 model ToolDefinition {
-  id                 String   @id @default(cuid())
+  id                 String            @id @default(cuid())
   tenantId           String
   name               String
   displayName        String
-  description        String   @db.Text
-  defaultDescription String   @db.Text
+  description        String            @db.Text
+  defaultDescription String            @db.Text
   parameters         Json
   agentScope         String // "screening" | "coordinator" | "both"
   type               String // "system" | "custom"
-  enabled            Boolean  @default(true)
+  enabled            Boolean           @default(true)
   webhookUrl         String?
-  webhookTimeout     Int      @default(10000)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  webhookTimeout     Int               @default(10000)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  // Feature 045: set when this tool was created by create_tool_definition
+  // under a BUILD-mode plan.
+  buildTransactionId String?
+  buildTransaction   BuildTransaction? @relation(fields: [buildTransactionId], references: [id])
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -614,13 +626,18 @@ model SopDefinition {
 }
 
 model SopVariant {
-  id              String   @id @default(cuid())
-  sopDefinitionId String
-  status          String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
-  content         String   @db.Text
-  enabled         Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String            @id @default(cuid())
+  sopDefinitionId    String
+  status             String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content            String            @db.Text
+  enabled            Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  // Feature 045: set when this variant was created via create_sop under a
+  // BUILD-mode plan. Kept on the variant (not the definition) because one
+  // SopDefinition can collect variants created across multiple plans.
+  buildTransactionId String?
+  buildTransaction   BuildTransaction? @relation(fields: [buildTransactionId], references: [id])
 
   sopDefinition SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
 
@@ -628,19 +645,53 @@ model SopVariant {
 }
 
 model SopPropertyOverride {
-  id              String   @id @default(cuid())
-  sopDefinitionId String
-  propertyId      String
-  status          String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
-  content         String   @db.Text
-  enabled         Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String            @id @default(cuid())
+  sopDefinitionId    String
+  propertyId         String
+  status             String // 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  content            String            @db.Text
+  enabled            Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  // Feature 045: set when this override was created via create_sop
+  // (propertyId branch) under a BUILD-mode plan.
+  buildTransactionId String?
+  buildTransaction   BuildTransaction? @relation(fields: [buildTransactionId], references: [id])
 
   sopDefinition SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
   property      Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, propertyId, status])
+}
+
+// ─── Feature 045: BUILD-mode transaction grouping ──────────────────────────
+//
+// Groups a set of create_sop / create_faq / create_tool_definition /
+// write_system_prompt calls that originated from a single
+// plan_build_changes approval. Enables atomic rollback across heterogeneous
+// artifact types when the manager wants to undo a whole plan.
+//
+// Status lifecycle: PLANNED → EXECUTING → (COMPLETED | PARTIAL) → ROLLED_BACK.
+// PARTIAL = some items succeeded, some failed; rollback reverts what did
+// land.
+model BuildTransaction {
+  id             String    @id @default(cuid())
+  tenantId       String
+  conversationId String?
+  plannedItems   Json // Array<{ type: 'sop'|'faq'|'system_prompt'|'tool_definition', name, rationale }>
+  status         String // PLANNED | EXECUTING | COMPLETED | PARTIAL | ROLLED_BACK
+  rationale      String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sopVariants          SopVariant[]
+  sopPropertyOverrides SopPropertyOverride[]
+  faqEntries           FaqEntry[]
+  toolDefinitions      ToolDefinition[]
+  aiConfigVersions     AiConfigVersion[]
+
+  @@index([tenantId, createdAt])
 }
 
 // ─── Push Subscriptions (Web Push VAPID) ────────────────────────────────────

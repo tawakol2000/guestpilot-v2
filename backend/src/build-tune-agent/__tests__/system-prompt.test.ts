@@ -1,18 +1,29 @@
 /**
- * Sprint 04 — system-prompt assembler unit tests.
+ * System-prompt assembler unit tests.
  *
- * Run:  npx tsx --test src/tuning-agent/__tests__/system-prompt.test.ts
+ * Run:  npx tsx --test src/build-tune-agent/__tests__/system-prompt.test.ts
+ *
+ * Sprint 045 refresh: the assembler now takes a `mode` and emits a
+ * mode addendum between the shared prefix and the dynamic suffix. These
+ * tests lock down (a) the shared prefix is byte-identical across turns
+ * for the same mode, (b) mode addenda swap content correctly, and (c)
+ * the dynamic suffix's terminal recap is mode-selected.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   assembleSystemPrompt,
+  buildSharedPrefix,
   buildStaticPrefix,
   buildDynamicSuffix,
+  type AgentMode,
   type SystemPromptContext,
 } from '../system-prompt';
-import { DYNAMIC_BOUNDARY_MARKER } from '../config';
+import {
+  DYNAMIC_BOUNDARY_MARKER,
+  SHARED_MODE_BOUNDARY_MARKER,
+} from '../config';
 
 function ctx(overrides: Partial<SystemPromptContext> = {}): SystemPromptContext {
   return {
@@ -22,54 +33,44 @@ function ctx(overrides: Partial<SystemPromptContext> = {}): SystemPromptContext 
     selectedSuggestionId: null,
     memorySnapshot: [],
     pending: { total: 0, topThree: [], countsByCategory: {} },
+    mode: 'TUNE' as AgentMode,
     ...overrides,
   };
 }
 
-test('assembleSystemPrompt embeds the boundary marker between static prefix and dynamic suffix', () => {
+test('assembleSystemPrompt emits shared→mode→dynamic regions separated by boundary markers', () => {
   const prompt = assembleSystemPrompt(ctx());
-  assert.ok(prompt.includes(DYNAMIC_BOUNDARY_MARKER), 'boundary marker must be present');
-  const idx = prompt.indexOf(DYNAMIC_BOUNDARY_MARKER);
-  const prefix = prompt.slice(0, idx);
-  const suffix = prompt.slice(idx + DYNAMIC_BOUNDARY_MARKER.length);
-  assert.ok(prefix.includes('<persona>'), 'prefix must carry persona');
-  assert.ok(prefix.includes('<taxonomy>'), 'prefix must carry taxonomy');
-  assert.ok(prefix.includes('<tools>'), 'prefix must carry tool docs');
-  assert.ok(suffix.includes('<memory_snapshot>'), 'suffix must carry memory');
-  assert.ok(suffix.includes('<session_state>'), 'suffix must carry session_state');
+  assert.ok(prompt.includes(SHARED_MODE_BOUNDARY_MARKER), 'shared/mode boundary must be present');
+  assert.ok(prompt.includes(DYNAMIC_BOUNDARY_MARKER), 'mode/dynamic boundary must be present');
+  const sharedEnd = prompt.indexOf(SHARED_MODE_BOUNDARY_MARKER);
+  const modeEnd = prompt.indexOf(DYNAMIC_BOUNDARY_MARKER);
+  assert.ok(sharedEnd < modeEnd, 'shared/mode boundary must precede mode/dynamic boundary');
+
+  const shared = prompt.slice(0, sharedEnd);
+  const modeAddendum = prompt.slice(sharedEnd + SHARED_MODE_BOUNDARY_MARKER.length, modeEnd);
+  const dynamic = prompt.slice(modeEnd + DYNAMIC_BOUNDARY_MARKER.length);
+
+  assert.ok(shared.includes('<persona>'), 'shared must carry persona');
+  assert.ok(shared.includes('<taxonomy>'), 'shared must carry taxonomy');
+  assert.ok(shared.includes('<tools>'), 'shared must carry tool docs');
+  assert.ok(modeAddendum.includes('<tune_mode>'), 'TUNE mode must emit tune_mode addendum');
+  assert.ok(dynamic.includes('<memory_snapshot>'), 'dynamic must carry memory');
+  assert.ok(dynamic.includes('<session_state>'), 'dynamic must carry session_state');
+  assert.ok(dynamic.includes('<terminal_recap>'), 'dynamic must carry terminal_recap');
 });
 
-test('static prefix is byte-identical across calls (cacheable)', () => {
-  const a = buildStaticPrefix();
-  const b = buildStaticPrefix();
-  const c = buildStaticPrefix();
+test('shared prefix is byte-identical across calls (cacheable)', () => {
+  const a = buildSharedPrefix();
+  const b = buildSharedPrefix();
+  const c = buildSharedPrefix();
   assert.equal(a, b);
   assert.equal(b, c);
+  // Back-compat alias returns the same string.
+  assert.equal(buildStaticPrefix(), a);
 });
 
-test('anti-sycophancy + NO_FIX-default + critical_rules clauses are present', () => {
-  const p = buildStaticPrefix();
-  // Sprint 10 workstream B: anti-sycophancy reframed as priority hierarchy
-  // ("truthfulness over validation"). NO_FIX-default is its own principle
-  // and the terminal critical_rules block recaps it as rule 3.
-  assert.ok(
-    p.includes('Truthfulness over validation'),
-    'priority-hierarchy anti-sycophancy phrasing must appear'
-  );
-  assert.ok(
-    p.includes('NO_FIX is the default'),
-    '"NO_FIX is the default" principle must appear'
-  );
-  assert.ok(p.includes('Refuse directly without lecturing.'));
-  assert.ok(p.includes('<critical_rules>'), 'terminal critical_rules block must appear');
-  assert.ok(
-    p.includes('NO_FIX is correct more often than you think'),
-    'critical_rules must include the NO_FIX recap'
-  );
-});
-
-test('static prefix is ordered: principles → persona → taxonomy → tools → platform_context → critical_rules', () => {
-  const p = buildStaticPrefix();
+test('shared prefix ordering: principles → persona → taxonomy → tools → platform_context → critical_rules', () => {
+  const p = buildSharedPrefix();
   const idxPrinciples = p.indexOf('<principles>');
   const idxPersona = p.indexOf('<persona>');
   const idxTaxonomy = p.indexOf('<taxonomy>');
@@ -80,10 +81,98 @@ test('static prefix is ordered: principles → persona → taxonomy → tools �
   assert.ok(idxTaxonomy > idxPersona, 'taxonomy must follow persona');
   assert.ok(idxTools > idxTaxonomy, 'tools must follow taxonomy');
   assert.ok(idxPlatform > idxTools, 'platform_context must follow tools');
-  assert.ok(idxCritical > idxPlatform, 'critical_rules must come last in the static prefix');
+  assert.ok(idxCritical > idxPlatform, 'critical_rules must come last in the shared prefix');
 });
 
-test('dynamic suffix reflects pending + memory context', () => {
+test('shared principles: truthfulness-over-validation retained; NO_FIX-as-default moved to TUNE addendum', () => {
+  // Sprint 045 §4: NO_FIX-as-default moved out of shared principles into TUNE addendum.
+  const p = buildSharedPrefix();
+  assert.ok(
+    p.includes('Truthfulness over validation'),
+    'truthfulness-over-validation principle stays in shared'
+  );
+  assert.ok(
+    !p.includes('NO_FIX is the default'),
+    'NO_FIX-as-default must NOT appear in shared prefix (moved to TUNE addendum)'
+  );
+  assert.ok(p.includes('Refuse directly without lecturing.'));
+  assert.ok(p.includes('<critical_rules>'), 'terminal critical_rules block must appear');
+});
+
+test('TUNE addendum carries NO_FIX-as-default and the fragment rule', () => {
+  const prompt = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(prompt.includes('<tune_mode>'), 'TUNE mode addendum must be present');
+  assert.ok(
+    prompt.includes('NO_FIX is the default'),
+    'TUNE addendum must carry NO_FIX-as-default (moved from shared principles)'
+  );
+  assert.ok(
+    prompt.includes('proposedText/newText must never be a fragment'),
+    'TUNE addendum must carry the fragment rule (moved from shared critical_rules)'
+  );
+});
+
+test('BUILD addendum carries interview posture + defaults-as-markers rule', () => {
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('<build_mode>'), 'BUILD mode addendum must be present');
+  assert.ok(!prompt.includes('<tune_mode>'), 'BUILD prompt must not carry TUNE addendum');
+  assert.ok(
+    prompt.includes('Elicit through specific past incidents'),
+    'BUILD addendum must carry incident-based interview posture'
+  );
+  assert.ok(
+    prompt.includes('<!-- DEFAULT: change me -->'),
+    'BUILD addendum must reference the default marker form'
+  );
+  assert.ok(
+    prompt.includes('plan_build_changes'),
+    'BUILD addendum must reference plan_build_changes orchestration'
+  );
+});
+
+test('terminal recap is mode-selected: TUNE rule 2 is NO_FIX, BUILD rule 2 is default-mark', () => {
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(tune.includes('NO_FIX is correct when evidence is absent'), 'TUNE recap rule 2');
+  assert.ok(
+    build.includes('Propose a sensible default if the manager'),
+    'BUILD recap rule 2'
+  );
+  assert.ok(
+    !tune.includes('Propose a sensible default if the manager'),
+    'TUNE must not carry BUILD recap'
+  );
+});
+
+test('BUILD mode injects tenant_state block when tenantState is supplied', () => {
+  const prompt = assembleSystemPrompt(
+    ctx({
+      mode: 'BUILD',
+      tenantState: {
+        posture: 'GREENFIELD',
+        systemPromptStatus: 'EMPTY',
+        systemPromptEditCount: 0,
+        sopsDefined: 0,
+        sopsDefaulted: 0,
+        faqsGlobal: 0,
+        faqsPropertyScoped: 0,
+        customToolsDefined: 0,
+        propertiesImported: 0,
+        lastBuildSessionAt: null,
+      },
+    })
+  );
+  assert.ok(prompt.includes('<tenant_state>'), 'tenant_state block must be present in BUILD');
+  assert.ok(prompt.includes('GREENFIELD'), 'GREENFIELD posture must render');
+  assert.ok(prompt.includes('start from the generic hospitality template'));
+});
+
+test('TUNE mode does not inject tenant_state block', () => {
+  const prompt = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(!prompt.includes('<tenant_state>'), 'tenant_state must not appear in TUNE');
+});
+
+test('dynamic suffix reflects pending + memory context (TUNE)', () => {
   const suffix = buildDynamicSuffix(
     ctx({
       memorySnapshot: [
@@ -128,8 +217,26 @@ test('memory snapshot is index-only with lazy-load instruction (sprint 10 workst
   assert.ok(suffix.includes('preferences/tone'));
 });
 
-test('empty queue + empty memory produce safe fallbacks', () => {
+test('empty queue + empty memory produce safe fallbacks (TUNE)', () => {
   const suffix = buildDynamicSuffix(ctx());
   assert.ok(suffix.includes('Queue is empty'));
   assert.ok(suffix.includes('No durable preferences on file'));
+});
+
+test('BUILD dynamic suffix renders interview_progress instead of pending_suggestions', () => {
+  const suffix = buildDynamicSuffix(
+    ctx({
+      mode: 'BUILD',
+      interviewProgress: {
+        loadBearingFilled: 2,
+        loadBearingTotal: 6,
+        nonLoadBearingFilled: 0,
+        nonLoadBearingTotal: 14,
+        defaultedSlots: [],
+      },
+    })
+  );
+  assert.ok(suffix.includes('<interview_progress>'));
+  assert.ok(suffix.includes('2/6'));
+  assert.ok(!suffix.includes('<pending_suggestions>'));
 });
