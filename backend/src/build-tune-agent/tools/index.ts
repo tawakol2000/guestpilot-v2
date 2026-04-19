@@ -18,6 +18,7 @@ import { buildGetVersionHistoryTool, buildRollbackTool } from './version-history
 import { buildCreateFaqTool } from './create-faq';
 import { buildCreateSopTool } from './create-sop';
 import { buildCreateToolDefinitionTool } from './create-tool-definition';
+import { buildWriteSystemPromptTool } from './write-system-prompt';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('../sdk-loader.cjs') as typeof import('../sdk-loader');
@@ -44,6 +45,7 @@ export async function buildTuningAgentMcpServer(
       buildCreateFaqTool(tool, getCtx),
       buildCreateSopTool(tool, getCtx),
       buildCreateToolDefinitionTool(tool, getCtx),
+      buildWriteSystemPromptTool(tool, getCtx),
     ],
   });
 }

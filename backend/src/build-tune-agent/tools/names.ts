@@ -18,4 +18,5 @@ export const TUNING_AGENT_TOOL_NAMES = {
   create_faq: `mcp__${TUNING_AGENT_SERVER_NAME}__create_faq`,
   create_sop: `mcp__${TUNING_AGENT_SERVER_NAME}__create_sop`,
   create_tool_definition: `mcp__${TUNING_AGENT_SERVER_NAME}__create_tool_definition`,
+  write_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__write_system_prompt`,
 } as const;

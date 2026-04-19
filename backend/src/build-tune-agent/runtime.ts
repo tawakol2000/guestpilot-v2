@@ -108,8 +108,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.create_faq,
       TUNING_AGENT_TOOL_NAMES.create_sop,
       TUNING_AGENT_TOOL_NAMES.create_tool_definition,
-      // Remaining Gate 2 tools append here:
-      //   write_system_prompt, plan_build_changes.
+      TUNING_AGENT_TOOL_NAMES.write_system_prompt,
+      // Remaining Gate 2 tool appends here:  plan_build_changes.
       // preview_ai_response lands in Gate 3 once its subsystem is green.
     ];
   }
