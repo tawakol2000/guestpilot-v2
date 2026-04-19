@@ -103,8 +103,13 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.memory,
       TUNING_AGENT_TOOL_NAMES.search_corrections,
       TUNING_AGENT_TOOL_NAMES.get_version_history,
-      // Gate 2 will append BUILD create_* tools + plan_build_changes +
-      // preview_ai_response here once registered in names.ts.
+      TUNING_AGENT_TOOL_NAMES.rollback,
+      // Gate 2 BUILD-path creators (registered as they land):
+      TUNING_AGENT_TOOL_NAMES.create_faq,
+      // Remaining Gate 2 tools append here:
+      //   create_sop, create_tool_definition, write_system_prompt,
+      //   plan_build_changes.
+      // preview_ai_response lands in Gate 3 once its subsystem is green.
     ];
   }
   return Object.values(TUNING_AGENT_TOOL_NAMES);

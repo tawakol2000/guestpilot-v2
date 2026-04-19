@@ -14,4 +14,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   memory: `mcp__${TUNING_AGENT_SERVER_NAME}__memory`,
   get_version_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_version_history`,
   rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__rollback`,
+  // Sprint 045, Gate 2 — BUILD-mode artifact creators.
+  create_faq: `mcp__${TUNING_AGENT_SERVER_NAME}__create_faq`,
 } as const;
