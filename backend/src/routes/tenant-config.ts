@@ -11,17 +11,24 @@ import { authMiddleware } from '../middleware/auth';
 import { getTenantAiConfig, updateTenantAiConfig, invalidateTenantConfigCache } from '../services/tenant-config.service';
 import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from '../services/ai.service';
 import { makeReplyTemplatesController } from '../controllers/reply-templates.controller';
+import { makeDocHandoffController } from '../controllers/doc-handoff.controller';
 import { AuthenticatedRequest } from '../types';
 
 export function tenantConfigRouter(prisma: PrismaClient): Router {
   const router = Router();
   const replyTemplatesCtrl = makeReplyTemplatesController(prisma);
+  const docHandoffCtrl = makeDocHandoffController(prisma);
   router.use(authMiddleware as unknown as RequestHandler);
 
   // ─── Feature 043: per-tenant reply templates ───
   router.get('/reply-templates', ((req, res) => replyTemplatesCtrl.list(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.put('/reply-templates/:escalationType/:decision', ((req, res) => replyTemplatesCtrl.upsert(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.delete('/reply-templates/:escalationType/:decision', ((req, res) => replyTemplatesCtrl.remove(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
+  // ─── Feature 044: doc-handoff settings + recent sends audit ───
+  router.get('/doc-handoff', ((req, res) => docHandoffCtrl.getSettings(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.put('/doc-handoff', ((req, res) => docHandoffCtrl.putSettings(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.get('/doc-handoff/recent-sends', ((req, res) => docHandoffCtrl.listRecentSends(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   // GET /api/tenant-config
   router.get('/', async (req: any, res) => {

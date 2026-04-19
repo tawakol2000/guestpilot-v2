@@ -14,6 +14,22 @@ export interface DocumentChecklist {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  // ─── Feature 044: captured image references for check-in handoff ───
+  receivedDocs?: ReceivedDocRef[];
+}
+
+export interface ReceivedDocRef {
+  slot: 'passport' | 'marriage_certificate';
+  slotIndex?: number;
+  hostawayMessageId: string;
+  imageUrls: string[];
+  capturedAt: string;
+  source: 'ai_tool' | 'manual';
+}
+
+export interface CaptureContext {
+  sourceMessageId?: string;
+  imageUrls?: string[];
 }
 
 export async function getChecklist(
@@ -70,7 +86,8 @@ export async function createChecklist(
 export async function updateChecklist(
   reservationId: string,
   updates: { documentType: 'passport' | 'marriage_certificate'; notes: string },
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  captureContext?: CaptureContext
 ): Promise<DocumentChecklist> {
   const reservation = await prisma.reservation.findUnique({
     where: { id: reservationId },
@@ -82,18 +99,41 @@ export async function updateChecklist(
   const checklist = sa.documentChecklist as DocumentChecklist | undefined;
   if (!checklist) throw new Error('No document checklist exists');
 
-  const updated = { ...checklist, updatedAt: new Date().toISOString() };
+  const updated: DocumentChecklist = {
+    ...checklist,
+    updatedAt: new Date().toISOString(),
+    receivedDocs: [...(checklist.receivedDocs ?? [])],
+  };
+
+  let didIncrement = false;
+  let slotIndex: number | undefined;
 
   if (updates.documentType === 'passport') {
     if (updated.passportsReceived < updated.passportsNeeded) {
       updated.passportsReceived += 1;
+      didIncrement = true;
+      slotIndex = updated.passportsReceived;
       console.log(`[DocChecklist] Passport received for reservation ${reservationId}: ${updated.passportsReceived}/${updated.passportsNeeded} (${updates.notes})`);
     } else {
       console.log(`[DocChecklist] All passports already received for reservation ${reservationId} — ignoring extra`);
     }
   } else if (updates.documentType === 'marriage_certificate') {
-    updated.marriageCertReceived = true;
-    console.log(`[DocChecklist] Marriage certificate received for reservation ${reservationId} (${updates.notes})`);
+    if (!updated.marriageCertReceived) {
+      updated.marriageCertReceived = true;
+      didIncrement = true;
+      console.log(`[DocChecklist] Marriage certificate received for reservation ${reservationId} (${updates.notes})`);
+    }
+  }
+
+  if (didIncrement && captureContext?.sourceMessageId && captureContext.imageUrls && captureContext.imageUrls.length > 0) {
+    updated.receivedDocs!.push({
+      slot: updates.documentType,
+      slotIndex,
+      hostawayMessageId: captureContext.sourceMessageId,
+      imageUrls: [...captureContext.imageUrls],
+      capturedAt: new Date().toISOString(),
+      source: 'ai_tool',
+    });
   }
 
   await prisma.reservation.update({
@@ -103,13 +143,22 @@ export async function updateChecklist(
     },
   });
 
+  // Fire-and-forget: notify doc-handoff scheduler that a deferred handoff may now be eligible.
+  try {
+    const { onChecklistUpdated } = await import('./doc-handoff.service');
+    void onChecklistUpdated(reservationId, prisma).catch(() => {});
+  } catch {
+    // Module may not be present during tests or initial load; ignore silently.
+  }
+
   return updated;
 }
 
 export async function manualUpdateChecklist(
   reservationId: string,
   data: { passportsReceived?: number; marriageCertReceived?: boolean },
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  captureContext?: CaptureContext
 ): Promise<DocumentChecklist> {
   const reservation = await prisma.reservation.findUnique({
     where: { id: reservationId },
@@ -121,13 +170,64 @@ export async function manualUpdateChecklist(
   const checklist = sa.documentChecklist as DocumentChecklist | undefined;
   if (!checklist) throw new Error('No document checklist exists');
 
-  const updated = { ...checklist, updatedAt: new Date().toISOString() };
+  const updated: DocumentChecklist = {
+    ...checklist,
+    updatedAt: new Date().toISOString(),
+    receivedDocs: [...(checklist.receivedDocs ?? [])],
+  };
+
+  const prevPassports = updated.passportsReceived;
+  const prevMarriage = updated.marriageCertReceived;
 
   if (data.passportsReceived !== undefined) {
     updated.passportsReceived = Math.min(Math.max(0, data.passportsReceived), updated.passportsNeeded);
   }
   if (data.marriageCertReceived !== undefined) {
     updated.marriageCertReceived = data.marriageCertReceived;
+  }
+
+  // Capture new image refs for any new increments.
+  if (captureContext?.sourceMessageId && captureContext.imageUrls && captureContext.imageUrls.length > 0) {
+    const passportDelta = updated.passportsReceived - prevPassports;
+    const capturedAt = new Date().toISOString();
+    if (passportDelta > 0) {
+      for (let i = 0; i < passportDelta; i++) {
+        updated.receivedDocs!.push({
+          slot: 'passport',
+          slotIndex: prevPassports + i + 1,
+          hostawayMessageId: captureContext.sourceMessageId,
+          imageUrls: [...captureContext.imageUrls],
+          capturedAt,
+          source: 'manual',
+        });
+      }
+    }
+    if (!prevMarriage && updated.marriageCertReceived) {
+      updated.receivedDocs!.push({
+        slot: 'marriage_certificate',
+        hostawayMessageId: captureContext.sourceMessageId,
+        imageUrls: [...captureContext.imageUrls],
+        capturedAt,
+        source: 'manual',
+      });
+    }
+  }
+
+  // Un-mark path: drop the most recent ref for any slot whose count decremented.
+  if (data.passportsReceived !== undefined && updated.passportsReceived < prevPassports) {
+    const dropCount = prevPassports - updated.passportsReceived;
+    for (let i = 0; i < dropCount; i++) {
+      const lastIdx = [...(updated.receivedDocs ?? [])].reverse().findIndex((r) => r.slot === 'passport');
+      if (lastIdx >= 0) {
+        const arr = updated.receivedDocs!;
+        arr.splice(arr.length - 1 - lastIdx, 1);
+      }
+    }
+  }
+  if (data.marriageCertReceived === false && prevMarriage) {
+    const arr = updated.receivedDocs!;
+    const lastIdx = [...arr].reverse().findIndex((r) => r.slot === 'marriage_certificate');
+    if (lastIdx >= 0) arr.splice(arr.length - 1 - lastIdx, 1);
   }
 
   await prisma.reservation.update({
@@ -138,6 +238,15 @@ export async function manualUpdateChecklist(
   });
 
   console.log(`[DocChecklist] Manual update for reservation ${reservationId}: passports=${updated.passportsReceived}/${updated.passportsNeeded}, marriageCert=${updated.marriageCertReceived}`);
+
+  // Fire-and-forget scheduler notification.
+  try {
+    const { onChecklistUpdated } = await import('./doc-handoff.service');
+    void onChecklistUpdated(reservationId, prisma).catch(() => {});
+  } catch {
+    // ignore
+  }
+
   return updated;
 }
 

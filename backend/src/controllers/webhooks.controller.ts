@@ -376,6 +376,12 @@ async function handleNewMessage(
           // Update local reference so AI reply logic uses fresh data
           Object.assign(conversation.reservation, updates);
 
+          // Feature 044: reschedule doc-handoff rows if dates/status changed.
+          try {
+            const { rescheduleOnReservationChange } = await import('../services/doc-handoff.service');
+            void rescheduleOnReservationChange(conversation.reservation.id, prisma).catch(() => {});
+          } catch { /* ignore */ }
+
           console.log(`[Webhook] [${tenantId}] Resynced reservation ${conversation.reservation.id}: ${JSON.stringify(updates)}`);
 
           // Broadcast so frontend reflects changes without page refresh
@@ -869,6 +875,13 @@ async function handleNewReservation(
     },
   });
 
+  // Feature 044: schedule or reschedule doc-handoff WhatsApp messages for this reservation.
+  // Fire-and-forget — any failure is logged inside the service, never propagates.
+  try {
+    const { scheduleOnReservationUpsert } = await import('../services/doc-handoff.service');
+    void scheduleOnReservationUpsert(reservation.id, prisma).catch(() => {});
+  } catch { /* ignore */ }
+
   // G1: Create Conversation if one doesn't exist for this reservation.
   // Use create + P2002 catch instead of findFirst + create to avoid a race condition:
   // reservation.created and message.received can both fire within milliseconds of each other,
@@ -974,6 +987,16 @@ async function handleReservationUpdated(
       ...(!isCancelledOrCheckedOut && newStatus && { aiEnabled: true }),
     },
   });
+
+  // Feature 044: on status-change / date-change / cancellation, keep doc-handoff rows in sync.
+  try {
+    const { rescheduleOnReservationChange, markCancelled } = await import('../services/doc-handoff.service');
+    if (newStatus === ReservationStatus.CANCELLED) {
+      void markCancelled(reservation.id, prisma).catch(() => {});
+    } else {
+      void rescheduleOnReservationChange(reservation.id, prisma).catch(() => {});
+    }
+  } catch { /* ignore */ }
 
   // Always fetch convs — needed for SSE broadcast and (conditionally) AI reply cancellation
   const convs = await prisma.conversation.findMany({

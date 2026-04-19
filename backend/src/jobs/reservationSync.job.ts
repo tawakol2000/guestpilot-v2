@@ -148,6 +148,13 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                 // The message sync will schedule AI if it finds new guest messages.
 
                 broadcastToTenant(tenant.id, 'reservation_created', { reservationId: reservation.id });
+
+                // Feature 044: schedule doc-handoff rows for the new reservation.
+                try {
+                  const { scheduleOnReservationUpsert } = await import('../services/doc-handoff.service');
+                  void scheduleOnReservationUpsert(reservation.id, prisma).catch(() => {});
+                } catch { /* ignore */ }
+
                 newCount++;
               } catch (err: any) {
                 if (err?.code === 'P2002') continue; // duplicate reservation, skip
@@ -190,6 +197,17 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     status,
                   });
                 }
+
+                // Feature 044: reschedule or cancel doc-handoff rows on reservation change.
+                try {
+                  const { rescheduleOnReservationChange, markCancelled } = await import('../services/doc-handoff.service');
+                  if (status === 'CANCELLED') {
+                    void markCancelled(existing.id, prisma).catch(() => {});
+                  } else {
+                    void rescheduleOnReservationChange(existing.id, prisma).catch(() => {});
+                  }
+                } catch { /* ignore */ }
+
                 updatedCount++;
               }
             }

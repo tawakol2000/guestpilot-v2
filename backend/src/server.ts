@@ -14,6 +14,7 @@ import { setPropertySearchPrisma } from './services/property-search.service';
 import { startFaqMaintenanceJob } from './jobs/faqMaintenance.job';
 import { startTuningRetentionJob } from './jobs/tuningRetention.job';
 import { startReservationSyncJob } from './jobs/reservationSync.job';
+import { startDocHandoffJob } from './jobs/docHandoff.job';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -64,6 +65,9 @@ async function main() {
   // 7d after acceptance — populates TuningSuggestion.appliedAndRetained7d.
   const tuningRetentionTimer = startTuningRetentionJob(prisma);
 
+  // Feature 044: doc-handoff WhatsApp polling job (2 min tick).
+  const docHandoffTimer = startDocHandoffJob(prisma);
+
   // Start BullMQ worker (graceful no-op if REDIS_URL missing)
   const aiReplyWorker = startAiReplyWorker(prisma);
 
@@ -80,6 +84,7 @@ async function main() {
     clearInterval(resSyncTimer);
     clearInterval(faqJobTimer);
     clearInterval(tuningRetentionTimer);
+    clearInterval(docHandoffTimer);
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();

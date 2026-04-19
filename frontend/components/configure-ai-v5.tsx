@@ -19,6 +19,7 @@ import {
   type TemplateVariableInfo,
 } from '@/lib/api'
 import AutomatedRepliesSection from '@/components/settings/automated-replies-section'
+import DocHandoffSection from '@/components/settings/doc-handoff-section'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const T = {
@@ -913,6 +914,11 @@ export function ConfigureAiV5(): React.ReactElement {
                 Automated Replies
               </h3>
               <AutomatedRepliesSection />
+            </div>
+
+            {/* Feature 044: Doc-handoff WhatsApp */}
+            <div style={{ marginTop: 24 }}>
+              <DocHandoffSection />
             </div>
 
             {/* Version History */}

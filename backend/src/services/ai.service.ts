@@ -2006,10 +2006,19 @@ export async function generateAndSendAiReply(
           const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
           if (!context.reservationId) return JSON.stringify({ error: 'No reservation linked' });
           try {
+            // Feature 044: capture the image we're reacting to so the doc-handoff handoff message
+            // can forward it to security later. Pick the most recent current-window guest message
+            // that has images attached.
+            const imageBearingMsgs = (currentMsgs as Array<{ id: string; imageUrls?: string[] }>)
+              .filter(m => m.imageUrls && m.imageUrls.length > 0);
+            const latestWithImage = imageBearingMsgs[imageBearingMsgs.length - 1];
+            const captureContext = latestWithImage
+              ? { sourceMessageId: latestWithImage.id, imageUrls: latestWithImage.imageUrls ?? [] }
+              : undefined;
             const updated = await updateChecklist(context.reservationId, {
               documentType: typedInput.document_type,
               notes: typedInput.notes,
-            }, prisma);
+            }, prisma, captureContext);
             return JSON.stringify({
               passportsReceived: updated.passportsReceived,
               passportsNeeded: updated.passportsNeeded,

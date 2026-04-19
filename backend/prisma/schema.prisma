@@ -64,6 +64,14 @@ model Tenant {
   // ─── Feature 043 relations ───
   automatedReplyTemplates AutomatedReplyTemplate[]
   taskActionLogs          TaskActionLog[]
+
+  // ─── Feature 044: WhatsApp doc-handoff config ───
+  docHandoffManagerRecipient  String?
+  docHandoffSecurityRecipient String?
+  docHandoffReminderTime      String  @default("22:00")
+  docHandoffTime              String  @default("10:00")
+  docHandoffEnabled           Boolean @default(false)
+  documentHandoffStates       DocumentHandoffState[]
 }
 
 model Property {
@@ -140,6 +148,9 @@ model Reservation {
   inquiryActionLogs    InquiryActionLog[]
   alteration           BookingAlteration?
   alterationActionLogs AlterationActionLog[]
+
+  // ─── Feature 044 ───
+  documentHandoffStates DocumentHandoffState[]
 
   @@unique([tenantId, hostawayReservationId])
   @@index([tenantId])
@@ -1067,4 +1078,33 @@ model FaqEntryHistory {
 
   @@index([tenantId, editedAt])
   @@index([targetId])
+}
+
+// ─── Feature 044: WhatsApp doc-handoff state machine ───
+// One row per (reservationId, messageType) where messageType ∈ {'REMINDER','HANDOFF'}.
+// status is a string (not enum) for forward-compat with new SKIPPED_* reasons without migration.
+// See specs/044-doc-handoff-whatsapp/data-model.md for the state machine.
+model DocumentHandoffState {
+  id                String    @id @default(cuid())
+  tenantId          String
+  reservationId     String
+  messageType       String
+  status            String
+  scheduledFireAt   DateTime
+  attemptCount      Int       @default(0)
+  lastError         String?
+  providerMessageId String?
+  recipientUsed     String?
+  messageBodyUsed   String?   @db.Text
+  imageUrlsUsed     String[]  @default([])
+  sentAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, messageType])
+  @@index([tenantId])
+  @@index([status, scheduledFireAt])
 }

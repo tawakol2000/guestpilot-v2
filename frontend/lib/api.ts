@@ -958,6 +958,44 @@ export async function apiDeleteReplyTemplate(
   })
 }
 
+// ─── Feature 044: Doc-handoff WhatsApp ───────────────────────────────────────
+export interface DocHandoffConfig {
+  enabled: boolean
+  managerRecipient: string | null
+  securityRecipient: string | null
+  reminderTime: string
+  handoffTime: string
+}
+
+export interface DocHandoffSendItem {
+  id: string
+  reservationId: string
+  messageType: 'REMINDER' | 'HANDOFF'
+  status: string
+  scheduledFireAt: string
+  sentAt: string | null
+  recipientUsed: string | null
+  messageBodyUsed: string | null
+  imageUrlCount: number
+  lastError: string | null
+  providerMessageId: string | null
+}
+
+export async function apiGetDocHandoffConfig(): Promise<DocHandoffConfig> {
+  return apiFetch('/api/tenant-config/doc-handoff')
+}
+
+export async function apiPutDocHandoffConfig(patch: Partial<DocHandoffConfig>): Promise<DocHandoffConfig> {
+  return apiFetch('/api/tenant-config/doc-handoff', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+}
+
+export async function apiListDocHandoffSends(limit = 20): Promise<{ items: DocHandoffSendItem[] }> {
+  return apiFetch(`/api/tenant-config/doc-handoff/recent-sends?limit=${limit}`)
+}
+
 // ─── AI Logs ─────────────────────────────────────────────────────────────────
 export interface AiApiLogEntry {
   id: string
