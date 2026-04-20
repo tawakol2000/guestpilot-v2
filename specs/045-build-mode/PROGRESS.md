@@ -34,7 +34,7 @@ through as many gates as it can, updates this doc, and hands off via
 | 4    | `generic-hospitality-seed.md`          | ✅ | 20 slots, fully-filled render = 2,494 tokens (within 1,500–2,500). `templates/index.ts` exports `GENERIC_HOSPITALITY_SEED`, `GENERIC_HOSPITALITY_SEED_VERSION`, `loadSeed()`, `renderSeed()`. `template.test.ts` (9 tests) locks slot-key alignment with write_system_prompt's constants, default-marker presence, and the token-range guard. |
 | 5    | Backend `/api/build/*`                 | ✅ | `services/tenant-state.service.ts` (getTenantStateSummary + getInterviewProgressSummary), `controllers/build-controller.ts` (4 handlers), `routes/build.ts` (router with ENABLE_BUILD_MODE hard 404 gate before auth), mounted in `app.ts`. `build-controller.integration.test.ts` (5 cases) green. Schema: `BuildTransaction` gained `approvedByUserId String?` + `approvedAt DateTime?` columns; pushed via `prisma db push`. |
 | 6    | Frontend `/build` page                 | ✅ | 3-pane layout matching `ui-mockup.html` at 1440×900. New files under `frontend/lib/build-api.ts`, `frontend/components/build/*`, `frontend/app/build/{layout,page}.tsx`. Palette inherited verbatim from `components/tuning/tokens.ts`. BROWNFIELD + disabled-gate verified live; GREENFIELD branch code-verified (trivial isGreenfield switch). |
-| 7    | End-to-end test + final handoff        | ⏳ session 6 | Includes fresh-tenant GREENFIELD walk-through + Langfuse trace + PR wrap. |
+| 7    | End-to-end test + final handoff        | ✅ | `backend/tests/integration/build-e2e.test.ts` — 3 always-on plumbing tests (GREENFIELD → seed plan → approve → rollback + idempotency + env-gate 404 sweep, ~10s) + 1 guarded live test (full interview → plan → approve → execute → test_pipeline → rollback via real `/api/build/turn` SSE, opt-in via `RUN_BUILD_E2E_LIVE=true` + `ANTHROPIC_API_KEY`). 3/3 plumbing green; full build-tune-agent suite stays 125/125 green; existing integration suite 9/9 green; `tsc --noEmit` clean. Cache metrics + screenshots + PR wrap skipped per user decision (sprint ships via direct branch deploy, no PR). |
 
 ## Decisions made this sprint (explicitly out of spec scope)
 
@@ -224,3 +224,17 @@ through as many gates as it can, updates this doc, and hands off via
   green (was 95 → test-judge +11, tenant-config bypass +3, test-pipeline
   tool +7 = 116). Prefix-stability threshold bumped 1024 → 2048 tokens
   for Sonnet 4.5/4.6, plus a tools-only measurement logged in CI.
+- 2026-04-20 — **Session 6 close — sprint 045 shipped.** Gate 7 Part 1
+  landed: `backend/tests/integration/build-e2e.test.ts` adds the
+  plumbing + live-agent regression moat (3 plumbing tests green in
+  ~10s, 1 live test gated on `RUN_BUILD_E2E_LIVE=true` +
+  `ANTHROPIC_API_KEY`). Gate 7 Parts 2 + 3 (cache-metrics walkthrough,
+  screenshots, PR wrap) skipped by user decision — sprint ships via
+  direct branch deploy on `feat/045-build-mode`, no PR, merge to main
+  deferred. `ENABLE_BUILD_MODE` remains off in every environment
+  default and in `.env.example`; the user flips it manually after
+  deploy when ready for staging/prod exposure. TUNE behaviour intact
+  at every commit. Full build-tune-agent suite 125/125 green;
+  `src/__tests__/integration` 9/9 green; backend `tsc --noEmit`
+  clean. Sprint 045 is closed — next session picks up on sprint 046
+  backlog in `NEXT.md`.

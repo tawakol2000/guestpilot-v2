@@ -1,7 +1,7 @@
 # GuestPilot — Unified Build+Tune Agent — Master Plan
 
 > Living doc. Updated as sprints land and the picture sharpens.
-> Last touched: 2026-04-19 (sprint 045 kickoff)
+> Last touched: 2026-04-20 (sprint 045 shipped)
 > Owner: Abdelrahman (ab.tawakol@gmail.com)
 
 ---
@@ -124,9 +124,18 @@ tools, plan-first orchestration, preview loop.
 
 Spec: `specs/045-build-mode/spec.md`.
 System prompt: `specs/045-build-mode/system-prompt.md`.
-Status: **in progress**.
-Target: 2 weeks.
-Behind `ENABLE_BUILD_MODE` env flag; staging-only until red-team ≥0.85.
+Status: **shipped 2026-04-20** — all 7 gates green on
+`feat/045-build-mode`. Shipped via direct branch deploy rather than PR
+by user decision; merge to main deferred. `ENABLE_BUILD_MODE` remains
+**off** in every environment default and in `.env.example` — the user
+flips it manually per-environment when ready to expose BUILD. Gate 7.2
+cache-metrics walkthrough + Gate 7.3 PR wrap skipped; the sprint-045
+E2E regression moat lives at
+`backend/tests/integration/build-e2e.test.ts` and runs on every
+`tsx --test` invocation (live live-agent path opt-in via
+`RUN_BUILD_E2E_LIVE=true`).
+See `specs/045-build-mode/PROGRESS.md` for the gate-by-gate closeout
+and `specs/045-build-mode/NEXT.md` for the sprint-046 backlog.
 
 ### Sprint 046 — Continuity and handoff (Ship 3)
 
@@ -158,11 +167,13 @@ Unlocks revenue beyond Abdelrahman's own operation.
 - **Batch preview subsystem** (golden-set + adversarial generator +
   deterministic rubric + LLM judging). Deferred from sprint 045 on
   2026-04-19 after the decision to ship a single-message
-  `test_pipeline` tool first. Trigger to build: a paying customer
-  explicitly asks for multi-scenario batch testing of AI behaviour
-  before apply, or D7-retention / default-override-rate data shows
-  the single-message loop is letting regressions through. Until then,
-  `test_pipeline` handles single-message verification.
+  `test_pipeline` tool first. Re-confirmed at sprint-045 close on
+  2026-04-20 — still in the backlog, still gated on the same trigger.
+  Trigger to build: a paying customer explicitly asks for
+  multi-scenario batch testing of AI behaviour before apply, or
+  D7-retention / default-override-rate data shows the single-message
+  loop is letting regressions through. Until then, `test_pipeline`
+  handles single-message verification.
 - Billing, plan tiers, per-tenant token budgets.
 - Multi-language BUILD interview support (Spanish, Portuguese, Arabic
   at minimum — serviced-apartments markets).
