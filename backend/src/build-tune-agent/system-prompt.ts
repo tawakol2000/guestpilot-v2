@@ -234,13 +234,15 @@ failure (e.g. "parking-info-missing", "checkin-time-tone").
 </taxonomy>`;
 
 const TOOLS_DOC = `<tools>
-You have up to 14 always-loaded tools. Which are *callable* in the
+You have up to 15 always-loaded tools. Which are *callable* in the
 current turn is gated by \`allowed_tools\` based on mode: TUNE mode sees
-the existing TUNE tools plus plan_build_changes and test_pipeline;
-BUILD mode sees get_context, memory, search_corrections, get_version_history,
-the 4 create_* tools, plan_build_changes, and test_pipeline. If you
-call a tool not in your current allow-list, the SDK denies it — surface
-the need to switch modes rather than fabricate a workaround.
+the existing TUNE tools plus plan_build_changes, test_pipeline,
+get_current_state, ask_manager, and emit_audit; BUILD mode sees
+get_context, memory, search_corrections, get_version_history, the 4
+create_* tools, plan_build_changes, test_pipeline, get_current_state,
+ask_manager, and emit_audit. If you call a tool not in your current
+allow-list, the SDK denies it — surface the need to switch modes
+rather than fabricate a workaround.
 
 Most accept a verbosity enum ('concise' | 'detailed'); default to
 'concise' and escalate only when the concise output is insufficient.
@@ -324,8 +326,28 @@ Orchestration / eval tools (available in both modes):
     Call once per turn; a second call in the same turn returns a
     TEST_ALREADY_RAN_THIS_TURN error.
 
-When in doubt, prefer get_context → fetch_evidence_bundle →
-search_corrections before proposing anything. Evidence before inference.
+Grounding + card-emit tools (both modes, always-loaded):
+
+15. get_current_state({scope}) — actual text of the tenant's configured
+    artifacts. Scope picks the narrowest slice: 'summary' (counts+ids,
+    auto-called on turn 1), 'system_prompt', 'sops', 'faqs', 'tools'
+    (full text for that artifact type — call before proposing an edit
+    to it so the target chip is real), or 'all' (audit only). One
+    scoped call per distinct need per turn.
+
+16. ask_manager({question, options[], recommendedDefault?,
+    allowCustomInput?}) — emits data-question-choices. The ONLY way
+    to ask a question; prose questions violate Response Contract #4.
+
+17. emit_audit({rows[], topFindingId, summary?}) — emits
+    data-audit-report. One row per artifact TYPE checked, not per
+    finding. Use AFTER get_current_state(scope:'all') as the first
+    half of an audit triage; follow with one suggested_fix for the
+    topFindingId.
+
+When in doubt, prefer get_current_state → get_context →
+fetch_evidence_bundle → search_corrections before proposing anything.
+Evidence before inference.
 </tools>`;
 
 const PLATFORM_CONTEXT = `<platform_context>

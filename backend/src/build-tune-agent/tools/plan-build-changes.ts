@@ -21,7 +21,9 @@ const DESCRIPTION = `plan_build_changes: Surface a reviewable plan of multiple a
 WHEN TO USE: BEFORE any sequence of 2+ create_* calls within a single user turn OR when a single manager statement implies multiple artifacts. Also appropriate in TUNE mode for multi-artifact corrections that touch SOPs + FAQs + system prompt together.
 WHEN NOT TO USE: Do NOT use for single-artifact operations. Do NOT use after create_* calls have already been made — call plan first or not at all.
 PARAMETERS:
-  items (array of { type: 'sop'|'faq'|'system_prompt'|'tool_definition', name: string, rationale: string })
+  items (array of { type: 'sop'|'faq'|'system_prompt'|'tool_definition', name: string, rationale: string, target?: {artifactId?, sectionId?, slotKey?, lineRange?}, previewDiff?: {before, after} })
+    - target: machine-readable pointer to the artifact/section the item edits. Supply whenever editing something that exists (lets the frontend render a chip so the manager can click through).
+    - previewDiff: optional before/after text for the plan-checklist's expandable disclosure. Omit if the body is being generated lazily inside the subsequent create_* call.
   rationale (string, ≤500 chars, overall plan rationale)
 RETURNS: { transactionId, plannedAt, approvalRequired, uiHint }`;
 
@@ -29,6 +31,25 @@ const planItemSchema = z.object({
   type: z.enum(['sop', 'faq', 'system_prompt', 'tool_definition']),
   name: z.string().min(1).max(120),
   rationale: z.string().min(5).max(500),
+  // Sprint 046 Session B — machine-readable target + optional before/after
+  // preview for the plan-checklist's expandable disclosure. Both fields are
+  // optional so existing planners don't break, but the frontend renders a
+  // chip whenever `target` is present and an "expand diff" affordance
+  // whenever `previewDiff` is present.
+  target: z
+    .object({
+      artifactId: z.string().optional(),
+      sectionId: z.string().optional(),
+      slotKey: z.string().optional(),
+      lineRange: z.tuple([z.number(), z.number()]).optional(),
+    })
+    .optional(),
+  previewDiff: z
+    .object({
+      before: z.string(),
+      after: z.string(),
+    })
+    .optional(),
 });
 
 export function buildPlanBuildChangesTool(

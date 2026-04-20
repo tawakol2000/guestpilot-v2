@@ -24,4 +24,7 @@ export const TUNING_AGENT_TOOL_NAMES = {
   test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__test_pipeline`,
   // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).
   get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
+  // Sprint 046, Session B — card-shaped I/O wrappers (callable in both modes).
+  ask_manager: `mcp__${TUNING_AGENT_SERVER_NAME}__ask_manager`,
+  emit_audit: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_audit`,
 } as const;

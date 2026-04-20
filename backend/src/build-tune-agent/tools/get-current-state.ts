@@ -101,7 +101,15 @@ export type CurrentStatePayload =
       tools: CurrentToolPayload[];
     };
 
-const DESCRIPTION = `Return the actual text of the tenant's configured artifacts. Use scope='summary' for counts + ids only (cheap); use 'system_prompt' | 'sops' | 'faqs' | 'tools' to pull the full text of that artifact type only when proposing an edit to it. Use 'all' only when running a full audit. Called with forced scope='summary' on the first turn of every conversation to ground subsequent edits.`;
+const DESCRIPTION = `Return the actual text of the tenant's configured artifacts. Pick the narrowest scope that answers the question at hand — calling wider than you need burns context tokens the rest of the turn could use.
+SCOPES:
+  'summary' — counts + ids only (cheap). Called automatically on the first turn of every conversation; follow-up calls only when counts alone answer the question.
+  'system_prompt' — full coordinator text + sections[]. Call before proposing any SYSTEM_PROMPT edit so the suggested-fix target can reference a real sectionId.
+  'sops' — all SopDefinitions with variants + property overrides. Call before SOP_CONTENT / SOP_ROUTING edits.
+  'faqs' — all FaqEntries (global + property-scoped). Call before FAQ edits or when evaluating coverage gaps.
+  'tools' — all ToolDefinitions (system + custom). Call before TOOL_CONFIG edits.
+  'all' — union of all non-summary scopes + summary. Use ONLY for full-audit prompts ("review my setup"); a single 'all' call replaces four scoped calls.
+ONE scoped call per distinct need per turn. A second call with the same scope in the same turn is flagged by the output linter.`;
 
 /**
  * Derive section anchors from the system-prompt text. The canonical template

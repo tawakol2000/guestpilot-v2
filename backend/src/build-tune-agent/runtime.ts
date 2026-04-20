@@ -117,6 +117,9 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.test_pipeline,
       // Sprint 046 Session A — full-artifact grounding tool (also in TUNE).
       TUNING_AGENT_TOOL_NAMES.get_current_state,
+      // Sprint 046 Session B — card-shaped I/O wrappers (also in TUNE).
+      TUNING_AGENT_TOOL_NAMES.ask_manager,
+      TUNING_AGENT_TOOL_NAMES.emit_audit,
     ];
   }
   // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
@@ -137,6 +140,9 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.test_pipeline,
     // Sprint 046 Session A — full-artifact grounding tool (shared with BUILD).
     TUNING_AGENT_TOOL_NAMES.get_current_state,
+    // Sprint 046 Session B — card-shaped I/O wrappers (shared with BUILD).
+    TUNING_AGENT_TOOL_NAMES.ask_manager,
+    TUNING_AGENT_TOOL_NAMES.emit_audit,
   ];
 }
 

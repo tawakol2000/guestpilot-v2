@@ -423,3 +423,92 @@ layer once explicit breakpoints are adopted.
   middleware's module-load assertion. Pre-existing from sprint 045;
   passes cleanly when `JWT_SECRET=test npm test …` is invoked. Worth
   hardening in a follow-up but NOT in session A's scope.
+
+## Sprint 046 — Session B (Phase B: cards + SSE parts)
+
+Completed: 2026-04-20. Branch: `feat/046-studio-unification` (continued
+from Session A; no new branch).
+
+| Gate | Item | Status | Notes |
+|------|------|--------|-------|
+| B1   | Four new SSE part types + stream-bridge pass-through | ✅ | New module `build-tune-agent/data-parts.ts` with typed contracts for `data-suggested-fix`, `data-question-choices`, `data-audit-report`, `data-advisory`. `stream-bridge.ts` header updated to document that data parts bypass the bridge (they flow via `emitDataPart` → writer directly). 5 round-trip tests. |
+| B2   | `ask_manager` + `emit_audit` tools + `propose_suggestion` retrofit | ✅ | Two thin wrappers registered in `tools/index.ts` + both allow-lists. `propose_suggestion` now emits `data-suggested-fix` (target + before/after + impact + category) ALONGSIDE the legacy `data-suggestion-preview`, derived from `editFormat`+ `oldText`/`newText` or `beforeText`/`proposedText`. `FixTarget` inferred from the legacy `targetHint` when `target` absent so existing TUNE callsites still render a target chip. 11 new unit tests (4 ask_manager, 4 emit_audit, 3 propose_suggestion retrofit). |
+| B3   | Extended `plan-build-changes` item schema | ✅ | Added optional `target` (artifactId/sectionId/slotKey/lineRange) and `previewDiff` (before/after) to the plan-item zod schema + tool description. Frontend `PlanChecklist` will render the chip + diff disclosure in Session C. 1 new test added; existing 4 tests remain green. |
+| B4   | `studio/tokens.ts` + five card components | ✅ | `frontend/components/studio/{tokens.ts, suggested-fix.tsx, question-choices.tsx, audit-report.tsx, state-snapshot.tsx, reasoning-line.tsx, index.ts}`. Main-app palette (#0A0A0A ink, #FFFFFF canvas, #0070F3 accent). Category pastels retained per plan §3.3 decision #3 — they're artifact-type labels. No imports from `components/tuning/*` for chrome. Components are presentation-only; Session C wires them to real handlers inside `inbox-v5.tsx`. |
+| B5   | `get_current_state` prompt update + cache baselines refresh | ✅ | Shared prefix `<tools>` doc gained entries 15/16/17 (get_current_state scopes + ask_manager + emit_audit). Tool description in `tools/get-current-state.ts` now lists each scope's appropriate call site. Region A drift +258 tokens (3,283 → 3,541) — under the +300 budget. Tool array grew +573 tokens, 15→17 tools. First pass drifted +579 tokens; pruned the per-scope verbose descriptions back to a one-line contract that still pushes the agent toward narrow scopes. |
+| B6   | Full suite + `tsc --noEmit` clean | ✅ | `build-tune-agent` tree 161/161 green when run with `JWT_SECRET=test OPENAI_API_KEY=sk-test` (was 158 → +3 data-parts overhead + +11 B2 + +1 B3 = +15 new, minus known-delta from test grouping). `src/__tests__/integration/*.test.ts` 9/9 green. `tests/integration/build-e2e.test.ts` 3/3 plumbing green. Backend `tsc --noEmit` clean. Frontend `tsc --noEmit` — no new errors in `components/studio/*` or `components/build/*`; pre-existing `inbox-v5.tsx` / `sandbox-chat-v5.tsx` / `tools-v5.tsx` errors unchanged (documented at sprint-045 session 5 close). |
+| B7   | PROGRESS.md updated + NEXT.md for Session C | ✅ | This section + `NEXT.md` rewritten for Session C. Session B's NEXT archived as `NEXT.sprint-046-session-b.archive.md`. |
+
+### Cache baselines (post-Session B)
+
+| Slice | Chars | Est. tokens | Δ vs Session A close |
+|-------|-------|-------------|----------------------|
+| Region A (shared prefix) | 14,162 | 3,541 | +1,033 / +258 |
+| TUNE cacheable (A + addendum) | 17,265 | 4,317 | +1,033 / +259 |
+| BUILD cacheable (A + addendum) | 19,563 | 4,891 | +1,033 / +258 |
+| Tools array only (17 tools) | 12,286 | 3,072 | +2,292 / +573 |
+
+All four slices stay comfortably above the 2,048-token Sonnet 4.5/4.6
+per-layer cache floor. Tools array grew most (+573 tokens) because
+`ask_manager` + `emit_audit` tool descriptions land in the tools array
+rather than the shared prefix; this is the right split (tools-array
+cache layer is permitted to grow under its 2048 floor, but with 17
+tools we're now well above it).
+
+### Decisions made this session
+
+- **Stream-bridge unchanged.** NEXT.md instructed "extend stream-bridge
+  with pass-through for four new types", but the actual data-part flow
+  bypasses `bridgeSDKMessage` — tools emit via `emitDataPart` → writer
+  directly. Added a header comment documenting the bypass + a typed
+  contract module (`data-parts.ts`) so adding new parts is a two-step
+  change (module + frontend consumer) rather than three.
+- **Propose-suggestion retrofit emits BOTH old and new parts.** The
+  legacy `data-suggestion-preview` keeps firing so TUNE's existing
+  diff-viewer surface doesn't break; the new `data-suggested-fix`
+  rides alongside for Studio cards. Clean separation between legacy
+  TUNE UI (sprint 045) and new Studio UI (sprint 046). Session D can
+  retire the legacy part after Studio ships.
+- **`FixTarget` derived from legacy `targetHint` when `target`
+  absent.** A strict no-fallback approach would make every existing
+  TUNE callsite emit an untargeted `data-suggested-fix`. A best-effort
+  derivation (category-keyed mapping) means Session C cards render a
+  useful target chip out of the box even on legacy TUNE flows.
+- **get_current_state description trimmed back after first pass over-
+  shot the +300 budget.** The first verbose description blew Region A
+  to +579 tokens; pruned scope bullets from multi-line to single-line
+  contracts (still name every scope + when to call it, just terser).
+  Landing at +258 tokens. Flag for Session D / sprint 047: if the
+  agent starts mis-choosing scopes, re-inflate but use a dynamic-
+  suffix inclusion rather than the shared prefix.
+- **`ask_manager` / `emit_audit` added to TOOLS_DOC as items 16/17.**
+  Keeps the prompt self-describing but kept the entries to ~2 lines
+  each. The full contract (schema, rationale) lives in their
+  individual tool `DESCRIPTION` constants, which land in the tools
+  array, not Region A.
+
+### Deferred to next session
+
+- Shell merge (`/studio` tab inside `inbox-v5.tsx`) → Session C.
+- Old-route 302 redirects (`/build`, `/tuning`, `/tuning/agent`) →
+  Session C.
+- Wiring Studio cards to real endpoints (accept / reject / fix-top-
+  finding) → Session C (components are presentation-only today).
+- 48h cooldown removal + `data-advisory` recent-edit toast → Session D.
+- Session-scoped rejection memory (`session/{conv}/rejected/{hash}`)
+  → Session D / sprint 047.
+- Retire the legacy `data-suggestion-preview` once Studio ships →
+  Session D.
+- Output-linter drop-not-log flip → Session D.
+- `BuildToolCallLog` 30-day retention sweep → sprint 047.
+
+### Blocked / surfaced
+
+- Pre-existing `preview/__tests__/tenant-config-bypass.test.ts`
+  brittleness on JWT_SECRET / OPENAI_API_KEY — same behaviour Session
+  A documented. Passes with both env vars set. No change attempted
+  this session (out of scope).
+- Pre-existing TypeScript errors in `frontend/components/inbox-v5.tsx`,
+  `sandbox-chat-v5.tsx`, `tools-v5.tsx` remain unchanged. These
+  predate sprint 046 (flagged at sprint 045 session 5 close) and
+  don't affect any Studio component compilation.

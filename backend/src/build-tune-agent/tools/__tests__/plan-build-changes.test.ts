@@ -128,3 +128,46 @@ test('plan_build_changes: does NOT execute create_* — only persists PLANNED', 
   // completedAt not set at plan time.
   assert.equal(txs[0].completedAt, undefined);
 });
+
+test('plan_build_changes: item target + previewDiff flow through to the data-build-plan emit', async () => {
+  const { prisma, txs } = makeFakePrisma();
+  const ctx = makeCtx(prisma);
+  const { factory, invoke } = captureTool();
+  buildPlanBuildChangesTool(factory, () => ctx);
+  await invoke({
+    items: [
+      {
+        type: 'system_prompt',
+        name: 'coordinator',
+        rationale: 'Tighten weekend late-checkout policy.',
+        target: { sectionId: 'checkout_time' },
+        previewDiff: {
+          before: 'Checkout is at 11am.',
+          after: 'Checkout is at 10am on weekends, 11am otherwise.',
+        },
+      },
+      {
+        type: 'sop',
+        name: 'weekend-late-checkout',
+        rationale: 'New SOP to cover the policy change.',
+      },
+    ],
+    rationale: 'Weekend turnover tightening.',
+  });
+
+  assert.equal(txs.length, 1);
+  const emitted = ctx._emitted.find((p) => p.type === 'data-build-plan');
+  assert.ok(emitted, 'data-build-plan emitted');
+  const items = (emitted!.data as any).items;
+  assert.equal(items.length, 2);
+  // Item 1 carries the new target + previewDiff.
+  assert.deepEqual(items[0].target, { sectionId: 'checkout_time' });
+  assert.equal(items[0].previewDiff.before, 'Checkout is at 11am.');
+  assert.equal(
+    items[0].previewDiff.after,
+    'Checkout is at 10am on weekends, 11am otherwise.'
+  );
+  // Item 2 is valid without target/previewDiff (both optional).
+  assert.equal(items[1].target, undefined);
+  assert.equal(items[1].previewDiff, undefined);
+});

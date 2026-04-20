@@ -10,6 +10,13 @@
  * framework code): the chat controller wires it to `createUIMessageStream`
  * and `pipeUIMessageStreamToResponse`.
  *
+ * Data parts (`data-*`) do NOT flow through this bridge — tools emit them
+ * directly via the runtime's `emitDataPart` sink, which writes to the
+ * Vercel AI SDK stream writer as already-shaped chunks. Adding a new
+ * `data-*` type requires (a) a contract entry in `./data-parts.ts` and
+ * (b) a frontend `StandalonePart` consumer; no change here. See sprint
+ * 046 Session B plan §5.4.
+ *
  * Minimal, correct-enough coverage:
  *   - `assistant` messages with text content blocks → text-start/end
  *     around a single text-delta with the whole text.
