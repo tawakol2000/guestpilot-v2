@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Keyboard, X } from 'lucide-react'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 type Shortcut = {
   keys: string[]

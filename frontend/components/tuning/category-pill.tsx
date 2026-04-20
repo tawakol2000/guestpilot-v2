@@ -1,7 +1,7 @@
 'use client'
 
 import type { TuningDiagnosticCategory } from '@/lib/api'
-import { categoryStyle } from './tokens'
+import { categoryStyle } from '../studio/tokens'
 
 /**
  * Sprint 07: category pills are rendered as a small rounded-full chip.

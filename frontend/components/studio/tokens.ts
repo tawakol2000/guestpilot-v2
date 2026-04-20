@@ -95,3 +95,105 @@ export const STUDIO_STATUS_DOT = {
 } as const;
 
 export type StudioStatus = keyof typeof STUDIO_STATUS_DOT;
+
+// ─── TUNE-era compat surface (sprint 046 Session D) ────────────────────
+//
+// Sprint 046 Session D retired `frontend/components/tuning/tokens.ts`.
+// The legacy /tuning/{pairs,history,sessions,…} sub-routes still exist
+// (redirect stubs deferred to sprint 047) and their components still
+// compile against the old `TUNING_COLORS` / `CATEGORY_STYLES` /
+// `categoryStyle` / `triggerLabel` export surface. Rather than inline a
+// fallback at every callsite, we publish a compat namespace from the
+// Studio tokens module so those components keep compiling without
+// reintroducing a second source of truth.
+//
+// Violet is still gone from the chrome palette. The one token the
+// compat surface needs that Studio doesn't use is `accent` — we map it
+// to Studio's blue, and expose a muted grey (`accentMuted`) that
+// tuning-era confidence gradients relied on. The tuning-era
+// `accentHover` and `accentSoft` likewise map to Studio's tokens. The
+// category pastels are identical to plan §3.3's retained set.
+
+import type { TuningDiagnosticCategory, TuningTriggerType } from '@/lib/api';
+
+export const TUNING_COLORS = {
+  canvas: STUDIO_COLORS.canvas,
+  surfaceRaised: STUDIO_COLORS.surfaceRaised,
+  surfaceSunken: STUDIO_COLORS.surfaceSunken,
+  ink: STUDIO_COLORS.ink,
+  inkMuted: STUDIO_COLORS.inkMuted,
+  inkSubtle: STUDIO_COLORS.inkSubtle,
+  hairline: STUDIO_COLORS.hairline,
+  hairlineSoft: STUDIO_COLORS.hairlineSoft,
+  accent: STUDIO_COLORS.accent,
+  accentHover: STUDIO_COLORS.accentHover,
+  accentSoft: STUDIO_COLORS.accentSoft,
+  // Muted accent for tuning-era confidence gradients. Studio chrome
+  // doesn't surface this; callsites in legacy tuning components do.
+  accentMuted: STUDIO_COLORS.inkSubtle,
+  diffAddBg: STUDIO_COLORS.diffAddBg,
+  diffAddFg: STUDIO_COLORS.diffAddFg,
+  diffDelBg: STUDIO_COLORS.diffDelBg,
+  diffDelFg: STUDIO_COLORS.diffDelFg,
+  warnBg: STUDIO_COLORS.warnBg,
+  warnFg: STUDIO_COLORS.warnFg,
+  successFg: STUDIO_COLORS.successFg,
+  dangerBg: STUDIO_COLORS.dangerBg,
+  dangerFg: STUDIO_COLORS.dangerFg,
+} as const;
+
+type TuneCategoryStyle = { bg: string; fg: string; label: string };
+
+export const LEGACY_CATEGORY_STYLE: TuneCategoryStyle = {
+  bg: STUDIO_COLORS.surfaceSunken,
+  fg: STUDIO_COLORS.inkMuted,
+  label: 'Edit',
+};
+
+export const CATEGORY_STYLES: Record<TuningDiagnosticCategory, TuneCategoryStyle> = {
+  SOP_CONTENT: STUDIO_CATEGORY_STYLES.SOP_CONTENT,
+  SOP_ROUTING: STUDIO_CATEGORY_STYLES.SOP_ROUTING,
+  FAQ: STUDIO_CATEGORY_STYLES.FAQ,
+  SYSTEM_PROMPT: STUDIO_CATEGORY_STYLES.SYSTEM_PROMPT,
+  TOOL_CONFIG: STUDIO_CATEGORY_STYLES.TOOL_CONFIG,
+  MISSING_CAPABILITY: STUDIO_CATEGORY_STYLES.MISSING_CAPABILITY,
+  PROPERTY_OVERRIDE: STUDIO_CATEGORY_STYLES.PROPERTY_OVERRIDE,
+  NO_FIX: STUDIO_CATEGORY_STYLES.NO_FIX,
+};
+
+export const CATEGORY_ACCENT: Record<TuningDiagnosticCategory | 'LEGACY', string> = {
+  SOP_CONTENT: '#CA8A04',
+  SOP_ROUTING: '#EA580C',
+  FAQ: '#14B8A6',
+  SYSTEM_PROMPT: '#3B82F6',
+  TOOL_CONFIG: '#8B5CF6',
+  MISSING_CAPABILITY: '#EC4899',
+  PROPERTY_OVERRIDE: '#06B6D4',
+  NO_FIX: STUDIO_COLORS.inkSubtle,
+  LEGACY: STUDIO_COLORS.inkSubtle,
+};
+
+export function categoryStyle(category: TuningDiagnosticCategory | null): TuneCategoryStyle {
+  if (!category) return LEGACY_CATEGORY_STYLE;
+  return CATEGORY_STYLES[category] ?? LEGACY_CATEGORY_STYLE;
+}
+
+export function categoryAccent(category: TuningDiagnosticCategory | null): string {
+  if (!category) return CATEGORY_ACCENT.LEGACY;
+  return CATEGORY_ACCENT[category] ?? CATEGORY_ACCENT.LEGACY;
+}
+
+export const TRIGGER_LABELS: Record<TuningTriggerType, string> = {
+  MANUAL: 'Manual',
+  EDIT_TRIGGERED: 'Edited before send',
+  REJECT_TRIGGERED: 'Wholesale rewrite',
+  COMPLAINT_TRIGGERED: 'Complaint',
+  THUMBS_DOWN_TRIGGERED: 'Thumbs down',
+  CLUSTER_TRIGGERED: 'Cluster pattern',
+  ESCALATION_TRIGGERED: 'Escalation',
+};
+
+export function triggerLabel(trigger: TuningTriggerType | null): string {
+  if (!trigger) return 'Legacy';
+  return TRIGGER_LABELS[trigger] ?? String(trigger);
+}

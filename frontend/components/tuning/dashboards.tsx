@@ -21,7 +21,7 @@ import {
   type TuningRetentionSummary,
   type TuningDiagnosticCategory,
 } from '@/lib/api'
-import { TUNING_COLORS, categoryAccent, categoryStyle } from './tokens'
+import { TUNING_COLORS, categoryAccent, categoryStyle } from '../studio/tokens'
 
 function fmtPct(n: number | null | undefined, digits = 0): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '—'

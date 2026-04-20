@@ -21,7 +21,7 @@ import {
   apiCreateTuningConversation,
   type TuningSuggestion,
 } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function DiscussButton({
   suggestion,

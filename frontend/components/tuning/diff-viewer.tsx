@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 // Minimal word-level LCS-based diff. Good enough for conversational edits
 // (40-800 chars). Keeps us from adding a dependency.

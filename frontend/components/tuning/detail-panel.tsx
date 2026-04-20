@@ -28,7 +28,7 @@ import { DiffViewer } from './diff-viewer'
 import { DiscussButton } from './discuss-button'
 import { EvidencePane } from './evidence-pane'
 import { RelativeTime } from './relative-time'
-import { TUNING_COLORS, triggerLabel } from './tokens'
+import { TUNING_COLORS, triggerLabel } from '../studio/tokens'
 
 export function DetailPanel({
   suggestion,

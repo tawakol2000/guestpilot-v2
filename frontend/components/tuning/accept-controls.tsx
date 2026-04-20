@@ -13,7 +13,7 @@ import {
   apiAcceptTuningSuggestion,
   apiRejectTuningSuggestion,
 } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 import { DiffViewer } from './diff-viewer'
 
 type Mode = 'idle' | 'dispatch' | 'edit' | 'reject' | 'saving'

@@ -11,7 +11,7 @@ import {
 import { TuningAuthGate } from '@/components/tuning/auth-gate'
 import { TuningTopNav } from '@/components/tuning/top-nav'
 import { RelativeTime } from '@/components/tuning/relative-time'
-import { TUNING_COLORS } from '@/components/tuning/tokens'
+import { TUNING_COLORS } from '@/components/studio/tokens'
 
 const STATUS_OPTIONS: CapabilityRequestStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'WONT_FIX']
 

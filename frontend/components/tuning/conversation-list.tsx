@@ -19,7 +19,7 @@ import {
   apiListTuningConversations,
   type TuningConversationSummary,
 } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 import { RelativeTime } from './relative-time'
 
 export function ConversationList({

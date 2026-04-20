@@ -12,7 +12,7 @@
  */
 
 import { Toaster } from 'sonner'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function TuningToaster() {
   return (

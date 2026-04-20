@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog'
-import { TUNING_COLORS } from '../tuning/tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function ConfirmRollbackDialog({
   open,

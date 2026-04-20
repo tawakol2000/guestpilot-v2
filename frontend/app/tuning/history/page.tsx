@@ -11,7 +11,7 @@ import { TuningAuthGate } from '@/components/tuning/auth-gate'
 import { TuningTopNav } from '@/components/tuning/top-nav'
 import { DiffViewer } from '@/components/tuning/diff-viewer'
 import { RelativeTime } from '@/components/tuning/relative-time'
-import { TUNING_COLORS } from '@/components/tuning/tokens'
+import { TUNING_COLORS } from '@/components/studio/tokens'
 
 const ARTIFACT_LABEL: Record<VersionHistoryEntry['artifactType'], string> = {
   SYSTEM_PROMPT: 'System prompt',

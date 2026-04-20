@@ -30,7 +30,7 @@ import {
 } from '@/lib/api'
 import { TuningAuthGate } from '@/components/tuning/auth-gate'
 import { TuningTopNav } from '@/components/tuning/top-nav'
-import { TUNING_COLORS } from '@/components/tuning/tokens'
+import { TUNING_COLORS } from '@/components/studio/tokens'
 
 const RESERVATION_STATUSES = ['INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] as const
 type Status = (typeof RESERVATION_STATUSES)[number]

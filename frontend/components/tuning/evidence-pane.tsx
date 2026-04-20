@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { getToken } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function EvidencePane({
   open,

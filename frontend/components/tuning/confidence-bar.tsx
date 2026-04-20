@@ -1,6 +1,6 @@
 'use client'
 
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 /**
  * Sprint 07: thinner track (3px), rounded-full both track and fill,

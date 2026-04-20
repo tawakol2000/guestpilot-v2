@@ -26,7 +26,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import { apiCreateTuningConversation } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 type Template = {
   icon: React.ReactNode

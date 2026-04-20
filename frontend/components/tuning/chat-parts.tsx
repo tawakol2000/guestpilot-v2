@@ -21,7 +21,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Sparkles, X } from 'lucide-react'
-import { TUNING_COLORS, categoryStyle } from './tokens'
+import { TUNING_COLORS, categoryStyle } from '../studio/tokens'
 import { DiffViewer } from './diff-viewer'
 import type {
   TuningApplyMode,

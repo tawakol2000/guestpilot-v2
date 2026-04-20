@@ -24,7 +24,7 @@ import {
   type UIMessage,
 } from 'ai';
 import { AuthenticatedRequest } from '../types';
-import { runTuningAgentTurn } from '../tuning-agent';
+import { runTuningAgentTurn } from '../build-tune-agent';
 import crypto from 'crypto';
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {

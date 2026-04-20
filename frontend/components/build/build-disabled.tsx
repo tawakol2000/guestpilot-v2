@@ -11,7 +11,7 @@
  * scaffold would misleadingly imply the surface is partially available.
  */
 import { Lock } from 'lucide-react'
-import { TUNING_COLORS } from '../tuning/tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function BuildDisabled() {
   return (

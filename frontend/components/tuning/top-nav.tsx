@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ChevronLeft, Menu } from 'lucide-react'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 const links: Array<{ href: string; label: string; group?: 'review' | 'configure' | 'analyze' }> = [
   { href: '/tuning', label: 'Suggestions', group: 'review' },

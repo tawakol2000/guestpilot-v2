@@ -30,7 +30,7 @@ import { TuningTopNav } from '@/components/tuning/top-nav'
 import { DiffViewer } from '@/components/tuning/diff-viewer'
 import { RelativeTime } from '@/components/tuning/relative-time'
 import { CategoryPill } from '@/components/tuning/category-pill'
-import { CATEGORY_STYLES, TUNING_COLORS, categoryStyle } from '@/components/tuning/tokens'
+import { CATEGORY_STYLES, TUNING_COLORS, categoryStyle } from '@/components/studio/tokens'
 
 function pickText(value: unknown): string {
   if (value === null || value === undefined) return ''

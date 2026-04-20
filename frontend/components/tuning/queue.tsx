@@ -6,7 +6,7 @@ import type { TuningSuggestion, TuningTriggerType } from '@/lib/api'
 import { CategoryPill } from './category-pill'
 import { ConfidenceBar } from './confidence-bar'
 import { RelativeTime } from './relative-time'
-import { TUNING_COLORS, categoryAccent, triggerLabel } from './tokens'
+import { TUNING_COLORS, categoryAccent, triggerLabel } from '../studio/tokens'
 
 type Group = { key: TuningTriggerType | 'LEGACY'; label: string; items: TuningSuggestion[] }
 

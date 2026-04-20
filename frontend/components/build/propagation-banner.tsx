@@ -13,7 +13,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Zap, X } from 'lucide-react'
-import { TUNING_COLORS } from '../tuning/tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 
 export function PropagationBanner({
   onDismiss,

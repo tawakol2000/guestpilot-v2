@@ -24,7 +24,7 @@ import {
   type TuningConversationDetail,
   type TuningConversationMessage,
 } from '@/lib/api'
-import { TUNING_COLORS } from './tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 import {
   AgentDisabledCard,
   EvidenceInline,

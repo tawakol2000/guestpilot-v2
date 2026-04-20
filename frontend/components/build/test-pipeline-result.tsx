@@ -7,7 +7,7 @@
  * rationale.
  */
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { TUNING_COLORS } from '../tuning/tokens'
+import { TUNING_COLORS } from '../studio/tokens'
 import type { TestPipelineResultData } from '@/lib/build-api'
 
 export function TestPipelineResult({ data }: { data: TestPipelineResultData }) {
