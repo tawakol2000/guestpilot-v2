@@ -342,3 +342,37 @@ For new contributors, in order of priority.
    lineage.
 7. `SPEC.md` at the repo root — full system specification.
 8. `AI_SYSTEM_FLOW.md` at the repo root — main AI pipeline detail.
+
+---
+
+## Sprint 046 — shipped (2026-04-21)
+
+Four sessions on `feat/046-studio-unification` (branched off
+`feat/045-build-mode`; sprint 045 is not yet merged to main, so 046
+builds on top of it). Net surface change:
+
+- **Unified Studio tab** — `/build`, `/tuning`, `/tuning/agent` folded
+  into one hash-state tab inside the main app shell (`inbox-v5.tsx`).
+  The old top-level routes survive one sprint as 302 redirect stubs
+  (deletion deferred to sprint 047). Main-app palette replaces the
+  violet-forward tuning chrome.
+- **Grounding-aware agent** — new `get_current_state` tool + forced
+  first-turn call gives the agent full artifact text instead of
+  counts-only. Response Contract (7 rules) + Triage Rules in both
+  mode addenda push the agent toward card-first, single-top-finding
+  outputs.
+- **Enforcement linter** — post-turn output linter; R1 (long prose)
+  and R2 (multiple suggested-fix) now enforce via `data-advisory`
+  emits + first-wins interception, not log-only. R3 stays log-only.
+- **Cleanup sweep** — 48h cooldown deny retired to a recent-edit
+  advisory; oscillation deny flipped to advisory; session-scoped
+  rejection memory for dismissed fixes; legacy
+  `data-suggestion-preview` retired; back-compat shims
+  (`tuning-agent/`, `components/tuning/tokens.ts`) deleted; orphaned
+  `components/build/*` files swept.
+
+See `PROGRESS.md` "Sprint 046" sections A + B + C + D + closing
+paragraph for the full gate tables, cache baselines, and deferrals.
+Sprint-047 carry-over (primarily D9's `BuildToolCallLog` admin trace
+view + the redirect-stub deletion + dashboards merge) is scoped in
+the fresh `NEXT.md` written at sprint 046's close.

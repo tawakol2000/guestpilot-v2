@@ -614,3 +614,131 @@ cacheable 4,891, tools-only 3,072). No drift to investigate.
   would be cleaner as in-place tab switches if they ever move back
   inside the main app shell. Out of scope for Session C; Session D
   can rewrite them if it touches the files.
+
+## Sprint 046 — Session D (Phase D: cleanup + cooldown + rejection memory)
+
+Completed: 2026-04-21. Branch: `feat/046-studio-unification` (continued
+from Session C; no new branch).
+
+| Gate | Item | Status | Notes |
+|------|------|--------|-------|
+| D1   | 48h cooldown removal + oscillation-as-advisory | ✅ | `COOLDOWN_WINDOW_MS` renamed to `RECENT_EDIT_WINDOW_MS` and demoted to a non-blocking advisory emit. Oscillation-deny flipped to a `data-advisory` (kind: 'oscillation') with the same 1.25× boost-floor diagnostic. `pre-tool-use-hook.test.ts` updated: cooldown-deny test removed; added (a) recent-edit emit, (b) recent-edit NOT emitted when older than 48h, (c) oscillation emits advisory without denying, (d) immediate second apply succeeds. 14/14 pass. |
+| D2   | `data-advisory` recent-edit emitter | ✅ | Landed with D1 — same code path. The frontend `StandalonePart` already rendered `data-advisory` (Session C), so no frontend change required. |
+| D3   | Session-scoped rejection memory + propose_suggestion guard | ✅ | `memory/service.ts` gained `computeRejectionFixHash`, `writeRejectionMemory`, `listRejectionHashes`, and a `RejectionIntent` type. `propose_suggestion` computes the hash before emit and returns `status: 'SKIPPED_REJECTED'` with a rephrase hint on match. `rejectSuggestedFix` controller endpoint writes a real row under `session/{conv}/rejected/{hash}`. Frontend `apiRejectSuggestedFix` takes a `RejectSuggestedFixPayload` (conversationId + target + category + subLabel). +4 memory-service tests, +3 propose-suggestion tests, +1 integration case (6/6 integration green, was 5). |
+| D4   | Output-linter R1 + R2 drop-not-log enforcement | ✅ | R2 enforcement lives at the `emitDataPart` boundary in `runtime.ts` — first-wins; subsequent `data-suggested-fix` emits are dropped before hitting stream + persistence; `suggestedFixDropped` counter drives a single `data-advisory` (kind: 'linter-drop') at turn end. R1 emits a `linter-drop` advisory with the 120-word hint; text is not retroactively truncated (already streamed to client). R3 stays log-only per plan §5.5 risk. `output-linter.ts` exports `buildLinterAdvisories`; +3 advisory tests. |
+| D5   | Retire legacy `data-suggestion-preview` | ✅ | `propose_suggestion` no longer dual-emits. `DATA_PART_TYPES.suggestion_preview` key kept and marked `@deprecated`; the frontend `StandalonePart` null-branch for the legacy part remains as a stale-session safety net. Remaining backend grep residue is all doc + tests + the deprecated-JSDoc entry (see S-4 note). |
+| D6   | Delete `backend/src/tuning-agent/index.ts` shim | ✅ | Shim file removed. Sole importer (`controllers/tuning-chat.controller.ts`) now imports from `'../build-tune-agent'` directly. `grep -r "from.*tuning-agent" backend/src` → empty (S-5 green). |
+| D7   | Delete `frontend/components/tuning/tokens.ts` | ✅ | File deleted. Compat surface (`TUNING_COLORS`, `CATEGORY_STYLES`, `categoryStyle`, `categoryAccent`, `TRIGGER_LABELS`, `triggerLabel`, `LEGACY_CATEGORY_STYLE`, `CATEGORY_ACCENT`) now lives in `components/studio/tokens.ts` sourced from the Studio palette. 30+ importers (components/tuning/*, components/build/*, app/tuning/*) migrated. Frontend `tsc --noEmit` line count holds at 32 (S-8 green). |
+| D8   | Orphaned `components/build/*` sweep | ✅ | Deleted: `build-chat.tsx`, `build-toaster.tsx`, `page-skeleton.tsx`, `setup-progress.tsx`, `transaction-history.tsx`. Kept (still imported by Studio surface): `plan-checklist.tsx`, `build-disabled.tsx`, `propagation-banner.tsx`, `test-pipeline-result.tsx`, `confirm-dialog.tsx`. `app/build/layout.tsx` simplified to no longer mount `BuildToaster`. |
+| D9   | `BuildToolCallLog` admin trace view | ⏭️ deferred → sprint 047 | Honoured the NEXT.md §6 "if bloating, defer D9" discipline. Observability-only, not a correctness fix — Session D shipped the core behaviour flips instead. Carry-over noted in sprint-047 NEXT.md. |
+| D10  | Full suite + `tsc --noEmit` + smoke | ✅ | Backend `tsc --noEmit` clean. Build-tune-agent tree 186/186 green (was 175 at Session C close → +4 memory rejection tests, +4 new pre-tool-use tests, +3 output-linter advisory tests, +3 propose-suggestion rejection tests, delta includes a cooldown-test deletion). `src/__tests__/integration/*.test.ts` 10/10 green (was 9 → +1 reject-endpoint case). `tests/integration/build-e2e.test.ts` 3/3 plumbing green, live test env-gated. Frontend `tsc --noEmit` = 32 lines (session-C baseline preserved). Staging smoke still blocked on a real JWT — see "Blocked / surfaced" below. |
+| D11  | PROGRESS.md final wrap + MASTER_PLAN entry | ✅ | This section + "Sprint 046 — shipped" entry in MASTER_PLAN.md + sprint-047 NEXT.md scaffolded. |
+
+### Cache baselines (post-Session D)
+
+No drift this session — none of the Session D changes touched the
+system prompt, mode addenda, or tool registration. Baselines are
+byte-identical to Session B/C close:
+
+| Slice | Chars | Est. tokens | Δ vs Session C close |
+|-------|-------|-------------|----------------------|
+| Region A (shared prefix) | 14,162 | 3,541 | 0 |
+| TUNE cacheable (A + addendum) | 17,265 | 4,317 | 0 |
+| BUILD cacheable (A + addendum) | 19,563 | 4,891 | 0 |
+| Tools array only (17 tools) | 12,286 | 3,072 | 0 |
+
+### Decisions made this session
+
+- **R1 does NOT truncate already-streamed text.** Plan §5.5 proposed
+  truncating prose on rule-1 fire. By the time the linter runs
+  post-turn, the text has already landed on the client and in
+  `event.responseMessage.parts`. A retroactive truncation would
+  require rewriting the Vercel AI SDK stream event, which is out of
+  scope for a behavioural cleanup session. The advisory still fires
+  and visibly flags the lint hit; DB persistence carries the full
+  text so a rerun surfaces both the original prose and the advisory.
+  Truncating at persist time is a sprint-047 candidate if Langfuse
+  shows long-prose turns surviving the advisory.
+- **R2 enforcement at emit-time, not persist-time.** Intercepting at
+  the `emitDataPart` boundary gives us first-wins against the live
+  stream too — the client never sees the duplicate card in the first
+  place, not just the persisted form. Cleaner UX than a post-hoc
+  drop.
+- **Legacy `data-suggestion-preview` part-type key retained.** The
+  emitter is gone but the `DATA_PART_TYPES.suggestion_preview` key
+  stays under a `@deprecated` tag. Two reasons: (1) an in-flight
+  session on an older deploy may still emit it after the flip; the
+  linter's STRUCTURED_PART_TYPES set recognises it so those in-flight
+  turns don't spuriously trip R1; (2) the frontend `StandalonePart`
+  null-branch stays as a silent no-op, not a blocker.
+- **`components/tuning/tokens.ts` deleted by migrating 30+
+  importers, not by re-exporting from a shim.** Fewer moving parts
+  than a shim layer and the `TUNING_COLORS` compat surface lives in a
+  single file (`studio/tokens.ts`) instead of two. NEXT.md §2.7
+  permitted either route; the bulk-rewrite was a trivial perl sweep.
+- **D9 deferred intentionally.** Per NEXT.md §6's "defer rather than
+  sprawl" discipline: D9 is an observability drawer, not a behaviour
+  flip, and it carries the largest per-gate surface (new prisma read,
+  new route, new drawer component, new env flag). Ship the
+  correctness gates first. Carry to sprint 047.
+
+### Deferred to sprint 047
+
+- **`BuildToolCallLog` admin trace view** (D9). Drawer + read-only
+  `GET /api/build/traces` endpoint + role-gate. Observability-only.
+- **30-day retention sweep on `BuildToolCallLog`** (inherited).
+- **Dashboards merge** into main Analytics tab (inherited from
+  sprint 045 plan §9).
+- **Raw-prompt editor drawer** (inherited, plan §6.5). Admin-only.
+- **Deletion of the three one-sprint redirect stubs** (`/build`,
+  `/tuning`, `/tuning/agent`). Courtesy period expires this sprint.
+- **R1 persist-time text truncation** if Langfuse shows long-prose
+  turns are not self-correcting under the advisory alone.
+- **Cross-session rejection memory** (sprint 046 Session D ships
+  session-scoped only; durable preference storage needs a Prisma
+  model, not an AgentMemory key).
+
+### Blocked / surfaced
+
+- **Staging smoke behind auth still unverified in-session.** Same
+  constraint as Session C: the runtime environment has no valid JWT,
+  so the first real-tenant click-through happens after the branch
+  is deployed to Railway + the user signs in. D1..D8 + D10's test
+  coverage + `tsc --noEmit` clean should catch any regressions; a
+  failed auth-gated mount would surface as a runtime crash on the
+  post-deploy login. NEXT.md §0 lists this explicitly as a flag, not
+  a blocker.
+- **Grep S-4 shows doc + test residue**, not just the deprecated
+  JSDoc entry. Intent is satisfied (no live emitter); the remaining
+  references are docs explaining the retirement and tests asserting
+  the legacy part does NOT emit. Treated as expected residue, not a
+  gate failure.
+
+## Sprint 046 — closed
+
+Four sessions, four cleanly-closed gate tables. Net surface change:
+
+- **Session A (backend grounding + response contract):** new
+  `get_current_state` tool, forced first-turn grounding call, 7-rule
+  Response Contract in the shared prefix, Triage Rules in both mode
+  addenda, `BuildToolCallLog` Prisma model, log-only output linter.
+- **Session B (cards + SSE parts):** four new SSE part types
+  (`data-suggested-fix`, `data-question-choices`, `data-audit-report`,
+  `data-advisory`), `ask_manager` + `emit_audit` tools,
+  `plan-build-changes` target + previewDiff enrichment, 5 new Studio
+  card components, Studio palette.
+- **Session C (shell merge):** `/studio` hash-state tab inside
+  `inbox-v5.tsx`; `/build`, `/tuning`, `/tuning/agent` demoted to
+  thin 302 redirect stubs; studio-chat, studio-surface, accept/reject
+  suggested-fix endpoints.
+- **Session D (cleanup + enforcement flips):** 48h cooldown retired
+  to a non-blocking recent-edit advisory; oscillation-deny flipped
+  to advisory; session-scoped rejection memory; output-linter R1/R2
+  drop-not-log enforcement; legacy `data-suggestion-preview` retired;
+  `tuning-agent/` shim deleted; `components/tuning/tokens.ts`
+  deleted; orphaned `components/build/*` swept.
+
+Sprint-047 carry-over: D9 (BuildToolCallLog admin trace view),
+dashboards merge, raw-prompt editor drawer, deletion of the three
+redirect stubs, cross-session rejection memory, R1 persist-time
+truncation (conditional on Langfuse signal).
