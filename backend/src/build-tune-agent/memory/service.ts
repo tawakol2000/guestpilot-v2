@@ -147,24 +147,21 @@ export async function writeRejectionMemory(
   intent: RejectionIntent
 ): Promise<void> {
   const key = rejectionKey(conversationId, fixHash);
+  const payload = {
+    fixHash,
+    intent,
+    rejectedAt: new Date().toISOString(),
+  };
   await prisma.agentMemory.upsert({
     where: { tenantId_key: { tenantId, key } },
     update: {
-      value: {
-        fixHash,
-        intent,
-        rejectedAt: new Date().toISOString(),
-      } as Prisma.InputJsonValue,
+      value: payload as unknown as Prisma.InputJsonValue,
       source: 'propose_suggestion.reject',
     },
     create: {
       tenantId,
       key,
-      value: {
-        fixHash,
-        intent,
-        rejectedAt: new Date().toISOString(),
-      } as Prisma.InputJsonValue,
+      value: payload as unknown as Prisma.InputJsonValue,
       source: 'propose_suggestion.reject',
     },
   });
