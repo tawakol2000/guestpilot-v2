@@ -23,6 +23,10 @@ function ctx(overrides: any = {}) {
     readLastUserMessage: overrides.readLastUserMessage ?? (() => ''),
     emitDataPart: undefined,
     compliance: { lastUserSanctionedApply: false, lastUserSanctionedRollback: false },
+    // Sprint 046 Session A: tool-trace hook fields — unused here but
+    // required by the HookContext interface.
+    turn: 1,
+    toolCallStartTimes: new Map<string, number>(),
   };
 }
 

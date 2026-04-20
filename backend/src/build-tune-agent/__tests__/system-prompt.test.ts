@@ -69,19 +69,52 @@ test('shared prefix is byte-identical across calls (cacheable)', () => {
   assert.equal(buildStaticPrefix(), a);
 });
 
-test('shared prefix ordering: principles → persona → taxonomy → tools → platform_context → critical_rules', () => {
+test('shared prefix ordering: principles → response_contract → persona → taxonomy → tools → platform_context → critical_rules', () => {
   const p = buildSharedPrefix();
   const idxPrinciples = p.indexOf('<principles>');
+  const idxResponseContract = p.indexOf('<response_contract>');
   const idxPersona = p.indexOf('<persona>');
   const idxTaxonomy = p.indexOf('<taxonomy>');
   const idxTools = p.indexOf('<tools>');
   const idxPlatform = p.indexOf('<platform_context>');
   const idxCritical = p.indexOf('<critical_rules>');
-  assert.ok(idxPrinciples >= 0 && idxPersona > idxPrinciples, 'principles must precede persona');
+  assert.ok(idxPrinciples >= 0, 'principles must appear');
+  assert.ok(idxResponseContract > idxPrinciples, 'response_contract must follow principles');
+  assert.ok(idxPersona > idxResponseContract, 'persona must follow response_contract');
   assert.ok(idxTaxonomy > idxPersona, 'taxonomy must follow persona');
   assert.ok(idxTools > idxTaxonomy, 'tools must follow taxonomy');
   assert.ok(idxPlatform > idxTools, 'platform_context must follow tools');
   assert.ok(idxCritical > idxPlatform, 'critical_rules must come last in the shared prefix');
+});
+
+test('shared prefix carries the Sprint 046 Response Contract verbatim (7 rules)', () => {
+  const p = buildSharedPrefix();
+  assert.ok(p.includes('<response_contract>'));
+  assert.ok(p.includes('## Response contract'));
+  assert.ok(p.includes('emit AT MOST ONE of the following structured'));
+  assert.ok(p.includes('Prose is optional and capped at 120 words'));
+  assert.ok(p.includes('DO NOT emit markdown tables, numbered lists'));
+  assert.ok(p.includes('question_choices'));
+  assert.ok(p.includes('machine-readable target'));
+  assert.ok(p.includes('Emoji status pills'));
+  assert.ok(p.includes('"Recommended Next Steps"'));
+});
+
+test('TUNE addendum carries the Sprint 046 Triage block', () => {
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('## Triage'));
+  assert.ok(tune.includes("get_current_state(scope: 'all')"));
+  assert.ok(tune.includes('impact × reversibility'));
+  assert.ok(tune.includes('audit_report'));
+});
+
+test('BUILD addendum carries both interview-style and audit-style Triage branches', () => {
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(build.includes('## Triage'));
+  assert.ok(build.includes("get_current_state(scope: 'summary')"));
+  assert.ok(build.includes('question_choices'));
+  assert.ok(build.includes("get_current_state(scope: 'all')"));
+  assert.ok(build.includes('Pick the top ONE'));
 });
 
 test('shared principles: truthfulness-over-validation retained; NO_FIX-as-default moved to TUNE addendum', () => {

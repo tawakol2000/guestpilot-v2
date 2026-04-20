@@ -696,6 +696,27 @@ model BuildTransaction {
   @@index([tenantId, createdAt])
 }
 
+// ─── Sprint 046 Session A: BUILD/TUNE tool-call observability ───────────────
+//
+// One row per tool invocation (real or synthetic "__lint__" / "__forced__"
+// entries). Powers the admin-only tool-use trace view planned for session D.
+// Inserts are fire-and-forget — a failed write never blocks the turn.
+model BuildToolCallLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  turn           Int
+  tool           String
+  paramsHash     String
+  durationMs     Int
+  success        Boolean
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId, turn])
+}
+
 // ─── Push Subscriptions (Web Push VAPID) ────────────────────────────────────
 
 model PushSubscription {

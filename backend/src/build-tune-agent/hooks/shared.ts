@@ -23,6 +23,19 @@ export interface HookContext {
     /** Sprint 09 fix 5: separate sanction track for rollback. */
     lastUserSanctionedRollback: boolean;
   };
+  /**
+   * Sprint 046 Session A — turn number (1-indexed). Stamped on every
+   * BuildToolCallLog row the trace hook writes. The runtime derives this
+   * from the count of existing TuningMessage rows before dispatching the
+   * turn.
+   */
+  turn: number;
+  /**
+   * Sprint 046 Session A — per-tool_use_id start-time map. PreToolUse
+   * writes an entry; PostToolUse reads + deletes it to derive
+   * durationMs. Private to the tool-trace hook — no other code reads it.
+   */
+  toolCallStartTimes: Map<string, number>;
 }
 
 /** 48 hours in ms — mirrors sprint-02's cooldown constant. */

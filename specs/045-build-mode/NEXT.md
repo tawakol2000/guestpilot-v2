@@ -1,205 +1,197 @@
-# Sprint 046 — backlog + session handoff
+# Sprint 046 — Session B: Cards + SSE parts
 
-> Written at sprint-045 close (2026-04-20). Sprint 045 shipped via direct
-> branch deploy on `feat/045-build-mode` — no PR, no merge to main.
-> `ENABLE_BUILD_MODE` is off in every environment default; flip manually
-> on Railway after deploy when ready to expose BUILD.
+> Session 2 of 4 for sprint 046. Implements Phase B of
+> [`sprint-046-plan.md`](./sprint-046-plan.md) §8.
 >
-> Previous session's handoff archived at
-> [`NEXT.sprint-045.archive.md`](NEXT.sprint-045.archive.md) — read that
-> for the Gate-by-Gate narrative of sprint 045.
->
-> Owner: Abdelrahman (ab.tawakol@gmail.com).
+> Owner: Abdelrahman. Branch: `feat/046-studio-unification` (continue
+> on the branch Session A opened; do NOT branch off again).
 
 ---
 
-## 1. First moves of sprint 046
+## 0. Starting state (handed off by Session A)
 
-Pick one of these as the opening task depending on what the BUILD rollout
-surfaces first. None block each other; all three are worth doing before
-BUILD-mode public beta.
+All six Session-A gates are green; see PROGRESS.md "Sprint 046 —
+Session A" for the full table. Highlights relevant to Session B:
 
-### 1.1 Live cache-hit capture + decision revisit
+- `get_current_state` tool exists and is in BUILD + TUNE allow-lists.
+  Every scope in the discriminated-union payload is testable
+  server-side. The agent is **not yet** instructed to call scopes
+  beyond `summary` — the prompt update lands in Session B once the
+  cards exist to render the returned text.
+- Forced first-turn call emits `data-state-snapshot` with the
+  `summary` scope payload. The frontend (Session C) will render this
+  into the right-rail state card.
+- Response Contract (7 rules) is live in the shared prefix; Triage
+  Rules are in both mode addenda.
+- `BuildToolCallLog` table exists + is getting written to per-turn
+  via `hooks/tool-trace.ts`. Findings from the post-turn output
+  linter persist as synthetic `__lint__` rows (log-only).
+- Branch is NOT pushed yet — Session A's exit commits land together
+  with any cleanup Session B inherits.
 
-Deferred from Gate 7.2 (session 6). As soon as `ENABLE_BUILD_MODE=true`
-flips on in a real Railway environment and a few TUNE-only + BUILD-only
-+ mixed sessions run through, pull `cache_read_input_tokens` counts per
-layer from Langfuse and check them against the spec's targets:
+Decisions locked in Session A that affect Session B:
 
-| Layer                         | Baseline tokens | Target hit-rate |
-|-------------------------------|-----------------|-----------------|
-| tools-array only              | 2,399           | ≥0.95           |
-| tools + shared prefix         | 5,255           | ≥0.995          |
-| full BUILD/TUNE cacheable     | 3,748 / 3,475   | ≥0.998 TUNE, ≥0.995 mixed |
-
-If the mixed-session hit-rate comes in <0.95, **the Gate-1 "automatic
-prefix caching" decision is the one to reopen** (see
-`PROGRESS.md` → "Decisions made this sprint" → "Cache breakpoints:
-automatic, not explicit"). The fallback is to bypass the Claude Agent
-SDK's `systemPrompt: string` surface and call `@anthropic-ai/sdk`
-directly with explicit `cache_control: { type: 'ephemeral' }` blocks
-on the three region boundaries. Non-trivial rewrite (~1 day) but the
-code sits in `backend/src/build-tune-agent/runtime.ts` in one place.
-
-If hit-rate comes in ≥0.98 on mixed, record the number in a new
-"Cache metrics — confirmed in prod" section of PROGRESS.md and move on.
-
-### 1.2 Lean `invalidateTenantConfigCache` extraction
-
-Deferred from Gate 2 (session 2) — also captured in PROGRESS.md
-"Decisions made this sprint". Current symptom:
-
-- `tenant-config.service.ts` transitively drags `ai.service.ts` →
-  `socket.service.ts` → `middleware/auth.ts` into any module that wants
-  to invalidate the cache, and `auth.ts` calls `process.exit(1)`
-  without `JWT_SECRET`. So BUILD tools (`write_system_prompt`,
-  `create_tool_definition`) rely on the 60s TTL rather than importing
-  the invalidator.
-- Acceptable for BUILD-in-manager-interview (the manager is still in
-  preview during the TTL window) but fragile for public beta.
-
-Extraction target: move `invalidateTenantConfigCache` + the cache Map
-into a new `services/tenant-config-cache.service.ts` that has zero
-dependencies except Node's `Map`. Have `tenant-config.service.ts`
-import from it (keeping the public API surface). Then BUILD tools can
-import the lean module and invalidate synchronously. ~2 hours of work;
-zero behaviour change.
-
-### 1.3 BUILD-mode cooldown + oscillation semantics
-
-When the manager hits "rollback" on a transaction and then immediately
-prompts the agent again ("try again, but gentler"), the agent should
-NOT re-propose the exact same plan within a short window. The
-sprint-045 rollback tool reverts the artifacts but leaves no signal
-that the manager disagreed with the prior approach — the agent can
-and will re-propose it.
-
-Design sketch:
-
-- On rollback, write an `AgentMemory` entry
-  `session/{conv}/rolled-back/{txId}` with the plannedItems snapshot.
-- In `plan_build_changes`'s pre-execution path, diff the proposed
-  items against any recent rolled-back plans for this conversation.
-  If overlap >50%, return an error telling the agent the manager
-  already rejected this shape and it must ask clarifying questions
-  first.
-- The `PreToolUse` hook is the natural home for this check — it can
-  short-circuit the tool call before the agent wastes a turn.
-
-Cross-links:
-
-- Existing hook at `backend/src/build-tune-agent/hooks/pre-tool-use.ts`.
-- Existing memory service at
-  `backend/src/build-tune-agent/memory/service.ts`.
-- Gate 045-§11 kept this explicitly out of scope ("BUILD-mode cooldown
-  / oscillation semantics — sprint 046").
+- Category-pastel palette **retained** (SOP yellow, FAQ teal,
+  system_prompt blue, tool purple) — they survive the Linear/Raycast
+  restraint pass because they're artifact-type labels, not chrome.
+- Hash-state `/studio` tab, not a top-level Next.js route (shell
+  merge is Session C, but frontend card components built in Session
+  B must not assume a route-level page — they live in
+  `frontend/components/studio/*`).
+- The advanced raw-prompt editor (§6.5 of the plan) defers until
+  sprint 047 UI surfacing; no frontend path for it in this sprint.
 
 ---
 
-## 2. Medium-sized follow-ups (take any opportunity)
+## 1. Read-before-you-start
 
-### 2.1 `/build` UX polish
+Mandatory, in order:
 
-Session-5 shipped the 3-pane layout but a few rough edges remain; the
-live Gate-7.1 walkthrough (deferred with the rest of Part 2) is where
-these will become visible:
+1. [`CLAUDE.md`](../../CLAUDE.md) — constitution + critical rules.
+2. [`sprint-046-plan.md`](./sprint-046-plan.md) — §§5.4 + 6.1 + 6.2
+   in particular. Plan §§5.4 lists the four new SSE parts; plan §6.1
+   describes the six new card components.
+3. [`sprint-046-session-a.md`](./sprint-046-session-a.md) — context on
+   what already shipped (especially the Response Contract verbatim
+   and the emitDataPart / turnFlags plumbing).
+4. [`PROGRESS.md`](./PROGRESS.md) "Sprint 046 — Session A" — current
+   gate state + deferrals you are about to pick up.
 
-- **Propagation banner timing.** Currently shows a fixed 60s countdown
-  after approve. That number is decoupled from the actual
-  `tenant-config` TTL (also 60s), which is the real gate on when
-  new prompts hit the main pipeline. If §1.2 lands, collapse the
-  banner the moment the cache is actually invalidated.
-- **Rollback confirm modal.** Clicking "Roll back" on
-  `TransactionHistory` fires the API call with no intermediate
-  confirm. For pilot that's fine; for beta add a confirm modal that
-  lists what will be deleted (pull from `plannedItems` on the
-  transaction row).
-- **GREENFIELD onboarding smoothing.** The hero copy renders from
-  `isGreenfield`, but the first-turn prompt doesn't pre-fill anything.
-  Consider a 3-chip starter ("I run short-term rentals", "Property
-  manager agency", "Boutique hotel") that seed the interview opener
-  rather than a blank textarea.
-- **Transaction-history pagination.** Only shows the most recent
-  transaction (`tenantState.lastBuildTransaction`). Listing more
-  needs a new `GET /api/build/plans` endpoint with limit/offset and
-  a small list view in `TransactionHistory`.
-- **Tenant-state aggregator cache.** `getTenantStateSummary` fires 6
-  parallel `count` queries per BUILD turn. Fine for pilot, 30s
-  in-memory cache keyed by `tenantId` before public beta.
+Then read the code you'll touch:
 
-### 2.2 Cross-mode PreToolUse sanction gate
-
-Today, attempting a BUILD tool from TUNE mode (or vice versa) returns
-an `allowed_tools` denial from the SDK — ugly and non-actionable. The
-research brief calls for a confirm-to-switch flow: when the agent
-tries a tool that isn't in the current mode's allow-list, the hook
-returns a `data-mode-switch-requested` part to the UI, which shows a
-banner asking the manager to confirm switching modes. On confirm, the
-next turn runs in the other mode.
-
-This is a visible-to-users change and needs a spec update + a new SSE
-data part, so it's its own small sprint-046 track.
+- `backend/src/build-tune-agent/stream-bridge.ts` — SDKMessage →
+  UIMessageChunk mapping. Add four new data-part passthroughs
+  (suggested_fix, question_choices, audit_report, advisory).
+- `backend/src/build-tune-agent/tools/*.ts` — two new tools:
+  `ask_manager` and `emit_audit` (thin wrappers around
+  `emitDataPart`).
+- `frontend/components/tuning/tokens.ts` — source of the existing
+  TUNE palette. Session B creates `frontend/components/studio/tokens.ts`
+  as the sprint-046 palette (main-app tokens verbatim per plan §3.3).
+- `frontend/components/build/plan-checklist.tsx` — extend item
+  schema for `target` + `previewDiff` (plan §5.3).
 
 ---
 
-## 3. Longer-tail / "when a customer asks"
+## 2. Scope — in this session
 
-Straight carry-over from MASTER_PLAN §sprint-047+ — **do not start
-these in sprint 046** unless a paying customer explicitly pulls.
+Each item is a gate. Order matters.
 
-- **Batch preview subsystem** (golden-set + adversarial generator +
-  deterministic rubric + LLM judging). Deferred from sprint 045 on
-  2026-04-19; trigger is a paying customer asking for multi-scenario
-  batch testing before apply, or D7-retention / default-override-rate
-  data showing `test_pipeline` single-message loop is letting
-  regressions through.
-- Billing, plan tiers, per-tenant token budgets.
-- Multi-language BUILD interview (Spanish, Portuguese, Arabic).
-- Templated onboarding flows per sub-vertical.
-- Platform-aggregate SFT from preference pairs.
-- Admin surface for harness maintenance.
-- Self-serve signup + Hostaway OAuth import inside `/build`.
+### 2.1 SSE part types + stream-bridge pass-through
+
+- Extend `stream-bridge.ts` with pass-through handling for four new
+  types: `data-suggested-fix`, `data-question-choices`,
+  `data-audit-report`, `data-advisory`. Existing
+  `data-state-snapshot` + `data-build-plan` + `data-test-pipeline-result`
+  stay as-is.
+- Unit test: every new type round-trips through the bridge unchanged.
+
+### 2.2 `ask_manager` + `emit_audit` tools
+
+- `ask_manager({ question, options, recommended_default?, allowCustomInput? })`
+  — emits `data-question-choices`. No DB write. Mode: both.
+- `emit_audit({ rows, topFindingId })` — emits `data-audit-report`.
+  No DB write. Mode: both.
+- Register in `tools/index.ts` + both allow-lists in `runtime.ts`.
+- Unit tests: 4 cases each (happy path, validation, emit path, edge).
+
+### 2.3 Extended `plan-build-changes` item schema
+
+- Add `target?: { artifactId?, sectionId?, slotKey?, lineRange? }`
+  and `previewDiff?: { before, after }` to the item shape per plan
+  §5.3.
+- Update the 4-case `plan-build-changes.test.ts` fixture.
+
+### 2.4 New React card components
+
+All under `frontend/components/studio/`:
+
+- `tokens.ts` (main-app palette per plan §3.3).
+- `suggested-fix.tsx` — diff viewer + target chip + accept/reject.
+- `question-choices.tsx` — 2–5 choice buttons + recommended-default.
+- `audit-report.tsx` — compact status rows + "Fix" CTA on top finding.
+- `state-snapshot.tsx` — right-rail card wired to the Session-A
+  forced-first-turn `data-state-snapshot` payload.
+- `reasoning-line.tsx` — one-line muted "Thought for Xs" collapse.
+
+### 2.5 Prompt update — instruct the agent to pull richer scopes
+
+Once the cards exist, the agent can be trusted to call
+`get_current_state({scope:'system_prompt'|'sops'|...})` based on
+intent. Update the shared prefix `<tools>` doc entry for
+`get_current_state` to list the richer scopes and when to use each.
+Re-run the cache-stability test + update baselines in PROGRESS.md.
+
+### 2.6 Output-linter enforcement dial — still log-only
+
+Session B keeps the linter in log-only mode. Session D flips the
+drop-not-log switch after a week of trace calibration. No behaviour
+change here, but verify the linter continues to fire after the new
+tools land (single `__lint__` row per offending turn).
 
 ---
 
-## 4. Open design questions carried into sprint 046
+## 3. Out of scope
 
-Answered as data from the live rollout comes in:
-
-- **Slot-persistence proof.** Is the BUILD addendum's
-  `memory.create`-with-key instruction honored at rate ≥90%? If
-  Langfuse traces show skipping, tighten the addendum in
-  `backend/src/build-tune-agent/system-prompt.ts`. Currently the
-  entire InterviewProgress widget assumes the agent follows it.
-- **Approve-then-execute gating.** Today: record `approvedByUserId` +
-  `approvedAt`, trust the agent's BUILD addendum to wait. Stricter:
-  reject follow-up `create_*` calls on a PLANNED transaction whose
-  `approvedAt` is null. Pilot rule works; public-beta rule may need
-  the server-side gate. Decide after first live flows — if the agent
-  runs past approval with today's rule, flip.
-- **Terminal-recap location.** V2 defaulted to `dynamic_suffix` per
-  the spec tiebreaker. Re-evaluate if rule adherence <80% in prod
-  Langfuse.
-- **Activation-funnel metrics.** Instrumentation deferred to sprint
-  046; reporting deferred to sprint 047+. Targets in MASTER_PLAN §7.
+- Shell merge (`/studio` tab inside `inbox-v5.tsx`) → Session C.
+- Old-route 302 redirects (`/build`, `/tuning`, `/tuning/agent`) →
+  Session C.
+- 48h cooldown removal + `data-advisory` recent-edit toast →
+  Session D.
+- Session-scoped rejection memory + cross-session deferral → Session
+  D / sprint 047.
+- Deleting `tuning-agent/index.ts` back-compat shim → Session D.
+- Any frontend changes outside `frontend/components/studio/`.
 
 ---
 
-## 5. Hard constraints still in force
+## 4. Gate sheet
 
-- `ENABLE_BUILD_MODE` stays **off** in `.env.example` and every
-  config default. Manual flip only, after deploy, scoped to a single
-  environment at a time.
-- Do not modify Prisma tables outside what sprint 045 already shipped
-  (`BuildTransaction` + 5 nullable FK columns + `approvedByUserId` +
-  `approvedAt`). Any new field needs a spec entry first.
-- TUNE behaviour must remain intact at every commit. Run
-  `JWT_SECRET=test OPENAI_API_KEY=sk-test npx tsx --test $(find src/build-tune-agent -name "*.test.ts")`
-  before every commit.
-- Frontend must keep using `components/tuning/tokens.ts` verbatim — no
-  main-app blue palette import.
-- Do not add SSE part types beyond `data-build-plan` +
-  `data-test-pipeline-result` (+ the existing TUNE parts) without
-  backend changes and an updated spec §11.
-- No PR / merge-to-main automation. Branch-to-branch deploys continue
-  per the `feat/045-build-mode` model until the user decides otherwise.
+Tick off as each lands.
+
+| Gate | Item | Status |
+|------|------|--------|
+| B1   | Four new SSE part types + stream-bridge pass-through | ☐ |
+| B2   | `ask_manager` + `emit_audit` tools + allow-list wiring | ☐ |
+| B3   | Extended `plan-build-changes` item schema | ☐ |
+| B4   | `studio/tokens.ts` + five new card components | ☐ |
+| B5   | `get_current_state` prompt update + cache baselines refresh | ☐ |
+| B6   | Full suite green + `tsc --noEmit` clean + cards rendered in staging smoke | ☐ |
+| B7   | PROGRESS.md updated + NEXT.md for Session C | ☐ |
+
+---
+
+## 5. Non-negotiables
+
+- Never break the main guest messaging flow.
+- Prisma changes apply via `prisma db push`, not migrations (CLAUDE.md).
+- `BuildToolCallLog` insertion failures remain fire-and-forget; don't
+  tighten the contract just because the admin view needs the data.
+- Frontend cards must not import from `frontend/components/tuning/*`
+  for chrome (palette or layout) — use the new `studio/tokens.ts`.
+- Artifact-type category pastels are the one exception (plan §3.3
+  decision #3).
+
+---
+
+## 6. Exit handoff
+
+At session end, do all three:
+
+### 6.1 Commit + push
+
+Single commit per gate is fine. Push to
+`feat/046-studio-unification` (the branch Session A opened).
+
+### 6.2 Archive this NEXT.md
+
+Move this file to `NEXT.sprint-046-session-a.archive.md`. Write a
+fresh `NEXT.md` for Session C (shell merge — plan §8 Phase C).
+
+### 6.3 Update PROGRESS.md
+
+Append a "Sprint 046 — Session B" section mirroring Session A's
+shape: gate table, cache baselines (if changed), decisions,
+deferrals, blockers.
+
+End of Session B brief.

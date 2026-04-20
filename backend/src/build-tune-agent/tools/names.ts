@@ -22,4 +22,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__plan_build_changes`,
   // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
   test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__test_pipeline`,
+  // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).
+  get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
 } as const;

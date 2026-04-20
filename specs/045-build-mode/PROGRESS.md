@@ -335,3 +335,91 @@ through as many gates as it can, updates this doc, and hands off via
   green (was 106 → build-transaction.test.ts +8); frontend
   `next build` clean (pre-existing type errors in inbox-v5 /
   sandbox-chat-v5 / tools-v5 are unchanged and out of scope).
+
+## Sprint 046 — Session A (Phase A: backend grounding + response contract)
+
+Completed: 2026-04-20. Branch: `feat/046-studio-unification` (off
+`feat/045-build-mode`, not main — sprint 045 is not merged).
+
+| Gate | Item | Status | Notes |
+|------|------|--------|-------|
+| A1   | `get_current_state` tool + 11 unit tests | ✅ | Six scopes (`summary`, `system_prompt`, `sops`, `faqs`, `tools`, `all`) with a discriminated-union payload. XML/Markdown/plain-body section derivation. Registered in BUILD + TUNE allow-lists. |
+| A2   | Forced first-turn call in runtime | ✅ | Runtime counts `tuningMessage` rows; when `count === 0` calls `buildCurrentStatePayload({scope:'summary'})` server-side, emits `data-state-snapshot`, pushes `get_current_state` into `toolCallsInvoked`, logs a `BuildToolCallLog` row. Extracted to `forced-first-turn.ts` for direct unit-testing (2 tests). |
+| A3   | Response Contract in shared prefix | ✅ | 7 rules verbatim, inserted between PRINCIPLES and PERSONA in Region A. Cache stability test still green; Region A delta +369 tokens (2,914 → 3,283, under the 500-token budget). |
+| A4   | Triage Rules in both mode addendums | ✅ | TUNE: audit-style triage only. BUILD: interview-style (single `question_choices` per turn) + audit-style (top-one `suggested_fix`). Token costs — TUNE addendum ~775, BUILD addendum ~1,350 (~50 over the ~1,300 hint; note below). |
+| A5   | `BuildToolCallLog` model + service | ✅ | Prisma model pushed via `prisma db push` (no migration). `services/build-tool-call-log.service.ts` exports `logToolCall` + `hashToolParams`. Wired via `hooks/tool-trace.ts` (Pre + Post hooks registered first in the chain so start times are captured before compliance/cooldown denies fire). Always fire-and-forget. |
+| A6   | Output linter (log-only) + 8 unit tests | ✅ | R1/R2/R3 each with pass + fail cases, plus a "structured part overrides word count" sanity test. Runtime runs the linter post-turn; findings persist as synthetic `__lint__` rows in `BuildToolCallLog`. Log-only per spec — no user-visible enforcement this session. |
+| A7   | Full test suite + `tsc --noEmit` clean | ✅ | `build-tune-agent` tree 158/158 green (was 125 → +11 get_current_state, +8 output-linter, +2 forced-first-turn, +5 system-prompt coverage = +26; delta includes the Sprint 045 baseline refresh). `src/__tests__/integration/*.test.ts` 9/9 green. `tests/integration/build-e2e.test.ts` 3/3 plumbing green (live test still gated by env). `tsc --noEmit` clean. |
+| A8   | PROGRESS.md updated + NEXT.md written | ✅ | This section + new `NEXT.md` for Session B. Old sprint-045 NEXT archived as `NEXT.sprint-045-close.archive.md`. |
+
+### Cache baselines (post-Session A)
+
+| Slice | Chars | Est. tokens | Δ vs sprint-045 close |
+|-------|-------|-------------|-----------------------|
+| Region A (shared prefix) | 13,129 | 3,283 | +1,476 / +369 |
+| TUNE cacheable (A + addendum) | 16,232 | 4,058 | +2,101 / +525 |
+| BUILD cacheable (A + addendum) | 18,530 | 4,633 | +2,304 / +576 |
+| Tools array only (15 tools) | 9,994 | 2,499 | +400 / +100 |
+
+All four slices stay comfortably above the 2,048-token Sonnet 4.5/4.6
+per-layer cache floor. The BUILD-addendum growth (+51 chars of new
+triage block) plus the shared Response Contract (+469 chars) lands
+~576 tokens total on the cacheable BUILD slice. Budget: session-a §2.3
+asked for Region A staying within 500 tokens of 2,856 (old Region A)
+— 3,283 is +427, well under. The BUILD-addendum ~1,350 tokens comes
+in ~50 tokens over the ~1,300 hint; flagged as a candidate for a
+one-line tightening in session D's clean-up pass if Langfuse shows
+cache-hit drift.
+
+Tools count increased 14→15 (`get_current_state` added). Tools-only
+slice now at 2,499 tokens — above the 2,048 floor on its own for the
+first time, which means the tools array could cache as an independent
+layer once explicit breakpoints are adopted.
+
+### Decisions made this session
+
+- **Turn counting via `tuningMessage.count()`, not a new column.** The
+  schema addition (`BuildConversation.turnCount`) suggested in
+  session-a §2.2 was avoided — counting existing `TuningMessage` rows
+  with a `WHERE conversationId = ?` aggregate is cheap (indexed by
+  `conversationId`) and keeps the data model additive-only.
+- **Forced first-turn extracted to `forced-first-turn.ts`.** The
+  runtime's `runTuningAgentTurn` can't be unit-tested without a real
+  `ANTHROPIC_API_KEY` (SDK load at module top). Extracting the forced
+  call into a small helper module gives us a clean unit test for the
+  "turn 1 calls `get_current_state` before any user tool call"
+  invariant without touching SDK loading.
+- **Trace hooks run first in the PreToolUse chain.** If a deny fires
+  in `pre-tool-use.ts` (compliance / cooldown / oscillation), the
+  trace hook still records the start time so PostToolUse can compute
+  duration and log the deny. Order matters — registered before
+  compliance hook in `hooks/index.ts`.
+- **Log-only linter persistence = `__lint__` tool name.** No new
+  table. Lint findings ride on `BuildToolCallLog` with a stable
+  synthetic tool name (`LINTER_SYNTHETIC_TOOL_NAME`) so the admin
+  trace view can filter them in or out.
+- **`summary` scope reuses `TenantStateSummary` from
+  `services/tenant-state.service.ts`,** not the `system-prompt.ts`
+  display-shape type. The service version is the authoritative Prisma
+  aggregate; the display shape is for renderer consumption.
+
+### Deferred to next session
+
+- `get_current_state` scopes other than `summary` being called
+  **by the agent** — the tool is wired + tested, but the agent prompt
+  doesn't instruct it to pull `system_prompt`/`sops`/etc. on its own
+  until session B wires up the audit/suggested-fix cards. The forced
+  first-turn call is `summary`-only by design.
+- 48h cooldown removal → Session D.
+- Session-scoped rejection memory → Session D.
+- `ask_manager` / `emit_audit` tools → Session B.
+- `BuildToolCallLog` retention (30-day sweep) → Session D / sprint 047.
+
+### Blocked / surfaced
+
+- `preview/__tests__/tenant-config-bypass.test.ts` remains brittle on
+  JWT_SECRET: uses `process.env.JWT_SECRET ??= 'test-secret-bypass'`
+  at the top of the file, but Node's test runner can race the auth
+  middleware's module-load assertion. Pre-existing from sprint 045;
+  passes cleanly when `JWT_SECRET=test npm test …` is invoked. Worth
+  hardening in a follow-up but NOT in session A's scope.

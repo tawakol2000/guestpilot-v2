@@ -28,6 +28,9 @@ import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './tools/names
 import { buildTuningAgentHooks, type HookContext } from './hooks';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import { listMemoryByPrefix } from './memory/service';
+import { runForcedFirstTurnCall } from './forced-first-turn';
+import { lintAgentOutput, LINTER_SYNTHETIC_TOOL_NAME } from './output-linter';
+import { logToolCall } from '../services/build-tool-call-log.service';
 import {
   isTuningAgentEnabled,
   tuningAgentDisabledReason,
@@ -112,6 +115,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.plan_build_changes,
       // Gate 3 single-message verification tool (also in TUNE below):
       TUNING_AGENT_TOOL_NAMES.test_pipeline,
+      // Sprint 046 Session A — full-artifact grounding tool (also in TUNE).
+      TUNING_AGENT_TOOL_NAMES.get_current_state,
     ];
   }
   // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
@@ -130,6 +135,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.rollback,
     TUNING_AGENT_TOOL_NAMES.plan_build_changes,
     TUNING_AGENT_TOOL_NAMES.test_pipeline,
+    // Sprint 046 Session A — full-artifact grounding tool (shared with BUILD).
+    TUNING_AGENT_TOOL_NAMES.get_current_state,
   ];
 }
 
@@ -188,10 +195,20 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
   }
 
   // ─── Resolve session id (resume or fresh) ──────────────────────────────
-  const conversation = await input.prisma.tuningConversation.findFirst({
-    where: { id: input.conversationId, tenantId: input.tenantId },
-    select: { id: true, sdkSessionId: true, anchorMessageId: true },
-  });
+  const [conversation, priorMessageCount] = await Promise.all([
+    input.prisma.tuningConversation.findFirst({
+      where: { id: input.conversationId, tenantId: input.tenantId },
+      select: { id: true, sdkSessionId: true, anchorMessageId: true },
+    }),
+    // Sprint 046 Session A — turn counter for BuildToolCallLog + the
+    // forced first-turn get_current_state grounding call. Counting
+    // TuningMessage rows before dispatching means turn 1 is `count === 0`.
+    input.prisma.tuningMessage.count({
+      where: { conversationId: input.conversationId },
+    }),
+  ]);
+  const turnNumber = priorMessageCount + 1;
+  const isFirstTurn = priorMessageCount === 0;
   if (!conversation) {
     input.writer.write({
       type: 'start',
@@ -309,6 +326,8 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     readLastUserMessage: () => lastUserSnapshot.text,
     emitDataPart,
     compliance,
+    turn: turnNumber,
+    toolCallStartTimes: new Map<string, number>(),
   };
 
   const mcpServer = await buildTuningAgentMcpServer(() => {
@@ -322,6 +341,19 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
   const state = makeBridgeState(input.assistantMessageId);
   input.writer.write({ type: 'start', messageId: input.assistantMessageId });
   input.writer.write({ type: 'start-step' });
+
+  // ─── Sprint 046 Session A — forced first-turn grounding ────────────────
+  if (isFirstTurn) {
+    await runForcedFirstTurnCall({
+      prisma: input.prisma,
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      assistantMessageId: input.assistantMessageId,
+      turn: turnNumber,
+      emitDataPart,
+      toolCallsInvoked,
+    });
+  }
 
   const model = input.modelOverride ?? resolveTuningAgentModel();
   let sdkSessionId: string | null = conversation.sdkSessionId ?? null;
@@ -488,6 +520,33 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         data: { sdkSessionId },
       })
       .catch((err) => console.warn('[tuning-agent] sdkSessionId persist failed:', err));
+  }
+
+  // ─── Sprint 046 Session A — output-linter pass ─────────────────────────
+  //
+  // Post-turn inspection: does the completed turn violate the Response
+  // Contract from the shared system prefix? Log-only in this session
+  // (sprint 046 Session D flips the drop-not-log switch). Findings are
+  // written as synthetic `__lint__` BuildToolCallLog rows so the admin
+  // trace view can surface them alongside real tool calls.
+  try {
+    const findings = lintAgentOutput({
+      finalText: finalText,
+      dataPartTypes: persistedDataParts.map((p) => p.type),
+    });
+    if (findings.length > 0) {
+      void logToolCall(input.prisma, {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        turn: turnNumber,
+        tool: LINTER_SYNTHETIC_TOOL_NAME,
+        params: { rules: findings.map((f) => f.rule), findings },
+        durationMs: 0,
+        success: true, // linter ran successfully; findings != error
+      });
+    }
+  } catch (err) {
+    console.warn('[tuning-agent] output-linter pass failed:', err);
   }
 
   return {

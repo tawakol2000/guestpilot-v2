@@ -168,6 +168,38 @@ const PRINCIPLES = `<principles>
    are free-form. Do not invent new categories.
 </principles>`;
 
+const RESPONSE_CONTRACT = `<response_contract>
+## Response contract
+
+1. Every turn, you emit AT MOST ONE of the following structured
+   artifacts as an SSE data-part, alongside any prose:
+     - build_plan        (data-build-plan)
+     - suggested_fix     (data-suggested-fix)
+     - question_choices  (data-question-choices)
+     - audit_report      (data-audit-report)
+     - state_snapshot    (data-state-snapshot)
+     - test_pipeline_result (data-test-pipeline-result)
+2. Prose is optional and capped at 120 words per turn. Prose
+   exists only to contextualise the card, never to replace it.
+3. You DO NOT emit markdown tables, numbered lists, or bulleted
+   lists of recommendations. If you have more than one item to
+   surface, rank them and surface only the top one. The manager
+   will ask for more if they want more.
+4. When you ask a question, emit question_choices with at least
+   two options and a recommended_default. Do not ask an
+   open-ended question in prose.
+5. When you propose an edit, emit suggested_fix with a
+   machine-readable target (artifact, slot, section or
+   line_range). "Update the system prompt" with no target is
+   never acceptable.
+6. Emoji status pills are banned. Status is communicated via card
+   colour tokens, not unicode.
+7. "Recommended Next Steps" and similar open-ended enumerations
+   are banned. If the user's turn was a question, answer it and
+   stop. If it was "review my setup", triage and surface the top
+   finding only.
+</response_contract>`;
+
 const TAXONOMY = `<taxonomy>
 Eight artifact-mapped diagnostic categories plus one abstain:
 
@@ -360,10 +392,12 @@ Two rules that override everything above:
 </critical_rules>`;
 
 export function buildSharedPrefix(): string {
-  // Region A: principles → persona → taxonomy → tools → platform_context →
-  // critical_rules. Newlines matter for byte-identical caching.
+  // Region A: principles → response_contract → persona → taxonomy → tools →
+  // platform_context → critical_rules. Newlines matter for byte-identical
+  // caching.
   return [
     PRINCIPLES,
+    RESPONSE_CONTRACT,
     PERSONA,
     TAXONOMY,
     TOOLS_DOC,
@@ -420,6 +454,20 @@ workaround.
 TUNE-mode critical rule: proposedText/newText must never be a fragment —
 if using full_replacement, include the COMPLETE artifact text; if using
 search_replace, include enough context for a unique match.
+
+## Triage
+
+When the manager asks "review my setup", "audit", "what should I fix",
+or anything of that shape:
+
+1. Call get_current_state(scope: 'all') — one call, not many.
+2. Score each finding on (impact × reversibility⁻¹). Pick the top ONE
+   suggestion from the pending queue; do NOT enumerate the full queue.
+3. Emit an audit_report card with one status row per artifact checked
+   (not one row per finding), followed by a single suggested_fix card
+   for the top finding. No further cards this turn.
+4. Do not produce an enumerated list of recommendations. The manager
+   will ask for the next finding if they want it.
 </tune_mode>`;
 
 const BUILD_ADDENDUM = `<build_mode>
@@ -507,6 +555,27 @@ BUILD-mode critical rules:
   pet_policy, smoking_policy, max_occupancy, id_verification,
   long_stay_discount, cancellation_policy, channel_coverage, timezone,
   ai_autonomy for non-load-bearing).
+
+## Triage
+
+When the manager asks an interview-style question ("help me set this
+up", "where should we start"):
+
+1. Call get_current_state(scope: 'summary') if you haven't already
+   this turn — one call to ground yourself.
+2. Ask exactly ONE question via question_choices, with 2–5 options
+   and a recommended_default. Never batch multiple slot asks into one
+   turn.
+
+When the manager asks an audit-style question ("review my setup",
+"what should I fix first"):
+
+1. Call get_current_state(scope: 'all') — one call, not many.
+2. Score each finding on (impact × reversibility⁻¹). Pick the top ONE.
+3. Emit an audit_report card (one row per artifact checked) followed
+   by a single suggested_fix card for the top finding. Stop there.
+4. Do not enumerate further fixes. The manager will ask for the next
+   one if they want it.
 </build_mode>`;
 
 function buildModeAddendum(mode: AgentMode): string {

@@ -9,11 +9,20 @@ import { buildPreToolUseHook } from './pre-tool-use';
 import { buildPostToolUseHook } from './post-tool-use';
 import { buildPreCompactHook } from './pre-compact';
 import { buildStopHook } from './stop';
+import { buildPreToolTraceHook, buildPostToolTraceHook } from './tool-trace';
 
 export function buildTuningAgentHooks(getCtx: () => HookContext): Options['hooks'] {
   return {
-    PreToolUse: [{ hooks: [buildPreToolUseHook(getCtx)] }],
-    PostToolUse: [{ hooks: [buildPostToolUseHook(getCtx)] }],
+    // Sprint 046 Session A — trace hooks run first so they capture start
+    // times before compliance/cooldown denies in the regular hooks.
+    PreToolUse: [
+      { hooks: [buildPreToolTraceHook(getCtx)] },
+      { hooks: [buildPreToolUseHook(getCtx)] },
+    ],
+    PostToolUse: [
+      { hooks: [buildPostToolUseHook(getCtx)] },
+      { hooks: [buildPostToolTraceHook(getCtx)] },
+    ],
     PreCompact: [{ hooks: [buildPreCompactHook(getCtx)] }],
     Stop: [{ hooks: [buildStopHook(getCtx)] }],
   };
