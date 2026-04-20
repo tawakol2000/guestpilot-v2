@@ -158,8 +158,9 @@ export function buildTurnEndpoint(): string {
 export interface SuggestedFixActionResponse {
   ok: boolean
   applied: boolean
-  appliedVia?: 'suggestion_action' | 'no-op-stub'
+  appliedVia?: 'suggestion_action' | 'no-op-stub' | 'rejection-memory'
   message?: string
+  fixHash?: string
 }
 
 export async function apiAcceptSuggestedFix(fixId: string): Promise<SuggestedFixActionResponse> {
@@ -169,10 +170,28 @@ export async function apiAcceptSuggestedFix(fixId: string): Promise<SuggestedFix
   )
 }
 
-export async function apiRejectSuggestedFix(fixId: string): Promise<SuggestedFixActionResponse> {
+// Sprint 046 Session D — reject endpoint now persists a session-scoped
+// rejection-memory row. Callers must pass enough of the suggested-fix
+// payload to derive the fix hash. The backend accepts either an explicit
+// `intent` or the convenience `(target, category, subLabel)` trio.
+export interface RejectSuggestedFixPayload {
+  conversationId: string
+  category?: string
+  subLabel?: string
+  target?: {
+    artifactId?: string
+    sectionId?: string
+    slotKey?: string
+  }
+}
+
+export async function apiRejectSuggestedFix(
+  fixId: string,
+  payload: RejectSuggestedFixPayload,
+): Promise<SuggestedFixActionResponse> {
   return buildFetch<SuggestedFixActionResponse>(
     `/api/build/suggested-fix/${encodeURIComponent(fixId)}/reject`,
-    { method: 'POST', body: '{}' },
+    { method: 'POST', body: JSON.stringify(payload) },
   )
 }
 

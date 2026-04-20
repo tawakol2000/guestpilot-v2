@@ -1,0 +1,51 @@
+# Conversational Tuning Agent — Glossary
+
+> **Working draft.** Shared vocabulary for all specs and sprint prompts.
+> **Rule:** When a fresh Claude Code session reads a spec, it should use these terms consistently.
+
+- **Tuning agent** — the meta-agent that reasons about the main AI's behavior with the manager and proposes changes. Not the main guest-facing AI.
+- **Main AI** — the guest-messaging AI (GPT-5.4-mini coordinator/screening agent) that replies to guests.
+- **Manager** — the property manager (Abdelrahman at first) who uses the tuning surface. One manager per tenant assumed.
+- **Tenant** — a customer of GuestPilot. Each tenant has one manager voice, many properties, many SOPs/FAQs.
+- **Artifact** — a tuneable entity: system prompt (coordinator/screening), SOP (variant + property override), FAQ (global + property-scoped), tool definition. These are what the tuning agent edits.
+- **Trigger event** — a moment that creates a potential tuning opportunity: edited copilot send, rejected draft, manager complaint, thumbs-down, cluster match (post-MVP), escalation divergence (post-MVP).
+- **Evidence bundle** — structured JSON snapshot produced on each trigger event: full tool trace, retrieval context, entity metadata, prior correction history, system prompt version, conditional branch taken. Fetched by the agent via tool call.
+- **Diagnostic taxonomy** — the 7 artifact-mapped categories + abstain: SOP content, SOP routing, FAQ, system prompt, tool, property override, no-fix. Rigid at schema level, fluid sub-labels.
+- **Suggestion** — a concrete proposed change to an artifact, with rationale and diff.
+- **Apply mode** — per-suggestion: `IMMEDIATE` (do it now) or `QUEUED` (pending review). Manager's choice per suggestion.
+- **Applied** — suggestion was accepted and written to the artifact.
+- **Applied-and-retained-7d** — suggestion was applied AND is still present (not rolled back, not superseded by a reversal) 7 days later. Stronger signal than applied alone.
+- **Verbalized confidence** — the agent's self-rated 0-1 confidence on each suggestion, expressed in natural language by the model. Tracked against actual acceptance rate for Platt-scaling calibration.
+- **Missing capability** — taxonomy category 6. AI needed a tool that doesn't exist. Routes to dev backlog as a `CapabilityRequest`, not an artifact edit.
+- **Tuning velocity dashboard** — the "is the tuning loop healthy?" dashboard. Three signals: acceptance rate up, new-suggestion-type volume down, coverage up. Shown in `/tuning`.
+- **Graduation dashboard** — the "is the main AI ready for autopilot?" dashboard. Per-tenant edit rate, edit magnitude, escalation rate, critical failures. Shown in operations view.
+- **Tuning conversation** — a single chat session in the tuning surface. First-class object with id, title, timestamps, optional `anchorMessageId`, message list.
+- **Anchor message** — the specific main-AI message a tuning conversation is focused on, if any. Set when manager clicks "discuss in tuning" on an inbox message.
+- **Agent memory** — durable tenant-scoped facts the tuning agent persists across sessions. Not conversation history; structured preferences and learned facts.
+- **Preference** — a durable manager-stated rule for the tuning agent: "don't suggest tone changes," "this tenant runs luxury properties." Stored in agent memory.
+- **Preference pair** — a (context, rejected_suggestion, preferred_final) triple captured on every reject or edit-then-accept. Future DPO training data.
+- **Cooldown** — time window after an accepted change during which the same artifact element cannot be re-suggested (48h default).
+- **Oscillation** — suggesting a reversal of a recently accepted change. Blocked unless evidence threshold is much higher than normal.
+- **Graduation** — the main AI's readiness to move from co-pilot to autopilot, measured per tenant over a rolling 14-day window.
+- **Graduation metric** — the composite score gating phase transitions: edit rate, edit magnitude, critical failures, escalation rate, judge quality, golden-set regression, volume, statistical confidence.
+- **Autopilot phase** — one of: `COPILOT` (AI suggests, manager sends), `SHADOW_AUTOPILOT` (AI sends, manager sees within minutes), `MONITORED_AUTOPILOT` (manager reviews 25% sample), `FULL_AUTOPILOT` (daily summary only).
+- **Golden set** — a tenant-specific set of expert-labeled representative conversations used for regression testing of config changes.
+- **Shadow evaluation** — running a proposed config change against recent conversations with an LLM judge before surfacing the suggestion, to confirm no regression.
+- **Version history** — every artifact edit produces a new version with diff, author, timestamp, and source suggestion ID. Supports undo and oscillation detection.
+- **Pre-wiring** — v1 backend/schema investments that enable later v2/v3 features without retrofitting. Ships silently in v1.
+- **Agentic search** — the tuning agent exploring evidence, artifacts, and history via tool calls. Opposed to semantic search via embeddings.
+- **Langfuse trace / span / session** — observability primitives from Langfuse adopted as the main AI's trace store. Session = full guest conversation; Trace = single message-generation run; Span = individual tool call or LLM call within a trace.
+- **Claude Agent SDK** — `@anthropic-ai/claude-agent-sdk` TypeScript package. Programmable version of the Claude Code / Cowork agent loop. Manages tool execution, context compaction, session persistence. Our tuning agent runs on this.
+- **`ClaudeSDKClient`** — the SDK primitive for multi-turn sessions. What we use for the tuning agent (vs `query()` which is one-shot).
+- **Hook** — SDK lifecycle callback that runs outside the context window and consumes no tokens. Our cross-cutting logic home.
+- **`PreToolUse` hook** — fires before any tool call; used for cooldown enforcement, oscillation detection, compliance checks. Can block a tool call with `permissionDecision: "deny"`.
+- **`PostToolUse` hook** — fires after any tool call; used for Langfuse logging, acceptance stat updates, preference pair capture.
+- **`PreCompact` hook** — fires before context compaction; used to inject preference/memory summaries so they survive the compaction.
+- **Memory tool (`memory_20250818`)** — SDK-native primitive where the agent issues `view`/`create`/`update`/`delete` memory commands. We implement the backend against Postgres `AgentMemory`.
+- **Tool Search** — SDK pattern for on-demand tool discovery instead of always-loading all tool definitions. Reduces prompt size and improves tool-selection accuracy when tool count grows past ~7.
+- **Verbosity enum** — parameter on consolidated tools (`concise` / `detailed`) letting the agent control return size per call, so one tool replaces multiple narrower ones without bloating context.
+- **Dynamic boundary / prompt cache boundary** — `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__` marker separating cached static system prompt (persona, taxonomy, tool docs) from per-request dynamic content (memory snapshot, pending suggestions). Static content caches, saves ~80% on repeated input tokens.
+- **Data part** — Vercel AI SDK 5+ typed, reconcilable-by-ID streamable object sent from server to client (e.g. `data-suggestion-preview`, `data-evidence-inline`).
+- **Transient part** — Vercel AI SDK part with `transient: true`; streamed to client but not persisted in message history. Used for progress indicators.
+- **Managed Agents API** — Anthropic's hosted runtime for agents (public beta April 2026, `managed-agents-2026-04-01` header). $0.08/session-hour with durable append-only event log. Our preferred scale-up path (D16) when the shared-backend runtime hits contention.
+- **`useChat()`** — Vercel AI SDK React hook (`@ai-sdk/react`) powering the chat UI. Handles streaming, message state, tool-call rendering, initial-messages for resuming conversations.

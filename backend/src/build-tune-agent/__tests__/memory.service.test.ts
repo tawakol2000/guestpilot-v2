@@ -12,6 +12,9 @@ import {
   updateMemory,
   deleteMemory,
   listMemoryByPrefix,
+  writeRejectionMemory,
+  listRejectionHashes,
+  computeRejectionFixHash,
 } from '../memory/service';
 
 function makeFakePrisma() {
@@ -111,4 +114,59 @@ test('listMemoryByPrefix filters by key prefix', async () => {
   const prefs = await listMemoryByPrefix(prisma, 't1', 'preferences/');
   assert.equal(prefs.length, 2);
   assert.ok(prefs.every((r) => r.key.startsWith('preferences/')));
+});
+
+// ─── Sprint 046 Session D — session-scoped rejection memory ───────────
+
+test('writeRejectionMemory + listRejectionHashes round-trip in a single conversation', async () => {
+  const { prisma } = makeFakePrisma();
+  const intent = {
+    artifactId: 'faq-abc',
+    sectionOrSlotKey: '',
+    semanticIntent: 'FAQ:wifi-password',
+  };
+  const hash = computeRejectionFixHash(intent);
+
+  await writeRejectionMemory(prisma, 't1', 'conv1', hash, intent);
+  const hashes = await listRejectionHashes(prisma, 't1', 'conv1');
+  assert.ok(hashes.has(hash));
+  assert.equal(hashes.size, 1);
+});
+
+test('listRejectionHashes is scoped to a single conversation', async () => {
+  const { prisma } = makeFakePrisma();
+  const intentA = {
+    artifactId: 'faq-abc',
+    sectionOrSlotKey: '',
+    semanticIntent: 'FAQ:wifi-password',
+  };
+  const intentB = {
+    artifactId: 'faq-xyz',
+    sectionOrSlotKey: '',
+    semanticIntent: 'FAQ:parking-note',
+  };
+  const hashA = computeRejectionFixHash(intentA);
+  const hashB = computeRejectionFixHash(intentB);
+
+  await writeRejectionMemory(prisma, 't1', 'conv1', hashA, intentA);
+  await writeRejectionMemory(prisma, 't1', 'conv2', hashB, intentB);
+
+  const conv1 = await listRejectionHashes(prisma, 't1', 'conv1');
+  const conv2 = await listRejectionHashes(prisma, 't1', 'conv2');
+  assert.ok(conv1.has(hashA) && !conv1.has(hashB));
+  assert.ok(conv2.has(hashB) && !conv2.has(hashA));
+});
+
+test('writeRejectionMemory is idempotent (upsert)', async () => {
+  const { prisma, rows } = makeFakePrisma();
+  const intent = {
+    artifactId: 'sop-checkin',
+    sectionOrSlotKey: 'checkout_time',
+    semanticIntent: 'SOP_CONTENT:checkout-time-wording',
+  };
+  const hash = computeRejectionFixHash(intent);
+  await writeRejectionMemory(prisma, 't1', 'conv1', hash, intent);
+  await writeRejectionMemory(prisma, 't1', 'conv1', hash, intent);
+  // Upsert must not duplicate the row.
+  assert.equal(rows.size, 1);
 });

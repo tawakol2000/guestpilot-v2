@@ -1,0 +1,66 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link "← Inbox" [ref=e6] [cursor=pointer]:
+          - /url: /
+        - navigation [ref=e7]:
+          - link "Tuning" [ref=e8] [cursor=pointer]:
+            - /url: /tuning
+          - link "History" [ref=e9] [cursor=pointer]:
+            - /url: /tuning/history
+          - link "Capability requests" [ref=e10] [cursor=pointer]:
+            - /url: /tuning/capability-requests
+        - generic [ref=e11]: Tuning
+    - generic [ref=e12]:
+      - complementary [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: Pending suggestions
+          - generic [ref=e16]: …
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: Conversations
+            - button "+ New" [ref=e27]
+          - searchbox "Search…" [ref=e29]
+          - list [ref=e30]:
+            - listitem [ref=e31]: Loading…
+      - main [ref=e32]:
+        - generic [ref=e35]:
+          - generic [ref=e36]: Select a suggestion
+          - paragraph [ref=e37]: Pick an item from the queue to see its evidence and proposed change.
+      - complementary [ref=e38]:
+        - button "Collapse dashboards" [expanded] [ref=e40]: Dashboards ▸
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]:
+              - heading "Tuning velocity" [level=3] [ref=e44]
+              - generic [ref=e45]: 14d
+            - generic [ref=e47]:
+              - generic [ref=e48]: Coverage — unedited sends
+              - generic [ref=e49]: —
+              - generic [ref=e50]: loading…
+            - generic [ref=e51]:
+              - generic [ref=e52]: Acceptance rate by category
+              - paragraph [ref=e53]: No category signal yet. Accept or dismiss a suggestion to start.
+          - generic [ref=e54]:
+            - generic [ref=e55]:
+              - heading "Graduation" [level=3] [ref=e56]
+              - generic [ref=e57]: 14d
+            - generic [ref=e58]:
+              - generic [ref=e59]:
+                - generic [ref=e60]: Edit rate
+                - generic [ref=e61]: —
+                - generic [ref=e62]: target <10%
+              - generic [ref=e63]:
+                - generic [ref=e64]: Edit magnitude
+                - generic [ref=e65]: —
+                - generic [ref=e66]: avg
+              - generic [ref=e67]:
+                - generic [ref=e68]: Escalation rate
+                - generic [ref=e69]: —
+                - generic [ref=e70]: target ≤5%
+              - generic [ref=e71]:
+                - generic [ref=e72]: Acceptance rate
+                - generic [ref=e73]: —
+                - generic [ref=e74]: composite
+  - alert [ref=e75]

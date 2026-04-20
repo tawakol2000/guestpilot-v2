@@ -1,0 +1,1138 @@
+[GET] https://platform.hostaway.com/notifications/messages?isSeen=0&limit=5&offset=0&event=&excludeEvent= => [401] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=def186d5ac8b4acfa918030ae04913fb,sentry-sampled=true,sentry-sample_rand=0.6590284356679752,sentry-sample_rate=1
+    sentry-trace: def186d5ac8b4acfa918030ae04913fb-a97a0b5fa63701cc-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/openAI/settings => [401] 
+  Request headers:
+    sentry-trace: def186d5ac8b4acfa918030ae04913fb-8436db0b8cc1b11e-1
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=def186d5ac8b4acfa918030ae04913fb,sentry-sampled=true,sentry-sample_rand=0.6590284356679752,sentry-sample_rate=1
+[GET] https://platform.hostaway.com/conversations/unread/count => [401] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=def186d5ac8b4acfa918030ae04913fb,sentry-sampled=true,sentry-sample_rand=0.6590284356679752,sentry-sample_rate=1
+    sentry-trace: def186d5ac8b4acfa918030ae04913fb-b266d29206c417fd-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/account/session => [403] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=def186d5ac8b4acfa918030ae04913fb,sentry-sampled=true,sentry-sample_rand=0.6590284356679752,sentry-sample_rate=1
+    sentry-trace: def186d5ac8b4acfa918030ae04913fb-a51762e840416f54-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"email":"ab.tawakol@gmail.com","password":"Bimbobimbosandwish1!","auditToken":"SURJzzjAfai5Y_idaWtiAiAAVa8tjOPETzDW8BZbyVqfApwWD0yGS0FXTYDzIaFe8YZ6_bs2uSZyfWA0GOUGFrTUsXtI-HcXM3Ot6mZY0Ha0LMXrJCaucEjNALVwYJdwa9s-L55LDidoaHFni3-MQQHEicc08O70CAGF9dSt2TgOuxGqnFQs9hvRpKWmMBzkAbsABSdvwjKGIq_lErrjbl_AaL8B4Oh8WWivrPI9Alz2JbVFss-VtYvnaJmXE_RdjaB64He0y2Vzfs3i0RCWfRPdwVeuoOSEZZr3u5l9_CkPSG6axC5dyRPYY5FD9fCsB3Bhc-c9eTUytSDJGjl260hHkoi3CEo53lNMwWIliyZU9KtGE0WHgnDzLLP3uIqRcQ-a3Ln56eZbRge1_Na2RRKozNrSPOdP95PROvhrmV_sDKxgKTgSEnIlPuByANdggZVqBOwQywziqznN2gofmxCdTdLLhebXItpQl1QGvuPCm_Q8e7vbunRlKwoXywepm4uidXEFlDiJhPmCB_fmqGnWPaneS9h-ErEj_9c0w0uIsT3HUvtsAU4LWtKJG92TUb3nVYL9P3iFECotjYdqrhFK-qBvuq3NZZZ-H1bp9ifLbNwTkZ8TEzOpLbBkAO-Bj2Y3fJUJOJCf5qk0dWLAlU60GukpkYPCwJjuO6ShxEO2CtMEVnU-ConeIzyaV2XKzGaaxKbg1J_FwPXb4Hvc1CFtmND4woSg6xGfViOnxUCxZhNQ98hR2WtFx2ZX8epxIDCPTiIcFaRtXZd0UNCIzP1b__Hs0RFnDK4OdMWinv2dBA7aeUvv69XMeN0e5r-LGY3nMeKzxYuvDyPdhiskT3AjafzfjmnqHNSsnaeN1rl3jY1og_nbxbdIeEF0xVS2jPnrlGGrR81WjbYBla5mtypvgmGKTOZICTdsLLU_U8pmhkRpV_c4mAbruPwdJgvPhKsLq7yCyzX33rUMXqagG5SO6RTqlm4tjs9OTdd4QQmYM14-PZlC7ke2RzZANNIf9ofJiJdOHRf289LrNWPaYJqw8SyLS53tzq0dSHbCAzkBEDjVsr8LV16z6qIfmtVsoHw8r-CQj0yJIMsYXGWP8uW9SR1sLxiyuKW8WMnFc4fR5qPXIj-VRMmklhq28J1CmrtAnkdn64-hSED1ThRMEDB_-O6X7HS7buQdXsEzUuOoREViFtgxT7MHphxbT2dGbs54x8O6vV_0u8hJwJERCE9olMVF2ArEjUYn0yk4dToxkMwn10T4Az27Nr4qYG2zqpcmWwc3UgMoM-LSxXwocgyGq5OFjNlq_LaUg1kwRyjGy4KxX63wdBXC92Wjk2nG3WlZNJkRvBorx6agcYR4FEd0pNQEgWt7XJfOg6a7Z102Z2EoHao5GSSlCCeUID6qfJMD7l5gDJ3Edj6e2Bpr8uTL5WKM6YJskZO66oQ9cYcx7ZuTxtqB_p6_FHZIGCeIGsDyvSddL4lJBzX83Mqm6Qx0tROpeLhzMnR4WGxkPRbjSVUiGHtsq_a-UWmHVHxsDhbf8xKYvZxPbepG0vQC7QFLUzQ3rTeOSMoxdBqpJzy4zI055ohyxV6tmgzgcTGhnrljJU-q_yHbir17m_HGkFHfy3gMSPxUaOWyQWtz5GTW4dL4_55NCJ9QaCy9wdSNLhj1LWhlCu-kbpBBnHHW7p9X5sRuM7E8VCIiMGFlXm7rzCAQ389xcSkbt5EosDkTnp87WwGiCiATl4eWVTaoA6_layxf8N5KGSapQ8uMpEk0rpqUpPdNyzbsouW1AxUZbSsrrolziOGQxidMiOQIgk-gNZ64Mioo5QJPNT3ufOjZBnV1mLEan-dWU6raMJNxvQEEPovTBGHErcGTbWtU8StMDAPP98J0k5bAjHbFi0pWRE-AXWysISIEW9GFBNvcNrDkWIcP9gF_lJ4HLNtunGzpw5i0DMJkDWDdXQFBqUJlRoQ32s1V3xYt2Hzlxe9vOlquGhfpUfELi6u-amEJHStcrAfGatOeUTtq0onfy5Iymy6hd0FgFEgy-Xc00hdqA1WPJmeVB9axq0YuUQtKlVUKA5z1v1epxgmGbJDh21HDkoH8S56DkjLtnGWCNJOR0Q1--cudBqfnws143Li_MZsdqzvu9hABpynV1DffHlN6WrKiprSVC0s3lWd6HwiIe-40EuRFtpjoXpDyXtXVMzd_8NXUyX0sjwMVQW_dY3J1avLe4cfzEuS1P5ZR7CYYhj0UvEihahO1-evRRpb50jEIXmnThWWtUopXGxxxwN11EJq-GkYZuFqePSq5RLCr8s1C6RQxtUxSmfNh2l7ZMUAgP-RYAez8S6fGkRc6FiNty3Kwr5A38kHvTEC5Yxvui3ojmTEfnAFxcEwCZN50hHu_8lORnXANNKkdXs_22xm77cUme4mmDVJtAgYKMQsc3LRRFFokc3upwAuASkkYLgdaVEyhqwkdbUNexG1Po0xBYRCElwx1-QKU25WEoTmkrODrW3MwPdBKYbTBJwV7F08N3_EHVVe41bFtgwjVxunXBWknRVYZR68HK0EN5LMOuwBLL4iGD-tEJ1vAt0hsQO8e_lg8nx4nKxUYEy9grkeogoym9tLbGciMgMOigUtTg0AnnncsR15PQXDIy0j05pl3aU6zZgrnzHYbJghD5RCwsFKaUAcDF1V4U1knDFVOkh_6Wb_MbF6KP37_HhkKyQtkGN2mUbH8pSlF-fckZwLGx2oB04j8GfPpk9rtw0N6WJUyo2iiI2GFRcAj-zCYxKotNMU2--BMLiIlBvq3bowv-7X-pz7URSYI9-rTeJZda7w6AngwaB2WY67E5wGX1Q","captchaToken":"0cAFcWeA4tO88F8173Twdz3dH_BIepBN_jNc7KGPc-Lnw_7HoxhUk_fpd_WaMQtQvgownWj02popZkGJ-zjIercE9fBnQLiZmi0CsIq5RZICg4J06wSp4VBdt5naw6uRUNx9gadJiIenICXoU6fYVG3KQDhTpa1EADaEqGgJPmW6Dy5lKDsZhUQPVkIzYnsKW3GvTJbfrNIio6wAhrf7TSx1ixfFcFGrGVPbwxsmP_DTw_OeoD-NCugqtSY6_WnGl0JG261E1mALe9ipoj9bx4QIzZxXl9oLRfiTy_s-Cow-CzDqBjDDVuG3SlovcDsYYEcnm8zM_ydptLN9q0hEU1YE-_pW3qnUNNI1IJnm4HGVvBc4Rj8G6XzPU2OYMuJWp30y1MiE3uBeMaKDNnoscsTAgN_-t_3iuCB_cJX49VUWZ7DajyiAuCuVNMTd6-WZJRlrlHk18qquFhrpKGrVmVpl_WZYvP0uxwMluTYrfC_g0WRH-W2iXw1mKpKbUpZZepAGHSpDayNMyBkye6-XvYALy0cbMXbdsNH6qww4of34KFMHIWidVX9rrmF3FW-9q-10xHwqAA-auqaKp3GF_QiHgiG9AKwgaezGYZtFJUp2WQm3MfZJWA9HtCtCT_gLpHWDka0dnOWcF4noR0457I3eom4IcUEVHbuxPgKnXKvxTOMcQWmphnOWW3hAsTTqx428PW6rCz18tTev2tDJgrX97YOM8MFIseN0g_nNTWkSFaflE6GM3eIb-2jW-dNkOvQ0JAbKyr4Vv_rQVLLzpguo0qNuKcOye-g-WdKB1BU4sOxCfZMQeix6LYBa4UuVOvQz3DTd21jy7JQua9TTgEDj9guBEB39jd7XBFxvv_8rD4RYNWTci0LDO5T-e__zwcXulfUHZOggODBk7J-wDRqVxHGIMBQOHCDNf530Tqz4b9Ctii83UZNvZ1bwOUCEGwWBPU8Oxfz2re0tWFMeP1yg3l1EDy8htBHczrxDBAQsLIOd2u2fMzz6LSI_hj7Uu8mPjjeWTUef0GBftss-ma_jPIEThC2Qe89N2uKyjKJMuPn3wzRIp-gxRXgrXs8ofr2Ce1aa-MmvEPiYmgOYH2EdbjSoT7OUB8Ogy-OI01As5M3pH8dFfRxnJh-ft7kXrfZLnGP4u6QFcmyQHE0_0SHmdfxKUgQtOfbeRnleea4PsZQNeFvOSEWEokuPAB0aX9TZPB60LLlLEWvpuprtWsVcDx_uLE5jwpj9U7yMSnSDu7WOUyDBdDFyTFeDh1iQyUYbGAF17YD9Vnd_PoILrcuBVzASQIPnj90g2J80Q6FFaE1DA9-Ewc_KHRjr0w0p-lLLZLQbI45VwPNb5osGySHScR5tmX8CR6ffDolaRBAALH4zw7cCl_oVxh_COZs3E0hL12B651d9xE_Q1aXJKXfNw1hF1REVhGqh2bBp81pz5MIGl12ThSOse6lIU7kbEegoTToRHXqGFpdlmaxN04ZhqlllqOA0dkkXjjUp8G1YGMTlhnCGZKdXfdwoGTw_xDJyWqodO3UOVIrA5dv4xkl9pjO3MimE1ZlQY0Lmorjy03XoE71FxSzGbvKUep9De27x6X-EfHxUNEisVPJITjH3uMyJuxLg323owbCMUCYMK_4eakDiUsyMY8YFWop5h3VaJUmCysk5Ibb8ZdHrEGA_j1Lx2VoeHsubNAaUF7EKtjeeKfbjSjmptMPMaGY65OQ4Qt7tmIpdFI_oUpAg-8dodpAFj6DWOCY5O_uTyqTw_ei3CCSauAY0Pm-wV_jd_l4FWOw--zoXR17NyXm-bRI68QgptktKSmSQPA7s0CKoUNMcyjrQaKBJlAMhZTkHwe87e9yrXNkopxB3ij2r-J4fr1dNJ-UcPVoamJRsPJ31E2KkkAvLlI8wufr014KLvpcqo5CcNCt-fG-dmnWri2b2KTXvEuGURpSibZit0m-b2DO_OTI2F0EZEvteSfWOIzQ6oMEl6iNjWiOqaoyUTEFvPdqLb3uYD2tY-B8RKUs0K48fVKHt9sGNRaaWqZxILjH6Bwtzyjz-B_IPNQ7vkFZ9kGFGLSsu58sau-9jMS5g63bxo6ZGpTvtQLSFaSdEoOfvhfI6T7CKZdCzon2tleFr0tI3VoX_cw5fdP2QHfzrney-89hJv8R5O0bVWKJmSXGADweuY5uz-Z"}
+[POST] https://platform.hostaway.com/account/session => [403] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=def186d5ac8b4acfa918030ae04913fb,sentry-sampled=true,sentry-sample_rand=0.6590284356679752,sentry-sample_rate=1
+    sentry-trace: def186d5ac8b4acfa918030ae04913fb-916a0300f0aef2b7-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"email":"ab.tawakol@gmail.com","password":"Bimbobimbosandwish1!","auditToken":"GxYb64pNZaG75fegrnSjs5KYwg1y0doHs40uA6uW1EGV4t0Wt99cSt7rumB8Dy0uc1x1W2DfAWZC7WpdX-Q4tmJqxpKCqxMXZkbdfz5-g8QgWXqakEUvYg1bPGg7LLzMQdp4zcN0C4AW6OXmGAHO23HndRXjmXAzNlRT45gzKHwzDbnN3dcJ75lcKuszregaGEeCRsqsdchJJzUJFKwNVUZSNHXyeNOd5haRH7SnwAlB7JuKT8tERlMYOpNlGO7eNhMarkSYeC7SgCPm5fzGomGkqk2PzeziUvao6kf5euMDWFVdyFDLMBZGhfHUVQCj2pw_8_TQa6N2Z22CfYiL0xcu2d147Oyc27c4AWOjDVQE9kQwf3aeCSbOGQMtRBmEP1jqB0Ed9rMsQZoagoygEXS7bWVvqy3SjCS6OMe-gldMF1B8xvWYCKf6ks3sGgnaChpXW7Aj0BQjIyo_DRHrsqRzXnhl4uvwb9bM1mcXi9o8pj_V1dJeTE2Zsp2i6f8rFpK9NAngHYjz6RIqh1SdBCOrWiK3xHuWhXFTVWyrY0yvy8IwjNcHVsRHW9rVtPP2VW-EFWvPEhxj_5qlnIeG9x6pX20FMZTv5CsjHlEaafbhar-TdAJgqdfCUhILe_u5ax1aoYKURDMeBtBXNuiBFYgZabbajAh7WWM12Fspxz_FGjW5kbFb9-xW-wUdsGOGWnZnSao0VeI1NNR-wi-qn4aE9mBT2GWHW29pAYkz8Univ3nDN0dP6Dql-jQH8JJihnPemnpZ3nz6Vy0vlvQ3x3Z7qU-jzOya4TmvHm9pTqDqHMD-fkgIWkXR_1hZQEBC_iTQbLxvKk2tggcyjTtGqi_GxwgU4HzY-4nLkE_Wh39WhTpo9FX9IHuuqjJRxTRkilURJmHlM35rbE6V5yVFvuhaILxiq6nS8pE_DB18o8R2i3_x8B9MWftKXzfRy3mRUI4pcT6naRCe_lGW3ZonyxFHzWjWiV1dpSXm5LuMauN6bpxP9UPrOUut0s4BynmkKRVPL1y0kYJVEw5fJYZPOuUIT0HCOWkNi_95gawyfZSq5J-OD8qAQBqHdD4VXA41HevcbQwX8GJb8z99_50gBN8lVTAZq1mKAoUchArvvPqJKfD_7WB1CABIh_VWgxGtbXaizUaIoMu-hxpgsLUcsBTwsCc-m32nSLjWjukfDxIrxiE1yyInvSn3uc7M3Nvi_jv7c1XRSVeiuR0I9KxxghAVDEyXr4zTy9rUTB6B8bQ5buB4j9oKksrFmH8PuxaKTCTdv_D9vex92sql7xd5RmONeWcD7zJVVaNeHQvKweywzzYFSMsdWJhTFMjFOke98_uCF_viKu_DN8rtdqbj4y1skbWOTHRKfGyUCxyLwe1ovTev94I_wsQwmZp1TUbjf-vy71rjxE6rWlfG0G0eHfrC6hBJ-8g7awOFTib3eqr2E1B9swTYvNK00a72eHjkDA2X6L5ZSFYhU_DboFrCp2irTWRc36s61ru0krfoWJxui8mzgWJHqH5fUMsAzwLmQX-2xJvxIqvgYzhJy2d9tj1I9MiI0aZOdqFispeXu5Emz0txYlKtxMup13LkeCTuYhVbc0GVtwYBZj-Zayrk6qcU2UrwXZqqypdHuu6MVS8o67KXKPPW6ZX1AGPCuoeiVmZBWJtkkXdGYCaLzxJu1nJiy8_qB-0fx4VNeLY2_Kn2FYJC-0X8RQVoQlGLe04cEkWDHlZ59iLksXBWisrjUk3bYxn-krq37qG-ZzIarGrvxR8DOkH-RUjsOmDjJRlTkCZ0NjsqQmkAOsuh67R49g-mWlqiHOyaUH18kaaBfnnVQsA3x1yShA4habli56r2t1zlZEpx6Z4urE6vkt92RZym87GA85QBhmeqWKdWP8Q0ZdtpeZITujRHwm_8en9TEyOkvZ6ssSi0HhNuXmBcI-SD5RNzoLUGaAoiQGmKMnLO-3fgIuI96prHb6lYi6JMbHOMmymlQmkuC0tjLhobnePEwuu8TUANFWitIwQiDpFKof04d0URqXbH2xggD-_l7PZ7iUt1EjNChPWWQLdD3Ki-E75QcTHjxYq2E2WuyGEqT4kxcU9O99MRKZV1x0r_b63Nm18uBV4FMYrQjfH_GR71UjC2H_jnoWKQ-kD20Nv_j2LZXgVhksQTPLq1hmy3FahGuXDUjaEIpmvyu4aWx8TlEt_HQrZUNnycKOn1cyzFqxHTY7uwHQ1UkGLQa1sg64Unu23LxA1DoZMg3kQ_ZVqtGz8z2j4lcxOalANYVGRM5lxed7OJoS9NeWOICVAG2kzlstfmlkmiqkJTpY9aPs3De3F-Bf3Crqbuq3ZsV55XHDSYRARZC7M3VlrlA42Dj-0sQHi_5nHp1GVbSfxV_RA4SuOzLEc0APAIwP_vbr8ooRQJ9YFCTnWn0AikQ_wx5jsf4yu27ewcdvifI4dFXzpk5iJaHD5vGTEPfwmjfrk6ya3uQs6Axqu8wzIWOgUtADxoiEh3MMWDAyamAi8hfE16Qh8OVtQT9WbgRRvtdqV_Q-83M6zmlkTeYsQHaJQ0JjG4gwmhC_wkt9-2hF_ttXxS_gMz7uYcioNyP_HGEofUw2Zjvh_vuA54qvYux9-snVffOFcOKZEa5UBQgKpvwEeIIHYdkHovRDQNWIxhe0QJeLf_5Z3FX2JgSdCdd6ixEh3qkIMr9TjWxr0VTylw6qvQ7vD8_52MedNBDaf6q2TO7b8i3dxJUcKs6y1UzGqYlOvwzCH2EXKg6z_1Chn-nNyv3VlgezMvY6jH-WVyojMwBwrsUK1Zw-EIf2Pn7RK_Pzj0drIyNKrlAhXXWYN_9xZog5ugwKQ8m-c-94iJ7g79lgbH1nCQ1w","captchaToken":"0cAFcWeA5uzEKir0xRnKOLqb0lponurEMvaZdwYTkKAJsZhDBF-V2w4VqZbiyTr5s2aZrggCvQ7hMMp9-x-9QCilDior_Wy2zvYMMjuuEIaeQDi9KVlZ-rpPFrjXoREYKoPQCKzY9-e_bsA0SJ1aJUb8wDgZ2qsFUXiiJ2X9vY4G3tS3qVii8UQlvz6dG-e42cbtnIeiSWvSaw1J5TKfAvB8tXmZbZYyY6a5Jyik5kgYx1VKJqMQmsMmAh_iEXLvj5i89YiuuOpKvxrhV9rk3XvADc7S_ebN73mU4RNEDMbqZvplh1av9WgsuB-zxcerpNQ7QV9Uu6Ycoj6Ihc1J1OvAOfKfXOzbhT3km1LkqNZX2H1uoIG7DMmQnKSe6FXgXhAKAG4JXt1IFxC1VSbK2bTtvs8pAHGg5nx1LBlkAB5p8h9ez_yR_UGd2yx4D8cg-YkpQ6_GjdJiKTg4z3mOCyTLylqYZSZF07n6Cppu3uoqlNRtA7zrbTtVXMgnMggLVy75BmVuxFvDf9OTDu7IeDkS-SHnaUmpZupP4DlO6RQzdPQRZA-LnDbWtJT8HnZD0KbfZSr-f2xhh69fnBhxcQ2bpZ-OBHkr5xbzturszFFL4ZFjBn3dR-0BflCJ41N_yAHmXjuXVfBvAwvAFKEltqCu_EZe-g0SW5qZ4qQSQD1LCzTqlC9n3Oua4s5ODKnaV9mKDstLTD0iCqcOS6Hbb_W-V3dBqpHuoMXbOMwv-VJDleT2-Vzt9mPhQjfP0Mlrcbg6QI_6aDoir84hBFOxaGWBiK0HZQgj7Os41ukXKTJ8EtDSD0raie1hHi_RuTZtHyIp4QN5rnjGtRbR-Hqcy41Ns2arZBiUGKcIt2Fm5Lnd5w7oRUGrMwQImUsk7hfN3qpFtkADhqKGVB30zhaogaIXWp9-hERBkPdxEqkAYqo922sz3srRUHPvj8Tpjy1dlI0BTy0yeBjgx807Z2MZRXGGqLVSWtFTViuCBz-l1XpJCscqLJVIpRL5q8WfuJctjQ7_LfypTe52WWqDOUZce3TGyFqh7RQ4L4Quuc_Eq6FWxzPCpYMbsnS5lN10qTdWM2AEbCFH3BfS3Ald9gFfkqL9pkTadU3W5MgC83_1KEcjHHqmN-_foo5KU8YqGm9qjyJ7psyXrfeMuZzrLU6-HX2xrWkIojEDYBKFuLdhEStgESq-cay1qSsZAniDJ8U2AukHZbY1cGL0hQwC6vmBPgfG-SztbNw59YdU2G4VZ7PDUKOWHynLWiT130s9uFCg2Lm9n_6zdRDeQ6oJLVNmMyNMfLRfmkhGKg9gO2iGJSXSiSJgkrUo_iHbg73DD9BDzKolJMHGDKmSVToQOwNCcG8Wd7t-wZpsky7uuoEdiy2c-lO8nCNIpyU_YUiJEJneFoh62OAiiNEZBJQcX0xROYZ9XyvZRLZa3oaPkSAxGi0dglw7RSZMc30D9bKMC8Iw-OLXP6Ga3nDZiEUedjGqmmIfp-FyEjZ8ZXwZUH8fd0B04OLSzxjtDDzU9wi4uNVrZarR2sHWRusMUUdJ-qZjRg3VrdrLXtrigTFCwiJtDBZF5fAsMZ4LhhtBmGpwkrtEuazgrmAb-BxPB-ABE4r8DICtSoT8dz9DjfEu1PJqrm-SBeKVBmoYm-EVQQ5gIxiq97twKeoWHnSUL7yCvtPTEkaxZEhrgYJRQxGGCLzVhiPcE0XHI9YQz5ery2W7vOnza7EBguldi8pBKAHQRyKXRWYMr92YcKLxKBusI6JisvJDd-LkAM1bfJ-JEElmFNGxWO0h1gb8XE9pw0mm7LeCEg4NjScrZxE_DhChPMGwfLdAC7kbrhU8PRBdGYAw0jnO8BtgLjZ3c6NwQkoWbaRB53il5wUdoJtyJjRykRBSyp4_ptJKZ7CiIND3tIO06IAqWJlXwp7w8lPQlhIPg2U6xH9znUj1W9OUHL2rKmhR3IcTfSx-Zw_RjURKRY0Pmr4Z4msxQXJbzWmqLd0_XVtzj8cy6bVp4b2Jut8j34KRgbRHWSC2GRwT1-1VGeNYR2B6SaMBUBjUgV-MEe4ApDAIDH3-Xrp5Ou7yilywzGXxocHeb1cE87fsRlApoqvocOHo_Fzhc8Qg5LFp3QVThYBvuPO86a2fMUg_Gg-F-qApHUsal5vtOMIyzjp6jQWyPg2RN2ZwKmfrMGYz96CSzK7uH4G-XAtKsl2h678Q"}
+[POST] https://platform.hostaway.com/account/link => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=a64699241095468db47ca6fd704425d5,sentry-sampled=true,sentry-sample_rand=0.035222689558341735,sentry-sample_rate=1
+    sentry-trace: a64699241095468db47ca6fd704425d5-a2232e210afc802f-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"code":"YWIudGF3YWtvbEBnbWFpbC5jb218MzczODgy","auditToken":"T0JOaEsaZ0v0WpmBZHp_emcF-WJsJ658r5XV2IlYSxVSHd17SwTveEM3uAoEAg32X5jda3f87MX7MSFS65jTLOF3UYEC20x39pHbwpST-GTP-0YDeXmDc8U7pSbFi9eQKzQVFjiH4YseQ7r4lSyZ7eRam0NAAAylalMrdm9L7JB9BU88bYGX1nLenJigVfcBSfvc-0MhnWHryEPsu9jlYshZjyIE7knL_qSQr05Rn7HdTswLlX66OOB7Qwwku_w9XfKc3pT87ass03kxQ05muuU-5Nclpsqk2pfepUYjfZoHWL22FFVhKdUzA8fhJouUg4rijLEFy-Hqdh3R_qNSls7LZCSv1KFM3Vnj-pdEg2Y-KRffEpHfMnsYxHoCua8OLpCStxX44SZfrM9vJjRRhdbciUcWyH01WHyp5DBdw45IbWfobRUSfum60eglqu8XbO14OAYb0jrkeumKy6rldcdgnPrcd570QsPf1J45qEswKnTQ3fVQYAKTz1AZqePykRIcihiLKoXzCUeSEPCQujlzNmwHn8U9ag-FippB7wCVssGGIM1C51XI4vWzCJ45JvPP-pKatdDawVvPCv5eE1dEuVGQJGJIE1_eUCnqC5lOaLr0n0PmzI_-Vrg20_tDR8wuSQXbzuP4TED-gO3LZQc40Fb-MMvYB_4MZ414EPvFGiJJHjVAf9A1cZgf5uujNgtxueQwq1I9zWhIl4SRJKTkPWLlukL21v74Zzdr9Cq-97x-JA8MxNLiEE9PrhJPMjz5QsnJIwztnB86CUikEbAlHMRL17uXyYLYof56aK2DsFthtIhK-9ueA4BTk04UfuRq_4EoDsatoqdKlZ2Ex69UQR8y_zUhf637fesL35RyML_oh13gTH16UJq1M99-UdE5G43WV_kuujqkiVH1x1t10vbXbgktE5s7yS33CvNzx2dcklI675b-B5DM-3ctg4-LltjE2jNzRZ0dvMsp5zYEZC0DE8F9JnpHUSuSRli6lS8UtPlQjDStwRbRxZhgJyiwU8QEWGQ2Awd3i1UmrgyK_m1r3FoPkcFyT5tuT-2Eq9u3pYAy32lIj72WAQ4XVBSN0dNj-BoNhtCV-6Zhw7sjfLvf-weOK3XcfZLcaAfcZYTDdz7B85aflPsEWIV--aOCxPeA3AmDVDN9ykVbgs5KaoglnoHgwrevgr-SSP2Wqmj0yzuDw9Otk62pQ_B6inI705Iq0_9w2rGLIO_pc3DKXocKnd3HIDUtUxfx7l4bXd6VWzutFGRetAdnH4jtrumRA5V0F9N2bhcJ5oZ-o3UBGamWN6hHLPb52BuEI0rBNv22cyNbEst_PrlbnPwGftoRBWx_x7JvETfruo56biZ729vZYmLsGbFcCjjqahKrjFvgN4i14GNMGkQkM5p0g3i18OWp05Q6mlLz4lRg6TE-zHL9txFwBNg7a6NGuICys6sjQnA7bNPVhYS3HuVOlJWRpSHlaBFEuRs7ebhrFvM6HtugmhEj1jLL5xBkiS9hN7ZIVMyv383fdfrGlFD9954COYay_cqZ3SulZDd6N__wZ5-5meCVQ_ZMefTtQvBA2lUh_GvETqxweCzGtVKRU8AlvvXpT934Na6H7eJX0hNyYDB_cs_EpcC8kovVe0X8VwKonPYjBiqEkqkngNh-CA6smqGhxvusNxh30n09JfS6Xj03F5vKf2LHA1KK4LlZuVTquIM1G_o5KwfC4ms_SSF3FwmPT962suGz7lbuLJ2Urdcvj4_34c1RcQicgk-eNlswxQW4oM1Fc1IHzQ95c-2WA5ezIvgobkLImR_hUNnzASnFxbj_YTqd1LZBFRF7Yfxer2YFLk3HTZVCuNPJ7pHkQ3cqDplXel68j6rRCYUknIsxObUVNn9DEF7IRsRgDuAPUjmNHY1ktrFiMZ7f_OgfluZ2F0xBFCGOlVmWZFYtM6yPEcDTiGaMiJzW1r1uQpqaqd-wehgTvq-MMeProcvWmGMo6BN4uu5KKecA_XIovIqQ-zOhVg_cGcQ2a73M8wQO4qb6Vlh8Ez-Uo6Qo-DjXSS7hh8uOp6X5NY7KbwAbPdgI6VVsY3OtVQXrAtDHtJncHs39-UEx6LN9GlgERNtF0n3HtZxSmdhqUuCreIMH2qshx5omDDNNrmRIWF06zl6_r_OcrLoJyhp9MQnOvfnohuPegFsZI6xgM5R5MujBNqcrEzVS8xnNT7H2kA1dR791e1Th7Y77hKVREeqnM0AR_EDMM_5HdtbOVDUbO-uRK_835A1bsC_Z3PSjwpAIHcZHs48gesG7RhqBa8RtZRR99v8qQxaHc_AuWdW-R2iIoGQaUeoAwotXA1cJOxL117jhbfLTO6FNpCDV00OucIV664uq0xICOCMpR_OirwPPpg8JVkgOoxUVjbN7P9XJjDHaSMIsXYKHluH52DKyyZcxggfUvzQYUfSmuu-7lnnISCHdTRcvcLLUgJJRUSEiBLo7C5kFXzUWJJnCu8CKvXZa0Edx_55JFl_Uhe3ArI2YDWVoYXBGo6Lx3GbiU6OK7Z2eckcus-0Ei7fIQxmJXX5tvigCYGBo8vFlT74nNBK6eNIsKGWGYdaZIhuoh_ZbsQhRPYBc1YGHm0sy3WHfmyWq5zBNySlKcPZU6c5hUCLKkAzzE0zD"}
+[GET] https://platform.hostaway.com/account/info => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=a64699241095468db47ca6fd704425d5,sentry-sampled=true,sentry-sample_rand=0.035222689558341735,sentry-sample_rate=1
+    sentry-trace: a64699241095468db47ca6fd704425d5-a0e79821b3d6fc5f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/channelSetting/list => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=a64699241095468db47ca6fd704425d5,sentry-sampled=true,sentry-sample_rand=0.035222689558341735,sentry-sample_rate=1
+    sentry-trace: a64699241095468db47ca6fd704425d5-815d3b892e789059-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/surveys/propertyManagementRoles => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=a64699241095468db47ca6fd704425d5,sentry-sampled=true,sentry-sample_rand=0.035222689558341735,sentry-sample_rate=1
+    sentry-trace: a64699241095468db47ca6fd704425d5-ac30210ec30063a5-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/subscription => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=a64699241095468db47ca6fd704425d5,sentry-sampled=true,sentry-sample_rand=0.035222689558341735,sentry-sample_rate=1
+    sentry-trace: a64699241095468db47ca6fd704425d5-b3353b5c3f8c1c3f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/notifications/messages?isSeen=0&limit=5&offset=0&event=&excludeEvent= => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-bdb8e467fb92ad5e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/openAI/settings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-b08c73d581d54b84-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/intercomZendesk/hash => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-ad89232c87bde78e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/filter?limit=1000&dateType=departureDate&fromDate=2026-04-02&toDate=2026-04-02&includeResources=1&reservationFlag=1&statuses%5B%5D=new&statuses%5B%5D=modified&statuses%5B%5D=ownerStay => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-9ba7706707390d9c-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/filter?limit=1000&dateType=arrivalDate&fromDate=2026-04-02&toDate=2026-04-02&includeResources=1&reservationFlag=1&statuses%5B%5D=new&statuses%5B%5D=modified&statuses%5B%5D=ownerStay => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-9ab377699d8fcbd8-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/account/overview/reservations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-b712b6091a182cdf-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=0&hasUnreadConversation=1&includeResources=1 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-a2cb10bb16a84ad2-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/account/overview/messages => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-8ec8b6363c11f008-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/account/overview/listings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-8736032fa5e384b1-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/conversations/unread/count => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fe05c6c7fa3a44f687792fd201547c5c,sentry-sampled=true,sentry-sample_rand=0.19334008955062876,sentry-sample_rate=1
+    sentry-trace: fe05c6c7fa3a44f687792fd201547c5c-bb5a2610daeff408-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=0&includeRelated=0&sortBy=latestActivityOn&sortOrder=desc&includeResources=0&includeLastMessage=1&isSnoozed=0&isArchived=0&isEscalated=0&fromDate=&toDate=&dateType=&arrivalDateTimeTo=&departureDateTimeFrom=&isLastIncomingMessage=&hasUnreadConversation=&isStarred=&isSameDayBooking=&assigneeAccountId=0&unassignedOnly=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=efd81975252d49daaa692382e567c336,sentry-sampled=true,sentry-sample_rand=0.11005970238805318,sentry-sample_rate=1
+    sentry-trace: efd81975252d49daaa692382e567c336-806eac76d32763fa-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57205036 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=efd81975252d49daaa692382e567c336,sentry-sampled=true,sentry-sample_rand=0.11005970238805318,sentry-sample_rate=1
+    sentry-trace: efd81975252d49daaa692382e567c336-a3af7ded95260f00-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/openAI/settings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-af9be5b949b6c05d-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57205036/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-9725d9b11b7f9359-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42287841&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-950f95ba00e769ac-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/users/list/all => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-aeff348eb1cf4d06-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42287841 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-89514f6a0f603f63-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[GET] https://platform.hostaway.com/listingUnit/417265 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-bd452aa221bf70d3-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/messageTemplates => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-8a54a6514d84a203-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/messageTemplateGroups => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-a2314181e556c097-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417265/calendar?startingDate=2026-11-01&endingDate=2026-12-05&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-80f5514ad0550be6-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[PUT] https://platform.hostaway.com/reservations/57205036/status/approved => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-b55703a3a177ffd1-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/specialOffers?reservationId=57205036 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-8b43a16bc9cc08dd-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417265/calendar?startingDate=2026-11-10&endingDate=2026-11-12&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-bba9e1b70dab4cfa-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=0&includeRelated=0&sortBy=latestActivityOn&sortOrder=desc&includeResources=0&includeLastMessage=1&isSnoozed=0&isArchived=0&isEscalated=0&fromDate=&toDate=&dateType=&arrivalDateTimeTo=&departureDateTimeFrom=&isLastIncomingMessage=&hasUnreadConversation=&isStarred=&isSameDayBooking=&assigneeAccountId=0&unassignedOnly=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=e220e5d849ed43f5a8d76983a9d10606,sentry-sampled=true,sentry-sample_rand=0.06779927120282891,sentry-sample_rate=1
+    sentry-trace: e220e5d849ed43f5a8d76983a9d10606-b24733d515baef78-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjYxMTEsImV4cCI6MTc4Mjk0MjExMSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6IjM0MGEzNjQ3OTJiODA2MDI2ZDgxNTYwMDk2ZDA5Y2IzM2RiM2YwZTdhOTM2ZGNlZDU5MGMxY2U5MjgxY2ViMWQiLCJhdWQiOjE2MjU3NX0.SH6qNPgouWkasb2nazYISe8wMSSUWKqGs__rPTvYeZ0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/smartlock/devices/count => [401] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-96cb5cfff42adb7a-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/dynamicPricing/stats => [401] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-ae5215479a422b4a-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/account/session => [403] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-a36d18c3b5043e20-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"email":"ab.tawakol@gmail.com","password":"Auth is via a jwt header","auditToken":"HhMfTcVuxTgxXS38FRDwH8I9IiwYkFwoaew6OGsbctqaZLNw3jLrJoMf5c-1zD2OHyeb5V6iRKBO95AG3nm4k-iSp8xmRnbV9j273tSwJ-bK55bZXsNUIkO8KjpnFwIDoTjUId3c-LxMYOu8_cV9Ue-W3PBxjdUrRP101Y2EB10c75yalH0jAszre7KHgusHmNzt_WQRyLrHQqCOuBoFe8ctwa5s_iBlaG-rYHi-qKavORG266LmSNfHAl2lIjlSAaSXkvj0IfqA1BFJv_wAzSP4jEg5GI9_2LXBYcYl9wChI890EEsW-mgJiFwnALPSYd7OsUqb02NZDn2ozUOHnE6jAs31PQowxatVGxI30EfvPGFD018iTKjruVCs8gsAvawGkzC1zOUwtJ_nIQwy5JiyARQOr0x7xQOhZR6LJZXcGpffaONwMskfvVgZFgIN3-GtbWKYbNuqmnWrYUzB356F4mtehK6k0zUXetcgp5YqCQT1OWvdzUh79LXQiP4yRm9FiV8cT40sX2dNM9pVICmkK3_tnR5hZczi5q-zk0C85Y3NMOwlmyrucf6IKS2xLlaJJDy0yu_DiCB_JDKdmUCCURMRMbCMVNgY_5fkFo-rIrjxIhPbuGLZNSn8XQaRzH943ScwZfbJT2drX9ZQwQoFWl0bmh2SJw4fEte3w-4JoIeOFgCTbvsbluaCIPR_P7Y8F4tSn9KkV-fY4kofWNdlSyK9qO-TJfpeARHs-IrU_n5xCD8C3ap5vfUYTOnF-mJRi-xEQViW_0AojzRTUSMHeGezPtgdO37mqF34ET7G3QivsigytAdp0K8EFsNGk9hYhbKGWL8GQzGXSJi1qbI_fV_exPGQNpvD_lXaMtuR6BoNI2MxaRG09nNr9CBPGMY0Jiy5HgmJ1cYaxEMRN2t6lkak-oV4IF3jkisHu5yHaa64ASVRLcr-ZCc1chWsJeXZ2U2wYbBlkJBPpC9JRQpkyleEObMhxcneYfYF1F6lpibwyi6GMJLJj-TE-TIlz261jmoW-U8zg9mVC9-Ymzwo6V3K00UzhZgJ1N2KreWpYtK3cwSo03MpsaH9wtaG6MXMGknzNv2RJAd8U7p-iplh5d2EUM_MVhyANM6gpHc9rIyfK7v-AidGBy4VeZCx9hEPrj0xEROX95Y-p2J36brDKJjEl-NyTUs-GsjC8Eh1ITUcCYM3UdZH4MnU_5ZULSAfmnklIyHCL5kZN-V3gJoXD1XyA-615gISREbNBX74OdwlIpmZ2HNp_MOFk7AGvmzDZUoMfjYz6ktd_ZJalkfGVSyAAAYb6as-eaoN7_4VYry-oMVyqmQPtnWVVSOgJ5Xh3uocOztgTLBkxw0a0y1NZrIU3w5wQ2HpsVhdeqw72EUu4uUzT14j2Dm96A0ov-Ta39Oc56nG8klNW0YgqjtGl_j0_CRPYNYznycYn__mubFAG2a0Kigmfo2haxhuw0duY1v1TBHT8CliA9Su9DUL81LtyJGHfK5uPyKnUaFg-G_JRtKypcJFInOJV2KWrhMUUQzaG7reciV30IQbdhY1Fcft3RcK-XiGsO2yd_GsykKx7FndVjQaUuceGe2nw5WSnqyfaHp_cPeRR4PHGEz85eSFna8OooYjm6TeYKhOJBozO-jh_FRsedVIO8aqxT4myD4dTU7P3osQECVDl6jqEJDGHfn-ii9uPaV9zSe5l9hWudvLo6ePn1ZXaktiLWgcZv0GXhE7NIx5idBlRYZBalKIDwzOJkeGAQjIFpQnlSw1wlMfbPpw4KhHkRDaYCO6_0rbAmqBRkQv8u5FI_r36J3sUdAsUnpQz7u34mXgkZ1teCx26QPIU4mP4YUtNS4U5jMWkIEajzOsEIVVCo1qgQcjohyXuN271XNsmOdse-xvpbRLGYczVdBUcmR5CY9Np2ww_wAJu_d-la6zJEBu9-6JWLUAu4sy4c-lK89i6Q_UMo9SoOl3C3cfWoF76FTzASbymI-_Jb8JwO40OZjw451lWBNA9-pzCCAz_dmAmJUrD0x_5_eZELoJroQEulmBJVDDUEk2BZxYwA36zqG8hLioD-g1KvWsKfW_XMaH-hptvd0n-pnm1Z0MXlWV9tdJsgiRO91RwlPMtQfN3Drkeihj34D2RSceDErQyZAQ1Os-pbLi02vVE0vViQ9lpJgDhBeplBEfr29AaQTzlMSQH5GEG-s_tQ5uKj2Yee7qUJxtMtb3QD1pt_spHmxLBI5N0meAIIuw6JUxPDMcz6-FEjhosuAP3bnP5s92SXdazdMeqXAOcN63e7EPuJ5ztvEWIq5TqQn6jSBKB7BHp6C8-e9jBWo7Xtk0LkwsK1f0PzumU_zQilA0oGGZx410YtkUF2VYNtcJ8WX0qGKk_Hg_T30duUau1tD_MWz6GGmvfYACknS1TVYNjUBBq-sjsfUak-QIZ-jnRQ3ny2v8UzTrQFrJC4ixMBB_p97_aQPi0z0MUOAUpT6O9bmJdsasqg5B4uGL8Mn3gU4m924Xnf9nrdwlDU8OgHBpfAEka4HuHuXghnhdYag18CmJjovm3kgEgBQpygD7k6BrBqsF8a2EU1cry3ZgRHtE_fzCcx34LlRQ1SSKB9nVqwLMFSlve_s-wf-1rizmCm_8bFysMkzuElDJLZmU57aL7VvwdkJfAjwcQ7D1pyNNgvITrfcvQLkjaVqhGA63ALXVQv8AlWn_iDnZKBgX2KtLcAphvl5Cs--VT7sHdLGlQKOVPW6UiD-bUVdT-OXaZMZgbYcLZQwpW9n7qzznoeq9j-TmYrBpMGn13ny2BuNSdV8hW801lWiwazNuOEtO4Nc6HKJ8wcJfuyhbHs9HS8v8Q0BUs5b83xXZHO4BybfsvzWXa3_-MGkj-g","captchaToken":"0cAFcWeA7Wdb1hP5BDCNDPjTPtO0mdCnwSSJq_PGglgRRa7X2I0KIq2fF6IwiP1gGxtdWooH4nwpH5xDOX-c4oikxPJygixRJ2--6i4ithUAdkApvZIyyZmrpRbI0Odil9WhYHwhb9Lpv4klnovIpkQFu0ryzO3T9eSjC_09kh0sIAeUuriMHX6bZ6IS-FN7JklHAsg0LesLjg1OHO_BfFtRBqbmIMicSd5RD1hS_ls-FaAfEQf89YWwrVEcdfRHaj6f1grPXf8Jay4W9di-iHpWM8NxS82hsEWi5vA9uXTOMMjfNA7KuiaYGs7V0nb_qTJ1-K2lz4W2EgqyD-CRJg8QnHioJNhALlQzwPAkl1Il7SLTnA8OXmzEEKRknh3ScPS3KlkHF-lUbd07Yfga8Z1P747VtqGMMhVRc2xzni7aVcaEiwjrqHFzD0j7fChRVDhRKK4wjPel7BsSnNfX7khywpZ5w2ggQ0nzMAs7ct_wub_6aNk5NEkN4GpE9UTKoXw639T6hJ2AP4rxsiu88tDt9Jpvhn5yFsSy_xzYLLuqt7WjYNc6nnvSwc2J4f1scRqsS9Xmnnm2HWalW8AKDu_xtcTCAMmWrZ3Sgo7hMm8O6kecGVToZ1m4c96XcUQA5HQ06Zxs9k1EcTNcKM5AOzyPQbuRsh1vAIPoDxinBYI-9h1fZk5UcaD42mO84JoGl-UF-eBhpcwis752maOssvuLoRlCIU8HZ0osSb3uESMH37JiFZOjo_nzakOdyck8McKnSgcuodkllQgp471QQHU0s2wSoyDZyk2ibTst3LhM9lSyseNvl3YCYGPR-lhcN5aN4X8uaWXCUsGG2XKnMWTAVfRJB4fIrb-sLTMEvR7Shojepv6f-speDWESswd8jo_G4kDhyShlq0hO9gDzA6BWQ4L6KbwpQP23RLV1OLIFhsASUjaj_vs8TFlobpEP57k6oeoDRdISTtnQqvfVEiS8kryEDs_3W-yJoy294BOxvLaAiTiQfUakr4EDbANJulDxetcZsUfHKTGYYa9SgRkJ6gbzDArlDwBq5BemUbDPQnOPXuNgW7wDKoK9iTVuJsa-EGpk00RBdTAGYVJtElqb3ivB-vdbgjR3h268xrcNpsIp75wW-KOHCtyA-0ImkboMb-CqA7673hYwA7FOs0f2hqyE7_rmqOm7iUtcbUs1SnojReHea9v58r0HGgy51Y4fHccQZ_otbluSTVgB7NCM7qVQOx4lGAGpEopaugfXpR9VYNrXoICsBFXBFr_tTZrJ-o9IThElKeKiimKg1t1GUsiJ3xNUd6jMI93VFY-EGe2CiAZwSJnAc7mcEO4BFNCvIDc98kurDOTv4XaRQ-y85rKSsKd1THDMlMjNCxc6ag14s0NC0RV2jdImYYhmBcb5QCegqhAaExslVENvZ_vJVRDr1oi4mqWT-sqBA-yGynEFjom2eVRAXnAG24VaRaOOmuqy3uqk5_5SzzZpMJjOxnm_O54ftiM-QH3TC9RRgp57FUFWY8DAL1XtQQCw5yzNGcQKFWdeYn7JY3uIXg0BiYR45r50Gaph-IQCG1acFreZ3UWuBUhdSDL2iXTIsyEsFyiwQz25TYUjezBuFgi44BKN64giE_fwDgF64HV5jQZI0QP3PH0JQaBpiDGgNYljCPzZZHnqi8jv8zOoN2p7wfa3RIMTwbGro9DVdw08hhNZQKwkbCOwXSZ-5jrc2Q_9iPJLDj9FqLmKnkfl66ii7VboFRyuJ0wMLwkcQ4rVqBO1nlzZ8PcwLuqXlCA8zcNbseJSnfJiHvBnv70oRFOvVgQXUIrUBJiIR-9XvKPBeEpO0G_w0zh0lz5PJV9sSV3chQPoob5z3pYgS5AdQP6Mkd7H50wPGy7OYkuJGhoRsxaPLc1bRxMfcsuQ2xLURvB6q0K-cIdIc4WAFjS5f2d3p9wYNtHx8QB8f1QYBicRDe7-qwF5dzENFqIZdLJNLsUvEBtESlWc47jej7KtwcbEq4FtvvxVEF7KmtkkQbLZh5RU-59pa17DKA62sYBDgFIynIDgcg5l8_Yt0e4JybO4v1l3d5vH2Z54zt_32c2kgHYA1DiGy0HvQruaErNnbBvZf6v06BJIorh31WK0cW1u9NH0YV-vy5ItURaOzdEUISyrRfKR8wBL0qHYP_jlapBz1CxWG6ZkyXxAyNv2y-aijOE4vAbgKY1LDeSnejDz_lDvsiFKz3rD_U-vERVHCfDazh5OI5MglC"}
+[POST] https://platform.hostaway.com/account/session => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-803d7e61923d0869-1
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"email":"ab.tawakol@gmail.com","password":"Bimbobimbosandwish1!","auditToken":"X1Jf1W3IZOz58PcIWyYFIcq_hCMWfDj7SFiso8iCNUTo-AUsqjlqvXBeSPFRp-2CIKEa1CoPnhSA9CzSMIMF4goeWw8JvUjtfwh6X0G30Tg6h4S0B9eagXxjj7Ba6PcfOOPCuwUj2Htsz6yq52bwXfUgwY1xk0sa2c9KgWU_rJhO_4dFBxD3yO68W7GYQYZUJ38-qXveJhPiEPLY6Z4itJI4LgK7qB95KWBJPfmM_7VARxA6iFLutiE7CgfbfWx7yMz7yTWBI3WM6SJTzOXEfCJZwQKY6ZI01OiDV_CKDWVxq3LzfX3oxLJmBzDC64KARC68T4TNdRY2KTf6BiUMgkQgCf9Gd_roe4I540I85dgvQV2Tf7XjKtphTzMCSC-SO9_yMCvlV7-XRy2-S839m29u70ueEtMPiI5_9HwoDxAgqRokBwYoNy08ugCbE7I0BEV5EDiwv9rxacHbot2vZoYLjqGvnq05SDViQf4WGzcblg6yCoJOqGLMaexFrVLmokrRMyfLsDd6-cwhQZGRpNoGjAY8VDpAlQfBgXT1fpJSnpUFWzbegaFss7VJYLtpMjKKgY9GpdWPE52ActbmMgdj6gyQlrIXJNTWPuQFUHYkUaGdIZtUCBRhH1LvAEBL9rLOs7SRUz1QSqhLuxTATt4CSmLf4LmkrOG0xW4-ajUg1lY2hndol0hkpW5kL1ztM5hFnXPlVsW5y4OgbHxgd1NjjKFQPl3zL81iIPK11rAT6UbasLLJSAE3EavYJRtk66Xm8_T8OaTt-vTgRi4lQSnJHw8ii-640ZM6OujnERO2Kac5cxubfjYlHjX-vRkpEZ5AJ8_ZPlH1-0VkolN8207Tm_DJvsbcYO4jDL6---WqycUWzkaTogCQs1szJ9fgK2VMu2sokQPSqO0oDOj1wh7CnUeZ80-jH4Q0obqAHtDTPrENQHu5UBAM74pvvgDYnKS1sFr-rLBexSTYh8rINWP4eOcIgseGgmSOAp20wPmrK00y60SUTDyw6NbpzOyCQVlSk8t96ZDnkGg_w-i8Vg3XJjXyoJngkZV4HfLJrjxwfNtKyPNAOnvWxot9Rc31jH4_fZsY5CfXdAuM_EHUFfApcHUt1r30lWIeISe4IC2HvpvtyCN4F4Y4lDd5C6bdMBKzUckdT4vn5ifSBJeqZRQLdg8wNr2sgxOs1wu1P2rHfaw_jjRv0v7WOuJNH5snZSDBerzaeHfGvpt21QedKDYyrtLIYfd9jo2CEJldDDhE__B0anjkhDTNvHgZcIiyeowB60hTDccExwaH12NWMtZOplO8M-pcjcfV8FyEn7yOhosBWbiKdksk65xYNhiGDZCDTJ_r3l_6SH27jojBwj0xYBFmz9Dm5dwl_qjUFvbRq3fsz6M1pXcj3IS4eB7dhbJ3QFeZQR9elM1LcEHIIYw0D0goqWMd_ktAGyN3H7dV0hN7xcErnWvsojT6MNvcYBmrP2sa7DEdXS39JVt7QvqvfmKuDY3aD4IJuktVkpicnOeTD4_Nfvp9Z4yklGW3Y__RKP7qRAiLqXDo5F8JRZn2gH_hF1eni0CCMd5AuWE1GLpl93C-QYKGezZC8tEvK6OmFfBQRJFNhMMgB3NFO0eKWK1DKC-1JDfHIqhOL06NPiRaiEtaZdUq9j-idUn1NSqfqJjHUFRfsnKDp8u0u-o4TFOnGzoEiWN1fD49UsqyKGsalcQSswDNwldmpyZzZBGjoyjjrDP3tY4dXTo5PFkheKBCwpWqyQVsD9jtLVe6_Uu9cMIY6LT7i1Bjs_5pc-UAljNhBToJ9YOjoWDJUjERWHX3hKus8ZVCxLd3nNLop-ArjbFuJYKxRRCfJj1-tkUqFdrUy2IT4uXIn4qkc8QXRTjLx2Oj_AQVRDyd4LyW1TpxbC5nctYV4aLIiLHg72mNoHft-hF5KLizNWAieVLYoh2jH2T_uWvjAbbxt7t0ou0UIzin1nvVG6Z60SNyvXWO6VE0PpyOez2hcKBfu87FX6m5jID-LDIcv-V7LWR43DHywNvc8KFps8Gz0sp70bTkEGImqJN-H74VFyu0vaTuyaZNqlLcikvUvXtLzwtKSWAi4b1WC-2_1pfebMJ2P-4HHeb9t9Cm65iiY2MQ8Ig5qs-Z8SQ8GWCcyaL_id3iEF0GxjW8qVDEnIlRQObLXg86MMo6ZuPOcGJa26pC97v9wBp6juF9Imp2Cp3GaFsNipl0jQFvRL9B4TnSJLNC9u9suBpJduU_YDMaRgolU-oI93U2dYv_-IZA01OKw4Az-TksLLiUdhOCO6kbiiy_fMhS1m12lfTE2yRaNZjZ9LS8F0KL8snDY39WQ1yD80KjwtTLDREqwV0Xm_oNqL2uPycmE8LUo-2HUy3XHfXdXVmG8N0EpRlQQwPkSO6iH2vYVFgV5iC0Mfo_hfU5fJcaonZPtP0vlB-_t3avd_3NP5zVCyxbkemBh8mkTKHcmBtXx9hqhpIH-Tsqy0YTrogSPQrn-oen5RyJiPE_yee1xsm_PExWdSNEy3wI8qAC9HDMf1lWWHd1jsEFt2E1N8VZz_4xylTdq6OJcH-62widxP7zAPMpNTn9pppFzRdXr48VQtwElbHTYE-NqoMKAepJc6nQf4gDY6GgO2tQdVJivZiwlYtxq4XXXuq8htaVYQmNtmqt7JaELIGinSZPJm8A_Z4KwFgOP0h3qN1D9yt5MsaiTrzwlTDxdDLbj7g2OKBsaw8_uM3-7kM94LzONbfmnd2xI7j1YsI7UWKVe7Hh_6W4iuMiiVHwPdDGs5XogvumbfqY50jTgJ4VNQsNSm0zsVuoMyvDNsUdiK4W8gT8P5H51md98_ggQ0b5Oirpq68kTWAXOBCxgxqY7f1krjZeGw-ltYf3W-qSZFCLpT9MfYqbHCa_jH6X-aKtL28fs63fD-JL0C1DUL-ovVG9M2Azfqe7Xw_vVV7xNzCkFirhltEeT-J-9-A49lJn-qpk9lXZBWNkdKbnl12f28s","captchaToken":"0cAFcWeA4ft3vm3PYuRMhGTPyWFdCo9fqaA4bSqVsM55CnrHBRtSkAC4rwXix6MKc2o1kneUFY_QLQhbldmt6F5Rejbp_9-4yISkz-CoSBc5xuAaKVSsiE5Fm31wh-BUgrZQ3yS4GBbCGxQmiURCgwhi5OBcg6KTcNc1kj6MEm72FGIXduyAP8qxzsRFzjyldXsjFFJA4qg73L_wPJVDtzrpPB8VSN7N8usfWWv2-tqA9cN--MiIkpl1imwbahw-KJjLk_4b5wlS01xsRyA_dOZrLz7ALhZ4GmR_MVzSdREfxnCczFSf-uND8bBElm7WdV4I83EJPxkjmAWoY0tP2podjzv8S_W2WRXdBS0Y8Y0C174CzPI0vDP-dk-OkLQAqvb6RQhr38GQTxYi-Ti4f5s0Hmf1VVFobht14p39KsjRdgYEZ1Hd-SSCYp-midHcY2OMZ_Ylt2FT_Icn9Cu60K9-tEvFpQmoV5JXrBUTBktq2oI5Ypac_FVFQerCh3G3i2OK9HT51MKOtuyfvpIsExTW3rnE2zCAH-OQJ24lrEd5-sMdnijccXVrCxQE6G4F6pntKgKY4UnHHgM39m1UOoqU_AxofJZiEb_dJUQIQO1Zg0EVq15495RrG0twFezxxpAfJNrH4EyyL9eO_KnM0HdI4EkvmTeV9oRvK_AQjzY8lmo0MFZGC1BmajLF9UlWNfcbvXzSeDgcGc1eYA3jkrf2OTTM2Yy50MhU8FnH3bsXRq9RMvzn1b6TX_Aqow3g9DzIyjRwSXR-2Kov3UPcPw1SxkPW3GwbAFoY-3JpEAfAjuuEkwZxKpKyBWjvmcb0cil-LIoVocM-4vmNw9gKXUwDpd6OS4iZfJGT5Xxmnl7Sf5NMJuQZktG88hnExlSO1yEBQ8V2wZsQiF-96PdcVovC29tZLlJhon1BtOGz5_DAfk8VwDih5GMMImdtGTpL3dOTPKsMZDmWrGkVcJkz0Y2HJswVuW2u9Hw4Q1bKGb9ULefOsQxcB6LSM8dgyRnmE1nsfpt_jkYYCbOkr4awn_smbt6zV0lIrrNx08ZmoglKpt0AxA94tCLXuvT4dSRxiSlOcyiRaFMkJ3DXWmHwB6FgyDpq7FlU3KqCPuaARgE0_vglU2OhvpxZXlmTAbW7NkgkfRuxKv34tSTrShu8mYrxsBbc23Cqvz0obj4gAvfnYF8-oxO8sFN8KuQE8i64TmQVcdMvLQMGvx94DUfBVXsrzhBASIO5EfsjdrHpHRuVVcwz1d0IYcSnlEXVtbC1skPqWIln0W4Ap8fp4CsLh5xTx0LjTCSKnGuCVYH0evGG0G1-TeKVQsZw1-CarnrspZef2FQHPd-XWYeyK9mTPcvO5ZCHM32dQDhqjC6ZQbHWT3AfAAlyywUF3haAgiGZU9ntgzX2eHH5O0uHPFboJvwSrsJSbA0vjjdkDnt1XiyRjck9CGeabeaCsVC79j0c2ClxK33sJ2arlHGx4A-Vl9KxXn3kHSAoTDw9xlhBKlAFogWC4Qdxr9qyJqDysmy6JnWPNddOYuZnbAnZ32Y85ZOWkL77SrsK7fNoy55lo7meT8ge218Sg6FhPzhV5K_cCgCeh95Y8E-Z_a7s4-noDkoiYbBXEp4-qmJBzVGfqT6bJsZJsiP0-almCxd0EhPYqpDhQUWm5SyJBbmKvbgeH4j42mdyZk-031bhDJfNFOSFjd2c7xOnbBQWeiPXvaLIRtWAYnA47aqSSUfcuu9w_t83hT4oXzABt8Ok2xlvTGqsrqNKVkuqi53aIK5Ixwe39nSrDLXds46j4SVzmIiwTOXNa2zgjeXISRM6e3z2S_Ylo5S4gRUanmdZjTzQXMj5rIYKk4FzbYRJu3w1XaJLpbyUx4uZ7yIPcuQh1OPhR8PHsiIfOpisrqh5fxeyN3X_l9HYo7H_vTMMB7ohzwA8-dPTrysnpH9MHd0d-jCmrpkfGcG_JAb53j9-LNwt8o2HsVZW7XiS3gagcpd9SkewhvNiqA0E3vrXLcdPxDHBtTplpKE1kCwDxyRCX-xV0l6_pIbm_u7UFa4HYXDl-GMuPRc1gO7bpfIfILS-MupUiyom9tN5BGI-khgvZcAp796bj1s76nIUVHkqNcZUE9bWmX5xzFGxg_nDBEZTpZc5ut_HxiKt9YMC6wXsEjCBS05RUwwQaMsfiXSg3HOl2xTcj7Llci-8z1HOWGnj3JAr21NdkaL-ymtsfhdnahCy2Y8vZHWaBRblX-Z1AJ"}
+[GET] https://platform.hostaway.com/account/info => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-b6d284b1d8d9d405-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/channelSetting/list => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-829cb0b1c527ade6-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/surveys/propertyManagementRoles => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=9b2b19e91965433797ebd350e0a316e1,sentry-sampled=true,sentry-sample_rand=0.4988664820536358,sentry-sample_rate=1
+    sentry-trace: 9b2b19e91965433797ebd350e0a316e1-9f388b15c5fbc3ce-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/subscription => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-b5f2703a372a636a-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/notifications/messages?isSeen=0&limit=5&offset=0&event=&excludeEvent= => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-9a680c895fe86b1f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/filter?limit=1000&dateType=departureDate&fromDate=2026-04-03&toDate=2026-04-03&includeResources=1&reservationFlag=1&statuses%5B%5D=new&statuses%5B%5D=modified&statuses%5B%5D=ownerStay => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-b292fe7d75bf0e67-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/filter?limit=1000&dateType=arrivalDate&fromDate=2026-04-03&toDate=2026-04-03&includeResources=1&reservationFlag=1&statuses%5B%5D=new&statuses%5B%5D=modified&statuses%5B%5D=ownerStay => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-80fd415cd450c357-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/openAI/settings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-817f873647f38116-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/account/overview/reservations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-978430c2e473f558-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=0&hasUnreadConversation=1&includeResources=1 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-8b450625f0835d60-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/account/overview/messages => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-8c5db03fe50976ae-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/account/overview/listings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-97fd48bbf312c016-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+[GET] https://platform.hostaway.com/intercomZendesk/hash => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-afe95d10f1b7fe00-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/unread/count => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=fb2ea70bbbef4c66a29ca898a847f46a,sentry-sampled=true,sentry-sample_rand=0.2248337594269192,sentry-sample_rate=1
+    sentry-trace: fb2ea70bbbef4c66a29ca898a847f46a-885dea4625ddb69e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=0&includeRelated=0&sortBy=latestActivityOn&sortOrder=desc&includeResources=0&includeLastMessage=1&isSnoozed=0&isArchived=0&isEscalated=0&fromDate=&toDate=&dateType=&arrivalDateTimeTo=&departureDateTimeFrom=&isLastIncomingMessage=&hasUnreadConversation=&isStarred=&isSameDayBooking=&assigneeAccountId=0&unassignedOnly=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=3c40579a0f174e2991013ddbdb578c48,sentry-sampled=true,sentry-sample_rand=0.23757466376728376,sentry-sample_rate=1
+    sentry-trace: 3c40579a0f174e2991013ddbdb578c48-9c5a0f6d71e28222-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57206447 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=3c40579a0f174e2991013ddbdb578c48,sentry-sampled=true,sentry-sample_rand=0.23757466376728376,sentry-sample_rate=1
+    sentry-trace: 3c40579a0f174e2991013ddbdb578c48-a70a16b4bb8d397e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[PUT] https://platform.hostaway.com/conversations/read => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=3c40579a0f174e2991013ddbdb578c48,sentry-sampled=true,sentry-sample_rand=0.23757466376728376,sentry-sample_rate=1
+    sentry-trace: 3c40579a0f174e2991013ddbdb578c48-b42a6abfbdaa7f51-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"ids":[42289224]}
+[GET] https://platform.hostaway.com/openAI/settings => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-8e7b770b71724d96-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57206447/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-8c1b2f3d5d105a15-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42289224&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-98b7e31eac7006e0-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/users/list/all => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-9cb3d01601de8f23-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listingUnit/417260 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-b255b9753578634f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417260/calendar?startingDate=2026-11-29&endingDate=2027-01-02&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-83ecdeeee2c868e5-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42289224 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-9b4fafb9d51e355e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[GET] https://platform.hostaway.com/reservations/57175332 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-9e0e133d391b1e5f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[PUT] https://platform.hostaway.com/conversations/read => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=b233cba65f1c48f1b73f3ee5b5427ffa,sentry-sampled=true,sentry-sample_rand=0.13388577917714395,sentry-sample_rate=1
+    sentry-trace: b233cba65f1c48f1b73f3ee5b5427ffa-9c53e3c1ec371b2e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"ids":[42259877]}
+[GET] https://platform.hostaway.com/reservations/57175332/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-b958d97deb393cf7-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/messageTemplates => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-a0c9820f24f610b7-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/messageTemplateGroups => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-b387be7ee071e790-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42259877&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-87ef61c7ed01cecc-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/474793/reservations/57175332/airbnbMessageAccount => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-9ea2a556b113ef6d-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/specialOffers?reservationId=57175332 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-a0d7a0fe53e762e3-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listingUnit/474793 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-a24b91d774489233-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/474793/calendar?startingDate=2026-03-29&endingDate=2026-05-02&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-a409483265f0b5f4-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42259877 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-88e26c23e167181d-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[GET] https://platform.hostaway.com/airbnbOfficial/reservations/57175332 => [400] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-906ce1ad774c2dc9-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/inbox?limit=20&offset=20&includeRelated=0&sortBy=latestActivityOn&sortOrder=desc&includeResources=0&includeLastMessage=1&isSnoozed=0&isArchived=0&isEscalated=0&fromDate=&toDate=&dateType=&arrivalDateTimeTo=&departureDateTimeFrom=&isLastIncomingMessage=&hasUnreadConversation=&isStarred=&isSameDayBooking=&assigneeAccountId=0&unassignedOnly=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-930ffaaf997faa8f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57175532 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=8a9953a29cf44bd2ac089b5c9ef7ee73,sentry-sampled=true,sentry-sample_rand=0.7976395726902765,sentry-sample_rate=1
+    sentry-trace: 8a9953a29cf44bd2ac089b5c9ef7ee73-9ffd1b74205b2159-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57175532/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-bcb682dd124f398f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42260079&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-bdd7773adc2c9161-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417264/reservations/57175532/airbnbMessageAccount => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-8e01631ecf9ba0fd-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/specialOffers?reservationId=57175532 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-bc8ccd16c50a1bf4-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listingUnit/417264 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-b953d25a2d8724b7-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417264/calendar?startingDate=2026-03-29&endingDate=2026-05-02&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-8810db56b33aaf0e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42260079 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-8b79adda3fe3cdf6-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[GET] https://platform.hostaway.com/airbnbOfficial/reservations/57175532 => [400] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-8e2fb75a9169c50d-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/airbnbOfficial/reservations/57175532 => [400] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-b80377e57154c5c4-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57156676 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=f1cd139921824287a4380fde92250548,sentry-sampled=true,sentry-sample_rand=0.6651374413443357,sentry-sample_rate=1
+    sentry-trace: f1cd139921824287a4380fde92250548-abb447abf802b5a2-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417264/reservations/57156676/airbnbMessageAccount => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-adedf81c4f8ad7d5-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57156676/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-9a62e7e8a3bdf49f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/specialOffers?reservationId=57156676 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-b079329d127f1f9f-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listingUnit/417264 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-9c110990290c7a92-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417264/calendar?startingDate=2026-03-29&endingDate=2026-05-02&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-a1c779d62e3e8350-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42242150&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-8d01b43e7581a164-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42242150 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-95f2ff7c693d1dc2-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[GET] https://platform.hostaway.com/airbnbOfficial/reservations/57156676 => [400] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-b78009c8b1244fb3-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57206447 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=7c1b3e74e3be4906959f329a78a34e15,sentry-sampled=true,sentry-sample_rand=0.498946668003577,sentry-sample_rate=1
+    sentry-trace: 7c1b3e74e3be4906959f329a78a34e15-be6c5762d199361b-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/reservations/57206447/alterations => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-a13f401a0ac5152e-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listingUnit/417260 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-9e4a83d881134d5b-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417260/calendar?startingDate=2026-11-29&endingDate=2027-01-02&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-b568459f62db2246-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/conversations/messages?offset=0&limit=20&sortBy=date&sortOrder=desc&preview=1&conversationId=42289224&attachObjects%5B%5D=conversationMessageNote&attachObjects%5B%5D=conversationSnooze&attachObjects%5B%5D=conversationArchive => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-af72d7c3e753f8bc-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[POST] https://platform.hostaway.com/conversationMessageNote/list/42289224 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-9c2359038e96a199-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+  Request body: {"conversationMessageId":[0]}
+[DELETE] https://platform.hostaway.com/reservations/57206447/status => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-ab2488be74a33fa9-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json
+[GET] https://platform.hostaway.com/listings/417260/calendar?startingDate=2026-12-08&endingDate=2026-12-10&includeInquiry=true&reservationStatuses%5B%5D=inquiryPreapproved&includeInsurance=0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: 
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    baggage: sentry-environment=production,sentry-release=dashboard-v3-spa-production%403.540.0,sentry-public_key=7d95e4c5e245c4dccd35e4b71da6796c,sentry-trace_id=880d1079446548d3bef2edd28956bcef,sentry-sampled=true,sentry-sample_rand=0.22169634376708436,sentry-sample_rate=1
+    sentry-trace: 880d1079446548d3bef2edd28956bcef-86cc34ff84a1c0ba-1
+    jwt: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2NvdW50SWQiOjE2MjU3NSwiYWNjb3VudEVtYWlsIjoieS50YXdha29sNzJAZ21haWwuY29tIiwidXNlcklkIjoxMDE2MDI5LCJ1c2VyRW1haWwiOiJhYi50YXdha29sQGdtYWlsLmNvbSIsImFkbWluQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzUxNjc1NTksImV4cCI6MTc4Mjk0MzU1OSwiYXV0aEhhc2giOiI1ZGUzM2FhMmNhM2RjMmQzZTE2MTMwNTgzYWFhOGFmMyIsImp0aSI6ImNjZDE0ZDhmODU0NmQ1NTE3NzM0YTQ0MzI0ZDkxOTRmMzM1NWQ1MjBmNDg3Y2M0YmU5MjgzYWRlM2RkOWE3MzEiLCJhdWQiOjE2MjU3NX0.3GcQmjWq6mz5ojVuvUzCkm3gUARei7Rjdngjj9ACGac
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+    accept: application/json

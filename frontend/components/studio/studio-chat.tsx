@@ -157,6 +157,7 @@ export function StudioChat({
               key={m.id}
               message={m}
               isLast={idx === messages.length - 1}
+              conversationId={conversationId}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onSendText={(text) => sendMessage({ text })}
@@ -283,12 +284,14 @@ function StudioEmptyState({
 function MessageRow({
   message,
   isLast,
+  conversationId,
   onPlanApproved,
   onPlanRolledBack,
   onSendText,
 }: {
   message: UIMessage
   isLast: boolean
+  conversationId: string
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onSendText?: (text: string) => void
@@ -348,6 +351,7 @@ function MessageRow({
             <StandalonePart
               key={`s:${i}`}
               part={p}
+              conversationId={conversationId}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onSendText={onSendText}
@@ -365,15 +369,18 @@ function MessageRow({
 
 function StandalonePart({
   part,
+  conversationId,
   onPlanApproved,
   onPlanRolledBack,
   onSendText,
 }: {
   part: Record<string, any>
+  conversationId: string
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onSendText?: (text: string) => void
 }) {
+  const rejectionConversationId = conversationId
   if (!part || typeof part !== 'object') return null
   const type = typeof part.type === 'string' ? part.type : ''
 
@@ -427,7 +434,12 @@ function StandalonePart({
           toast.success('Fix accepted')
         }}
         onReject={async (id) => {
-          await apiRejectSuggestedFix(id)
+          await apiRejectSuggestedFix(id, {
+            conversationId: rejectionConversationId,
+            category: typeof data.category === 'string' ? data.category : undefined,
+            subLabel: typeof data.subLabel === 'string' ? data.subLabel : undefined,
+            target: (data.target as { artifactId?: string; sectionId?: string; slotKey?: string }) ?? undefined,
+          })
           toast.success('Fix rejected')
         }}
       />

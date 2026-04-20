@@ -1,0 +1,6 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e45]: INTERNAL_ERROR
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e39] [cursor=pointer]:
+    - img [ref=e40]
+  - alert [ref=e43]

@@ -193,6 +193,62 @@ test('case 4: POST /turn with ENABLE_BUILD_MODE=true returns 200 SSE stream', as
   }
 });
 
+test('case 6: POST /suggested-fix/:id/reject persists rejection memory (sprint 046 Session D)', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  const conv = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session D rejection memory',
+    },
+  });
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/suggested-fix/preview:abc123/reject`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          conversationId: conv.id,
+          category: 'FAQ',
+          subLabel: 'wifi-password',
+          target: { artifactId: 'faq-abc' },
+        }),
+      }
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status}`);
+    const body = (await res.json()) as any;
+    assert.equal(body.ok, true);
+    assert.equal(body.appliedVia, 'rejection-memory');
+    assert.ok(body.fixHash);
+    const row = await prisma.agentMemory.findFirst({
+      where: {
+        tenantId: fx.tenantId,
+        key: `session/${conv.id}/rejected/${body.fixHash}`,
+      },
+    });
+    assert.ok(row, 'rejection-memory row must be persisted');
+  } finally {
+    await prisma.agentMemory
+      .deleteMany({
+        where: {
+          tenantId: fx.tenantId,
+          key: { startsWith: `session/${conv.id}/rejected/` },
+        },
+      })
+      .catch(() => undefined);
+    await prisma.tuningConversation
+      .delete({ where: { id: conv.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+  }
+});
+
 test('case 5: POST /plan/:id/rollback invokes rollback tool and returns success', async () => {
   process.env.ENABLE_BUILD_MODE = 'true';
   // Seed a BuildTransaction + one FAQ owned by it. Rollback should

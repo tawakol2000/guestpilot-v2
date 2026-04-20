@@ -1,0 +1,78 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - button "Open queue" [ref=e6]:
+          - img [ref=e7]
+        - link "← Inbox" [ref=e9] [cursor=pointer]:
+          - /url: /
+        - navigation [ref=e10]:
+          - link "Tuning" [ref=e11] [cursor=pointer]:
+            - /url: /tuning
+          - link "History" [ref=e12] [cursor=pointer]:
+            - /url: /tuning/history
+          - link "Capability requests" [ref=e13] [cursor=pointer]:
+            - /url: /tuning/capability-requests
+        - generic [ref=e14]: Tuning
+    - generic [ref=e15]:
+      - main [ref=e16]:
+        - article [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]:
+              - generic "Edit" [ref=e29]:
+                - generic [ref=e30]: Edit
+              - time [ref=e32]: 12h ago
+              - generic [ref=e33]: Legacy
+            - heading "visitor policy" [level=1] [ref=e34]
+          - paragraph [ref=e35]: This is a legacy suggestion written by the old analyzer. Rationale and evidence were not captured for it. Accept or dismiss still work; the editor below lets you adjust the proposed text before applying.
+          - generic [ref=e36]:
+            - generic [ref=e37]: Conversation context
+            - list [ref=e38]:
+              - listitem [ref=e39]:
+                - generic [ref=e40]:
+                  - generic [ref=e41]: AI
+                  - generic [ref=e42]: ·
+                  - time [ref=e44]: 23h ago
+                - generic [ref=e45]: Thanks for clarifying. To answer your previous question, yes building 8 is near the entrance gate. We would need your passports and marriage certificate once booking is accepted.
+              - listitem [ref=e46]:
+                - generic [ref=e47]:
+                  - generic [ref=e48]: GUEST
+                  - generic [ref=e49]: ·
+                  - time [ref=e51]: 13h ago
+                - generic [ref=e52]: I would like to book it from 19th-25th
+              - listitem [ref=e53]:
+                - generic [ref=e54]:
+                  - generic [ref=e55]: AI
+                  - generic [ref=e56]: ·
+                  - time [ref=e58]: 13h ago
+                - generic [ref=e59]: Noted — I’ve updated your request to 19th–25th and it’s being reviewed.
+              - listitem [ref=e60]:
+                - generic [ref=e61]:
+                  - generic [ref=e62]: GUEST
+                  - generic [ref=e63]: ·
+                  - time [ref=e65]: 13h ago
+                - generic [ref=e66]: Thats when my wife is coming
+              - listitem [ref=e67]:
+                - generic [ref=e68]:
+                  - generic [ref=e69]: AI
+                  - generic [ref=e70]: ·
+                  - time [ref=e72]: 12h ago
+                  - generic [ref=e73]: anchor
+                - generic [ref=e74]: Can you please modify the booking to the new dates.
+          - generic [ref=e75]:
+            - generic [ref=e76]: Proposed change
+            - generic [ref=e78]:
+              - generic [ref=e79]:
+                - generic [ref=e80]: AI draft → proposed
+                - generic [ref=e81]: word-level diff
+              - generic [ref=e82]: Apply visitor-policy guidanceNoted only— whenif theyour guestwife is explicitly asking about an additional visitor orjoining, someonethat’s stayingfine. atOnce the property. Do not mention passport, marriage certificate, or other visitor documents for booking-date changes, extensions,booking oris reservationconfirmed, edits;we’ll routeneed thoseboth requestspassports toand bookingyour modificationmarriage instead.certificate.
+          - generic [ref=e84]:
+            - generic [ref=e85]:
+              - button "Apply now" [ref=e86]
+              - button "Queue" [ref=e87]
+              - button "Edit proposal" [ref=e88]
+              - button "Dismiss" [ref=e89]
+            - generic [ref=e90]: "Apply mode: IMMEDIATE"
+      - complementary [ref=e22]:
+        - button "Expand dashboards" [ref=e24]: ◂
+  - alert [ref=e25]

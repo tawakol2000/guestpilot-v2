@@ -1,0 +1,217 @@
+- generic [active] [ref=e1]:
+  - text: 
+  - generic [ref=e4]:
+    - generic [ref=e11]:
+      - textbox "Email" [ref=e15]
+      - textbox "Password" [ref=e19]
+      - button "Log in" [ref=e21] [cursor=pointer]:
+        - generic [ref=e22]: Log in
+      - link "Forgot your password?" [ref=e24] [cursor=pointer]:
+        - /url: /forgot
+      - generic [ref=e25]:
+        - text: New to Hostaway? Get started
+        - link "here" [ref=e26] [cursor=pointer]:
+          - /url: https://www.hostaway.com/get-free-demo/
+    - generic [ref=e27]:
+      - generic [ref=e29]:
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - link "Solutions" [ref=e34] [cursor=pointer]:
+              - /url: https://hostaway.com/features?nav_source=dashboard
+            - link "Property Management" [ref=e35] [cursor=pointer]:
+              - /url: https://hostaway.com/features/property-management/?nav_source=dashboard
+            - link "Communication" [ref=e36] [cursor=pointer]:
+              - /url: https://hostaway.com/features/communication/?nav_source=dashboard
+            - link "Analytics & Reporting" [ref=e37] [cursor=pointer]:
+              - /url: https://hostaway.com/features/analytics-and-reporting/?nav_source=dashboard
+            - link "Automation Tools" [ref=e38] [cursor=pointer]:
+              - /url: https://hostaway.com/features/automation-tools/?nav_source=dashboard
+            - link "Services" [ref=e39] [cursor=pointer]:
+              - /url: https://hostaway.com/features/services/?nav_source=dashboard
+            - link "Marketing" [ref=e40] [cursor=pointer]:
+              - /url: https://hostaway.com/features/marketing/?nav_source=dashboard
+            - link "Channel Manager" [ref=e41] [cursor=pointer]:
+              - /url: https://hostaway.com/features/channel-manager/?nav_source=dashboard
+            - link "Operations" [ref=e42] [cursor=pointer]:
+              - /url: https://hostaway.com/features/operations/?nav_source=dashboard
+          - generic [ref=e43]:
+            - generic [ref=e44]: Resources
+            - link "Blog" [ref=e45] [cursor=pointer]:
+              - /url: https://hostaway.com/blog?nav_source=dashboard
+            - link "Marketplace" [ref=e46] [cursor=pointer]:
+              - /url: https://hostaway.com/marketplace/?nav_source=dashboard
+            - link "Case Studies" [ref=e47] [cursor=pointer]:
+              - /url: https://hostaway.com/case-studies/?nav_source=dashboard
+            - link "Webinars" [ref=e48] [cursor=pointer]:
+              - /url: https://www.youtube.com/playlist?list=PLeHwxh773b65b1hrOCtmS-gB0vzg7QdY1
+            - link "Help Center" [ref=e49] [cursor=pointer]:
+              - /url: https://support.hostaway.com/hc/en-us/?nav_source=dashboard
+            - link "Changelog" [ref=e50] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/?nav_source=dashboard
+            - link "Privacy Policy" [ref=e51] [cursor=pointer]:
+              - /url: https://hostaway.com/privacy-policy/?nav_source=dashboard
+            - link "Referral Program" [ref=e52] [cursor=pointer]:
+              - /url: https://hostaway.com/affiliate-program/?nav_source=dashboard
+            - link "Terms And Services" [ref=e53] [cursor=pointer]:
+              - /url: https://hostaway.com/terms-and-services/?nav_source=dashboard
+          - generic [ref=e54]:
+            - generic [ref=e55]: Company
+            - link "About" [ref=e56] [cursor=pointer]:
+              - /url: https://hostaway.com/about?nav_source=dashboard
+            - link "Careers" [ref=e57] [cursor=pointer]:
+              - /url: https://hostaway.recruitee.com/
+            - link "Press" [ref=e58] [cursor=pointer]:
+              - /url: https://hostaway.com/press/?nav_source=dashboard
+          - generic [ref=e59]:
+            - generic [ref=e60]: Get In Touch
+            - link "Sales" [ref=e61] [cursor=pointer]:
+              - /url: mailto:sales@hostaway.com
+            - link "Support" [ref=e62] [cursor=pointer]:
+              - /url: mailto:support@hostaway.com
+            - link "Partnerships" [ref=e63] [cursor=pointer]:
+              - /url: https://forms.gle/cR1TZbrghTCjP5Kf9
+            - link "+12106228536" [ref=e64] [cursor=pointer]:
+              - /url: tel:+12106228536
+              - generic [ref=e66]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e67]: +1 (210) 622-8536
+                - 'button "United States: + 1" [ref=e69]'
+            - link "+442035148487" [ref=e71] [cursor=pointer]:
+              - /url: tel:+442035148487
+              - generic [ref=e73]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e74]: +44 20 3514 8487
+                - 'button "United Kingdom: + 44" [ref=e76]'
+            - link "+61730626871" [ref=e78] [cursor=pointer]:
+              - /url: tel:+61730626871
+              - generic [ref=e80]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e81]: +61 (73) 0626 871
+                - 'button "Australia: + 61" [ref=e83]'
+            - link "+17828213667" [ref=e85] [cursor=pointer]:
+              - /url: tel:+17828213667
+              - generic [ref=e87]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e88]: +1 (782) 821-3667
+                - 'button "Canada: + 1" [ref=e90]'
+            - link "+33801271014" [ref=e92] [cursor=pointer]:
+              - /url: tel:+33801271014
+              - generic [ref=e94]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e95]: +33 8 01 27 1014
+                - 'button "France: + 33" [ref=e97]'
+            - link "+34512512358" [ref=e99] [cursor=pointer]:
+              - /url: tel:+34512512358
+              - generic [ref=e101]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e102]: +34 51 251 235 8
+                - 'button "Spain: + 34" [ref=e104]'
+            - link "+358942551994" [ref=e106] [cursor=pointer]:
+              - /url: tel:+358942551994
+              - generic [ref=e108]:
+                - textbox "1 (702) 123-4567" [disabled] [ref=e109]: +358 94 255 19 94
+                - 'button "Finland: + 358" [ref=e111]'
+        - generic [ref=e113]:
+          - link [ref=e114] [cursor=pointer]:
+            - /url: https://www.facebook.com/Hostawaycom/
+            - img [ref=e115]
+          - link [ref=e117] [cursor=pointer]:
+            - /url: https://twitter.com/hostaway
+            - img [ref=e118]
+          - link [ref=e120] [cursor=pointer]:
+            - /url: https://www.linkedin.com/company/hostaway
+            - img [ref=e121]
+      - generic [ref=e125]: © 2026 Hostaway
+  - iframe [ref=e126]:
+    - generic [ref=f5e4]:
+      - generic [ref=f5e5]:
+        - heading "Latest changes" [level=3] [ref=f5e7]
+        - generic [ref=f5e8]:
+          - link "News Meet Booking Website Pro ✨ We're excited to introduce Booking Website Pro a premium Hostaway add-on that gives vacation rent..." [ref=f5e9] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e10]: News
+            - strong [ref=f5e11]: Meet Booking Website Pro ✨
+            - text: We're excited to introduce Booking Website Pro a premium Hostaway add-on that gives vacation rent...
+          - link "News Email Owner Statements. Owner statements can now be emailed directly from Hostaway once they’ve been generated and publis..." [ref=f5e12] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e13]: News
+            - strong [ref=f5e14]: Email Owner Statements.
+            - text: Owner statements can now be emailed directly from Hostaway once they’ve been generated and publis...
+          - link "News New Inbox Features to Enhance Host-Guest Communication. We're excited to share two new updates to the Hostaway Inbox designed to help hosts stay on top o..." [ref=f5e15] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e16]: News
+            - strong [ref=f5e17]: New Inbox Features to Enhance Host-Guest Communication.
+            - text: We're excited to share two new updates to the Hostaway Inbox designed to help hosts stay on top o...
+          - link "News Mobile App Hostaway Mobile App - Version 1.29.6. We're excited to bring you the latest updates to the Hostaway mobile app. This release introduces..." [ref=f5e18] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e19]: News
+            - generic [ref=f5e20]: Mobile App
+            - strong [ref=f5e21]: Hostaway Mobile App - Version 1.29.6.
+            - text: We're excited to bring you the latest updates to the Hostaway mobile app. This release introduces...
+          - link "News Smart AI Reservation Assignment for Multi-Unit Listings. We're delighted to introduce Smart AI Reservation Assignment for multi-unit listings. This featur..." [ref=f5e22] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e23]: News
+            - strong [ref=f5e24]: Smart AI Reservation Assignment for Multi-Unit Listings.
+            - text: We're delighted to introduce Smart AI Reservation Assignment for multi-unit listings. This featur...
+          - link "News Improved Channel Connection Statuses + Google Vacation Rentals Visibility. We’ve just released an update to make managing your channel connections even more intuitive. What..." [ref=f5e25] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f5e26]: News
+            - strong [ref=f5e27]: Improved Channel Connection Statuses + Google Vacation Rentals Visibility.
+            - text: We’ve just released an update to make managing your channel connections even more intuitive. What...
+        - link "Hostaway updates" [ref=f5e29] [cursor=pointer]:
+          - /url: https://changelog.hostaway.com/?utm_medium=widget
+      - generic [ref=f5e30]:
+        - generic [ref=f5e31]:
+          - generic [ref=f5e32]:
+            - link [ref=f5e33] [cursor=pointer]:
+              - /url: "#back"
+            - heading "Meet Booking Website Pro ✨" [level=3] [ref=f5e34]
+          - paragraph [ref=f5e37]:
+            - link "Read more" [ref=f5e38] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/meet-booking-website-pro-334549
+        - generic [ref=f5e39]:
+          - generic [ref=f5e40]:
+            - link [ref=f5e41] [cursor=pointer]:
+              - /url: "#back"
+            - heading "Email Owner Statements" [level=3] [ref=f5e42]
+          - paragraph [ref=f5e45]:
+            - link "Read more" [ref=f5e46] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/email-owner-statements-334503
+        - generic [ref=f5e47]:
+          - generic [ref=f5e48]:
+            - link [ref=f5e49] [cursor=pointer]:
+              - /url: "#back"
+            - heading "New Inbox Features to Enhance Host-Guest Communication" [level=3] [ref=f5e50]
+          - paragraph [ref=f5e53]:
+            - link "Read more" [ref=f5e54] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/new-inbox-features-to-enhance-host-guest-communication-334499
+        - generic [ref=f5e55]:
+          - generic [ref=f5e56]:
+            - link [ref=f5e57] [cursor=pointer]:
+              - /url: "#back"
+            - heading "Hostaway Mobile App - Version 1.29.6" [level=3] [ref=f5e58]
+          - paragraph [ref=f5e61]:
+            - link "Read more" [ref=f5e62] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/hostaway-mobile-app-version-1-29-6-334066
+        - generic [ref=f5e63]:
+          - generic [ref=f5e64]:
+            - link [ref=f5e65] [cursor=pointer]:
+              - /url: "#back"
+            - heading "Smart AI Reservation Assignment for Multi-Unit Listings" [level=3] [ref=f5e66]
+          - paragraph [ref=f5e69]:
+            - link "Read more" [ref=f5e70] [cursor=pointer]:
+              - /url: https://changelog.hostaway.com/smart-ai-reservation-assignment-for-multi-unit-listings-333705
+        - generic [ref=f5e71]:
+          - generic [ref=f5e72]:
+            - link [ref=f5e73] [cursor=pointer]:
+              - /url: "#back"
+            - heading "Improved Channel Connection Statuses + Google Vacation Rentals Visibility" [level=3] [ref=f5e74]
+          - generic [ref=f5e75]:
+            - paragraph
+  - iframe [ref=e129]:
+    - generic [ref=f9e2]:
+      - generic [ref=f9e5]:
+        - link "Privacy" [ref=f9e6] [cursor=pointer]:
+          - /url: https://www.google.com/intl/en/policies/privacy/
+        - text: "-"
+        - link "Terms" [ref=f9e7] [cursor=pointer]:
+          - /url: https://www.google.com/intl/en/policies/terms/
+      - generic [ref=f9e8]:
+        - generic [ref=f9e9]:
+          - text: protected by
+          - strong [ref=f9e10]: reCAPTCHA
+        - generic [ref=f9e11]: "-"

@@ -1,0 +1,47 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]
+  - generic [ref=e12]:
+    - banner [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e16]: GP
+        - generic [ref=e17]: GuestPilot
+      - button "Log out" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+    - navigation [ref=e22]:
+      - button "Overview" [ref=e23] [cursor=pointer]
+      - button "Inbox" [ref=e24] [cursor=pointer]
+      - button "Calendar" [ref=e25] [cursor=pointer]
+      - button "Analytics" [ref=e26] [cursor=pointer]
+      - button "Tasks" [ref=e27] [cursor=pointer]
+      - button "Settings" [ref=e28] [cursor=pointer]
+      - button "Configure AI" [ref=e29] [cursor=pointer]
+      - button "AI Logs" [ref=e30] [cursor=pointer]
+      - button "Webhooks" [ref=e31] [cursor=pointer]
+      - button "SOPs" [ref=e32] [cursor=pointer]
+      - button "Tools" [ref=e33] [cursor=pointer]
+      - button "Sandbox" [ref=e34] [cursor=pointer]
+      - button "Listings" [ref=e35] [cursor=pointer]
+      - button "FAQs" [ref=e36] [cursor=pointer]
+      - button "Tuning" [ref=e37] [cursor=pointer]
+      - button "Build" [ref=e38] [cursor=pointer]
+    - generic [ref=e39]:
+      - complementary [ref=e40]:
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - img [ref=e44]
+            - textbox "Search conversations" [ref=e47]
+          - button "Toggle filters" [ref=e49] [cursor=pointer]:
+            - img [ref=e50]
+        - generic [ref=e51]:
+          - button "All" [ref=e52] [cursor=pointer]
+          - button "Unread" [ref=e53] [cursor=pointer]
+          - button "Starred" [ref=e54] [cursor=pointer]
+          - button "Archive" [ref=e55] [cursor=pointer]
+        - generic [ref=e57]: Loading…
+      - main [ref=e58]:
+        - generic [ref=e59]: Loading…
+      - complementary [ref=e60]:
+        - generic [ref=e62]: Details
+        - generic [ref=e63]: Select a conversation to view details

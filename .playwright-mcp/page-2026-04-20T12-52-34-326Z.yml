@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - button "Open Next.js Dev Tools" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+  - alert [ref=e11]: GuestPilot — Inbox
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: G
+        - generic [ref=e17]: GuestPilot
+      - paragraph [ref=e18]: Sign in to your account
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - button "Sign In" [ref=e21]
+        - button "Sign Up" [ref=e22]
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]: Email
+          - textbox "you@example.com" [ref=e26]
+        - generic [ref=e27]:
+          - generic [ref=e28]: Password
+          - textbox "••••••••" [ref=e29]
+        - button "Sign In" [ref=e30]
+    - paragraph [ref=e31]: GuestPilot © 2026

@@ -1,19 +1,25 @@
 /**
- * propose_suggestion — sprint 046 Session B retrofit tests.
+ * propose_suggestion — sprint 046 Session D tests.
  *
- * The legacy tool has been in production since sprint 02. Session B
- * adds a second emit — `data-suggested-fix` with the new
- * target + before/after shape — alongside the existing
- * `data-suggestion-preview`. These tests only cover the retrofit;
- * the legacy behavior is exercised by the integration suite.
+ * Session D retires the legacy `data-suggestion-preview` emit (it was
+ * dual-emitted alongside `data-suggested-fix` during sprints B/C for
+ * TUNE/Studio parity). From this session forward only
+ * `data-suggested-fix` ships. Session D also adds a session-scoped
+ * rejection-memory guard — if the current conversation has already
+ * rejected a semantically-equivalent fix, the tool skips the emit and
+ * returns a `SKIPPED_REJECTED` hint so the agent re-reasons.
  *
  * Run: JWT_SECRET=test npx tsx --test src/build-tune-agent/tools/__tests__/propose-suggestion.test.ts
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildProposeSuggestionTool } from '../propose-suggestion';
+import { buildProposeSuggestionTool, deriveRejectionIntent } from '../propose-suggestion';
 import type { ToolContext } from '../types';
+import {
+  computeRejectionFixHash,
+  type RejectionIntent,
+} from '../../memory/service';
 
 function captureTool() {
   let captured: any = null;
@@ -24,12 +30,18 @@ function captureTool() {
   return { factory: fakeToolFactory, invoke: (args: any) => captured(args) };
 }
 
-function makeCtx(): ToolContext & {
+function makeCtx(opts: { rejectedHashes?: string[] } = {}): ToolContext & {
   _emitted: Array<{ type: string; id?: string; data: unknown }>;
 } {
   const emitted: Array<{ type: string; id?: string; data: unknown }> = [];
+  const prefix = 'session/conv1/rejected/';
+  const rows = (opts.rejectedHashes ?? []).map((h) => ({ key: prefix + h }));
   return {
-    prisma: {} as any,
+    prisma: {
+      agentMemory: {
+        findMany: async () => rows,
+      },
+    } as any,
     tenantId: 't1',
     conversationId: 'conv1',
     userId: 'u1',
@@ -39,7 +51,7 @@ function makeCtx(): ToolContext & {
   };
 }
 
-test('propose_suggestion emits both data-suggestion-preview AND data-suggested-fix', async () => {
+test('propose_suggestion emits only data-suggested-fix (legacy preview retired)', async () => {
   const ctx = makeCtx();
   const { factory, invoke } = captureTool();
   buildProposeSuggestionTool(factory, () => ctx);
@@ -55,7 +67,10 @@ test('propose_suggestion emits both data-suggestion-preview AND data-suggested-f
   });
 
   const types = ctx._emitted.map((p) => p.type);
-  assert.ok(types.includes('data-suggestion-preview'), 'legacy preview part must still emit');
+  assert.ok(
+    !types.includes('data-suggestion-preview'),
+    'legacy data-suggestion-preview must NOT emit after Session D'
+  );
   assert.ok(types.includes('data-suggested-fix'), 'new suggested-fix part must emit');
 
   const fix = ctx._emitted.find((p) => p.type === 'data-suggested-fix')!.data as any;
@@ -108,4 +123,72 @@ test('propose_suggestion derives FixTarget from legacy targetHint when no target
   const fix = ctx._emitted.find((p) => p.type === 'data-suggested-fix')!.data as any;
   assert.equal(fix.target.artifact, 'faq');
   assert.equal(fix.target.artifactId, 'faq-xyz');
+});
+
+test('propose_suggestion skips emit when rejection memory matches (same session)', async () => {
+  const intent: RejectionIntent = deriveRejectionIntent({
+    category: 'FAQ',
+    subLabel: 'wifi-password',
+    target: { artifact: 'faq', artifactId: 'faq-abc' },
+  });
+  const existingHash = computeRejectionFixHash(intent);
+
+  const ctx = makeCtx({ rejectedHashes: [existingHash] });
+  const { factory, invoke } = captureTool();
+  buildProposeSuggestionTool(factory, () => ctx);
+  const result = await invoke({
+    category: 'FAQ',
+    subLabel: 'wifi-password',
+    rationale: 'Manager already rejected this fix intent.',
+    editFormat: 'full_replacement',
+    beforeText: 'WIFI-2024',
+    proposedText: 'WIFI-2024',
+    target: { artifact: 'faq', artifactId: 'faq-abc' },
+  });
+
+  assert.equal(ctx._emitted.length, 0, 'no data-parts should emit on rejection match');
+  const structured = result.structuredContent ?? JSON.parse(result.content?.[0]?.text ?? '{}');
+  assert.equal(structured.status, 'SKIPPED_REJECTED');
+});
+
+test('propose_suggestion still emits when rejection memory does not match', async () => {
+  const unrelated = 'deadbeef'.repeat(5);
+  const ctx = makeCtx({ rejectedHashes: [unrelated] });
+  const { factory, invoke } = captureTool();
+  buildProposeSuggestionTool(factory, () => ctx);
+  const result = await invoke({
+    category: 'FAQ',
+    subLabel: 'wifi-password',
+    rationale: 'Different fix intent.',
+    editFormat: 'full_replacement',
+    beforeText: 'WIFI-2024',
+    proposedText: 'Summit-Wifi-2026',
+    target: { artifact: 'faq', artifactId: 'faq-abc' },
+  });
+
+  const types = ctx._emitted.map((p) => p.type);
+  assert.ok(types.includes('data-suggested-fix'));
+  const structured = result.structuredContent ?? JSON.parse(result.content?.[0]?.text ?? '{}');
+  assert.equal(structured.status, 'PREVIEWED');
+});
+
+test('rejection hash is stable across minor rationale rephrasing', () => {
+  const a = deriveRejectionIntent({
+    category: 'SYSTEM_PROMPT',
+    subLabel: 'checkout-time-tone',
+    target: { artifact: 'system_prompt', sectionId: 'checkout_time' },
+  });
+  const b = deriveRejectionIntent({
+    category: 'SYSTEM_PROMPT',
+    subLabel: 'checkout-time-tone',
+    target: { artifact: 'system_prompt', sectionId: 'checkout_time' },
+  });
+  assert.equal(computeRejectionFixHash(a), computeRejectionFixHash(b));
+
+  const c = deriveRejectionIntent({
+    category: 'SYSTEM_PROMPT',
+    subLabel: 'checkout-time-wording',
+    target: { artifact: 'system_prompt', sectionId: 'checkout_time' },
+  });
+  assert.notEqual(computeRejectionFixHash(a), computeRejectionFixHash(c));
 });

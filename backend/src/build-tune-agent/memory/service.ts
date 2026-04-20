@@ -5,6 +5,7 @@
  *
  * See ./README.md for the key-namespacing convention.
  */
+import crypto from 'crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 export interface MemoryRecord {
@@ -96,6 +97,99 @@ export async function deleteMemory(
     if (err?.code === 'P2025') return { ok: true, deleted: false };
     throw err;
   }
+}
+
+// ─── Session-scoped rejection memory (sprint 046 Session D) ─────────────
+//
+// Per plan §4.4 + NEXT.md §2.3 a dismissed suggested_fix writes to
+// `session/{conversationId}/rejected/{fixHash}` so a subsequent
+// propose_suggestion in the same conversation can skip re-proposing a
+// semantically-equivalent fix. Cross-session memory is deferred to
+// sprint 047; this layer is session-scoped only.
+//
+// fixHash = sha1(artifactId + '|' + (target.sectionId||target.slotKey||'') + '|' + semanticIntent)
+
+export interface RejectionIntent {
+  /** Primary artifact id (or empty string when only category-level targeting). */
+  artifactId: string;
+  /** section id OR slot key — whichever targets the fix more specifically. */
+  sectionOrSlotKey: string;
+  /**
+   * A short, semantically-stable description of what the fix wanted to change.
+   * Callers should normalise (lowercase + trim) before hashing.
+   */
+  semanticIntent: string;
+}
+
+/** Compute the stable fixHash used for rejection-memory keys. */
+export function computeRejectionFixHash(intent: RejectionIntent): string {
+  const canonical = `${intent.artifactId}|${intent.sectionOrSlotKey}|${intent.semanticIntent
+    .toLowerCase()
+    .trim()}`;
+  return crypto.createHash('sha1').update(canonical).digest('hex');
+}
+
+function rejectionKey(conversationId: string, fixHash: string): string {
+  return `session/${conversationId}/rejected/${fixHash}`;
+}
+
+/**
+ * Persist a session-scoped rejection entry. Idempotent — upserts on the
+ * composite unique `(tenantId, key)` index. Stores the fix intent + a
+ * timestamp so diagnostic tooling can later show "rejected at" without
+ * replaying the whole session.
+ */
+export async function writeRejectionMemory(
+  prisma: PrismaClient,
+  tenantId: string,
+  conversationId: string,
+  fixHash: string,
+  intent: RejectionIntent
+): Promise<void> {
+  const key = rejectionKey(conversationId, fixHash);
+  await prisma.agentMemory.upsert({
+    where: { tenantId_key: { tenantId, key } },
+    update: {
+      value: {
+        fixHash,
+        intent,
+        rejectedAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+      source: 'propose_suggestion.reject',
+    },
+    create: {
+      tenantId,
+      key,
+      value: {
+        fixHash,
+        intent,
+        rejectedAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+      source: 'propose_suggestion.reject',
+    },
+  });
+}
+
+/**
+ * List every fixHash a manager has rejected in this conversation. The
+ * propose_suggestion tool consults this set before emitting to avoid
+ * re-proposing a semantically-equivalent fix.
+ */
+export async function listRejectionHashes(
+  prisma: PrismaClient,
+  tenantId: string,
+  conversationId: string
+): Promise<Set<string>> {
+  const prefix = `session/${conversationId}/rejected/`;
+  const rows = await prisma.agentMemory.findMany({
+    where: { tenantId, key: { startsWith: prefix } },
+    select: { key: true },
+  });
+  return new Set(
+    rows
+      .map((r) => r.key.slice(prefix.length))
+      .filter((h) => h.length > 0)
+  );
 }
 
 /**

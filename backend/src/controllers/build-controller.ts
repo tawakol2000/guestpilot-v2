@@ -36,6 +36,11 @@ import {
   getTenantStateSummary,
   getInterviewProgressSummary,
 } from '../services/tenant-state.service';
+import {
+  computeRejectionFixHash,
+  writeRejectionMemory,
+  type RejectionIntent,
+} from '../build-tune-agent/memory/service';
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -338,12 +343,15 @@ export function makeBuildController(prisma: PrismaClient) {
     },
 
     /**
-     * POST /api/build/suggested-fix/:fixId/reject — (sprint 046 Session C)
+     * POST /api/build/suggested-fix/:fixId/reject — (sprint 046 Session D)
      *
-     * Thin proxy. Rejection memory (hash by (artifactId, target,
-     * semanticIntent)) lands in Session D. For now: 200 OK stub so the
-     * card can settle, and if a matching TuningSuggestion row exists we
-     * flag the intent in the response for the Session D writer.
+     * Writes a session-scoped rejection-memory row under
+     * `session/{conversationId}/rejected/{fixHash}` so a subsequent
+     * propose_suggestion in the same conversation skips re-proposing a
+     * semantically-equivalent fix (plan §4.4). Body must carry the fix
+     * intent (artifactId / sectionId|slotKey / category / subLabel) —
+     * the frontend card already has these on hand from the
+     * `data-suggested-fix` payload it rendered.
      */
     async rejectSuggestedFix(
       req: AuthenticatedRequest,
@@ -355,18 +363,76 @@ export function makeBuildController(prisma: PrismaClient) {
         res.status(400).json({ error: 'MISSING_FIX_ID' });
         return;
       }
+      const body = (req.body ?? {}) as {
+        conversationId?: string;
+        intent?: Partial<RejectionIntent> & {
+          category?: string;
+          subLabel?: string;
+        };
+        target?: {
+          artifactId?: string;
+          sectionId?: string;
+          slotKey?: string;
+        };
+        category?: string;
+        subLabel?: string;
+      };
+      const conversationId = body.conversationId;
+      if (!conversationId) {
+        res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
+        return;
+      }
+
+      // Derive a RejectionIntent from whatever shape the client sent.
+      // Prefer an explicit intent block, fall back to (target, category,
+      // subLabel) which are always on the data-suggested-fix payload.
+      const artifactId =
+        body.intent?.artifactId ??
+        body.target?.artifactId ??
+        '';
+      const sectionOrSlot =
+        body.intent?.sectionOrSlotKey ??
+        body.target?.sectionId ??
+        body.target?.slotKey ??
+        '';
+      const category = body.intent?.semanticIntent
+        ? undefined
+        : body.category ?? body.intent?.category ?? '';
+      const subLabel = body.subLabel ?? body.intent?.subLabel ?? '';
+      const semanticIntent =
+        body.intent?.semanticIntent ?? `${category ?? ''}:${subLabel}`;
+
+      const intent: RejectionIntent = {
+        artifactId,
+        sectionOrSlotKey: sectionOrSlot,
+        semanticIntent,
+      };
+      const fixHash = computeRejectionFixHash(intent);
+
       try {
-        const hit = await prisma.tuningSuggestion.findFirst({
-          where: { id: fixId, tenantId },
+        // Tenant scoping — the conversation must belong to this tenant.
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id: conversationId, tenantId },
           select: { id: true },
         });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+        await writeRejectionMemory(
+          prisma,
+          tenantId,
+          conversationId,
+          fixHash,
+          intent
+        );
         res.json({
           ok: true,
           applied: false,
-          appliedVia: hit ? 'suggestion_action' : 'no-op-stub',
-          message: hit
-            ? 'Rejection noted — durable rejection memory lands in Session D.'
-            : 'No matching suggestion row — ephemeral preview.',
+          appliedVia: 'rejection-memory',
+          fixHash,
+          message:
+            'Rejection persisted — propose_suggestion in this conversation will skip this fix.',
         });
       } catch (err) {
         console.error('[build-controller] rejectSuggestedFix failed:', err);

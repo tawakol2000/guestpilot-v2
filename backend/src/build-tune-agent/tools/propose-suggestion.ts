@@ -22,7 +22,33 @@ import {
   type FixTarget,
   type SuggestedFixData,
 } from '../data-parts';
+import {
+  computeRejectionFixHash,
+  listRejectionHashes,
+  type RejectionIntent,
+} from '../memory/service';
 import { asCallToolResult, asError, type ToolContext } from './types';
+
+/**
+ * Derive the (artifactId, sectionOrSlotKey, semanticIntent) triple that
+ * hashes into the rejection-memory key. `semanticIntent` is a short
+ * category+subLabel fingerprint — stable across minor rephrasings of the
+ * rationale but distinct across different intents on the same artifact.
+ */
+export function deriveRejectionIntent(args: {
+  category: string;
+  subLabel: string;
+  target: FixTarget;
+}): RejectionIntent {
+  const artifactId = args.target.artifactId ?? '';
+  const sectionOrSlot = args.target.sectionId ?? args.target.slotKey ?? '';
+  const semanticIntent = `${args.category}:${args.subLabel}`;
+  return {
+    artifactId,
+    sectionOrSlotKey: sectionOrSlot,
+    semanticIntent,
+  };
+}
 
 /**
  * Derive a `FixTarget` from the legacy `targetHint` + category. Best-
@@ -125,29 +151,51 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
         const previewId = `preview:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
         const createdAt = new Date().toISOString();
 
-        if (c.emitDataPart) {
-          c.emitDataPart({
-            type: 'data-suggestion-preview',
-            id: previewId,
-            data: {
-              previewId,
-              category: args.category,
-              subLabel: args.subLabel,
-              rationale: args.rationale,
-              confidence: args.confidence ?? null,
-              editFormat,
-              proposedText: args.proposedText ?? null,
-              oldText: args.oldText ?? null,
-              newText: args.newText ?? null,
-              beforeText: args.beforeText ?? null,
-              targetHint: args.targetHint ?? null,
-              createdAt,
-            },
-          });
+        const derivedTarget: FixTarget = args.target ?? deriveTargetFromHint(args.category, args.targetHint);
 
-          // Sprint 046 Session B — also emit the canonical
-          // data-suggested-fix shape consumed by the Studio
-          // suggested-fix card. Derivation rules:
+        // Sprint 046 Session D — session-scoped rejection memory guard.
+        // Before emitting the card, compute the fix hash and skip the
+        // emit if the manager has already rejected a semantically-
+        // equivalent fix in this conversation (per plan §4.4).
+        if (c.conversationId) {
+          const intent = deriveRejectionIntent({
+            category: args.category,
+            subLabel: args.subLabel,
+            target: derivedTarget,
+          });
+          const fixHash = computeRejectionFixHash(intent);
+          try {
+            const rejected = await listRejectionHashes(
+              c.prisma,
+              c.tenantId,
+              c.conversationId
+            );
+            if (rejected.has(fixHash)) {
+              const skipPayload = {
+                previewId,
+                category: args.category,
+                editFormat,
+                status: 'SKIPPED_REJECTED',
+                hint: 'Fix was previously rejected in this session; rephrase or propose a different target.',
+              };
+              span.end({ ...skipPayload, skippedDueToRejection: true });
+              return asCallToolResult(skipPayload);
+            }
+          } catch (err) {
+            console.warn(
+              '[propose_suggestion] rejection-memory lookup failed:',
+              err
+            );
+          }
+        }
+
+        if (c.emitDataPart) {
+          // Sprint 046 Session D — retired legacy `data-suggestion-preview`
+          // emission (was a dual-emit alongside data-suggested-fix during
+          // sprint 046 sessions B and C). Studio is the only consumer now.
+
+          // Sprint 046 Session B — canonical data-suggested-fix shape
+          // consumed by the Studio suggested-fix card. Derivation rules:
           //   before = beforeText (full_replacement) or oldText (search_replace)
           //   after  = proposedText (full_replacement) or newText (search_replace)
           // `target` is preferred when supplied; otherwise we derive a
@@ -162,7 +210,6 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
               ? args.newText ?? ''
               : args.proposedText ?? '';
 
-          const derivedTarget: FixTarget = args.target ?? deriveTargetFromHint(args.category, args.targetHint);
           const fixData: SuggestedFixData = {
             id: previewId,
             target: derivedTarget,

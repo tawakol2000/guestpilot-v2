@@ -1,0 +1,24 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - button "Open queue" [ref=e6]:
+          - img [ref=e7]
+        - link "← Inbox" [ref=e9] [cursor=pointer]:
+          - /url: /
+        - navigation [ref=e10]:
+          - link "Tuning" [ref=e11] [cursor=pointer]:
+            - /url: /tuning
+          - link "History" [ref=e12] [cursor=pointer]:
+            - /url: /tuning/history
+          - link "Capability requests" [ref=e13] [cursor=pointer]:
+            - /url: /tuning/capability-requests
+        - generic [ref=e14]: Tuning
+    - generic [ref=e15]:
+      - main [ref=e16]:
+        - generic [ref=e19]:
+          - generic [ref=e20]: Select a suggestion
+          - paragraph [ref=e21]: Pick an item from the queue to see its evidence and proposed change.
+      - complementary [ref=e22]:
+        - button "Expand dashboards" [ref=e24]: ◂
+  - alert [ref=e25]
