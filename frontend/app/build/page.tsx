@@ -38,6 +38,7 @@ import {
   isAuthenticated,
   type TuningConversationMessage,
 } from '@/lib/api'
+import { toast } from 'sonner'
 import {
   apiGetBuildTenantState,
   BuildModeDisabledError,
@@ -52,6 +53,7 @@ import { TestPipelineResult } from '@/components/build/test-pipeline-result'
 import { SetupProgress } from '@/components/build/setup-progress'
 import { TransactionHistory } from '@/components/build/transaction-history'
 import { PropagationBanner } from '@/components/build/propagation-banner'
+import { BuildPageSkeleton } from '@/components/build/page-skeleton'
 
 type LoadState =
   | { kind: 'loading' }
@@ -152,6 +154,24 @@ function BuildPageInner() {
           return
         }
         const message = err instanceof Error ? err.message : String(err)
+        toast.error('Couldn’t load tenant state', {
+          description: message,
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              bootstrapOnceRef.current = false
+              setLoad({ kind: 'loading' })
+              setTimeout(() => {
+                // Re-run bootstrap by flipping the ref + forcing a rerender
+                // via setLoad above; the effect re-fires when bootstrapOnce
+                // is reset. React won't re-trigger the effect on its own,
+                // so we call the inner function directly.
+                // eslint-disable-next-line @typescript-eslint/no-floating-promises
+                bootstrap()
+              }, 0)
+            },
+          },
+        })
         setLoad({ kind: 'error', message })
       }
     }
@@ -179,7 +199,13 @@ function BuildPageInner() {
       .then((next) => {
         setLoad((prev) => (prev.kind === 'ready' ? { ...prev, tenantState: next } : prev))
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (err instanceof BuildModeDisabledError) return
+        toast.error('Couldn’t refresh sidebar', {
+          description:
+            err instanceof Error ? err.message : 'Please reload to see the latest counts.',
+        })
+      })
   }, [])
 
   const tenantEmail = useMemo(() => getTenantMeta()?.email ?? '', [])
@@ -189,16 +215,7 @@ function BuildPageInner() {
   )
 
   if (load.kind === 'loading' || load.kind === 'unauthenticated') {
-    return (
-      <div
-        className="flex min-h-dvh items-center justify-center"
-        style={{ background: TUNING_COLORS.canvas }}
-      >
-        <span className="text-sm" style={{ color: TUNING_COLORS.inkSubtle }}>
-          Loading…
-        </span>
-      </div>
-    )
+    return <BuildPageSkeleton />
   }
 
   if (load.kind === 'disabled') {
@@ -518,18 +535,7 @@ function rehydrate(rows: TuningConversationMessage[]): UIMessage[] {
 
 export default function BuildPage() {
   return (
-    <Suspense
-      fallback={
-        <div
-          className="flex min-h-dvh items-center justify-center"
-          style={{ background: TUNING_COLORS.canvas }}
-        >
-          <span className="text-sm" style={{ color: TUNING_COLORS.inkSubtle }}>
-            Loading…
-          </span>
-        </div>
-      }
-    >
+    <Suspense fallback={<BuildPageSkeleton />}>
       <BuildPageInner />
     </Suspense>
   )

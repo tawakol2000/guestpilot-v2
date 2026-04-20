@@ -13,13 +13,16 @@
  */
 import { useState } from 'react'
 import { Check, Loader2, RotateCcw, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { TUNING_COLORS } from '../tuning/tokens'
 import {
   apiApproveBuildPlan,
   apiRollbackBuildPlan,
+  withBuildToast,
   type BuildPlanData,
   type BuildPlanItem,
 } from '@/lib/build-api'
+import { ConfirmRollbackDialog } from './confirm-dialog'
 
 type PlanState =
   | { kind: 'idle' }
@@ -47,29 +50,34 @@ export function PlanChecklist({
   onRolledBack?: (transactionId: string) => void
 }) {
   const [state, setState] = useState<PlanState>({ kind: 'idle' })
+  const [rollbackOpen, setRollbackOpen] = useState(false)
 
   async function approve() {
     setState({ kind: 'approving' })
     try {
-      const res = await apiApproveBuildPlan(data.transactionId)
+      const res = await withBuildToast('Couldn’t approve plan', () =>
+        apiApproveBuildPlan(data.transactionId),
+      )
       setState({ kind: 'approved', approvedAt: res.approvedAt })
+      toast.success('Plan approved', {
+        description: 'The agent will write these artifacts next.',
+      })
       onApproved?.(data.transactionId)
     } catch (err) {
       setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  async function rollback() {
-    if (typeof window !== 'undefined') {
-      const ok = window.confirm(
-        `Roll back this plan? This reverts every artifact written under transaction ${data.transactionId.slice(0, 8)}….`,
-      )
-      if (!ok) return
-    }
+  async function confirmRollback() {
     setState({ kind: 'rolling-back' })
     try {
-      await apiRollbackBuildPlan(data.transactionId)
+      await withBuildToast('Couldn’t roll back plan', () =>
+        apiRollbackBuildPlan(data.transactionId),
+      )
       setState({ kind: 'rolled-back' })
+      toast.success('Plan rolled back', {
+        description: `Reverted every artifact in tx_${data.transactionId.slice(0, 8)}…`,
+      })
       onRolledBack?.(data.transactionId)
     } catch (err) {
       setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
@@ -240,7 +248,7 @@ export function PlanChecklist({
         {state.kind === 'approved' ? (
           <button
             type="button"
-            onClick={rollback}
+            onClick={() => setRollbackOpen(true)}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-white px-3 text-xs font-medium"
             style={{ borderColor: TUNING_COLORS.hairline, color: TUNING_COLORS.dangerFg }}
           >
@@ -249,6 +257,34 @@ export function PlanChecklist({
           </button>
         ) : null}
       </footer>
+      <ConfirmRollbackDialog
+        open={rollbackOpen}
+        onOpenChange={setRollbackOpen}
+        title="Roll back this plan?"
+        summary={summariseRollback(data.items, data.transactionId)}
+        onConfirm={confirmRollback}
+      />
     </article>
   )
+}
+
+function summariseRollback(items: BuildPlanItem[], transactionId: string): string {
+  const counts: Record<BuildPlanItem['type'], number> = {
+    sop: 0,
+    faq: 0,
+    system_prompt: 0,
+    tool_definition: 0,
+  }
+  for (const it of items) counts[it.type] = (counts[it.type] ?? 0) + 1
+  const parts: string[] = []
+  if (counts.sop) parts.push(`${counts.sop} SOP${counts.sop === 1 ? '' : 's'}`)
+  if (counts.faq) parts.push(`${counts.faq} FAQ${counts.faq === 1 ? '' : 's'}`)
+  if (counts.system_prompt)
+    parts.push(
+      `${counts.system_prompt} system prompt change${counts.system_prompt === 1 ? '' : 's'}`,
+    )
+  if (counts.tool_definition)
+    parts.push(`${counts.tool_definition} tool${counts.tool_definition === 1 ? '' : 's'}`)
+  const summary = parts.length > 0 ? `This will remove ${parts.join(' and ')}` : 'This will revert every artifact'
+  return `${summary} added in tx_${transactionId.slice(0, 8)}…. The main pipeline will pick up the revert within 60 seconds.`
 }

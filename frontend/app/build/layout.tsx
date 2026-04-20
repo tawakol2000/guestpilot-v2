@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { BuildToaster } from '@/components/build/build-toaster'
 
 export const metadata: Metadata = {
   title: 'Build · GuestPilot',
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 }
 
 export default function BuildLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return (
+    <>
+      {children}
+      <BuildToaster />
+    </>
+  )
 }

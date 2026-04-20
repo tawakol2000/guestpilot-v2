@@ -5,7 +5,14 @@
 //
 // All endpoints are 404'd server-side when ENABLE_BUILD_MODE is unset; the
 // page uses that 404 to render a "not enabled" screen.
+//
+// Refinement pass (sprint 045 § E1) — every mutation helper exposes a
+// toast wrapper (withToast) that surfaces failures as Sonner toasts
+// instead of console noise. 404s on tenant-state are deliberately NOT
+// toasted because that 404 signals the disabled-screen path, not an
+// error.
 
+import { toast } from 'sonner'
 import { getToken, ApiError } from './api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
@@ -68,6 +75,42 @@ async function buildFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(data?.error || `Request failed: ${res.status}`, res.status, data)
   }
   return data as T
+}
+
+/**
+ * Wrap a /api/build/* fetch with a toast on failure. Skips 404
+ * (BuildModeDisabledError) so the disabled-screen path stays silent.
+ */
+export async function withBuildToast<T>(
+  label: string,
+  task: () => Promise<T>,
+  options: { retry?: () => void } = {},
+): Promise<T> {
+  try {
+    return await task()
+  } catch (err) {
+    if (err instanceof BuildModeDisabledError) throw err
+    const message = friendlyMessage(err)
+    if (options.retry) {
+      toast.error(label, {
+        description: message,
+        action: { label: 'Retry', onClick: options.retry },
+      })
+    } else {
+      toast.error(label, { description: message })
+    }
+    throw err
+  }
+}
+
+function friendlyMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status >= 500) return 'The server returned an error. Please try again or contact support.'
+    if (typeof err.message === 'string' && err.message.length > 0) return err.message
+    return `Request failed (${err.status})`
+  }
+  if (err instanceof Error && err.message) return err.message
+  return 'Please try again or contact support.'
 }
 
 export async function apiGetBuildTenantState(): Promise<BuildTenantState> {

@@ -10,14 +10,20 @@
  * So we render a single row for the last transaction with a Roll back
  * button. When session 6 ships a `/api/build/transactions` list, extend
  * this component; the rollback path is already wired.
+ *
+ * Refinement pass (E1) — window.confirm replaced with ConfirmRollbackDialog;
+ * errors surface as Sonner toasts instead of inline text.
  */
 import { useState } from 'react'
-import { Loader2, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { TUNING_COLORS } from '../tuning/tokens'
 import {
   apiRollbackBuildPlan,
+  withBuildToast,
   type BuildLastTransaction,
 } from '@/lib/build-api'
+import { ConfirmRollbackDialog } from './confirm-dialog'
 
 export function TransactionHistory({
   last,
@@ -26,8 +32,7 @@ export function TransactionHistory({
   last?: BuildLastTransaction
   onRolledBack?: (transactionId: string) => void
 }) {
-  const [rollingBack, setRollingBack] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   if (!last) {
     return (
@@ -45,30 +50,22 @@ export function TransactionHistory({
         >
           Recent changes
         </div>
-        <div className="mt-2">No build transactions yet.</div>
+        <div className="mt-2" style={{ color: TUNING_COLORS.inkMuted }}>
+          No changes yet. As you build, your change history will appear here.
+        </div>
       </section>
     )
   }
 
-  async function rollback() {
+  async function confirmRollback() {
     if (!last) return
-    if (typeof window !== 'undefined') {
-      const ok = window.confirm(
-        `Roll back the last build transaction (${last.id.slice(0, 8)}…)? Every artifact written under it reverts.`,
-      )
-      if (!ok) return
-    }
-    setRollingBack(true)
-    setMessage(null)
-    try {
+    await withBuildToast('Couldn’t roll back', async () => {
       await apiRollbackBuildPlan(last.id)
-      setMessage('Rolled back.')
+      toast.success('Rolled back', {
+        description: `Reverted every artifact in tx_${last.id.slice(0, 8)}…`,
+      })
       onRolledBack?.(last.id)
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRollingBack(false)
-    }
+    })
   }
 
   const approved = !!last.approvedAt
@@ -109,25 +106,22 @@ export function TransactionHistory({
         {!rolledBack ? (
           <button
             type="button"
-            onClick={rollback}
-            disabled={rollingBack}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border bg-white px-2.5 text-[11px] font-medium disabled:opacity-60"
+            onClick={() => setDialogOpen(true)}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border bg-white px-2.5 text-[11px] font-medium"
             style={{ borderColor: TUNING_COLORS.hairline, color: TUNING_COLORS.dangerFg }}
           >
-            {rollingBack ? (
-              <Loader2 size={11} strokeWidth={2.25} className="animate-spin" />
-            ) : (
-              <RotateCcw size={11} strokeWidth={2.25} />
-            )}
+            <RotateCcw size={11} strokeWidth={2.25} />
             Roll back
           </button>
         ) : null}
       </div>
-      {message ? (
-        <div className="mt-2 text-[11px]" style={{ color: TUNING_COLORS.inkMuted }}>
-          {message}
-        </div>
-      ) : null}
+      <ConfirmRollbackDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title="Roll back this change?"
+        summary={`This reverts every artifact (${last.itemCount} item${last.itemCount === 1 ? '' : 's'}) written under tx_${last.id.slice(0, 8)}…. The main pipeline will pick up the revert within 60 seconds.`}
+        onConfirm={confirmRollback}
+      />
     </section>
   )
 }

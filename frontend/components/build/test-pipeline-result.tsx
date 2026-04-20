@@ -98,7 +98,7 @@ export function TestPipelineResult({ data }: { data: TestPipelineResultData }) {
             ) : null}
           </div>
           <p className="mt-1.5 text-[12.5px] leading-5" style={{ color: TUNING_COLORS.inkMuted }}>
-            {data.judgeRationale}
+            {data.judgeRationale?.trim() || 'No rationale provided.'}
           </p>
           <div
             className="mt-2 font-mono text-[10.5px]"

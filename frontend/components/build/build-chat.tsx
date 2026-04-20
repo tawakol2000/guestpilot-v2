@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { ArrowUp } from 'lucide-react'
+import { toast } from 'sonner'
 import { getToken } from '@/lib/api'
 import { buildTurnEndpoint, type BuildPlanData, type TestPipelineResultData } from '@/lib/build-api'
 import { TUNING_COLORS } from '../tuning/tokens'
@@ -103,6 +104,22 @@ export function BuildChat({
   const isSending = status === 'submitted'
   const canSend = !!draft.trim() && !isStreaming && !isSending
 
+  // Surface streaming / transport errors as toasts; the inline banner
+  // kept below is a belt-and-braces fallback.
+  const lastReportedErrorRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!error) {
+      lastReportedErrorRef.current = null
+      return
+    }
+    const message = error.message
+    if (lastReportedErrorRef.current === message) return
+    lastReportedErrorRef.current = message
+    toast.error('Agent reply failed', {
+      description: message || 'Please try sending the message again.',
+    })
+  }, [error])
+
   const showEmptyHero = messages.length === 0
 
   return (
@@ -122,7 +139,7 @@ export function BuildChat({
             />
           ))}
 
-          {isStreaming ? <TypingIndicator /> : null}
+          {isStreaming || isSending ? <TypingIndicator /> : null}
 
           {error ? (
             <div
