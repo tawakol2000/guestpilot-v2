@@ -97,7 +97,16 @@ export function invalidateSopCache(tenantId: string): void {
  *
  * Auto-seeds the tenant on first call if no SopDefinitions exist.
  * Caches resolved content per (tenant, category, status, propertyId) for 5 min.
+ *
+ * Pass `{ bypassCache: true }` to force a DB hit even if a cached entry
+ * exists. This is the BUILD-mode test_pipeline's R4 mitigation — a new
+ * SOP written via create_sop must be visible to the very next
+ * test_pipeline call, and the 5-min cache would otherwise hide it.
  */
+export interface GetSopContentOptions {
+  bypassCache?: boolean;
+}
+
 export async function getSopContent(
   tenantId: string,
   category: string,
@@ -106,15 +115,18 @@ export async function getSopContent(
   propertyAmenities?: string,
   prisma?: PrismaClient,
   variableDataMap?: Record<string, string>,
+  options?: GetSopContentOptions,
 ): Promise<string> {
   // Normalise status to match DB values
   const status = normaliseStatus(reservationStatus);
 
   // Cache key includes all resolution dimensions
   const cacheKey = `sop:${tenantId}:content:${category}:${status}:${propertyId || '_'}`;
-  const cached = cacheGet<string>(cacheKey);
-  if (cached !== undefined) {
-    return applyTemplates(cached, category, propertyAmenities, variableDataMap);
+  if (!options?.bypassCache) {
+    const cached = cacheGet<string>(cacheKey);
+    if (cached !== undefined) {
+      return applyTemplates(cached, category, propertyAmenities, variableDataMap);
+    }
   }
 
   // We need Prisma for DB lookups

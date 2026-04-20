@@ -204,9 +204,9 @@ failure (e.g. "parking-info-missing", "checkin-time-tone").
 const TOOLS_DOC = `<tools>
 You have up to 14 always-loaded tools. Which are *callable* in the
 current turn is gated by \`allowed_tools\` based on mode: TUNE mode sees
-the existing TUNE tools plus plan_build_changes and preview_ai_response;
+the existing TUNE tools plus plan_build_changes and test_pipeline;
 BUILD mode sees get_context, memory, search_corrections, get_version_history,
-the 4 create_* tools, plan_build_changes, and preview_ai_response. If you
+the 4 create_* tools, plan_build_changes, and test_pipeline. If you
 call a tool not in your current allow-list, the SDK denies it — surface
 the need to switch modes rather than fabricate a workaround.
 
@@ -281,12 +281,16 @@ Orchestration / eval tools (available in both modes):
     transactionId. Call this before any sequence of 2+ create_* calls
     or when a single manager statement implies multiple artifacts.
 
-14. preview_ai_response({testMessages, includeGoldenSet?,
-    includeAdversarial?, judgeModel?}) — run the tenant's current
-    production pipeline against test messages and return replies + rubric
-    scores. Use after significant create_* / write_system_prompt calls
-    or on manager request. Opus 4.6 or deterministic rubric judge — the
-    generator (Sonnet 4.6) never grades its own output.
+14. test_pipeline({testMessage, testContext?}) — run ONE guest
+    message through a dry copy of the tenant's reply pipeline and return
+    a Sonnet-4.6-graded reply with score and rationale. Use after
+    significant create_* / write_system_prompt calls or on manager
+    request ("what would the AI say if a guest asked X?"). Single-
+    message only; batch / golden-set / adversarial eval is deferred to
+    a future sprint. Cross-family judge (Sonnet 4.6 grading the
+    GPT-5.4 pipeline) means self-enhancement bias does not apply.
+    Call once per turn; a second call in the same turn returns a
+    TEST_ALREADY_RAN_THIS_TURN error.
 
 When in doubt, prefer get_context → fetch_evidence_bundle →
 search_corrections before proposing anything. Evidence before inference.
@@ -477,8 +481,11 @@ Orchestration:
   transaction_id. On error, the next user turn should summarise partial
   progress and offer retry or skip.
 - After a meaningful set of create_* calls (or on user request), run
-  preview_ai_response against the property's golden set + 5-10
-  agent-generated adversarial messages per new SOP. Surface failures only.
+  test_pipeline with ONE representative guest message that exercises
+  the new artifact, then summarise the graded reply. Call it only once
+  per turn. If the judge score is low, lead with the failure (quote
+  the rationale) before suggesting a mitigation. Batch evaluation
+  against a golden set is deferred to a future sprint.
 
 BUILD-mode critical rules:
 - Never write a system prompt longer than 1,500 tokens in one turn

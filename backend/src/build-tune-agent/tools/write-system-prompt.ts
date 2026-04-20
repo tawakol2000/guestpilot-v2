@@ -31,7 +31,11 @@ import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { Prisma } from '@prisma/client';
 import { startAiSpan } from '../../services/observability.service';
-import { validateBuildTransaction } from './build-transaction';
+import {
+  finalizeBuildTransactionIfComplete,
+  markBuildTransactionPartial,
+  validateBuildTransaction,
+} from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 // Spec §6 graduation criteria — load-bearing slots must be covered with
@@ -223,6 +227,11 @@ export function buildWriteSystemPromptTool(
         // a 60s delay before main-AI propagation is not user-visible.
         // Sprint 046 can add a leaner invalidation path if needed.
 
+        await finalizeBuildTransactionIfComplete(
+          c.prisma,
+          c.tenantId,
+          args.transactionId
+        );
         const previewUrl = `/system-prompt/${versionRow.id}`;
         const payload = {
           ok: true,
@@ -250,8 +259,13 @@ export function buildWriteSystemPromptTool(
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'write_system_prompt',
+          message: msg,
+        });
         span.end({ error: String(err) });
-        return asError(`write_system_prompt failed: ${err?.message ?? String(err)}`);
+        return asError(`write_system_prompt failed: ${msg}`);
       }
     }
   );

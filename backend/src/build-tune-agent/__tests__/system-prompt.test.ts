@@ -223,6 +223,25 @@ test('empty queue + empty memory produce safe fallbacks (TUNE)', () => {
   assert.ok(suffix.includes('No durable preferences on file'));
 });
 
+test('"preview_ai_response" is absent from the rendered prompt in both modes (sprint 045 A1)', () => {
+  // preview_ai_response was re-scoped to test_pipeline in session 3. A stale
+  // reference in the system prompt would make the agent emit a tool call
+  // that the SDK's allow-list denies, surfacing as a failed tool invocation
+  // to the manager mid-interview.
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(
+    !tune.includes('preview_ai_response'),
+    'TUNE-mode prompt must not mention preview_ai_response'
+  );
+  assert.ok(
+    !build.includes('preview_ai_response'),
+    'BUILD-mode prompt must not mention preview_ai_response'
+  );
+  assert.ok(tune.includes('test_pipeline'), 'TUNE-mode prompt must name test_pipeline');
+  assert.ok(build.includes('test_pipeline'), 'BUILD-mode prompt must name test_pipeline');
+});
+
 test('BUILD dynamic suffix renders interview_progress instead of pending_suggestions', () => {
   const suffix = buildDynamicSuffix(
     ctx({

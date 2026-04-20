@@ -23,7 +23,11 @@ import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { invalidateSopCache } from '../../services/sop.service';
-import { validateBuildTransaction } from './build-transaction';
+import {
+  finalizeBuildTransactionIfComplete,
+  markBuildTransactionPartial,
+  validateBuildTransaction,
+} from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 const SOP_STATUSES = [
@@ -149,6 +153,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             select: { id: true },
           });
           invalidateSopCache(c.tenantId);
+          await finalizeBuildTransactionIfComplete(
+            c.prisma,
+            c.tenantId,
+            args.transactionId
+          );
           const previewUrl = `/sops/${definition.id}/override/${override.id}`;
           const payload = {
             ok: true,
@@ -202,6 +211,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           select: { id: true },
         });
         invalidateSopCache(c.tenantId);
+        await finalizeBuildTransactionIfComplete(
+          c.prisma,
+          c.tenantId,
+          args.transactionId
+        );
         const previewUrl = `/sops/${definition.id}/variant/${variant.id}`;
         const payload = {
           ok: true,
@@ -229,6 +243,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_sop',
+          message: msg,
+        });
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
           return asError(
@@ -236,7 +255,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           );
         }
         span.end({ error: String(err) });
-        return asError(`create_sop failed: ${err?.message ?? String(err)}`);
+        return asError(`create_sop failed: ${msg}`);
       }
     }
   );

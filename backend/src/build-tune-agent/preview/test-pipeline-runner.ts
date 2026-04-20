@@ -21,11 +21,14 @@
  * untouched. This runner is a separate code path used only by the
  * BUILD `test_pipeline` tool and its unit tests.
  *
- * Cache bypass: the runner calls `getTenantAiConfig(tenantId, prisma,
- * { bypassCache: true })` so a system prompt written ≤60s ago is
- * visible immediately. That option is gated to BUILD-mode callers by
- * convention (documented on `GetTenantAiConfigOptions`); production
- * continues to hit the 60s-TTL cache.
+ * Cache bypass: the runner threads `{ bypassCache: true }` through
+ * every cached config read so a freshly-written artifact is visible
+ * immediately:
+ *   - getTenantAiConfig — tenant-config + system prompt (60s TTL)
+ *   - getSopContent     — per-category SOP content (5-min TTL)
+ * These are the two caches in the dry-run path. The FAQ lookup is a
+ * direct Prisma query with no caching layer. Production (`ai.service`)
+ * does NOT use this flag and stays on the normal TTLs.
  */
 import type { PrismaClient } from '@prisma/client';
 import OpenAI from 'openai';
@@ -95,7 +98,7 @@ export async function runPipelineDry(
   }
 
   const [sopContext, faqContext] = await Promise.all([
-    collectSopContext(input.tenantId, status, input.prisma),
+    collectSopContext(input.tenantId, status, input.prisma, true),
     collectFaqContext(input.tenantId, input.prisma),
   ]);
 
@@ -161,7 +164,8 @@ export async function runPipelineDry(
 async function collectSopContext(
   tenantId: string,
   status: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  bypassCache: boolean
 ): Promise<string> {
   const sections: string[] = [];
   for (const category of SOP_CATEGORIES) {
@@ -172,7 +176,9 @@ async function collectSopContext(
       status,
       undefined,
       undefined,
-      prisma
+      prisma,
+      undefined,
+      { bypassCache }
     ).catch(() => '');
     if (content && content.trim().length > 0) {
       sections.push(`## ${category}\n${content.trim()}`);

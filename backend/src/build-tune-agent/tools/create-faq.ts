@@ -13,7 +13,11 @@ import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { FAQ_CATEGORIES } from '../../config/faq-categories';
 import { startAiSpan } from '../../services/observability.service';
-import { validateBuildTransaction } from './build-transaction';
+import {
+  finalizeBuildTransactionIfComplete,
+  markBuildTransactionPartial,
+  validateBuildTransaction,
+} from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 // The spec §11 tool description is load-bearing for dispatch. WHEN TO USE
@@ -90,6 +94,11 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
           select: { id: true },
         });
 
+        await finalizeBuildTransactionIfComplete(
+          c.prisma,
+          c.tenantId,
+          args.transactionId
+        );
         const previewUrl = `/faqs/${created.id}`;
         if (c.emitDataPart) {
           c.emitDataPart({
@@ -120,6 +129,11 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_faq',
+          message: msg,
+        });
         // Surface unique-constraint collision in a readable form.
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
@@ -128,7 +142,7 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
           );
         }
         span.end({ error: String(err) });
-        return asError(`create_faq failed: ${err?.message ?? String(err)}`);
+        return asError(`create_faq failed: ${msg}`);
       }
     }
   );

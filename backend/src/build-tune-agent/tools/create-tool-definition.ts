@@ -21,7 +21,11 @@ import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
-import { validateBuildTransaction } from './build-transaction';
+import {
+  finalizeBuildTransactionIfComplete,
+  markBuildTransactionPartial,
+  validateBuildTransaction,
+} from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 // snake_case — same convention the main AI's system tools use
@@ -138,6 +142,11 @@ export function buildCreateToolDefinitionTool(
         // resolve against this cache at prompt-build time, so no separate
         // tenant-config invalidation is needed for net-new tools.
         invalidateToolCache(c.tenantId);
+        await finalizeBuildTransactionIfComplete(
+          c.prisma,
+          c.tenantId,
+          args.transactionId
+        );
 
         const previewUrl = `/tools/${created.id}`;
         const payload = {
@@ -167,6 +176,11 @@ export function buildCreateToolDefinitionTool(
         span.end(payload);
         return asCallToolResult(payload);
       } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_tool_definition',
+          message: msg,
+        });
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
           return asError(
@@ -174,7 +188,7 @@ export function buildCreateToolDefinitionTool(
           );
         }
         span.end({ error: String(err) });
-        return asError(`create_tool_definition failed: ${err?.message ?? String(err)}`);
+        return asError(`create_tool_definition failed: ${msg}`);
       }
     }
   );
