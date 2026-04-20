@@ -47,7 +47,6 @@ import {
 } from '@/lib/build-api'
 import { TUNING_COLORS } from '@/components/tuning/tokens'
 import { BuildDisabled } from '@/components/build/build-disabled'
-import { TenantStateBanner } from '@/components/build/tenant-state-banner'
 import { BuildChat } from '@/components/build/build-chat'
 import { TestPipelineResult } from '@/components/build/test-pipeline-result'
 import { SetupProgress } from '@/components/build/setup-progress'
@@ -257,11 +256,26 @@ function BuildPageInner() {
       <LeftRail
         tenantState={tenantState}
         onRolledBack={handlePlanRolledBack}
+        onNewSession={() => {
+          // Drop the conversationId param and reload. Full reload keeps the
+          // state-init + auto-seed paths simple — a new BUILD session is
+          // explicit and infrequent, so the skeleton flash is acceptable.
+          if (typeof window !== 'undefined') {
+            window.location.assign('/build')
+          }
+        }}
       />
 
       <main className="flex min-h-0 flex-col overflow-hidden">
-        <ChatHead greenfield={tenantState.isGreenfield} />
-        <TenantStateBanner state={tenantState} />
+        <ChatHead tenantState={tenantState} />
+        {showPropagationBanner ? (
+          <div
+            className="border-b px-5 py-2"
+            style={{ borderColor: TUNING_COLORS.hairlineSoft, background: TUNING_COLORS.surfaceRaised }}
+          >
+            <PropagationBanner onDismiss={() => setShowPropagationBanner(false)} />
+          </div>
+        ) : null}
         <div className="min-h-0 flex-1">
           <BuildChat
             conversationId={conversationId}
@@ -274,11 +288,7 @@ function BuildPageInner() {
         </div>
       </main>
 
-      <PreviewPane
-        results={testResults}
-        showPropagation={showPropagationBanner}
-        onDismissPropagation={() => setShowPropagationBanner(false)}
-      />
+      <PreviewPane results={testResults} />
     </div>
   )
 }
@@ -363,9 +373,11 @@ function ActivityIcon({
 
 function LeftRail({
   tenantState,
+  onNewSession,
   onRolledBack,
 }: {
   tenantState: BuildTenantState
+  onNewSession: () => void
   onRolledBack?: (id: string) => void
 }) {
   return (
@@ -374,35 +386,28 @@ function LeftRail({
       style={{ borderColor: TUNING_COLORS.hairline, background: TUNING_COLORS.surfaceRaised }}
     >
       <div
-        className="flex items-center justify-between border-b px-4 py-3"
+        className="flex h-[56px] shrink-0 items-center justify-between border-b px-4"
         style={{ borderColor: TUNING_COLORS.hairline }}
       >
         <span className="text-sm font-semibold" style={{ color: TUNING_COLORS.ink }}>
           Build
         </span>
-        <a
-          href="/build"
-          className="inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-white"
+        <button
+          type="button"
+          onClick={onNewSession}
+          className="inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-white transition-colors hover:bg-[#5B4BD4]"
           style={{ background: TUNING_COLORS.accent }}
-          onClick={(e) => {
-            // New conversation = drop the conversationId param and let the
-            // bootstrap create a fresh row.
-            if (typeof window !== 'undefined') {
-              e.preventDefault()
-              window.location.href = '/build'
-            }
-          }}
         >
           <Plus size={12} strokeWidth={2.4} />
           New
-        </a>
+        </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
-        <SetupProgress state={tenantState} />
         <TransactionHistory
           last={tenantState.lastBuildTransaction}
           onRolledBack={onRolledBack}
         />
+        <SetupProgress state={tenantState} />
       </div>
     </aside>
   )
@@ -410,10 +415,12 @@ function LeftRail({
 
 // ─── Center chat header ────────────────────────────────────────────────────
 
-function ChatHead({ greenfield }: { greenfield: boolean }) {
+function ChatHead({ tenantState }: { tenantState: BuildTenantState }) {
+  const { isGreenfield, sopCount, faqCounts, customToolCount, propertyCount } = tenantState
+  const totalArtifacts = sopCount + faqCounts.global + faqCounts.perProperty + customToolCount
   return (
     <header
-      className="flex h-[52px] shrink-0 items-center justify-between border-b px-5"
+      className="flex h-[56px] shrink-0 items-center justify-between border-b px-5"
       style={{
         borderColor: TUNING_COLORS.hairline,
         background: TUNING_COLORS.surfaceRaised,
@@ -422,68 +429,82 @@ function ChatHead({ greenfield }: { greenfield: boolean }) {
       <div className="flex items-center gap-3">
         <div
           aria-hidden
-          className="flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-bold text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-[12px] font-bold text-white"
           style={{ background: `linear-gradient(135deg, ${TUNING_COLORS.accent}, ${TUNING_COLORS.accentMuted})` }}
         >
           gp
         </div>
-        <div>
-          <div
-            className="flex items-center gap-2 text-sm font-semibold"
-            style={{ color: TUNING_COLORS.ink }}
-          >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[15px] font-semibold leading-tight" style={{ color: TUNING_COLORS.ink }}>
             Agent Studio
             <span
-              className="inline-flex items-center rounded px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-widest"
-              style={{
-                background: TUNING_COLORS.accentSoft,
-                color: TUNING_COLORS.accent,
-                border: '1px solid rgba(108,92,231,0.25)',
-              }}
+              className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
+              style={{ background: TUNING_COLORS.accentSoft, color: TUNING_COLORS.accent }}
             >
               Build
             </span>
           </div>
-          <div className="font-mono text-[11.5px]" style={{ color: TUNING_COLORS.inkSubtle }}>
-            {greenfield ? 'No artifacts yet · starting from scratch' : 'Existing tenant · propose changes'}
+          <div className="mt-0.5 text-[11.5px] leading-tight" style={{ color: TUNING_COLORS.inkMuted }}>
+            {isGreenfield
+              ? 'Greenfield tenant — nothing written yet.'
+              : 'Everything you build here is atomic and revertable.'}
           </div>
         </div>
+      </div>
+
+      {/* Compact stat bar — collapses three lines of tenant-state into one header row. */}
+      <div className="hidden items-center gap-4 md:flex">
+        <HeaderStat label="Properties" value={propertyCount} />
+        <HeaderDivider />
+        <HeaderStat label="Artifacts" value={totalArtifacts} accent={totalArtifacts > 0} />
       </div>
     </header>
   )
 }
 
+function HeaderStat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className="flex flex-col items-end leading-none">
+      <span
+        className="font-mono text-[15px] font-semibold"
+        style={{ color: accent ? TUNING_COLORS.accent : TUNING_COLORS.ink }}
+      >
+        {value}
+      </span>
+      <span
+        className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em]"
+        style={{ color: TUNING_COLORS.inkSubtle }}
+      >
+        {label}
+      </span>
+    </div>
+  )
+}
+
+function HeaderDivider() {
+  return <span className="h-6 w-px" style={{ background: TUNING_COLORS.hairline }} />
+}
+
 // ─── Preview pane (right, 440px) ───────────────────────────────────────────
 
-function PreviewPane({
-  results,
-  showPropagation,
-  onDismissPropagation,
-}: {
-  results: TestPipelineResultData[]
-  showPropagation: boolean
-  onDismissPropagation: () => void
-}) {
+function PreviewPane({ results }: { results: TestPipelineResultData[] }) {
   return (
     <aside
       className="flex min-h-0 flex-col overflow-hidden border-l"
       style={{ borderColor: TUNING_COLORS.hairline, background: TUNING_COLORS.surfaceRaised }}
     >
       <div
-        className="flex h-[52px] shrink-0 items-center gap-2 border-b px-4"
+        className="flex h-[56px] shrink-0 items-center gap-2 border-b px-4"
         style={{ borderColor: TUNING_COLORS.hairline }}
       >
-        <span className="text-xs" style={{ color: TUNING_COLORS.inkSubtle }}>
-          Preview
-        </span>
-        <span className="text-xs" style={{ color: TUNING_COLORS.inkSubtle }}>
-          /
-        </span>
         <span className="text-sm font-semibold" style={{ color: TUNING_COLORS.ink }}>
           Test pipeline
         </span>
+        <span className="text-[11px]" style={{ color: TUNING_COLORS.inkMuted }}>
+          · independent judge grades each reply
+        </span>
         <span
-          className="ml-auto rounded px-2 py-0.5 font-mono text-[11px]"
+          className="ml-auto rounded-full px-2 py-0.5 font-mono text-[11px]"
           style={{ background: TUNING_COLORS.surfaceSunken, color: TUNING_COLORS.inkSubtle }}
         >
           {results.length} run{results.length === 1 ? '' : 's'}
@@ -494,9 +515,6 @@ function PreviewPane({
         style={{ background: TUNING_COLORS.canvas }}
       >
         <div className="flex flex-col gap-3">
-          {showPropagation ? (
-            <PropagationBanner onDismiss={onDismissPropagation} />
-          ) : null}
           {results.length === 0 ? (
             <div
               className="rounded-lg border border-dashed px-4 py-6 text-center text-xs leading-relaxed"

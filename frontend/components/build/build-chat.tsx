@@ -220,57 +220,86 @@ function BuildHero({
 }) {
   const suggestions = greenfield
     ? [
-        'I run short-let apartments. Help me build this from scratch.',
-        'I manage vacation rentals across a few cities. Different channels, different rules.',
-        'I just connected Hostaway. Walk me through what you need to know.',
-        'Here is one real guest message I handled yesterday — use it as the starting point.',
+        {
+          title: 'Describe your business',
+          body: 'I run short-let apartments. Help me set this up from scratch.',
+        },
+        {
+          title: 'Walk through a real guest',
+          body: 'Here is one real guest message I handled yesterday — use it as the starting point.',
+        },
+        {
+          title: 'Connect Hostaway',
+          body: 'I just connected Hostaway. Walk me through what you need to know.',
+        },
+        {
+          title: 'Multi-property setup',
+          body: 'I manage vacation rentals across a few cities. Different channels, different rules.',
+        },
       ]
     : [
-        'Review my current setup and tell me what is missing.',
-        'Something is wrong with how the AI is handling late check-ins.',
-        'Add a new SOP for damage reports.',
-        'Test a message through the pipeline: "What time can I check in?"',
+        {
+          title: 'Audit my current setup',
+          body: 'Review my current setup and tell me what is missing.',
+        },
+        {
+          title: 'Fix a specific flow',
+          body: 'Something is wrong with how the AI is handling late check-ins.',
+        },
+        {
+          title: 'Add a new SOP',
+          body: 'Add a new SOP for damage reports.',
+        },
+        {
+          title: 'Test a guest message',
+          body: 'Test a message through the pipeline: "What time can I check in?"',
+        },
       ]
+  const heading = greenfield ? 'Let’s build your AI.' : 'What should we change?'
+  const subhead = greenfield
+    ? 'Tell me about your business in plain English. I’ll ask a few follow-up questions, draft a plan, and write nothing without your sign-off.'
+    : 'I can add SOPs, FAQs, custom tools, or rewrite your system prompt. Every change is atomic and revertable.'
+
   return (
-    <section className="py-6 text-center">
-      <div
-        aria-hidden
-        className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-bold text-white"
-        style={{
-          background: `linear-gradient(135deg, ${TUNING_COLORS.accent}, ${TUNING_COLORS.accentMuted})`,
-        }}
-      >
-        gp
+    <section className="py-8">
+      <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
+        <div
+          aria-hidden
+          className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl text-[15px] font-bold text-white"
+          style={{
+            background: `linear-gradient(135deg, ${TUNING_COLORS.accent}, ${TUNING_COLORS.accentMuted})`,
+          }}
+        >
+          gp
+        </div>
+        <h1
+          className="text-[22px] font-semibold leading-tight tracking-tight"
+          style={{ color: TUNING_COLORS.ink }}
+        >
+          {heading}
+        </h1>
+        <p className="mt-2 max-w-md text-[13.5px] leading-5" style={{ color: TUNING_COLORS.inkMuted }}>
+          {subhead}
+        </p>
       </div>
-      <h1
-        className="text-2xl font-semibold"
-        style={{ color: TUNING_COLORS.ink, fontFamily: 'Playfair Display, Georgia, serif' }}
-      >
-        {greenfield ? (
-          <>
-            Let's <em style={{ color: TUNING_COLORS.accent }}>build</em> your AI.
-          </>
-        ) : (
-          <>
-            What should we <em style={{ color: TUNING_COLORS.accent }}>change</em>?
-          </>
-        )}
-      </h1>
-      <p className="mx-auto mt-2 max-w-lg text-sm" style={{ color: TUNING_COLORS.inkMuted }}>
-        {greenfield
-          ? 'Tell me about your business in plain English. I’ll ask a few follow-up questions, draft a plan, and write nothing without your sign-off.'
-          : 'I can add SOPs, FAQs, custom tools, or rewrite your system prompt. Every change is atomic and revertable.'}
-      </p>
       <div className="mx-auto mt-8 grid max-w-2xl grid-cols-1 gap-2 md:grid-cols-2">
         {suggestions.map((s) => (
           <button
-            key={s}
+            key={s.title}
             type="button"
-            onClick={() => onPick(s)}
-            className="rounded-xl border bg-white px-4 py-3 text-left text-[13px] transition-all hover:-translate-y-px hover:border-[#6C5CE7] hover:shadow-md"
-            style={{ borderColor: TUNING_COLORS.hairline, color: TUNING_COLORS.ink }}
+            onClick={() => onPick(s.body)}
+            className="group rounded-xl border bg-white px-4 py-3 text-left transition-all hover:-translate-y-px hover:border-[#6C5CE7] hover:shadow-md"
+            style={{ borderColor: TUNING_COLORS.hairline }}
           >
-            {s}
+            <div
+              className="text-[13px] font-semibold leading-tight group-hover:text-[#6C5CE7]"
+              style={{ color: TUNING_COLORS.ink }}
+            >
+              {s.title}
+            </div>
+            <div className="mt-1 text-[12px] leading-snug" style={{ color: TUNING_COLORS.inkMuted }}>
+              {s.body}
+            </div>
           </button>
         ))}
       </div>

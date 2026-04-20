@@ -57,6 +57,9 @@ frontend/
 | translation.service.ts | Feature 042 — inbound message translation to English (cached on Message.contentTranslationEn). Provider-abstracted (TranslationProvider interface) for easy swap. |
 | reply-template.service.ts | Feature 043 — render tenant-editable approval/rejection templates with {GUEST_FIRST_NAME}, {REQUESTED_TIME}, {PROPERTY_NAME}, {CHECK_IN_TIME}, {CHECK_OUT_TIME} substitution. Falls back to system defaults in config/reply-template-defaults.ts. |
 | scheduled-time.service.ts | Feature 043 — policy evaluator + auto-accept applier for late-checkout/early-check-in time requests. Within-threshold → auto-approve, send template, write Reservation.scheduledCheckInAt/Out, resolved Task + TaskActionLog. Outside threshold → falls through to manual escalation path. |
+| tenant-state.service.ts | Feature 045 — GREENFIELD/BROWNFIELD detection + interview-progress summary read from `session/{conversationId}/slot/*` memory keys. Called every BUILD turn by build-controller.ts to populate the system-prompt `<tenant_state>` and `<interview_progress>` blocks. |
+| build-tune-agent/preview/test-pipeline-runner.ts | Feature 045 — single-message dry-run of the tenant's reply pipeline for the `test_pipeline` tool. Reuses the real system prompt + SOP/FAQ context, but bypasses all 60s/5-min caches so freshly-written artifacts are visible immediately. Never hits Hostaway, never writes messages. |
+| build-tune-agent/preview/test-judge.ts | Feature 045 — Sonnet 4.6 cross-family judge for `test_pipeline`. Version-stamped prompt (returned as `judgePromptVersion`) lets a regression surface as a score drift, not a silent judge change. Cross-family (Sonnet grading GPT-5.4 output) sidesteps self-enhancement bias. |
 
 ## AI Pipeline Flow
 ```
