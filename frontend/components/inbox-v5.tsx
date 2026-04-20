@@ -116,6 +116,7 @@ import FaqV5 from '@/components/faq-v5'
 // placeholder below.
 import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { StudioSurface } from '@/components/studio'
 import { getActionCardFor } from '@/components/actions/action-card-registry'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
@@ -149,7 +150,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs' | 'tuning' | 'build'
+type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs' | 'tuning' | 'build' | 'studio'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today' | 'expired'
 
 interface Message {
@@ -1464,9 +1465,11 @@ export default function InboxV5() {
       // Feature 041 sprint 09 fix 13: the tuning /agent page deep-links to
       // /?tab=sops|faqs|tools. Honor the URL query first, fall back to
       // sessionStorage so other places preserve their last-tab behavior.
+      // Sprint 046 Session C — 'studio' is a hash-state tab that replaces
+      // the top-level /build and /tuning routes.
       const validTabs = [
         'overview','inbox','calendar','analytics','tasks','settings','configure',
-        'logs','webhooks','sops','tools','sandbox','listings','faqs','tuning',
+        'logs','webhooks','sops','tools','sandbox','listings','faqs','tuning','studio',
       ] as const
       const params = new URLSearchParams(window.location.search)
       const urlTab = params.get('tab')
@@ -1476,9 +1479,40 @@ export default function InboxV5() {
     }
     return 'inbox'
   })
+  const [studioConversationId, setStudioConversationId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    const params = new URLSearchParams(window.location.search)
+    return params.get('conversationId')
+  })
   const setNavTab = useCallback((tab: NavTab) => {
     setNavTabRaw(tab)
     try { sessionStorage.setItem('gp-nav-tab', tab) } catch {}
+    // Sprint 046 Session C — URL sync for Studio (hash-state tab). We use
+    // replaceState (not push) so the browser back button doesn't trap in
+    // tab-cycling. Non-studio tabs clear the studio conversationId from
+    // the URL to avoid stale deep-links.
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href)
+        if (tab === 'studio') {
+          url.searchParams.set('tab', 'studio')
+        } else {
+          url.searchParams.delete('tab')
+          url.searchParams.delete('conversationId')
+        }
+        window.history.replaceState({}, '', url.toString())
+      } catch {}
+    }
+  }, [])
+  const updateStudioConversationId = useCallback((id: string | null) => {
+    setStudioConversationId(id)
+    if (typeof window === 'undefined') return
+    try {
+      const url = new URL(window.location.href)
+      if (id) url.searchParams.set('conversationId', id)
+      else url.searchParams.delete('conversationId')
+      window.history.replaceState({}, '', url.toString())
+    } catch {}
   }, [])
   const navRef = useRef<HTMLElement>(null)
   const [lampStyle, setLampStyle] = useState({ left: 0, width: 0, ready: false })
@@ -3129,8 +3163,9 @@ export default function InboxV5() {
             /* OPUS tab removed — 014-openai-migration */
             { id: 'listings', label: 'Listings' },
             { id: 'faqs', label: 'FAQs' },
-            { id: 'tuning', label: 'Tuning' }, // Feature 040: Copilot Shadow Mode review surface
-            { id: 'build', label: 'Build' }, // Feature 045: BUILD-mode agent (/build route; ENABLE_BUILD_MODE-gated on backend)
+            // Sprint 046 Session C — 'Studio' replaces the separate Tuning + Build tabs.
+            // Old /build and /tuning routes 302 to /?tab=studio via the redirect stubs.
+            { id: 'studio', label: 'Studio' },
             /* SOP Monitor tab removed */
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
@@ -3138,7 +3173,6 @@ export default function InboxV5() {
             key={tab.id}
             data-tab={tab.id}
             onClick={() => {
-              if (tab.id === 'build') { router.push('/build'); return }
               setNavTab(tab.id)
             }}
             style={{
@@ -4638,13 +4672,15 @@ export default function InboxV5() {
                                         anchorMessageId: msg.id,
                                         triggerType: 'MANUAL',
                                       })
-                                      router.push(`/tuning?conversationId=${conversation.id}`)
+                                      // Sprint 046 Session C — in-place tab switch instead of route transition.
+                                      updateStudioConversationId(conversation.id)
+                                      setNavTab('studio')
                                     } catch (err) {
                                       console.error('[DiscussInTuning] failed:', err)
                                     }
                                   }}
-                                  title="Open a tuning chat anchored to this message"
-                                  aria-label="Discuss this message in tuning"
+                                  title="Open a Studio chat anchored to this message"
+                                  aria-label="Discuss this message in Studio"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -5759,32 +5795,26 @@ export default function InboxV5() {
         </div>
         </ErrorBoundary>
       )}
-      {/* Feature 041 sprint 03: tuning surface lives at /tuning. The inbox tab
-          link redirects there so the existing nav stays intact. */}
+      {/* Sprint 046 Session C — legacy 'tuning' navTab forwards to Studio.
+          The separate /tuning/build routes ship as 302 stubs this sprint
+          (deleted next sprint); the in-app tab simply renders Studio. */}
       {navTab === 'tuning' && (
         <ErrorBoundary>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 24 }}>
-          <div style={{
-            maxWidth: 560, margin: '48px auto', padding: 24,
-            border: '1px solid var(--color-border, #e5e7eb)', borderRadius: 12,
-            background: 'var(--color-surface, #fff)',
-          }}>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Tuning</h2>
-            <p style={{ margin: '0 0 16px', color: 'var(--color-text-muted, #6b7280)', lineHeight: 1.5 }}>
-              The conversational tuning surface is its own page now.
-            </p>
-            <a
-              href="/tuning"
-              style={{
-                display: 'inline-block', padding: '8px 14px', borderRadius: 8,
-                background: '#1E3A8A', color: '#fff', textDecoration: 'none',
-                fontSize: 14, fontWeight: 500,
-              }}
-            >
-              Open /tuning →
-            </a>
-          </div>
-        </div>
+          <StudioSurface
+            conversationId={studioConversationId}
+            onConversationChange={updateStudioConversationId}
+          />
+        </ErrorBoundary>
+      )}
+
+      {/* Sprint 046 Session C — Studio tab. Hash-state (plan §3.4), no
+          router push, three-pane surface mounted inline. */}
+      {navTab === 'studio' && (
+        <ErrorBoundary>
+          <StudioSurface
+            conversationId={studioConversationId}
+            onConversationChange={updateStudioConversationId}
+          />
         </ErrorBoundary>
       )}
 

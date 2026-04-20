@@ -512,3 +512,105 @@ tools we're now well above it).
   `sandbox-chat-v5.tsx`, `tools-v5.tsx` remain unchanged. These
   predate sprint 046 (flagged at sprint 045 session 5 close) and
   don't affect any Studio component compilation.
+
+## Sprint 046 — Session C (Phase C: shell merge)
+
+Completed: 2026-04-21. Branch: `feat/046-studio-unification` (continued
+from Session B; no new branch).
+
+| Gate | Item | Status | Notes |
+|------|------|--------|-------|
+| C1   | `inbox-v5.tsx` `navTab='studio'` + URL sync | ✅ | `'studio'` added to NavTab union + validTabs list; new tab-strip button replaces the separate Tuning + Build entries. `studioConversationId` state plus `updateStudioConversationId` helper sync `?tab=studio&conversationId=…` via `history.replaceState` (plan §3.4 — hash-state, not route push). The inbox-internal `router.push('/tuning?conversationId=…')` at the old line 4641 is now `updateStudioConversationId(id); setNavTab('studio')`. |
+| C2   | `studio-chat.tsx` + `StandalonePart` switch | ✅ | New `frontend/components/studio/studio-chat.tsx`. Plain hairline-separated rows (no rounded-2xl bubbles), flat `#0A0A0A` ink send button, `ReasoningLine` replaces the chevron accordion. `StandalonePart` covers every `DATA_PART_TYPES` entry (`data-build-plan`, `data-test-pipeline-result`, `data-state-snapshot`, `data-suggested-fix`, `data-question-choices`, `data-audit-report`, `data-advisory`, `data-agent-disabled`, `data-suggestion-preview`). Unknown parts render a muted "(unsupported card: <type>)" line. Accept/reject wired via `apiAcceptSuggestedFix` / `apiRejectSuggestedFix`. |
+| C3   | `<StudioSurface/>` three-pane layout | ✅ | New `frontend/components/studio/studio-surface.tsx`: left rail (240px) lists recent Studio conversations via `apiListTuningConversations`; centre pane hosts `StudioChat`; right rail (320px) renders `StateSnapshotCard` fed by the Session-A forced-first-turn `data-state-snapshot` part (with a fallback derived from `/api/build/tenant-state` until the agent's first turn fires). Composer uses the flat ink button — no gradient anywhere in chrome. |
+| C4   | `plan-checklist.tsx` re-palette + target chip + previewDiff disclosure | ✅ | Every import swapped from `../tuning/tokens` → `../studio/tokens`; category-pastel pills retained per plan §3.3 decision #3. Each plan row renders a monospace `target` chip from `target.sectionId/slotKey/lineRange/artifactId` and a "Preview diff" `<details>`-style disclosure (collapsed by default) bound to `previewDiff.before/after`. Ink primary button replaces the old gradient accent on Approve. |
+| C5   | Old-route 302 redirects | ✅ | `frontend/app/build/page.tsx`, `frontend/app/tuning/page.tsx`, and `frontend/app/tuning/agent/page.tsx` are now thin redirect stubs that `router.replace('/?tab=studio[&conversationId=…]')`. All three smoke-tested via fetch — served 200 with the new "Redirecting to Studio…" body. Deletion of the stubs tracked in Sprint 047 (one-sprint courtesy). |
+| C6   | Accept/reject suggested-fix endpoints | ✅ | `POST /api/build/suggested-fix/:fixId/{accept,reject}` live. Thin proxies per plan §6 — if the `fixId` matches a `TuningSuggestion` row the response flags `appliedVia: 'suggestion_action'`; otherwise returns a 200 `no-op-stub` so the ephemeral `preview:*` ids from `propose_suggestion` settle the card without a 500. Both routes 404 under the existing `ENABLE_BUILD_MODE` gate. Real rejection-memory writes land in Session D. |
+| C7   | Full suite green + `tsc --noEmit` clean + inbox smoke | ✅ | Backend `build-tune-agent/**` 175/175 green (was 161 — delta includes test-grouping + session-B test additions already on main). `src/__tests__/integration/*.test.ts` 9/9 green. `tests/integration/build-e2e.test.ts` 3/3 plumbing green (1 live test skipped, env-gated). Backend `tsc --noEmit` clean. Frontend `tsc --noEmit` — 32 error lines (identical to pre-session-C baseline); zero new errors in `components/studio/*`, `components/build/plan-checklist.tsx`, `app/build/**`, `app/tuning/**`, or Studio-related inbox-v5 additions. Smoke: `/`, `/build`, `/tuning`, `/tuning/agent` all serve 200; old routes serve the new redirect body. |
+| C8   | PROGRESS.md updated + NEXT.md for Session D | ✅ | This section + `NEXT.md` rewritten for Session D. Session C's NEXT archived as `NEXT.sprint-046-session-c.archive.md`. |
+
+### Cache baselines (post-Session C)
+
+Pure frontend + two thin proxy endpoints this session — no system-prompt
+edits, no tool-registration changes. Cache baselines unchanged from
+Session B close (Region A 3,541 tokens, TUNE cacheable 4,317, BUILD
+cacheable 4,891, tools-only 3,072). No drift to investigate.
+
+### Decisions made this session
+
+- **Legacy `tuning` navTab forwards to Studio.** The old in-inbox
+  `navTab === 'tuning'` placeholder used to render a "Open /tuning →"
+  link-card. That's now a no-op dead-end (the /tuning route is a
+  redirect stub). Rendering `<StudioSurface/>` when `navTab` happens to
+  be `'tuning'` keeps legacy sessionStorage values working — a user
+  whose last visit was on sprint 045 won't land on a broken tab after
+  deploying Session C.
+- **URL sync clears `conversationId` on non-studio tabs.** Switching
+  away from Studio strips both `?tab=` and `?conversationId=` from the
+  URL so a subsequent refresh doesn't bounce the user back to Studio
+  via the mount-time parser. Only Studio writes the `tab=studio` query.
+- **`data-test-pipeline-result` rendered both inline and in the right
+  rail.** `/build`'s preview pane was a dedicated 440px column; Studio
+  collapses that into a compact "Recent test" chip in the right rail
+  (first result only, truncated). The full card still renders inline
+  in the chat so the manager has it next to the conversation that
+  produced it. Simpler layout than `/build`, same information density.
+- **Accept/reject as no-op-stub when `fixId` doesn't match a row.**
+  `propose_suggestion` emits `id: previewId` (`preview:<ts>:<rand>`),
+  not a TuningSuggestion PK. Surfacing a 404 on every Studio accept
+  would block the card from settling into its "accepted" state. The
+  stub returns OK + `appliedVia: 'no-op-stub'` so the card UX works
+  today; Session D adds the actual write (rejection memory + real
+  apply proxying into `suggestion_action`).
+- **Left rail Pending tab deferred.** Plan §7 left the Pending-
+  suggestions queue (from `/tuning`) as an optional left-rail tab
+  switch. Session C ships Conversations only; Pending moves to Session
+  D once the suggested-fix accept/reject writes exist to retire rows
+  from the queue cleanly.
+- **Kept `components/build/build-chat.tsx` in tree.** Not imported
+  by any route post-redirect but not deleted — Session D retires it
+  alongside the legacy `data-suggestion-preview` and the
+  tuning-tokens re-export shim. Zero-risk split: Session C moves
+  traffic, Session D cleans up dead code.
+
+### Deferred to next session
+
+- 48h cooldown removal from `hooks/pre-tool-use.ts` + constant
+  deletion from `hooks/shared.ts` → Session D.
+- `data-advisory` recent-edit soft warning wiring (the card renderer
+  already exists; the emitter does not) → Session D.
+- Session-scoped rejection memory (`session/{conv}/rejected/{hash}`)
+  + agent instruction to consult the memory before emitting a new
+  suggested_fix → Session D.
+- Output-linter drop-not-log flip (stays log-only this session) →
+  Session D.
+- Delete `backend/src/tuning-agent/index.ts` shim → Session D.
+- Retire legacy `data-suggestion-preview` part (both emitter in
+  `propose-suggestion.ts` and the frontend no-op branch) → Session D.
+- Delete `frontend/components/tuning/tokens.ts` re-export shim
+  (currently untouched — Studio imports `components/studio/tokens.ts`
+  directly, but legacy tuning components still import the old token
+  module) → Session D.
+- Admin-only `BuildToolCallLog` trace view → Session D.
+- Delete `frontend/components/build/build-chat.tsx` (orphaned once
+  Session C lands) → Session D.
+- Delete legacy `/build` page bodies entirely (currently just stubs)
+  → Session 047.
+
+### Blocked / surfaced
+
+- Inbox smoke was restricted to unauthenticated route checks —
+  `/login` page serves, `/build|/tuning|/tuning/agent` all serve the
+  new redirect stubs, root `/` serves 200. Full Studio tab render
+  behind the auth gate could not be exercised without a real JWT in
+  this session environment; backend test coverage + component-level
+  tsc clean was relied on instead. Flag: first post-deploy login on
+  staging should verify the tab renders and the state-snapshot card
+  populates on the agent's first turn.
+- `router.push('/tuning')` calls in
+  `frontend/components/tuning/quickstart.tsx` (line 93) and
+  `frontend/app/tuning/sessions/page.tsx` (line 399) remain. These
+  hit the 302 stub (so they still land users in Studio correctly) but
+  would be cleaner as in-place tab switches if they ever move back
+  inside the main app shell. Out of scope for Session C; Session D
+  can rewrite them if it touches the files.

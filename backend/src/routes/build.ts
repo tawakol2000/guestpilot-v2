@@ -42,6 +42,13 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.post('/turn', (req: any, res) => ctl.turn(req, res));
   router.post('/plan/:id/approve', (req: any, res) => ctl.approvePlan(req, res));
   router.post('/plan/:id/rollback', (req: any, res) => ctl.rollbackPlan(req, res));
+  // Sprint 046 Session C — thin accept/reject proxies for Studio cards.
+  router.post('/suggested-fix/:fixId/accept', (req: any, res) =>
+    ctl.acceptSuggestedFix(req, res)
+  );
+  router.post('/suggested-fix/:fixId/reject', (req: any, res) =>
+    ctl.rejectSuggestedFix(req, res)
+  );
 
   return router;
 }

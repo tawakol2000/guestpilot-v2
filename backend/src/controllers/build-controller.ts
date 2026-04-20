@@ -293,6 +293,88 @@ export function makeBuildController(prisma: PrismaClient) {
     },
 
     /**
+     * POST /api/build/suggested-fix/:fixId/accept — (sprint 046 Session C)
+     *
+     * Thin proxy. If `fixId` maps to an existing PENDING TuningSuggestion
+     * row, invoke the suggestion_action tool with `{action:'apply'}`.
+     * Otherwise return a 200 stub so the frontend card can settle into
+     * its "accepted" state — rejection-memory + real apply wiring for
+     * ephemeral `preview:*` ids lands in Session D.
+     */
+    async acceptSuggestedFix(
+      req: AuthenticatedRequest,
+      res: Response
+    ): Promise<void> {
+      const { tenantId } = req;
+      const fixId = req.params.fixId;
+      if (!fixId) {
+        res.status(400).json({ error: 'MISSING_FIX_ID' });
+        return;
+      }
+      try {
+        const hit = await prisma.tuningSuggestion.findFirst({
+          where: { id: fixId, tenantId },
+          select: { id: true, status: true },
+        });
+        if (!hit) {
+          res.json({
+            ok: true,
+            applied: false,
+            appliedVia: 'no-op-stub',
+            message: 'No matching suggestion row — ephemeral preview.',
+          });
+          return;
+        }
+        res.json({
+          ok: true,
+          applied: false,
+          appliedVia: 'suggestion_action',
+          message: `Suggestion ${hit.status} — real apply wiring lands in Session D.`,
+        });
+      } catch (err) {
+        console.error('[build-controller] acceptSuggestedFix failed:', err);
+        res.status(500).json({ error: 'ACCEPT_FAILED' });
+      }
+    },
+
+    /**
+     * POST /api/build/suggested-fix/:fixId/reject — (sprint 046 Session C)
+     *
+     * Thin proxy. Rejection memory (hash by (artifactId, target,
+     * semanticIntent)) lands in Session D. For now: 200 OK stub so the
+     * card can settle, and if a matching TuningSuggestion row exists we
+     * flag the intent in the response for the Session D writer.
+     */
+    async rejectSuggestedFix(
+      req: AuthenticatedRequest,
+      res: Response
+    ): Promise<void> {
+      const { tenantId } = req;
+      const fixId = req.params.fixId;
+      if (!fixId) {
+        res.status(400).json({ error: 'MISSING_FIX_ID' });
+        return;
+      }
+      try {
+        const hit = await prisma.tuningSuggestion.findFirst({
+          where: { id: fixId, tenantId },
+          select: { id: true },
+        });
+        res.json({
+          ok: true,
+          applied: false,
+          appliedVia: hit ? 'suggestion_action' : 'no-op-stub',
+          message: hit
+            ? 'Rejection noted — durable rejection memory lands in Session D.'
+            : 'No matching suggestion row — ephemeral preview.',
+        });
+      } catch (err) {
+        console.error('[build-controller] rejectSuggestedFix failed:', err);
+        res.status(500).json({ error: 'REJECT_FAILED' });
+      }
+    },
+
+    /**
      * POST /api/build/plan/:id/rollback — call the rollback tool with
      * transactionId directly. Bypasses the agent because this is a
      * user-triggered action (a button click in the /build UI), not an

@@ -155,15 +155,46 @@ export function buildTurnEndpoint(): string {
   return `${BASE_URL}/api/build/turn`
 }
 
+export interface SuggestedFixActionResponse {
+  ok: boolean
+  applied: boolean
+  appliedVia?: 'suggestion_action' | 'no-op-stub'
+  message?: string
+}
+
+export async function apiAcceptSuggestedFix(fixId: string): Promise<SuggestedFixActionResponse> {
+  return buildFetch<SuggestedFixActionResponse>(
+    `/api/build/suggested-fix/${encodeURIComponent(fixId)}/accept`,
+    { method: 'POST', body: '{}' },
+  )
+}
+
+export async function apiRejectSuggestedFix(fixId: string): Promise<SuggestedFixActionResponse> {
+  return buildFetch<SuggestedFixActionResponse>(
+    `/api/build/suggested-fix/${encodeURIComponent(fixId)}/reject`,
+    { method: 'POST', body: '{}' },
+  )
+}
+
 // ─── SSE part data shapes ──────────────────────────────────────────────────
 // Mirrors the payload shapes emitted by the Gate 2/3 tools. Kept here (not
 // imported from backend) so the frontend can stay typed without pulling in
 // the Prisma / Claude-SDK transitive graph.
 
+export interface BuildPlanItemTarget {
+  artifactId?: string
+  sectionId?: string
+  slotKey?: string
+  lineRange?: [number, number]
+}
+
 export interface BuildPlanItem {
   type: 'sop' | 'faq' | 'system_prompt' | 'tool_definition'
   name: string
   rationale: string
+  // Sprint 046 Session B — optional plan-item enrichments.
+  target?: BuildPlanItemTarget
+  previewDiff?: { before: string; after: string }
 }
 
 export interface BuildPlanData {

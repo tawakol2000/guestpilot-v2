@@ -23,6 +23,12 @@ export type {
 export { ReasoningLine } from './reasoning-line'
 export type { ReasoningLineProps } from './reasoning-line'
 
+export { StudioChat } from './studio-chat'
+export type { StudioChatProps } from './studio-chat'
+
+export { StudioSurface } from './studio-surface'
+export type { StudioSurfaceProps } from './studio-surface'
+
 export {
   STUDIO_COLORS,
   STUDIO_CATEGORY_STYLES,
