@@ -1,7 +1,11 @@
 node_modules/
 .next/
 dist/
-build/
+# Only ignore top-level build/ (bundler output). Feature modules named
+# "build" (e.g. frontend/components/build/) must be tracked — sprint 045
+# introduced the /build tuning-surface directory.
+/build/
+backend/build/
 .env
 .env.*
 !.env.example

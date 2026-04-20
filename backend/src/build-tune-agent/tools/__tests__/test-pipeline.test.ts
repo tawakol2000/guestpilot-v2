@@ -156,10 +156,11 @@ test('test_pipeline: propagates testContext to runner', async () => {
     testMessage: 'When can I check in?',
     testContext: { reservationStatus: 'INQUIRY', channel: 'AIRBNB' },
   });
-  assert.ok(captured);
-  assert.equal(captured!.context?.reservationStatus, 'INQUIRY');
-  assert.equal(captured!.context?.channel, 'AIRBNB');
-  assert.equal(captured!.tenantId, 't1');
+  if (!captured) throw new Error('runner was not invoked');
+  const capturedDry: RunPipelineDryInput = captured;
+  assert.equal(capturedDry.context?.reservationStatus, 'INQUIRY');
+  assert.equal(capturedDry.context?.channel, 'AIRBNB');
+  assert.equal(capturedDry.tenantId, 't1');
 });
 
 test('test_pipeline: runner failure returns structured error (not throw)', async () => {
@@ -202,7 +203,8 @@ test('test_pipeline: judge rationale reaches the payload', async () => {
   assert.equal(parsed.judgeFailureCategory, 'missing-sop-reference');
   assert.equal(parsed.judgeRationale, 'Reply ignored the wifi SOP.');
   // Judge received the pipeline's generated reply + context.
-  assert.ok(captured);
-  assert.equal(captured!.guestMessage, "what's the wifi password?");
-  assert.match(captured!.tenantContext, /System prompt/);
+  if (!captured) throw new Error('judge was not invoked');
+  const capturedJudge: TestJudgeInput = captured;
+  assert.equal(capturedJudge.guestMessage, "what's the wifi password?");
+  assert.match(capturedJudge.tenantContext, /System prompt/);
 });

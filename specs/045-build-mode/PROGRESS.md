@@ -33,8 +33,8 @@ through as many gates as it can, updates this doc, and hands off via
 | 3    | `test_pipeline` tool (re-scoped from preview subsystem) | ✅ | Sonnet-4.6 judge + dry pipeline runner + bypassCache flag. Batch subsystem deferred to sprint 047+ (see MASTER_PLAN.md). |
 | 4    | `generic-hospitality-seed.md`          | ✅ | 20 slots, fully-filled render = 2,494 tokens (within 1,500–2,500). `templates/index.ts` exports `GENERIC_HOSPITALITY_SEED`, `GENERIC_HOSPITALITY_SEED_VERSION`, `loadSeed()`, `renderSeed()`. `template.test.ts` (9 tests) locks slot-key alignment with write_system_prompt's constants, default-marker presence, and the token-range guard. |
 | 5    | Backend `/api/build/*`                 | ✅ | `services/tenant-state.service.ts` (getTenantStateSummary + getInterviewProgressSummary), `controllers/build-controller.ts` (4 handlers), `routes/build.ts` (router with ENABLE_BUILD_MODE hard 404 gate before auth), mounted in `app.ts`. `build-controller.integration.test.ts` (5 cases) green. Schema: `BuildTransaction` gained `approvedByUserId String?` + `approvedAt DateTime?` columns; pushed via `prisma db push`. |
-| 6    | Frontend `/build` page                 | ⏳ session 5 | 3-pane layout, tuning tokens palette. |
-| 7    | End-to-end test + final handoff        | ⏳ session 5 | |
+| 6    | Frontend `/build` page                 | ✅ | 3-pane layout matching `ui-mockup.html` at 1440×900. New files under `frontend/lib/build-api.ts`, `frontend/components/build/*`, `frontend/app/build/{layout,page}.tsx`. Palette inherited verbatim from `components/tuning/tokens.ts`. BROWNFIELD + disabled-gate verified live; GREENFIELD branch code-verified (trivial isGreenfield switch). |
+| 7    | End-to-end test + final handoff        | ⏳ session 6 | Includes fresh-tenant GREENFIELD walk-through + Langfuse trace + PR wrap. |
 
 ## Decisions made this sprint (explicitly out of spec scope)
 
@@ -170,6 +170,50 @@ through as many gates as it can, updates this doc, and hands off via
   - ENABLE_BUILD_MODE remains off in `.env.example` and any config
     defaults; only flipped on locally for the integration-test run.
     NEXT.md rewritten for session 5 (Gate 6 frontend + Gate 7 E2E).
+- 2026-04-20 — **Session 5 close.** Gate 6 complete. Frontend `/build` page
+  ships with a 3-pane layout (activity bar 56px / left rail 288px /
+  chat flex / preview 440px) that mirrors `ui-mockup.html` at desktop
+  widths. Files added:
+  - `frontend/lib/build-api.ts` — typed fetch client for `/api/build/*`
+    endpoints, plus SSE part data shapes (`BuildPlanData`,
+    `TestPipelineResultData`). Surfaces a typed `BuildModeDisabledError`
+    on 404 so the page can render the hard-gate screen.
+  - `frontend/components/build/*` — 8 components:
+    `tenant-state-banner.tsx` (GREENFIELD/BROWNFIELD banner),
+    `plan-checklist.tsx` (renders `data-build-plan` SSE parts, calls
+    `approve` + `rollback`), `test-pipeline-result.tsx` (renders
+    `data-test-pipeline-result` in the preview panel; <0.7 judge score
+    gets a warning-colored treatment), `setup-progress.tsx` (counts
+    widget — SOPs/FAQs/tools/properties), `transaction-history.tsx`
+    (shows the last `BuildTransaction` with a Roll-back button),
+    `propagation-banner.tsx` (60s notice after approval),
+    `build-disabled.tsx` (the "not enabled" screen), `build-chat.tsx`
+    (Vercel-AI-SDK chat surface adapted from `components/tuning/chat-panel.tsx`).
+  - `frontend/app/build/{layout,page}.tsx` — page shell with auth gate,
+    tenant-state bootstrap, TuningConversation reuse via URL
+    `conversationId` param, and the 3-pane grid.
+  Verified live against the prod Railway database with a minted JWT:
+  BROWNFIELD (`ab.tawakol@gmail.com` tenant → 23 SOPs / 74 FAQs / 0
+  custom tools / 20 properties) renders the brownfield banner +
+  Setup Progress counts + empty transaction history + empty preview
+  panel. Disabled state renders the lock-card screen after removing
+  `ENABLE_BUILD_MODE` from local `.env`. GREENFIELD branch code-verified
+  (symmetric `state.isGreenfield` branch in `TenantStateBanner` + empty
+  hero in `BuildChat`); full wet-test of a fresh-tenant GREENFIELD
+  walk-through is deferred to Gate 7.
+  - **Incidental bug fix (Railway deploy unblocked).**
+    `backend/src/build-tune-agent/tools/__tests__/test-pipeline.test.ts`
+    had `assert.ok(captured); captured!.context` patterns that TypeScript
+    5.x narrowed to `never` because `captured` is assigned inside a
+    closure — `tsc` was treating it as strictly `null`. Railway's
+    `npm run build` picked this up (local `npx tsc` reproduces), blocking
+    the deploy. Replaced the pattern with an explicit `if (!captured)
+    throw` guard + `const capturedDry: RunPipelineDryInput = captured`
+    type rebind. Seven-test file still passes.
+  - `ENABLE_BUILD_MODE` flipped on locally with `JWT_SECRET=test` +
+    `OPENAI_API_KEY=sk-test` for the smoke run, then fully reverted
+    before the session close. `.env` is back to its starting state
+    (single `DATABASE_URL=…` line). Production defaults untouched.
 - 2026-04-19 — **Session 3 close.** Gate 3 complete. `test_pipeline`
   tool shipped with Sonnet-4.6 grader, dry pipeline runner, per-turn
   hasRunThisTurn guard, and a BUILD-only `bypassCache` flag on
