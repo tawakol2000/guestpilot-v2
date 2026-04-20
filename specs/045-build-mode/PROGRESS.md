@@ -72,6 +72,27 @@ through as many gates as it can, updates this doc, and hands off via
   | BUILD cacheable (A + addendum)| 14,991  | 3,748       |
   | Tools array only (14 tools)   |  9,594  | 2,399       |
 
+  **Refinement-pass update (2026-04-20, session 8).** Purged
+  `preview_ai_response` from the system prompt in four places (two TOOLS_DOC
+  allow-list mentions, one full tool entry, one BUILD addendum orchestration
+  block) and replaced with `test_pipeline` semantics. Cache-stability
+  baselines re-recorded:
+
+  | Slice                         | Chars   | Est. tokens | Δ vs session 3 |
+  |-------------------------------|---------|-------------|----------------|
+  | Region A (shared prefix)      | 11,653  | 2,914       | +231 / +58     |
+  | TUNE cacheable (A + addendum) | 14,131  | 3,533       | +231 / +58     |
+  | BUILD cacheable (A + addendum)| 16,226  | 4,057       | +1,235 / +309  |
+  | Tools array only (14 tools)   |  9,594  | 2,399       | 0              |
+
+  BUILD cacheable grew more than TUNE because the BUILD addendum's
+  orchestration block was the longest stale passage; the replacement says
+  the same thing with less inline jargon but adds a sentence on the
+  once-per-turn guard, the failure-leading rationale, and the explicit
+  deferral of batch eval. All four slices still comfortably clear the
+  2,048-token Sonnet 4.5/4.6 minimum. Tools array is unchanged — tool
+  descriptions live in individual tool files, not in the system prompt.
+
   **Threshold bumped 1024 → 2048.** Sonnet 4.5/4.6 require ≥2048 tokens
   for an independent cached layer; the older 1024-token floor applies
   to earlier Sonnet/Opus families we no longer target. All three
@@ -238,3 +259,79 @@ through as many gates as it can, updates this doc, and hands off via
   `src/__tests__/integration` 9/9 green; backend `tsc --noEmit`
   clean. Sprint 045 is closed — next session picks up on sprint 046
   backlog in `NEXT.md`.
+- 2026-04-20 — **Session 7 close — refinement pass.** Driven by the
+  23-finding audit in `refinement-discovery.md`. Four commits on
+  `feat/045-build-mode` addressing the ship-blocker + demo-UX buckets;
+  PR + production flip remain gated on the user's sign-off.
+
+  - **Critical correctness (`fix(045)`, 918ca71).** A1 + B1/C3 + B5.
+    Purged `preview_ai_response` from the system prompt in four places;
+    replaced with `test_pipeline` semantics and added a unit test asserting
+    neither mode's rendered prompt ever mentions the retired tool again.
+    Closed the `BuildTransaction` state machine: added
+    `finalizeBuildTransactionIfComplete` (EXECUTING → COMPLETED on
+    last-child-write) and `markBuildTransactionPartial` (EXECUTING →
+    PARTIAL on any post-validation failure, with a diagnostic stamp
+    appended to `rationale`). Wired both into all four create_* tools.
+    8 new state-machine tests cover the PLANNED → EXECUTING →
+    {COMPLETED | PARTIAL} → ROLLED_BACK lattice. Threaded `bypassCache`
+    through `getSopContent` via a new `GetSopContentOptions` arg so
+    `test_pipeline`'s dry run sees freshly-written SOPs (previously the
+    5-min cache hid them — R4 mitigation was silently broken).
+  - **UX polish (`feat(045)`, a4e9cb2).** E1 + loading + toasts.
+    `window.confirm` replaced with a `ConfirmRollbackDialog` in both
+    `transaction-history` and `plan-checklist`; the body dynamically
+    lists what will be reverted (e.g. "This will remove 2 SOPs and 1 FAQ
+    added in tx_abcd1234…"). Built on the existing
+    `@radix-ui/react-dialog` primitive — no new dependency. Added
+    `BuildPageSkeleton` (shimmer that mirrors the 3-pane grid so there's
+    no layout shift on data arrival) and extended the chat
+    TypingIndicator to the `submitted` state so slow cold-starts don't
+    show an unexplained pause. Introduced a Sonner toaster scoped to
+    `/build` and a `withBuildToast` wrapper around build-api failures
+    (404 BUILD_MODE_DISABLED path deliberately stays silent — it renders
+    the disabled screen instead). Empty-state fallback text for
+    `judgeRationale`.
+  - **Copy + layout pass (`polish(045)`, dfee2b5 + b8c6950).** A full
+    UX pass after user feedback that colour audits weren't the real
+    gap — layout, design, and flow were. Outcome: (1) greeting
+    duplication collapsed — ChatHead subtitle + TenantStateBanner +
+    BuildHero had all been announcing greenfield/brownfield state at
+    once; folded the stats into the header as a right-aligned compact
+    bar (Properties · Artifacts), retired the separate TenantStateBanner
+    entirely, and left BuildHero as the single place the greeting
+    lives; (2) left rail order flipped to put "Recent changes" (active
+    tx + rollback) above "Your setup" (static counts) — usefulness
+    first; (3) preview pane header dropped the useless "Preview /"
+    breadcrumb and now says "Test pipeline · independent judge grades
+    each reply" so a first-time user understands the affordance at a
+    glance; (4) PropagationBanner moved out of the preview pane into
+    the main chat column (it's a chat-level event, not a test-result
+    artifact); (5) "New" button switched from `<a href>` full-reload to
+    a real `<button>` + `location.assign` with proper button semantics;
+    (6) BuildHero rework — suggestion cards now have tight title + body
+    pairs (scan-then-choose) instead of one long sentence each.
+  - **Docs (`docs`, in this commit).** CLAUDE.md "Key Services" table
+    gained `tenant-state.service.ts`, `test-pipeline-runner.ts`, and
+    `test-judge.ts` entries for the sprint-045 surface. PROGRESS.md
+    Decisions section updated with new token baselines (tune_cacheable
+    3,533 / build_cacheable 4,057 / shared 2,914 / tools_only 2,399 —
+    all still above the 2,048-token floor).
+  - **Screenshots deferred.** `refinement-screenshots/` contains two
+    captures (error-toast + login-redirect) taken during the session.
+    The remaining seven demo-ready states (brownfield landing,
+    interview mid-turn, plan checklist populated, test pipeline result,
+    transaction history populated, rollback modal, disabled screen)
+    require either a live backend with sprint 045 deployed + a real
+    tenant's JWT, or a fully-mocked dev env with a test-tenant fixture
+    in the database. The local-against-prod-DB path failed on FK
+    constraint violations when the fake `TEST_SCREENSHOT_ONLY` tenant
+    tried to own a TuningConversation. Deferred to a follow-up when the
+    branch is deployed to staging and a real tenant is available.
+
+  Test gates at every commit: backend `tsc --noEmit` clean;
+  `src/build-tune-agent/__tests__/*.test.ts` +
+  `src/build-tune-agent/tools/__tests__/*.test.ts` collectively 114/114
+  green (was 106 → build-transaction.test.ts +8); frontend
+  `next build` clean (pre-existing type errors in inbox-v5 /
+  sandbox-chat-v5 / tools-v5 are unchanged and out of scope).
