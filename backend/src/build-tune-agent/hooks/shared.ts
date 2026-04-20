@@ -38,8 +38,14 @@ export interface HookContext {
   toolCallStartTimes: Map<string, number>;
 }
 
-/** 48 hours in ms — mirrors sprint-02's cooldown constant. */
-export const COOLDOWN_WINDOW_MS = 48 * 60 * 60 * 1000;
+/**
+ * 48 hours in ms — recent-edit advisory window. Formerly the
+ * `COOLDOWN_WINDOW_MS` deny threshold; sprint 046 Session D demoted it to
+ * a non-blocking `data-advisory` (kind: 'recent-edit') per plan §5.2.
+ * Kept as a constant so a future policy change can re-tune the window
+ * without hunting magic numbers.
+ */
+export const RECENT_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /** 14 days — oscillation window for reversal-detection in PreToolUse. */
 export const OSCILLATION_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;

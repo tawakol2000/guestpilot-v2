@@ -21,7 +21,7 @@ function ctx(overrides: any = {}) {
     conversationId: 'c1',
     userId: null,
     readLastUserMessage: overrides.readLastUserMessage ?? (() => ''),
-    emitDataPart: undefined,
+    emitDataPart: overrides.emitDataPart,
     compliance: { lastUserSanctionedApply: false, lastUserSanctionedRollback: false },
     // Sprint 046 Session A: tool-trace hook fields — unused here but
     // required by the HookContext interface.
@@ -72,10 +72,18 @@ test('denies apply without manager sanction', async () => {
   assert.match(res.hookSpecificOutput?.permissionDecisionReason || '', /Compliance/);
 });
 
-test('denies apply when cooldown is hit', async () => {
+// Sprint 046 Session D — cooldown-deny deleted. The hook no longer
+// blocks on a prior recent apply; it emits a non-blocking recent-edit
+// advisory instead. The legacy "denies apply when cooldown is hit"
+// test was removed in this session. See the new
+// "recent-edit advisory is emitted but does not deny" test below.
+
+test('emits recent-edit advisory without denying when prior apply is within 48h', async () => {
   const recent = new Date();
+  const emits: any[] = [];
   const c = ctx({
     readLastUserMessage: () => 'apply it',
+    emitDataPart: (part: any) => emits.push(part),
     prisma: {
       tuningSuggestion: {
         findFirst: async (args: any) => {
@@ -92,9 +100,8 @@ test('denies apply when cooldown is hit', async () => {
               status: 'PENDING',
             };
           }
-          // Cooldown query: recent accepted suggestion on same target.
           if (args.where.status === 'ACCEPTED' && args.where.appliedAt) {
-            return { id: 'prior', appliedAt: recent };
+            return { id: 'prior', appliedAt: recent, confidence: null };
           }
           return null;
         },
@@ -106,21 +113,114 @@ test('denies apply when cooldown is hit', async () => {
     action: 'apply',
     suggestionId: 's1',
   });
-  assert.equal(res.continue, false);
-  assert.match(res.hookSpecificOutput?.permissionDecisionReason || '', /Cooldown/);
+  assert.deepEqual(res, { continue: true });
+  const recentEdit = emits.find(
+    (p) => p.type === 'data-advisory' && p.data?.kind === 'recent-edit'
+  );
+  assert.ok(recentEdit, 'expected a recent-edit advisory data part');
 });
 
-test('denies oscillation reversal without confidence boost', async () => {
-  let call = 0;
-  const earlier = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago
+test('does NOT emit recent-edit advisory when prior apply is older than 48h', async () => {
+  const long = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000); // 10 days ago
+  const emits: any[] = [];
   const c = ctx({
     readLastUserMessage: () => 'apply it',
+    emitDataPart: (part: any) => emits.push(part),
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async (args: any) => {
+          if (args.where.id === 's3') {
+            return {
+              id: 's3',
+              diagnosticCategory: 'FAQ',
+              confidence: 0.8,
+              sopCategory: null,
+              sopStatus: null,
+              sopPropertyId: null,
+              systemPromptVariant: null,
+              faqEntryId: 'faq1',
+              status: 'PENDING',
+            };
+          }
+          // The where clause scopes appliedAt: { gte: recentSince }. A prior
+          // apply from 10 days ago is out-of-window, so the prisma mock
+          // returns null for both recent-edit and oscillation checks.
+          if (args.where.status === 'ACCEPTED' && args.where.appliedAt) {
+            // The query honours appliedAt>=recentSince; our mock can't
+            // filter, so return null to mirror production behaviour on an
+            // out-of-window prior.
+            void long;
+            return null;
+          }
+          return null;
+        },
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
+    action: 'apply',
+    suggestionId: 's3',
+  });
+  assert.deepEqual(res, { continue: true });
+  const recentEdit = emits.find(
+    (p) => p.type === 'data-advisory' && p.data?.kind === 'recent-edit'
+  );
+  assert.equal(recentEdit, undefined);
+});
+
+test('allows immediate second apply of the same artifact (no cooldown deny)', async () => {
+  const veryRecent = new Date();
+  const emits: any[] = [];
+  const c = ctx({
+    readLastUserMessage: () => 'apply it',
+    emitDataPart: (part: any) => emits.push(part),
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async (args: any) => {
+          if (args.where.id === 's2') {
+            return {
+              id: 's2',
+              diagnosticCategory: 'SOP_CONTENT',
+              confidence: 0.8,
+              sopCategory: 'sop-checkin',
+              sopStatus: 'CONFIRMED',
+              sopPropertyId: null,
+              systemPromptVariant: null,
+              faqEntryId: null,
+              status: 'PENDING',
+            };
+          }
+          // Emulate an apply that happened 5 seconds ago — still inside the
+          // former 48h cooldown; the hook must not deny.
+          if (args.where.status === 'ACCEPTED' && args.where.appliedAt) {
+            return { id: 'prior', appliedAt: veryRecent, confidence: null };
+          }
+          return null;
+        },
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
+    action: 'apply',
+    suggestionId: 's2',
+  });
+  assert.deepEqual(res, { continue: true });
+});
+
+test('oscillation reversal without confidence boost emits advisory, does NOT deny', async () => {
+  let call = 0;
+  const earlier = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago
+  const emits: any[] = [];
+  const c = ctx({
+    readLastUserMessage: () => 'apply it',
+    emitDataPart: (part: any) => emits.push(part),
     prisma: {
       tuningSuggestion: {
         findFirst: async () => {
           call += 1;
           if (call === 1) {
-            // Suggestion lookup
             return {
               id: 's1',
               diagnosticCategory: 'SOP_CONTENT',
@@ -134,7 +234,9 @@ test('denies oscillation reversal without confidence boost', async () => {
             };
           }
           if (call === 2) {
-            // Cooldown check — nothing within 48h
+            // Recent-edit (prior-48h) check — also returns the older apply
+            // since it pre-dates the 48h window here; return null to focus
+            // this test on the oscillation path.
             return null;
           }
           // Oscillation check — prior accepted at confidence 0.6 (2 days ago)
@@ -148,8 +250,11 @@ test('denies oscillation reversal without confidence boost', async () => {
     action: 'apply',
     suggestionId: 's1',
   });
-  assert.equal(res.continue, false);
-  assert.match(res.hookSpecificOutput?.permissionDecisionReason || '', /Oscillation/);
+  assert.deepEqual(res, { continue: true });
+  const osc = emits.find(
+    (p) => p.type === 'data-advisory' && p.data?.kind === 'oscillation'
+  );
+  assert.ok(osc, 'expected an oscillation advisory data part');
 });
 
 test('allows apply when sanction present and no cooldown/oscillation', async () => {

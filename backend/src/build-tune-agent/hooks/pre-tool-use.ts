@@ -1,14 +1,22 @@
 /**
- * PreToolUse hook — runs before every tool call. Enforces:
- *   1. Compliance: suggestion_action(apply | edit_then_apply) requires an
- *      explicit manager-sanctioning turn in the last user message.
- *   2. Cooldown: 48h on the same (diagnosticCategory, artifact target).
- *   3. Oscillation: refuses an apply that reverses a decision within the
- *      last 14d unless new confidence exceeds prior * 1.25.
+ * PreToolUse hook — runs before every tool call.
  *
- * The hook returns PreToolUseHookSpecificOutput with a permissionDecision
- * of 'deny' + a rationale when blocked. Deny strings are fed back to the
- * agent as the tool's return, so the agent explains the block to the user.
+ * Sprint 046 Session D: cooldown removal. The hook still enforces:
+ *   1. Compliance — suggestion_action(apply | edit_then_apply) and
+ *      rollback require an explicit manager-sanctioning turn.
+ *   2. Oscillation detection — when a prior ACCEPTED suggestion targeted
+ *      the same artifact within 14d and the new confidence does not
+ *      meet the 1.25× boost floor, we emit a non-blocking
+ *      `data-advisory` (kind: 'oscillation') so the Studio renderer can
+ *      surface a muted warning chip. The advisory never blocks.
+ *   3. Recent-edit advisory — when the artifact targeted by the apply
+ *      was last written inside the last 48h, emit a non-blocking
+ *      `data-advisory` (kind: 'recent-edit') so the manager can factor
+ *      in the recent churn. Never blocks.
+ *
+ * The 48h deny-on-cooldown gate is gone. If abuse patterns appear in
+ * production, handle them with rate-limiting on the controller per plan
+ * §5.2 / NEXT.md §6 — do not re-add the hook block.
  */
 import type {
   HookCallback,
@@ -18,13 +26,14 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { TUNING_AGENT_TOOL_NAMES } from '../tools/names';
 import {
-  COOLDOWN_WINDOW_MS,
   OSCILLATION_WINDOW_MS,
   OSCILLATION_CONFIDENCE_BOOST,
+  RECENT_EDIT_WINDOW_MS,
   detectApplySanction,
   detectRollbackSanction,
   type HookContext,
 } from './shared';
+import { DATA_PART_TYPES, type AdvisoryData } from '../data-parts';
 
 export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
   return async (input: HookInput): Promise<HookJSONOutput> => {
@@ -125,29 +134,49 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         existingSuggestion?.beforeText ?? toolInput.draft?.beforeText ?? null,
     };
     const confidence = existingSuggestion?.confidence ?? toolInput.draft?.confidence ?? null;
-
-    // ─── 2. Cooldown ───────────────────────────────────────────────────────
-    const cooldownSince = new Date(Date.now() - COOLDOWN_WINDOW_MS);
     const targetWhere = artifactTargetWhere(category, target);
+
+    // ─── 2. Recent-edit advisory ───────────────────────────────────────────
+    //
+    // Formerly the 48h cooldown-deny. Sprint 046 Session D demoted it to
+    // a non-blocking advisory per plan §5.2 — the Studio renderer paints a
+    // muted "last edited Nh ago" chip above the suggested-fix card.
     if (targetWhere) {
+      const recentSince = new Date(Date.now() - RECENT_EDIT_WINDOW_MS);
       const recent = await c.prisma.tuningSuggestion.findFirst({
         where: {
           tenantId: c.tenantId,
           status: 'ACCEPTED',
-          appliedAt: { gte: cooldownSince },
+          appliedAt: { gte: recentSince },
           ...targetWhere,
         },
         select: { id: true, appliedAt: true },
         orderBy: { appliedAt: 'desc' },
       });
-      if (recent) {
-        return denyHook(
-          `Cooldown (48h) hit: suggestion ${recent.id} was applied at ${recent.appliedAt?.toISOString()} against the same artifact. Wait for the window to clear, or propose a materially different fix.`
-        );
+      if (recent && c.emitDataPart) {
+        const lastEditedAt = recent.appliedAt?.toISOString() ?? null;
+        const advisory: AdvisoryData = {
+          kind: 'recent-edit',
+          message: lastEditedAt
+            ? `This artifact was last edited on ${lastEditedAt}.`
+            : 'This artifact was edited recently.',
+          context: { lastEditedAt, priorSuggestionId: recent.id },
+        };
+        c.emitDataPart({
+          type: DATA_PART_TYPES.advisory,
+          id: `advisory:recent-edit:${recent.id}`,
+          data: advisory,
+          transient: true,
+        });
       }
     }
 
-    // ─── 3. Oscillation ────────────────────────────────────────────────────
+    // ─── 3. Oscillation advisory (non-blocking) ────────────────────────────
+    //
+    // Sprint 046 Session D: still detect reversal-within-14d at confidence
+    // below the 1.25× boost floor, but emit a `data-advisory` instead of
+    // denying the apply. The boost check remains informative for
+    // Langfuse / dashboards but never gates execution.
     const oscWindow = new Date(Date.now() - OSCILLATION_WINDOW_MS);
     if (targetWhere) {
       const priorAccepted = await c.prisma.tuningSuggestion.findFirst({
@@ -161,33 +190,34 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         orderBy: { appliedAt: 'desc' },
       });
       if (priorAccepted) {
-        // Sprint 09 fix 4: when EITHER the current or prior suggestion has
-        // null confidence (legacy rows), the comparison 0 < 0 * 1.25 is
-        // trivially true (or false at boundary) and fires unstable
-        // oscillation blocks. Skip the check unless both sides have real
-        // confidence scores.
         const priorConfidence = priorAccepted.confidence;
         const nowConfidence = confidence;
         const bothHaveConfidence =
           typeof priorConfidence === 'number' && typeof nowConfidence === 'number';
         if (bothHaveConfidence) {
-          // Sprint 10 workstream D: invert to strict-less so a re-proposal
-          // at *exactly* the 1.25× boundary is allowed (boundary spec is
-          // "confidence ≥ priorConfidence × 1.25"). Previous `<=` denied
-          // the boundary case, treating equality as failure — fixed here.
           const requiredFloor = priorConfidence * OSCILLATION_CONFIDENCE_BOOST;
           const passed = nowConfidence >= requiredFloor;
-          // Observability: emit the check result either way so dashboards
-          // and Langfuse can pivot on oscillation behaviour without
-          // back-walking PreToolUse calls. Single-line console for Railway
-          // log greppability.
           console.log(
             `[TuningAgent] oscillation_check tenant=${c.tenantId} prior=${priorAccepted.id} prior_conf=${priorConfidence.toFixed(2)} now_conf=${nowConfidence.toFixed(2)} required_floor=${requiredFloor.toFixed(2)} boost=${OSCILLATION_CONFIDENCE_BOOST} passed=${passed}`
           );
-          if (!passed) {
-            return denyHook(
-              `Oscillation guard: an ACCEPTED suggestion (${priorAccepted.id}, confidence ${priorConfidence.toFixed(2)}) was applied to the same artifact on ${priorAccepted.appliedAt?.toISOString()}. This proposal's confidence (${nowConfidence.toFixed(2)}) does not meet the ${OSCILLATION_CONFIDENCE_BOOST}× boost floor (≥ ${requiredFloor.toFixed(2)} required). Explain to the manager and either gather stronger evidence or propose a different artifact.`
-            );
+          if (!passed && c.emitDataPart) {
+            const advisory: AdvisoryData = {
+              kind: 'oscillation',
+              message: `This artifact was edited recently at a higher confidence (${priorConfidence.toFixed(2)}). New proposal confidence ${nowConfidence.toFixed(2)} is below the recommended ${requiredFloor.toFixed(2)} floor.`,
+              context: {
+                priorSuggestionId: priorAccepted.id,
+                priorConfidence,
+                nowConfidence,
+                requiredFloor,
+                priorAppliedAt: priorAccepted.appliedAt?.toISOString() ?? null,
+              },
+            };
+            c.emitDataPart({
+              type: DATA_PART_TYPES.advisory,
+              id: `advisory:oscillation:${priorAccepted.id}`,
+              data: advisory,
+              transient: true,
+            });
           }
         }
       }
