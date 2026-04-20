@@ -499,13 +499,14 @@ function PreviewPane({
           ) : null}
           {results.length === 0 ? (
             <div
-              className="rounded-lg border border-dashed px-4 py-6 text-center text-xs"
+              className="rounded-lg border border-dashed px-4 py-6 text-center text-xs leading-relaxed"
               style={{ borderColor: TUNING_COLORS.hairline, color: TUNING_COLORS.inkSubtle }}
             >
               No test runs yet.
               <br />
-              Ask the agent to <span style={{ color: TUNING_COLORS.ink }}>test a message</span> through
-              the pipeline.
+              Ask the agent to{' '}
+              <span style={{ color: TUNING_COLORS.ink }}>test a guest message</span> — it runs through
+              the current tenant config and an independent judge grades the reply.
             </div>
           ) : (
             results.map((r, i) => <TestPipelineResult key={i} data={r} />)

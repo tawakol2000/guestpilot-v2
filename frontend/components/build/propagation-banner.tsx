@@ -47,9 +47,10 @@ export function PropagationBanner({
     >
       <Zap size={13} strokeWidth={2} className="mt-[2px] shrink-0" style={{ color: TUNING_COLORS.accent }} />
       <div className="min-w-0 flex-1">
-        <div className="font-medium">Changes are live in preview now.</div>
+        <div className="font-medium">Applying changes…</div>
         <div className="mt-0.5" style={{ color: TUNING_COLORS.inkMuted }}>
-          Propagation to the live guest-reply pipeline takes up to 60 seconds.
+          The main pipeline picks these up in up to 60 seconds. Tests run against
+          the latest version immediately.
         </div>
       </div>
       <button

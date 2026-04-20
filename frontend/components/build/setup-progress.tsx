@@ -31,7 +31,7 @@ export function SetupProgress({ state }: { state: BuildTenantState }) {
         className="text-[10.5px] font-semibold uppercase tracking-wider"
         style={{ color: TUNING_COLORS.inkSubtle }}
       >
-        Tenant state
+        Your setup
       </div>
       <div className="mt-2 flex flex-col gap-1.5">
         {rows.map((r) => (
