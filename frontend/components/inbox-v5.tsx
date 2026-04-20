@@ -149,7 +149,7 @@ type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type InboxTab = 'All' | 'Unread' | 'Starred' | 'Archive'
-type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs' | 'tuning'
+type NavTab = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'tasks' | 'settings' | 'configure' | 'logs' | 'webhooks' | 'sops' | 'tools' | 'sandbox' | 'listings' | 'faqs' | 'tuning' | 'build'
 type CheckInStatus = 'upcoming' | 'checked-in' | 'checked-out' | 'inquiry' | 'pending' | 'cancelled' | 'checking-in-today' | 'checking-out-today' | 'expired'
 
 interface Message {
@@ -3130,13 +3130,17 @@ export default function InboxV5() {
             { id: 'listings', label: 'Listings' },
             { id: 'faqs', label: 'FAQs' },
             { id: 'tuning', label: 'Tuning' }, // Feature 040: Copilot Shadow Mode review surface
+            { id: 'build', label: 'Build' }, // Feature 045: BUILD-mode agent (/build route; ENABLE_BUILD_MODE-gated on backend)
             /* SOP Monitor tab removed */
           ] as { id: NavTab; label: string }[]
         ).map(tab => (
           <button
             key={tab.id}
             data-tab={tab.id}
-            onClick={() => setNavTab(tab.id)}
+            onClick={() => {
+              if (tab.id === 'build') { router.push('/build'); return }
+              setNavTab(tab.id)
+            }}
             style={{
               height: 28,
               padding: '0 14px',
