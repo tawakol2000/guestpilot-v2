@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { lintAgentOutput } from '../output-linter';
+import { lintAgentOutput, buildLinterAdvisories } from '../output-linter';
 
 test('R1 pass: short prose without a structured part is fine', () => {
   const findings = lintAgentOutput({
@@ -81,4 +81,39 @@ test('R1 pass when a structured part is present regardless of word count', () =>
     dataPartTypes: ['data-audit-report'],
   });
   assert.equal(findings.filter((f) => f.rule === 'R1').length, 0);
+});
+
+// ─── Sprint 046 Session D — enforcement advisories ───────────────────
+
+test('buildLinterAdvisories returns a linter-drop for R1', () => {
+  const findings = lintAgentOutput({
+    finalText: Array.from({ length: 130 }, () => 'word').join(' '),
+    dataPartTypes: ['data-advisory'],
+  });
+  const advisories = buildLinterAdvisories(findings);
+  const r1 = advisories.find((a) => (a.context as any)?.rule === 'R1');
+  assert.ok(r1, 'expected a linter-drop advisory for R1');
+  assert.equal(r1!.kind, 'linter-drop');
+  assert.match(r1!.message, /prose too long/i);
+});
+
+test('buildLinterAdvisories returns a drop-count advisory for R2', () => {
+  const findings = lintAgentOutput({
+    finalText: 'two fixes',
+    dataPartTypes: ['data-suggested-fix', 'data-suggested-fix', 'data-suggested-fix'],
+  });
+  const advisories = buildLinterAdvisories(findings, { droppedSuggestedFixCount: 2 });
+  const r2 = advisories.find((a) => (a.context as any)?.rule === 'R2');
+  assert.ok(r2, 'expected a linter-drop advisory for R2');
+  assert.match(r2!.message, /Dropped 2 additional suggested fixes/);
+});
+
+test('buildLinterAdvisories does NOT return an advisory for R3 (log-only)', () => {
+  const findings = lintAgentOutput({
+    finalText: '1. one\n2. two\n3. three',
+    dataPartTypes: [],
+  });
+  const advisories = buildLinterAdvisories(findings);
+  const r3 = advisories.find((a) => (a.context as any)?.rule === 'R3');
+  assert.equal(r3, undefined, 'R3 must remain log-only per plan §5.5');
 });

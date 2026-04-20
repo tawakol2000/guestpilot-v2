@@ -1,16 +1,25 @@
 /**
- * Output linter (sprint 046 Session A).
+ * Output linter (sprint 046 Sessions A + D).
  *
  * A cheap post-turn pass over the agent's output. Flags turns that
- * violate the Response Contract in the system-prompt. Log-only in this
- * session — session D flips the drop-not-log switch after we have a
- * week of trace data to calibrate against.
+ * violate the Response Contract in the system-prompt.
  *
  * Rules (plan §5.5 + session-a §2.6):
  *   - R1: zero structured data-parts AND final text > 120 words.
  *   - R2: more than one `data-suggested-fix` emitted in the turn.
  *   - R3: >2 lines of markdown-list syntax (`^\s*[-*]\s` or `^\s*\d+\.\s`)
  *         in any text part.
+ *
+ * Session D enforcement (plan §5.5 + NEXT.md §2.4):
+ *   - R1: emit a `data-advisory` (kind: 'linter-drop') with the prose
+ *         word count hint. The original text is not retroactively
+ *         truncated in the live stream; DB persistence keeps the full
+ *         text so a rerun surfaces the lint hit plus original prose.
+ *   - R2: extra `data-suggested-fix` emissions are intercepted at the
+ *         emitDataPart boundary (runtime.ts) — only the first survives.
+ *         A `data-advisory` documents the drop count.
+ *   - R3: remains log-only. Too noisy for enforcement this session per
+ *         plan §5.5 risk — revisit after a week of trace calibration.
  */
 
 export type LinterSeverity = 'warn';
@@ -123,3 +132,57 @@ export function lintAgentOutput(input: LinterInput): LinterFinding[] {
 
 /** Stable, test-friendly synthetic tool name used when persisting lint rows. */
 export const LINTER_SYNTHETIC_TOOL_NAME = '__lint__';
+
+/**
+ * Shape of an advisory payload the runtime should emit when a lint rule
+ * fires. Caller decides when to write to the stream; this function is
+ * pure and returns the advisories alongside the findings.
+ *
+ * Sprint 046 Session D — R1 and R2 enforcement. R3 stays log-only.
+ */
+export interface LinterAdvisoryPayload {
+  kind: 'linter-drop';
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export interface EnforceOptions {
+  /**
+   * Number of `data-suggested-fix` parts the runtime actually delivered
+   * to the persisted stream (i.e. after its own first-wins interception).
+   * If the runtime intercepted, `findings` will still include R2 based on
+   * the in-session emit attempts; this number tells `enforce` how many
+   * were actually dropped so the advisory message is accurate.
+   */
+  droppedSuggestedFixCount?: number;
+}
+
+export function buildLinterAdvisories(
+  findings: LinterFinding[],
+  opts: EnforceOptions = {}
+): LinterAdvisoryPayload[] {
+  const advisories: LinterAdvisoryPayload[] = [];
+  for (const f of findings) {
+    if (f.rule === 'R1') {
+      const words = (f.detail as any)?.words ?? '?';
+      advisories.push({
+        kind: 'linter-drop',
+        message:
+          '(card omitted — agent prose too long without a structured card; please rephrase)',
+        context: { rule: 'R1', words },
+      });
+    } else if (f.rule === 'R2') {
+      const dropped = opts.droppedSuggestedFixCount ?? Math.max(
+        0,
+        (((f.detail as any)?.suggestedFixCount ?? 1) as number) - 1
+      );
+      advisories.push({
+        kind: 'linter-drop',
+        message: `Dropped ${dropped} additional suggested fix${dropped === 1 ? '' : 'es'} — surface the top one first.`,
+        context: { rule: 'R2', dropped },
+      });
+    }
+    // R3 stays log-only — no advisory this session.
+  }
+  return advisories;
+}

@@ -30,6 +30,12 @@ export const DATA_PART_TYPES = {
   state_snapshot: 'data-state-snapshot',
   build_plan: 'data-build-plan',
   test_pipeline_result: 'data-test-pipeline-result',
+  /**
+   * @deprecated Sprint 046 Session D — retired. Use `suggested_fix` instead.
+   * Key retained for stream-bridge back-compat (an in-flight session on an
+   * older deploy may still deliver this part type; the Studio renderer
+   * returns null for it). No new emitter should reference this.
+   */
   suggestion_preview: 'data-suggestion-preview',
   agent_disabled: 'data-agent-disabled',
 } as const;

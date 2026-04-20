@@ -29,7 +29,12 @@ import { buildTuningAgentHooks, type HookContext } from './hooks';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import { listMemoryByPrefix } from './memory/service';
 import { runForcedFirstTurnCall } from './forced-first-turn';
-import { lintAgentOutput, LINTER_SYNTHETIC_TOOL_NAME } from './output-linter';
+import {
+  lintAgentOutput,
+  buildLinterAdvisories,
+  LINTER_SYNTHETIC_TOOL_NAME,
+} from './output-linter';
+import { DATA_PART_TYPES, type AdvisoryData } from './data-parts';
 import { logToolCall } from '../services/build-tool-call-log.service';
 import {
   isTuningAgentEnabled,
@@ -295,7 +300,22 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
   const persistedDataParts: Array<{ type: string; id?: string; data: unknown }> = [];
   const toolCallsInvoked: string[] = [];
 
+  // Sprint 046 Session D — R2 enforcement. Only the first
+  // `data-suggested-fix` per turn reaches the client + DB; subsequent
+  // attempts are intercepted here so the manager never sees a duplicate
+  // card, and a single `data-advisory` (kind: 'linter-drop') is emitted
+  // at turn-end documenting the drop count.
+  let suggestedFixEmitted = 0;
+  let suggestedFixDropped = 0;
+
   const emitDataPart = (part: { type: string; id?: string; data: unknown; transient?: boolean }) => {
+    if (part.type === DATA_PART_TYPES.suggested_fix) {
+      if (suggestedFixEmitted >= 1) {
+        suggestedFixDropped += 1;
+        return;
+      }
+      suggestedFixEmitted += 1;
+    }
     try {
       (input.writer as any).write({
         type: part.type,
@@ -528,25 +548,76 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
       .catch((err) => console.warn('[tuning-agent] sdkSessionId persist failed:', err));
   }
 
-  // ─── Sprint 046 Session A — output-linter pass ─────────────────────────
+  // ─── Sprint 046 Sessions A + D — output-linter pass ────────────────────
   //
   // Post-turn inspection: does the completed turn violate the Response
-  // Contract from the shared system prefix? Log-only in this session
-  // (sprint 046 Session D flips the drop-not-log switch). Findings are
-  // written as synthetic `__lint__` BuildToolCallLog rows so the admin
-  // trace view can surface them alongside real tool calls.
+  // Contract from the shared system prefix?
+  //
+  // Session A shipped log-only persistence as synthetic `__lint__` rows
+  // in BuildToolCallLog. Session D flips R1 + R2 to drop-not-log:
+  //   - R2 interception happens at emit time (first-wins in emitDataPart
+  //     above). Post-turn we emit a single `data-advisory` documenting
+  //     the drop count.
+  //   - R1 emits a `data-advisory` when prose > 120 words with zero
+  //     structured parts.
+  //   - R3 stays log-only.
+  // The advisory is emitted BEFORE persistence, so the Vercel AI SDK
+  // onFinish event reads the linted final state.
   try {
+    // Lint on the *post-intercept* part list — if R2 interception kicked
+    // in, persistedDataParts already reflects one `data-suggested-fix`,
+    // so lintAgentOutput won't re-flag R2. We pass the intercept count
+    // separately to build an accurate advisory.
     const findings = lintAgentOutput({
       finalText: finalText,
       dataPartTypes: persistedDataParts.map((p) => p.type),
     });
-    if (findings.length > 0) {
+
+    // R2 enforcement fires when suggestedFixDropped > 0 even if lint
+    // didn't see multiple in the persisted array (because we dropped
+    // them pre-persistence). Synthesise an R2 finding if interception
+    // happened.
+    const enforcedFindings = [...findings];
+    if (suggestedFixDropped > 0) {
+      enforcedFindings.push({
+        rule: 'R2',
+        severity: 'warn',
+        message: 'R2 enforced at emit time',
+        detail: { suggestedFixCount: suggestedFixEmitted + suggestedFixDropped },
+      });
+    }
+
+    const advisories = buildLinterAdvisories(enforcedFindings, {
+      droppedSuggestedFixCount: suggestedFixDropped,
+    });
+    for (const adv of advisories) {
+      const payload: AdvisoryData = {
+        kind: adv.kind,
+        message: adv.message,
+        context: adv.context,
+      };
+      emitDataPart({
+        type: DATA_PART_TYPES.advisory,
+        id: `advisory:${adv.kind}:${(adv.context as any)?.rule ?? 'lint'}`,
+        data: payload,
+        transient: true,
+      });
+    }
+
+    if (enforcedFindings.length > 0) {
       void logToolCall(input.prisma, {
         tenantId: input.tenantId,
         conversationId: input.conversationId,
         turn: turnNumber,
         tool: LINTER_SYNTHETIC_TOOL_NAME,
-        params: { rules: findings.map((f) => f.rule), findings },
+        params: {
+          rules: enforcedFindings.map((f) => f.rule),
+          findings: enforcedFindings,
+          enforced: {
+            suggestedFixDropped,
+            suggestedFixKept: suggestedFixEmitted,
+          },
+        },
         durationMs: 0,
         success: true, // linter ran successfully; findings != error
       });

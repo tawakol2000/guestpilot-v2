@@ -2,17 +2,18 @@
  * propose_suggestion — stage a TuningSuggestion WITHOUT writing it.
  *
  * The row is not persisted. Instead, we:
- *   1. emit a `data-suggestion-preview` part to the client with the diff
- *      and proposed change, so the manager sees the suggestion inline
+ *   1. emit a `data-suggested-fix` part to the client with the diff
+ *      and proposed change, so the manager sees the card inline
  *   2. return a summary to the agent with a client-generated preview id
  *
  * When the manager sanctions "apply"/"queue", the agent calls
  * suggestion_action with the previewId (or with a separately-persisted id
  * if a PENDING row was created via suggestion_action too).
  *
- * This preserves sprint-02's writer as the single write path for persisted
- * suggestions — this tool is a *preview generator* plus a seat at the
- * manager's review table.
+ * Sprint 046 Session D — session-scoped rejection memory guard. Before
+ * emitting, the tool hashes (artifactId, sectionId||slotKey, category:subLabel)
+ * and skips the emit when that hash already lives under
+ * `session/{conversationId}/rejected/` in AgentMemory.
  */
 import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
