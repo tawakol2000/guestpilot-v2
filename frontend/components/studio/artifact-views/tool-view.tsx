@@ -9,6 +9,13 @@
  * The 050-A tighten-up regex catches arbitrary-named custom fields;
  * here we just feed the payload through.
  *
+ * Sprint 052 A C3 — `showDiff` wires a JSON-diff path against
+ * `prevParameters` / `prevWebhookConfig`. Both sides are sanitised
+ * inside `JsonDiffBody` before the walk so "removed value" lines can't
+ * leak a redacted secret. Admin-tier full-output toggle still only
+ * relaxes the length heuristic; redact-by-key holds on both tiers
+ * (sprint-050-A4 invariant).
+ *
  * Admin-gated runtime flag affordance is a placeholder for the edit
  * path — this sprint remains viewer-only (brief §2 non-negotiable).
  */
@@ -18,6 +25,7 @@ import { sanitiseToolPayload } from '@/lib/tool-call-sanitise'
 import { STUDIO_COLORS } from '../tokens'
 import { ArtifactMetaGrid } from './meta-grid'
 import { PendingBadge } from './pending-badge'
+import { JsonDiffBody } from './json-diff-body'
 import { PreBody, SectionHeading } from './sop-view'
 
 export interface ToolViewProps {
@@ -26,6 +34,8 @@ export interface ToolViewProps {
   traceViewEnabled: boolean
   showFullSensitive: boolean
   isPending: boolean
+  /** 052-C3: when true, render JSON diff against `prevParameters` / `prevWebhookConfig`. */
+  showDiff: boolean
 }
 
 export function ToolView({
@@ -34,6 +44,7 @@ export function ToolView({
   traceViewEnabled,
   showFullSensitive,
   isPending,
+  showDiff,
 }: ToolViewProps) {
   const meta = artifact.meta as {
     name?: string
@@ -57,6 +68,10 @@ export function ToolView({
   const sanitisedParameters = useMemo(() => {
     return sanitiseToolPayload(meta.parameters, { tier })
   }, [meta.parameters, tier])
+  const hasPrevParameters = artifact.prevParameters !== undefined
+  const hasPrevWebhookConfig =
+    artifact.prevWebhookConfig !== undefined &&
+    artifact.prevWebhookConfig !== null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {isPending && <PendingBadge />}
@@ -79,9 +94,18 @@ export function ToolView({
       </div>
       <div>
         <SectionHeading>Parameters (JSON schema)</SectionHeading>
-        <JsonBlock value={sanitisedParameters} />
+        {showDiff && hasPrevParameters ? (
+          <JsonDiffBody
+            prev={artifact.prevParameters}
+            current={meta.parameters}
+            isPending={isPending}
+            tier={tier}
+          />
+        ) : (
+          <JsonBlock value={sanitisedParameters} />
+        )}
       </div>
-      {sanitisedConfig ? (
+      {sanitisedConfig || hasPrevWebhookConfig ? (
         <div>
           <SectionHeading>
             Webhook config{' '}
@@ -97,7 +121,16 @@ export function ToolView({
               ({tier} view)
             </span>
           </SectionHeading>
-          <JsonBlock value={sanitisedConfig} />
+          {showDiff && hasPrevWebhookConfig ? (
+            <JsonDiffBody
+              prev={artifact.prevWebhookConfig ?? null}
+              current={artifact.webhookConfig ?? null}
+              isPending={isPending}
+              tier={tier}
+            />
+          ) : (
+            <JsonBlock value={sanitisedConfig} />
+          )}
         </div>
       ) : null}
     </div>

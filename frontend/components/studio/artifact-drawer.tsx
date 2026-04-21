@@ -183,9 +183,20 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
       detail.prevBody !== detail.body,
     [detail],
   )
+  // 052-C3: JSON diff eligibility — any prev-schema payload present on
+  // the tool artifact enables the toggle. Sanitisation happens inside
+  // `JsonDiffBody`; the drawer just decides whether to render the toggle.
+  const hasPrevJson = useMemo(() => {
+    if (!detail) return false
+    return (
+      detail.prevParameters !== undefined ||
+      detail.prevWebhookConfig !== undefined
+    )
+  }, [detail])
   const showDiffToggleVisible = showDiffToggle(
     target?.artifact ?? 'sop',
     hasPrev,
+    hasPrevJson,
     isAdmin,
     rawPromptEditorEnabled,
   )
@@ -404,15 +415,16 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
 }
 
 /**
- * 052-C2: centralise the footer-toggle visibility rule. Shows when:
+ * 052-C2/C3: centralise the footer-toggle visibility rule. Shows when:
  *  - sop/faq: prevBody string differs from current (existing B2 rule).
  *  - system_prompt: prevBody differs AND the viewer can see the body
  *    (admin + rawPromptEditorEnabled); otherwise the diff is moot.
- * tool JSON diff lands in C3 as a separate branch.
+ *  - tool: prevParameters or prevWebhookConfig is present (C3 JSON diff).
  */
 function showDiffToggle(
   type: BuildArtifactType,
   hasPrev: boolean,
+  hasPrevJson: boolean,
   isAdmin: boolean,
   rawPromptEditorEnabled: boolean,
 ): boolean {
@@ -420,6 +432,7 @@ function showDiffToggle(
   if (type === 'system_prompt') {
     return hasPrev && isAdmin && rawPromptEditorEnabled
   }
+  if (type === 'tool') return hasPrevJson
   return false
 }
 
@@ -483,6 +496,7 @@ function ViewSwitch(props: {
           traceViewEnabled={traceViewEnabled}
           showFullSensitive={showFullSensitive}
           isPending={isPending}
+          showDiff={showDiff}
         />
       )
     case 'property_override':

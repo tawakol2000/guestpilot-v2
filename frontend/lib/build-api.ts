@@ -394,6 +394,16 @@ export interface BuildArtifactDetail {
     | 'unsupported-type'
     | 'artifact-missing'
     | null
+  /**
+   * Sprint 052 A C3 — prev JSON payload for `tool` artifacts. The
+   * `json-diff-body` renderer uses these to compute per-key deltas.
+   * Both sides are sanitised with `sanitiseToolPayload` before diff,
+   * so a removed secret doesn't leak through the "removed value" path.
+   * Unset when no history is available (tool artifacts do not have a
+   * history table yet; the seam is forward-compatible).
+   */
+  prevParameters?: unknown
+  prevWebhookConfig?: Record<string, unknown> | null
 }
 
 export class BuildArtifactNotFoundError extends Error {

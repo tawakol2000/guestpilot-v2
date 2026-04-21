@@ -399,4 +399,79 @@ describe('ArtifactDrawer', () => {
     })) as HTMLInputElement
     expect(toggle).toBeInTheDocument()
   })
+
+  // 052-C3 — tool JSON diff toggle appears when prevParameters present.
+  it('shows "View changes" on tool when prevParameters is set', async () => {
+    mockFetch.mockResolvedValueOnce({
+      type: 'tool',
+      id: 'tool-1',
+      title: 'slack-notify',
+      body: 'Posts to Slack.',
+      meta: {
+        name: 'slack-notify',
+        displayName: 'slack-notify',
+        agentScope: 'coordinator',
+        toolType: 'custom',
+        enabled: true,
+        parameters: { timeout: 10000, message: 'hello' },
+      },
+      prevParameters: { timeout: 5000, message: 'hello' },
+    } as BuildArtifactDetail)
+    render(
+      <ArtifactDrawer
+        open
+        target={{ artifact: 'tool', artifactId: 'tool-1' }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+        sessionStartIso={new Date().toISOString()}
+      />,
+    )
+    const toggle = (await screen.findByRole('checkbox', {
+      name: /show changes this session/i,
+    })) as HTMLInputElement
+    expect(toggle).toBeInTheDocument()
+  })
+
+  // 052-C3 — load-bearing regression: a removed apiKey must NOT leak
+  // through the JSON diff "removed value" path.
+  it('redacts removed apiKey on the tool JSON diff (load-bearing)', async () => {
+    mockFetch.mockResolvedValueOnce({
+      type: 'tool',
+      id: 'tool-1',
+      title: 'slack-notify',
+      body: 'Posts to Slack.',
+      meta: {
+        name: 'slack-notify',
+        displayName: 'slack-notify',
+        agentScope: 'coordinator',
+        toolType: 'custom',
+        enabled: true,
+        parameters: { message: 'hello' },
+      },
+      prevParameters: { message: 'hello', apiKey: 'sk-live-deadbeefcafe' },
+    } as BuildArtifactDetail)
+    const { container } = render(
+      <ArtifactDrawer
+        open
+        target={{ artifact: 'tool', artifactId: 'tool-1' }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+        sessionStartIso={new Date().toISOString()}
+      />,
+    )
+    const toggle = (await screen.findByRole('checkbox', {
+      name: /show changes this session/i,
+    })) as HTMLInputElement
+    act(() => {
+      fireEvent.click(toggle)
+    })
+    await waitFor(() => {
+      expect(container.textContent).toContain('[redacted]')
+    })
+    expect(container.textContent).not.toContain('sk-live-deadbeefcafe')
+  })
 })
