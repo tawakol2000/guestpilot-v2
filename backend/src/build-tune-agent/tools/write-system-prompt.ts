@@ -39,6 +39,7 @@ import {
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
+import { openRitualWindow } from '../lib/ritual-state';
 
 // Spec §6 graduation criteria — load-bearing slots must be covered with
 // non-default values before write_system_prompt is allowed.
@@ -292,7 +293,7 @@ export function buildWriteSystemPromptTool(
             : current.systemPromptScreening
           : null;
         const operation: 'CREATE' | 'UPDATE' = prevField ? 'UPDATE' : 'CREATE';
-        await emitArtifactHistory(c.prisma, {
+        const emission = await emitArtifactHistory(c.prisma, {
           tenantId: c.tenantId,
           artifactType: 'system_prompt',
           artifactId: args.variant,
@@ -313,6 +314,8 @@ export function buildWriteSystemPromptTool(
             ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
           },
         });
+        // 054-A F3 — open verification ritual tied to this history row.
+        openRitualWindow(c, emission.historyId);
 
         const previewUrl = `/system-prompt/${versionRow.id}`;
         const payload = {

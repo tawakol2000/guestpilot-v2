@@ -275,6 +275,44 @@ test('"preview_ai_response" is absent from the rendered prompt in both modes (sp
   assert.ok(build.includes('test_pipeline'), 'BUILD-mode prompt must name test_pipeline');
 });
 
+test('054-A F3: BUILD addendum carries <verification_ritual> block stamped with VERIFICATION_RITUAL_VERSION', async () => {
+  // If this test fails because the version string was bumped intentionally,
+  // update the assertion below AND VERIFICATION_RITUAL_VERSION in
+  // lib/ritual-state.ts — they must stay in lockstep.
+  const { VERIFICATION_RITUAL_VERSION } = await import(
+    '../lib/ritual-state'
+  );
+  assert.equal(VERIFICATION_RITUAL_VERSION, '054-a.1');
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(
+    build.includes('<verification_ritual version="054-a.1">'),
+    'BUILD addendum must carry <verification_ritual> block with the current version stamp',
+  );
+  assert.ok(
+    build.includes('direct') &&
+      build.includes('implicit') &&
+      build.includes('framed axis'),
+    'verification_ritual block must teach the direct / implicit / framed axis',
+  );
+  assert.ok(
+    build.includes('testMessages: [t1, t2, t3]'),
+    'verification_ritual block must name the testMessages array shape',
+  );
+  assert.ok(
+    build.includes('CEILING, not a floor'),
+    'verification_ritual block must instruct "1/1 and 2/2 honest, not padded to 3"',
+  );
+  assert.ok(
+    build.includes('TEST_RITUAL_EXHAUSTED'),
+    'verification_ritual block must reference the executor-level error on 4th call',
+  );
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(
+    !tune.includes('<verification_ritual'),
+    'TUNE addendum must not carry the verification_ritual block',
+  );
+});
+
 test('054-A F1: BUILD addendum carries <write_rationale> block stamped with RATIONALE_PROMPT_VERSION', async () => {
   // If this test fails because the version string was bumped intentionally,
   // update the assertion below AND the RATIONALE_PROMPT_VERSION constant in

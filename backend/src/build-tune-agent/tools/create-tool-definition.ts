@@ -30,6 +30,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 import { sanitiseArtifactPayload } from '../lib/sanitise-artifact-payload';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
+import { openRitualWindow } from '../lib/ritual-state';
 
 // snake_case — same convention the main AI's system tools use
 // (get_sop, get_faq, search_available_properties, …). Prevents drift
@@ -203,7 +204,7 @@ export function buildCreateToolDefinitionTool(
 
         // D2 — observational history row. tool_definition rows are
         // sanitised inside emitArtifactHistory — parity with D1 preview.
-        await emitArtifactHistory(c.prisma, {
+        const emission = await emitArtifactHistory(c.prisma, {
           tenantId: c.tenantId,
           artifactType: 'tool_definition',
           artifactId: created.id,
@@ -227,6 +228,8 @@ export function buildCreateToolDefinitionTool(
             ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
           },
         });
+        // 054-A F3 — open verification ritual tied to this history row.
+        openRitualWindow(c, emission.historyId);
 
         const previewUrl = `/tools/${created.id}`;
         const payload = {

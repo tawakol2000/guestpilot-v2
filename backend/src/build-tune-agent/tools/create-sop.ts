@@ -31,6 +31,7 @@ import {
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
+import { openRitualWindow } from '../lib/ritual-state';
 
 const SOP_STATUSES = [
   'DEFAULT',
@@ -240,7 +241,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             args.transactionId
           );
           // D2 — observational history row (override branch).
-          await emitArtifactHistory(c.prisma, {
+          const emission = await emitArtifactHistory(c.prisma, {
             tenantId: c.tenantId,
             artifactType: 'property_override',
             artifactId: override.id,
@@ -261,6 +262,8 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
               ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
             },
           });
+          // 054-A F3 — open verification ritual tied to this history row.
+          openRitualWindow(c, emission.historyId);
           const previewUrl = `/sops/${definition.id}/override/${override.id}`;
           const payload = {
             ok: true,
@@ -320,7 +323,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           args.transactionId
         );
         // D2 — observational history row (variant branch).
-        await emitArtifactHistory(c.prisma, {
+        const emission = await emitArtifactHistory(c.prisma, {
           tenantId: c.tenantId,
           artifactType: 'sop',
           artifactId: variant.id,
@@ -340,6 +343,8 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
           },
         });
+        // 054-A F3 — open verification ritual tied to this history row.
+        openRitualWindow(c, emission.historyId);
         const previewUrl = `/sops/${definition.id}/variant/${variant.id}`;
         const payload = {
           ok: true,

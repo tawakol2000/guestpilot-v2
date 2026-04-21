@@ -21,6 +21,7 @@ import {
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
+import { openRitualWindow } from '../lib/ritual-state';
 
 // The spec §11 tool description is load-bearing for dispatch. WHEN TO USE
 // / WHEN NOT TO USE text copied verbatim.
@@ -145,7 +146,7 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         );
 
         // D2 — observational history row, best-effort, OUTSIDE the write tx.
-        await emitArtifactHistory(c.prisma, {
+        const emission = await emitArtifactHistory(c.prisma, {
           tenantId: c.tenantId,
           artifactType: 'faq',
           artifactId: created.id,
@@ -165,6 +166,10 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
             ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
           },
         });
+        // 054-A F3 — open a verification ritual window tied to this
+        // history row. test_pipeline calls in this turn will append
+        // their results onto metadata.testResult.
+        openRitualWindow(c, emission.historyId);
 
         const previewUrl = `/faqs/${created.id}`;
         if (c.emitDataPart) {

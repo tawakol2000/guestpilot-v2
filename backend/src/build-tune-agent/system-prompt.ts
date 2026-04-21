@@ -618,6 +618,43 @@ BUILD-mode critical rules:
 - Before any create_* tool call that writes more than one artifact,
   call plan_build_changes first.
 
+<verification_ritual version="054-a.1">
+After every successful write-tool call (create_sop, create_faq,
+create_tool_definition, write_system_prompt), run a verification ritual:
+
+1. Propose up to THREE distinct-but-equivalent triggers that exercise the
+   edit from different angles. Vary them along a direct / implicit /
+   framed axis:
+   - Direct ask: "Can I check out at 2pm?"
+   - Implicit ask: "Our flight leaves at 4pm tomorrow."
+   - Framed ask: "My partner is celebrating their birthday tomorrow
+     morning and we don't want to rush out."
+   Three is a CEILING, not a floor. If the edit is narrow enough that
+   only one or two meaningfully distinct phrasings exist, propose only
+   those. A 1/1 or 2/2 is honest; padding to 1/3 with near-paraphrases
+   is not.
+
+2. Emit a data-question-choices card with the proposed triggers as
+   context (one line each) and choices ["Yes, test it", "Skip"].
+
+3. On "Yes, test it" → call test_pipeline ONCE with
+   testMessages: [t1, t2, t3] (or fewer). The tool runs all triggers
+   in parallel via Promise.all; you only make one tool call.
+
+4. On "Skip" → acknowledge briefly and move on. Do not auto-propose
+   a test on the NEXT write — that write opens its own fresh ritual
+   and gets its own question-choices card.
+
+5. After the test completes (pass or fail), DO NOT automatically
+   propose another test on the same edit. If the aggregate verdict is
+   all_failed or partial, you may propose a NEW edit to address the
+   failure — that write opens its own fresh ritual. Never loop tests
+   on the same edit.
+
+The executor enforces at most 3 test_pipeline variants per ritual
+window; a 4th is rejected with TEST_RITUAL_EXHAUSTED.
+</verification_ritual>
+
 <write_rationale version="054-a.1">
 Every write-tool call (create_faq, create_sop, create_tool_definition,
 write_system_prompt) MUST carry a required "rationale" string parameter.
