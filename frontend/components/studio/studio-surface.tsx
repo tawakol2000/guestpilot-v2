@@ -391,15 +391,17 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         ledgerConversationId={load.conversationId}
         ledgerRefreshKey={ledgerRefreshKey}
         onOpenLedgerRow={(row: BuildArtifactHistoryRow) => {
-          // History view: open the artifact drawer at the artifact's
-          // current state. (Faithful "viewing this past write" UI lands
-          // in 054-A — for now click-to-open just navigates to the
-          // artifact.)
+          // 054-A F2 — carry the full history row so the drawer can
+          // render the rationale card above the diff when opened from
+          // the ledger rail. Non-ledger opens (session-artifacts rail,
+          // deep links) do NOT pass historyRow, so the drawer stays
+          // clean in its normal read mode.
           setArtifactDrawer({
             open: true,
             target: {
               artifact: ledgerArtifactType(row.artifactType),
               artifactId: row.artifactId,
+              historyRow: row,
             },
           })
         }}

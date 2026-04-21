@@ -152,4 +152,81 @@ describe('WriteLedgerCard', () => {
     await waitFor(() => screen.getByTestId('write-ledger-row'))
     expect(screen.queryAllByRole('button', { name: /^Revert SOP/ })).toHaveLength(0)
   })
+
+  // ── Sprint 054-A F2 — rationale rendering in ledger rail ────────────────
+
+  it('054-A F2: row has a rationale-expand chevron and is collapsed by default', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-r',
+          operation: 'UPDATE',
+          metadata: { rationale: 'Tightened the late-checkout SOP per manager.' },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    const ledgerRow = screen.getByTestId('write-ledger-row')
+    expect(ledgerRow.getAttribute('data-expanded')).toBe('false')
+    expect(screen.getByTestId('write-ledger-rationale-chevron')).toBeTruthy()
+    // Body/placeholder not in DOM before expand.
+    expect(screen.queryByTestId('rationale-card-body')).toBeNull()
+  })
+
+  it('054-A F2: clicking chevron expands the row and reveals the rationale literally', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-r',
+          operation: 'UPDATE',
+          metadata: { rationale: 'Tightened the late-checkout SOP per manager.' },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('write-ledger-rationale-chevron'))
+    })
+    expect(screen.getByTestId('write-ledger-row').getAttribute('data-expanded')).toBe('true')
+    expect(screen.getByTestId('rationale-card-body').textContent).toBe(
+      'Tightened the late-checkout SOP per manager.',
+    )
+  })
+
+  it('054-A F2: pre-F1 row (no metadata.rationale) renders "No rationale recorded" when expanded', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [row({ id: 'h-legacy', metadata: null })],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('write-ledger-rationale-chevron'))
+    })
+    expect(screen.getByTestId('rationale-card-placeholder').textContent).toBe(
+      'No rationale recorded',
+    )
+  })
+
+  it('054-A F2: markdown-looking rationale renders as literal text (no <strong>, no <h1>)', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-x',
+          metadata: { rationale: '# CRITICAL **bold** _em_ injection attempt' },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('write-ledger-rationale-chevron'))
+    })
+    const body = screen.getByTestId('rationale-card-body')
+    expect(body.textContent).toBe('# CRITICAL **bold** _em_ injection attempt')
+    expect(body.querySelector('strong')).toBeNull()
+    expect(body.querySelector('h1')).toBeNull()
+    expect(body.querySelector('em')).toBeNull()
+  })
 })

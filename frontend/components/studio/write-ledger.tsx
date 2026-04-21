@@ -25,6 +25,8 @@ import {
   RotateCcw,
   Plus,
   Pencil,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { STUDIO_COLORS } from './tokens'
 import {
@@ -32,6 +34,7 @@ import {
   type BuildArtifactHistoryRow,
   type BuildArtifactType,
 } from '@/lib/build-api'
+import { RationaleCard, extractRationale } from './artifact-views/rationale-card'
 
 export interface WriteLedgerCardProps {
   visible: boolean
@@ -169,6 +172,7 @@ function LedgerRow({
   onOpen: () => void
   onRevert: () => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const TypeIcon = TYPE_ICON[row.artifactType] ?? BookOpen
   const OpIcon = OPERATION_ICON[row.operation] ?? Pencil
   const typeLabel = TYPE_LABEL[row.artifactType] ?? row.artifactType
@@ -178,11 +182,14 @@ function LedgerRow({
       : row.operation === 'CREATE'
       ? STUDIO_COLORS.successFg
       : STUDIO_COLORS.ink
+  const rationale = extractRationale(row.metadata)
+  const ChevronIcon = expanded ? ChevronDown : ChevronRight
   return (
     <li
       data-testid="write-ledger-row"
       data-artifact-type={row.artifactType}
       data-operation={row.operation}
+      data-expanded={expanded ? 'true' : 'false'}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -193,40 +200,68 @@ function LedgerRow({
         background: STUDIO_COLORS.surfaceRaised,
       }}
     >
-      <button
-        type="button"
-        aria-label={`Open ${typeLabel} ${row.operation}`}
-        onClick={onOpen}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          background: 'transparent',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          width: '100%',
-          textAlign: 'left',
-          color: STUDIO_COLORS.ink,
-        }}
-      >
-        <TypeIcon size={12} color={STUDIO_COLORS.inkMuted} />
-        <OpIcon size={11} color={opColor} />
-        <span style={{ fontSize: 11.5, fontWeight: 500 }}>
-          {row.operation} {typeLabel}
-        </span>
-        <span
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button
+          type="button"
+          aria-label={`Open ${typeLabel} ${row.operation}`}
+          onClick={onOpen}
           style={{
-            fontSize: 11,
-            color: STUDIO_COLORS.inkSubtle,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            flex: 1,
+            textAlign: 'left',
+            color: STUDIO_COLORS.ink,
+            minWidth: 0,
           }}
         >
-          — {row.artifactId}
-        </span>
-      </button>
+          <TypeIcon size={12} color={STUDIO_COLORS.inkMuted} />
+          <OpIcon size={11} color={opColor} />
+          <span style={{ fontSize: 11.5, fontWeight: 500 }}>
+            {row.operation} {typeLabel}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              color: STUDIO_COLORS.inkSubtle,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            — {row.artifactId}
+          </span>
+        </button>
+        <button
+          type="button"
+          data-testid="write-ledger-rationale-chevron"
+          aria-label={
+            expanded
+              ? `Collapse rationale for ${typeLabel} ${row.artifactId}`
+              : `Expand rationale for ${typeLabel} ${row.artifactId}`
+          }
+          aria-expanded={expanded}
+          onClick={() => setExpanded((e) => !e)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 2,
+            cursor: 'pointer',
+            color: STUDIO_COLORS.inkSubtle,
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <ChevronIcon size={13} />
+        </button>
+      </div>
       <div
         style={{
           display: 'flex',
@@ -263,6 +298,7 @@ function LedgerRow({
           </>
         ) : null}
       </div>
+      {expanded ? <RationaleCard variant="rail" rationale={rationale} /> : null}
     </li>
   )
 }

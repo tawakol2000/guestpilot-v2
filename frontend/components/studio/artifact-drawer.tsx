@@ -37,6 +37,11 @@ import { FaqView } from './artifact-views/faq-view'
 import { SystemPromptView } from './artifact-views/system-prompt-view'
 import { ToolView } from './artifact-views/tool-view'
 import { PropertyOverrideView } from './artifact-views/property-override-view'
+import {
+  RationaleCard,
+  extractRationale,
+} from './artifact-views/rationale-card'
+import type { BuildArtifactHistoryRow } from '@/lib/build-api'
 
 export interface ArtifactDrawerTarget {
   artifact: BuildArtifactType
@@ -47,6 +52,12 @@ export interface ArtifactDrawerTarget {
   scrollToSection?: string | null
   /** Passed to the row, used to derive deep-link + display title fallback. */
   sessionArtifact?: SessionArtifact | null
+  /**
+   * Sprint 054-A F2 — when the drawer was opened from a write-ledger row,
+   * carry the row so we can render the rationale card above the diff.
+   * Absent when opened from session-artifacts rail / deep links.
+   */
+  historyRow?: BuildArtifactHistoryRow | null
 }
 
 export interface ArtifactDrawerProps {
@@ -423,6 +434,21 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
           {error ? <ErrorBanner message={error} /> : null}
           {previewActive ? <PreviewBanner onClear={clearPreview} /> : null}
           {previewError ? <PreviewErrorBanner message={previewError} /> : null}
+          {/* 054-A F2 — history view: surface the rationale above the diff.
+              The card renders even when rationale is missing, so pre-F1
+              rows get a consistent "No rationale recorded" instead of a
+              layout shift. Non-history drawer opens omit the card entirely. */}
+          {target?.historyRow ? (
+            <div
+              data-testid="artifact-drawer-rationale-slot"
+              style={{ marginBottom: 12 }}
+            >
+              <RationaleCard
+                variant="drawer"
+                rationale={extractRationale(target.historyRow.metadata)}
+              />
+            </div>
+          ) : null}
           {renderDetail ? (
             <ViewSwitch
               artifact={renderDetail}

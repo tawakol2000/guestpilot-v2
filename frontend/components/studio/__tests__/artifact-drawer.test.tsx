@@ -474,4 +474,113 @@ describe('ArtifactDrawer', () => {
     })
     expect(container.textContent).not.toContain('sk-live-deadbeefcafe')
   })
+
+  // ── Sprint 054-A F2 — rationale card in drawer history view ───────────
+
+  it('054-A F2: drawer renders rationale card above diff when opened with historyRow', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeDetail({
+        type: 'faq',
+        id: 'f1',
+        title: 'wifi',
+        body: 'Password: in the welcome card.',
+        meta: { category: 'wifi-technology', scope: 'GLOBAL' },
+      }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{
+          artifact: 'faq',
+          artifactId: 'f1',
+          historyRow: {
+            id: 'h-1',
+            artifactType: 'faq',
+            artifactId: 'f1',
+            operation: 'UPDATE',
+            actorEmail: 'mgr@x',
+            conversationId: 'c1',
+            createdAt: new Date().toISOString(),
+            prevBody: null,
+            newBody: null,
+            metadata: { rationale: 'Clarified the wifi handoff per incident last week.' },
+          },
+        }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    expect(await screen.findByTestId('artifact-drawer-rationale-slot')).toBeTruthy()
+    expect(screen.getByTestId('rationale-card-body').textContent).toBe(
+      'Clarified the wifi handoff per incident last week.',
+    )
+  })
+
+  it('054-A F2: drawer omits rationale card when opened WITHOUT historyRow (non-history view)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeDetail({
+        type: 'faq',
+        id: 'f1',
+        title: 'wifi',
+        body: 'Password: in the welcome card.',
+        meta: { category: 'wifi-technology', scope: 'GLOBAL' },
+      }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{ artifact: 'faq', artifactId: 'f1' }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    await screen.findByText(/Password:/)
+    expect(screen.queryByTestId('artifact-drawer-rationale-slot')).toBeNull()
+    expect(screen.queryByTestId('rationale-card')).toBeNull()
+  })
+
+  it('054-A F2: drawer history view with missing rationale shows "No rationale recorded"', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeDetail({
+        type: 'faq',
+        id: 'f1',
+        title: 'wifi',
+        body: 'body',
+        meta: { category: 'wifi-technology', scope: 'GLOBAL' },
+      }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{
+          artifact: 'faq',
+          artifactId: 'f1',
+          historyRow: {
+            id: 'h-legacy',
+            artifactType: 'faq',
+            artifactId: 'f1',
+            operation: 'CREATE',
+            actorEmail: null,
+            conversationId: null,
+            createdAt: new Date().toISOString(),
+            prevBody: null,
+            newBody: null,
+            metadata: null,
+          },
+        }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    expect(await screen.findByTestId('artifact-drawer-rationale-slot')).toBeTruthy()
+    expect(screen.getByTestId('rationale-card-placeholder').textContent).toBe(
+      'No rationale recorded',
+    )
+  })
 })
