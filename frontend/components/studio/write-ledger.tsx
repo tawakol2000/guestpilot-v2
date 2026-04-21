@@ -31,6 +31,7 @@ import {
 import { STUDIO_COLORS } from './tokens'
 import {
   apiListBuildArtifactHistory,
+  type AggregateVerdict,
   type BuildArtifactHistoryRow,
   type BuildArtifactType,
 } from '@/lib/build-api'
@@ -275,6 +276,7 @@ function LedgerRow({
         <span>{row.actorEmail ?? 'unknown'}</span>
         <span>·</span>
         <span>{formatRelative(row.createdAt)}</span>
+        <VerdictChip row={row} onClick={onOpen} />
         {row.operation === 'UPDATE' ? (
           <>
             <span style={{ flex: 1 }} />
@@ -323,4 +325,73 @@ export function ledgerArtifactType(
 ): BuildArtifactType {
   if (t === 'tool_definition') return 'tool'
   return t as BuildArtifactType
+}
+
+// ─── Sprint 054-A F4 — verdict chip inline on ledger rows ────────────────
+
+function extractVerdict(
+  metadata: Record<string, unknown> | null | undefined,
+): AggregateVerdict | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const tr = (metadata as { testResult?: unknown }).testResult
+  if (!tr || typeof tr !== 'object') return null
+  const agg = (tr as { aggregateVerdict?: unknown }).aggregateVerdict
+  if (agg === 'all_passed' || agg === 'partial' || agg === 'all_failed') {
+    return agg
+  }
+  return null
+}
+
+function VerdictChip({
+  row,
+  onClick,
+}: {
+  row: BuildArtifactHistoryRow
+  onClick: () => void
+}) {
+  const verdict = extractVerdict(row.metadata)
+  if (!verdict) return null
+  const label =
+    verdict === 'all_passed'
+      ? 'Passed'
+      : verdict === 'partial'
+      ? 'Partial'
+      : 'Failed'
+  const color =
+    verdict === 'all_passed'
+      ? STUDIO_COLORS.successFg
+      : verdict === 'partial'
+      ? STUDIO_COLORS.warnFg
+      : STUDIO_COLORS.dangerFg
+  const bg =
+    verdict === 'all_passed'
+      ? '#ECFDF5'
+      : verdict === 'partial'
+      ? '#FEF3C7'
+      : '#FEF2F2'
+  return (
+    <button
+      type="button"
+      data-testid="write-ledger-verdict-chip"
+      data-verdict={verdict}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      aria-label={`${label} — open verification detail`}
+      style={{
+        background: bg,
+        color,
+        border: 'none',
+        borderRadius: 999,
+        padding: '1px 8px',
+        fontSize: 10,
+        fontWeight: 600,
+        cursor: 'pointer',
+        letterSpacing: 0.2,
+      }}
+    >
+      {label}
+    </button>
+  )
 }

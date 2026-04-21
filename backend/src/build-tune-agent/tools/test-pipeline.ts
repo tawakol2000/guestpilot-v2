@@ -42,6 +42,7 @@ import {
 import {
   bumpVerificationCallCount,
   canFireVerification,
+  getActiveRitualArtifactContext,
   getActiveRitualHistoryId,
   getVerificationCallCount,
   VERIFICATION_MAX_CALLS,
@@ -154,6 +155,7 @@ export function buildTestPipelineTool(
       });
 
       const historyId = getActiveRitualHistoryId(c);
+      const artifactCtx = getActiveRitualArtifactContext(c);
 
       try {
         // Promise.all over (test, judge) pairs — sequential inside each
@@ -251,6 +253,7 @@ export function buildTestPipelineTool(
           aggregateVerdict,
           ritualVersion: VERIFICATION_RITUAL_VERSION,
           sourceWriteHistoryId: historyId,
+          sourceWriteLabel: artifactCtx,
           ritualCallsRemaining: Math.max(
             0,
             VERIFICATION_MAX_CALLS - getVerificationCallCount(c)

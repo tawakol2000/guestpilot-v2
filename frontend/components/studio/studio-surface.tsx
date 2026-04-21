@@ -40,6 +40,7 @@ import { StudioChat } from './studio-chat'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { WriteLedgerCard, ledgerArtifactType } from './write-ledger'
 import {
+  apiListBuildArtifactHistory,
   apiRevertArtifactFromHistory,
   type BuildArtifactHistoryRow,
 } from '@/lib/build-api'
@@ -243,6 +244,36 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     }
     setArtifactDrawer({ open: true, target })
   }, [])
+  // 054-A F4 — open the drawer for a given history row id (used by the
+  // test-pipeline-result source-write chip + ledger verdict chip).
+  // Fetches the row via the rail endpoint, which already returns the full
+  // row shape; drawer then renders the rationale + Verification section.
+  const conversationIdForHistoryLookup =
+    load.kind === 'ready' ? load.conversationId : undefined
+  const openArtifactDrawerForHistoryId = useCallback(
+    async (historyId: string) => {
+      try {
+        const page = await apiListBuildArtifactHistory({
+          conversationId: conversationIdForHistoryLookup,
+          limit: 50,
+        })
+        const row = page.rows.find((r) => r.id === historyId)
+        if (!row) return
+        setArtifactDrawer({
+          open: true,
+          target: {
+            artifact: ledgerArtifactType(row.artifactType),
+            artifactId: row.artifactId,
+            historyRow: row,
+            scrollToSection: 'verification',
+          },
+        })
+      } catch {
+        // Silent — user can click the ledger row directly as a fallback.
+      }
+    },
+    [conversationIdForHistoryLookup],
+  )
   const closeArtifactDrawer = useCallback(() => {
     setArtifactDrawer((prev) => ({ ...prev, open: false }))
     const opener = artifactDrawerOpenerRef.current
@@ -370,6 +401,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             onOpenArtifact={openArtifactFromCitation}
             isAdmin={capabilities.isAdmin}
             traceViewEnabled={capabilities.traceViewEnabled}
+            onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
           />
         </div>
       </main>
@@ -646,33 +678,47 @@ function RightRail({
         artifacts={sessionArtifacts}
         onOpen={onOpenArtifact}
       />
-      {testResults.length > 0 && (
-        <div
-          className="rounded-md border bg-white p-3"
-          style={{ borderColor: STUDIO_COLORS.hairline }}
-        >
+      {testResults.length > 0 && (() => {
+        const latest = testResults[0]
+        const variants = Array.isArray(latest.variants) ? latest.variants : []
+        const firstVariant = variants[0]
+        if (!firstVariant) return null
+        const passed = variants.filter((v) => v.verdict === 'passed').length
+        return (
           <div
-            className="mb-2 text-[11px] font-semibold uppercase tracking-wide"
-            style={{ color: STUDIO_COLORS.inkMuted }}
+            className="rounded-md border bg-white p-3"
+            style={{ borderColor: STUDIO_COLORS.hairline }}
           >
-            Recent test
+            <div
+              className="mb-2 text-[11px] font-semibold uppercase tracking-wide"
+              style={{ color: STUDIO_COLORS.inkMuted }}
+            >
+              Recent test
+            </div>
+            <div
+              className="mb-1 text-[12px] font-semibold"
+              style={{
+                color:
+                  latest.aggregateVerdict === 'all_passed'
+                    ? STUDIO_COLORS.successFg
+                    : STUDIO_COLORS.warnFg,
+              }}
+            >
+              {passed}/{variants.length} passed
+            </div>
+            <div className="text-[12px]" style={{ color: STUDIO_COLORS.ink }}>
+              {firstVariant.pipelineOutput.slice(0, 140)}
+              {firstVariant.pipelineOutput.length > 140 ? '…' : ''}
+            </div>
+            <div
+              className="mt-1 text-[10.5px]"
+              style={{ color: STUDIO_COLORS.inkSubtle }}
+            >
+              {firstVariant.latencyMs}ms · {firstVariant.replyModel}
+            </div>
           </div>
-          <div className="text-[12px]" style={{ color: STUDIO_COLORS.ink }}>
-            {testResults[0].reply.slice(0, 140)}
-            {testResults[0].reply.length > 140 ? '…' : ''}
-          </div>
-          <div
-            className="mt-1 text-[10.5px]"
-            style={{ color: STUDIO_COLORS.inkSubtle }}
-          >
-            Judge score{' '}
-            <strong style={{ color: STUDIO_COLORS.ink }}>
-              {testResults[0].judgeScore.toFixed(2)}
-            </strong>{' '}
-            · {testResults[0].latencyMs}ms
-          </div>
-        </div>
-      )}
+        )
+      })()}
       <WriteLedgerCard
         visible={ledgerVisible}
         conversationId={ledgerConversationId}

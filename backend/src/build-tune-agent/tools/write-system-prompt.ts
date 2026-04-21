@@ -315,7 +315,11 @@ export function buildWriteSystemPromptTool(
           },
         });
         // 054-A F3 — open verification ritual tied to this history row.
-        openRitualWindow(c, emission.historyId);
+        openRitualWindow(c, emission.historyId, {
+          artifactType: 'system_prompt',
+          artifactId: args.variant,
+          operation,
+        });
 
         const previewUrl = `/system-prompt/${versionRow.id}`;
         const payload = {

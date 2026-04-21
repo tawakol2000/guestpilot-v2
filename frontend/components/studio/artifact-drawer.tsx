@@ -466,6 +466,12 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
               }
             />
           ) : null}
+          {/* 054-A F4 — in history view, surface the stored verification
+              result below the diff so the user can see the verdict + judge
+              reasoning without having to scroll the chat back. */}
+          {target?.historyRow ? (
+            <VerificationSection row={target.historyRow} />
+          ) : null}
         </div>
 
         <footer
@@ -859,5 +865,140 @@ function synthesizePreviewDetail(
     body: nextBody,
     prevBody: base.body,
   }
+}
+
+// ─── Sprint 054-A F4 — Verification section in drawer history view ──────
+//
+// Reads metadata.testResult that F3 writes back to the triggering
+// history row, renders a compact verdict-first card identical in
+// shape to the chat renderer but rooted in the drawer for persistent
+// reference. Renders nothing when no result is stored.
+
+interface StoredVerificationVariant {
+  triggerMessage: string
+  pipelineOutput: string
+  verdict: 'passed' | 'failed'
+  judgeReasoning: string
+  judgePromptVersion: string
+  ranAt: string
+}
+interface StoredVerificationResult {
+  variants: StoredVerificationVariant[]
+  aggregateVerdict: 'all_passed' | 'partial' | 'all_failed'
+  ritualVersion: string
+}
+
+function extractStoredVerification(
+  metadata: Record<string, unknown> | null | undefined,
+): StoredVerificationResult | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const tr = (metadata as { testResult?: unknown }).testResult
+  if (!tr || typeof tr !== 'object') return null
+  const trObj = tr as Record<string, unknown>
+  const variants = Array.isArray(trObj.variants)
+    ? (trObj.variants as StoredVerificationVariant[])
+    : []
+  const agg = trObj.aggregateVerdict
+  if (agg !== 'all_passed' && agg !== 'partial' && agg !== 'all_failed') return null
+  const ritualVersion = typeof trObj.ritualVersion === 'string' ? trObj.ritualVersion : ''
+  return { variants, aggregateVerdict: agg, ritualVersion }
+}
+
+function VerificationSection({
+  row,
+}: {
+  row: import('@/lib/build-api').BuildArtifactHistoryRow
+}) {
+  const result = extractStoredVerification(row.metadata)
+  if (!result) return null
+  const passed = result.variants.filter((v) => v.verdict === 'passed').length
+  const total = result.variants.length
+  const headline =
+    result.aggregateVerdict === 'all_passed'
+      ? `${total}/${total} passed`
+      : result.aggregateVerdict === 'all_failed'
+      ? `0/${total} passed`
+      : `${passed}/${total} passed — ${total - passed} failed`
+  const color =
+    result.aggregateVerdict === 'all_passed'
+      ? STUDIO_COLORS.successFg
+      : result.aggregateVerdict === 'all_failed'
+      ? STUDIO_COLORS.dangerFg
+      : STUDIO_COLORS.warnFg
+  return (
+    <section
+      id="verification"
+      data-testid="artifact-drawer-verification-section"
+      data-aggregate={result.aggregateVerdict}
+      style={{
+        marginTop: 14,
+        padding: 12,
+        border: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+        borderRadius: 6,
+        background: STUDIO_COLORS.surfaceRaised,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+          textTransform: 'uppercase',
+          color: STUDIO_COLORS.inkSubtle,
+          marginBottom: 6,
+        }}
+      >
+        Verification
+      </div>
+      <div
+        data-testid="artifact-drawer-verification-headline"
+        style={{ fontSize: 14, fontWeight: 700, color }}
+      >
+        {headline}
+      </div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {result.variants.map((v, i) => (
+          <li
+            key={i}
+            style={{
+              fontSize: 12,
+              color: STUDIO_COLORS.inkMuted,
+              borderLeft:
+                v.verdict === 'failed'
+                  ? `3px solid ${STUDIO_COLORS.warnFg}`
+                  : 'none',
+              paddingLeft: v.verdict === 'failed' ? 8 : 0,
+            }}
+          >
+            <span
+              style={{
+                fontWeight: 600,
+                marginRight: 6,
+                color:
+                  v.verdict === 'passed'
+                    ? STUDIO_COLORS.successFg
+                    : STUDIO_COLORS.warnFg,
+              }}
+            >
+              {v.verdict === 'passed' ? 'Passed.' : "Didn't work."}
+            </span>
+            {v.judgeReasoning}
+          </li>
+        ))}
+      </ul>
+      {result.ritualVersion ? (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10.5,
+            fontFamily: 'monospace',
+            color: STUDIO_COLORS.inkSubtle,
+          }}
+        >
+          ritual {result.ritualVersion}
+        </div>
+      ) : null}
+    </section>
+  )
 }
 

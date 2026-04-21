@@ -84,6 +84,12 @@ export interface StudioChatProps {
    */
   isAdmin?: boolean
   traceViewEnabled?: boolean
+  /**
+   * Sprint 054-A F4 — opens the artifact drawer in history view for a
+   * given BuildArtifactHistory row id so the Verification section is
+   * visible. Wired by the parent which owns the drawer + ledger rows.
+   */
+  onOpenVerificationForHistoryId?: (historyId: string) => void
 }
 
 // Sprint 050 A3 — helpers that turn a plan-approval or suggested-fix
@@ -164,6 +170,7 @@ export function StudioChat({
   onOpenArtifact,
   isAdmin = false,
   traceViewEnabled = false,
+  onOpenVerificationForHistoryId,
 }: StudioChatProps) {
   const transport = useMemo(
     () =>
@@ -291,6 +298,7 @@ export function StudioChat({
               onOpenArtifact={onOpenArtifact}
               onSendText={(text) => sendMessage({ text })}
               onOpenToolDrawer={openToolDrawer}
+              onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
             />
           ))}
 
@@ -431,6 +439,7 @@ function MessageRow({
   onOpenArtifact,
   onSendText,
   onOpenToolDrawer,
+  onOpenVerificationForHistoryId,
 }: {
   message: UIMessage
   isLast: boolean
@@ -445,6 +454,7 @@ function MessageRow({
   ) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
+  onOpenVerificationForHistoryId?: (historyId: string) => void
 }) {
   const isUser = message.role === 'user'
   const parts = ((message as any).parts as Array<Record<string, any>>) ?? []
@@ -507,6 +517,7 @@ function MessageRow({
               onOpenArtifact={onOpenArtifact}
               onSendText={onSendText}
               onOpenToolDrawer={onOpenToolDrawer}
+              onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
             />
           ))}
         </div>
@@ -528,6 +539,7 @@ function StandalonePart({
   onOpenArtifact,
   onSendText,
   onOpenToolDrawer,
+  onOpenVerificationForHistoryId,
 }: {
   part: Record<string, any>
   conversationId: string
@@ -541,6 +553,7 @@ function StandalonePart({
   ) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
+  onOpenVerificationForHistoryId?: (historyId: string) => void
 }) {
   const rejectionConversationId = conversationId
   if (!part || typeof part !== 'object') return null
@@ -598,9 +611,18 @@ function StandalonePart({
     // Render inline too (parent right rail already has a copy via
     // onTestResult hoisting; showing the card inline makes it easy to
     // reference while reading the conversation).
+    const testData = part.data as TestPipelineResultData
     return (
       <div style={{ maxWidth: 720 }}>
-        <TestPipelineResult data={part.data as TestPipelineResultData} />
+        <TestPipelineResult
+          data={testData}
+          sourceWriteLabel={testData.sourceWriteLabel ?? undefined}
+          onOpenSourceWrite={
+            testData.sourceWriteHistoryId
+              ? () => onOpenVerificationForHistoryId?.(testData.sourceWriteHistoryId!)
+              : undefined
+          }
+        />
       </div>
     )
   }

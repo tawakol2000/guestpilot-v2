@@ -31,21 +31,50 @@ export const VERIFICATION_MAX_CALLS = 3;
 const K_HISTORY_ID = 'verification_ritual:historyId';
 const K_COUNT = 'verification_ritual:count';
 const K_WRITE_COUNT = 'verification_ritual:writeCount';
+const K_ARTIFACT_CTX = 'verification_ritual:artifactCtx';
 
 function flags(ctx: ToolContext): Record<string, unknown> {
   return (ctx.turnFlags ??= {}) as Record<string, unknown>;
+}
+
+export interface RitualArtifactContext {
+  artifactType:
+    | 'sop'
+    | 'faq'
+    | 'system_prompt'
+    | 'tool_definition'
+    | 'property_override';
+  artifactId: string;
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'REVERT';
 }
 
 /**
  * Record a successful write. Opens a fresh ritual window, resetting
  * the test-pipeline counter. The history id is the triggering row's
  * primary key so the verification result can be linked back.
+ * `artifactContext` (optional) carries the artifact type + id +
+ * operation so the F4 chat card can render a "Testing: UPDATE sop —
+ * late_checkout" chip without a round-trip to the DB.
  */
-export function openRitualWindow(ctx: ToolContext, historyId: string | null): void {
+export function openRitualWindow(
+  ctx: ToolContext,
+  historyId: string | null,
+  artifactContext?: RitualArtifactContext,
+): void {
   const f = flags(ctx);
   f[K_HISTORY_ID] = historyId ?? null;
   f[K_COUNT] = 0;
+  f[K_ARTIFACT_CTX] = artifactContext ?? null;
   f[K_WRITE_COUNT] = (typeof f[K_WRITE_COUNT] === 'number' ? (f[K_WRITE_COUNT] as number) : 0) + 1;
+}
+
+export function getActiveRitualArtifactContext(
+  ctx: ToolContext,
+): RitualArtifactContext | null {
+  const f = flags(ctx);
+  const v = f[K_ARTIFACT_CTX];
+  if (!v || typeof v !== 'object') return null;
+  return v as RitualArtifactContext;
 }
 
 /**

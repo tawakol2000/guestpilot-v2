@@ -169,7 +169,11 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         // 054-A F3 — open a verification ritual window tied to this
         // history row. test_pipeline calls in this turn will append
         // their results onto metadata.testResult.
-        openRitualWindow(c, emission.historyId);
+        openRitualWindow(c, emission.historyId, {
+          artifactType: 'faq',
+          artifactId: created.id,
+          operation: 'CREATE',
+        });
 
         const previewUrl = `/faqs/${created.id}`;
         if (c.emitDataPart) {

@@ -263,7 +263,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             },
           });
           // 054-A F3 — open verification ritual tied to this history row.
-          openRitualWindow(c, emission.historyId);
+          openRitualWindow(c, emission.historyId, {
+            artifactType: 'property_override',
+            artifactId: override.id,
+            operation: 'CREATE',
+          });
           const previewUrl = `/sops/${definition.id}/override/${override.id}`;
           const payload = {
             ok: true,
@@ -344,7 +348,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           },
         });
         // 054-A F3 — open verification ritual tied to this history row.
-        openRitualWindow(c, emission.historyId);
+        openRitualWindow(c, emission.historyId, {
+          artifactType: 'sop',
+          artifactId: variant.id,
+          operation: 'CREATE',
+        });
         const previewUrl = `/sops/${definition.id}/variant/${variant.id}`;
         const payload = {
           ok: true,

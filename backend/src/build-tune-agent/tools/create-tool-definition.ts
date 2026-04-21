@@ -229,7 +229,11 @@ export function buildCreateToolDefinitionTool(
           },
         });
         // 054-A F3 — open verification ritual tied to this history row.
-        openRitualWindow(c, emission.historyId);
+        openRitualWindow(c, emission.historyId, {
+          artifactType: 'tool_definition',
+          artifactId: created.id,
+          operation: 'CREATE',
+        });
 
         const previewUrl = `/tools/${created.id}`;
         const payload = {

@@ -358,16 +358,46 @@ export interface BuildPlanData {
   rationale: string
 }
 
-export interface TestPipelineResultData {
-  ok: boolean
-  reply: string
+// ─── Sprint 054-A F3/F4 — verification-ritual verdict shape ──────────────
+//
+// Extends the sprint-045 single-variant payload with a multi-variant
+// aggregate. Callers can accept either by checking for `variants`:
+// variants present → 054-A shape; otherwise legacy single-variant.
+
+export type VariantVerdict = 'passed' | 'failed'
+
+export interface TestPipelineVariant {
+  triggerMessage: string
+  pipelineOutput: string
+  verdict: VariantVerdict
+  judgeReasoning: string
   judgeScore: number
-  judgeRationale: string
   judgeFailureCategory?: string | null
   judgePromptVersion: string
   judgeModel: string
   replyModel: string
   latencyMs: number
+  ranAt: string
+}
+
+export type AggregateVerdict = 'all_passed' | 'partial' | 'all_failed'
+
+export interface SourceWriteLabel {
+  artifactType: BuildArtifactType | 'tool_definition'
+  artifactId: string
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'REVERT'
+}
+
+export interface TestPipelineResultData {
+  ok: boolean
+  variants: TestPipelineVariant[]
+  aggregateVerdict: AggregateVerdict
+  ritualVersion: string
+  /** History row id when this ran inside a ritual window; null otherwise. */
+  sourceWriteHistoryId: string | null
+  /** Artifact context for the source-write chip (054-A F4). */
+  sourceWriteLabel?: SourceWriteLabel | null
+  ritualCallsRemaining: number
 }
 
 // ─── Sprint 051 A B1 — artifact drawer read seam ──────────────────────────

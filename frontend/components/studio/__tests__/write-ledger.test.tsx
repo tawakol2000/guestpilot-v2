@@ -209,6 +209,105 @@ describe('WriteLedgerCard', () => {
     )
   })
 
+  // ── Sprint 054-A F4 — verdict chip inline on ledger rows ───────────────
+
+  it('054-A F4: ledger row renders a passed chip when metadata.testResult.aggregateVerdict is all_passed', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-pass',
+          metadata: {
+            rationale: 'Added late-checkout SOP.',
+            testResult: {
+              variants: [
+                { triggerMessage: 'a', pipelineOutput: 'b', verdict: 'passed', judgeReasoning: 'ok', judgePromptVersion: 'v1', ranAt: new Date().toISOString() },
+              ],
+              aggregateVerdict: 'all_passed',
+              ritualVersion: '054-a.1',
+            },
+          },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-verdict-chip'))
+    const chip = screen.getByTestId('write-ledger-verdict-chip')
+    expect(chip.getAttribute('data-verdict')).toBe('all_passed')
+    expect(chip.textContent).toBe('Passed')
+  })
+
+  it('054-A F4: partial verdict renders an amber "Partial" chip, all_failed renders red "Failed"', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-partial',
+          metadata: {
+            testResult: {
+              variants: [],
+              aggregateVerdict: 'partial',
+              ritualVersion: '054-a.1',
+            },
+          },
+        }),
+        row({
+          id: 'h-fail',
+          metadata: {
+            testResult: {
+              variants: [],
+              aggregateVerdict: 'all_failed',
+              ritualVersion: '054-a.1',
+            },
+          },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() =>
+      expect(screen.getAllByTestId('write-ledger-verdict-chip').length).toBe(2),
+    )
+    const chips = screen.getAllByTestId('write-ledger-verdict-chip')
+    expect(chips[0].getAttribute('data-verdict')).toBe('partial')
+    expect(chips[0].textContent).toBe('Partial')
+    expect(chips[1].getAttribute('data-verdict')).toBe('all_failed')
+    expect(chips[1].textContent).toBe('Failed')
+  })
+
+  it('054-A F4: row without testResult renders NO verdict chip', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [row({ id: 'h-none', metadata: { rationale: 'Just a write, no test yet.' } })],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    expect(screen.queryByTestId('write-ledger-verdict-chip')).toBeNull()
+  })
+
+  it('054-A F4: clicking verdict chip triggers onOpenRow (dispatches to drawer)', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-chip',
+          metadata: {
+            testResult: {
+              variants: [],
+              aggregateVerdict: 'all_passed',
+              ritualVersion: '054-a.1',
+            },
+          },
+        }),
+      ],
+    })
+    const onOpen = vi.fn()
+    render(
+      <WriteLedgerCard visible conversationId="c1" onOpenRow={onOpen} />,
+    )
+    await waitFor(() => screen.getByTestId('write-ledger-verdict-chip'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('write-ledger-verdict-chip'))
+    })
+    expect(onOpen).toHaveBeenCalled()
+    expect(onOpen.mock.calls[0][0].id).toBe('h-chip')
+  })
+
   it('054-A F2: markdown-looking rationale renders as literal text (no <strong>, no <h1>)', async () => {
     mockList.mockResolvedValueOnce({
       rows: [

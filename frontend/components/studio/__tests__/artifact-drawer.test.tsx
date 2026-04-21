@@ -543,6 +543,105 @@ describe('ArtifactDrawer', () => {
     expect(screen.queryByTestId('rationale-card')).toBeNull()
   })
 
+  // ── Sprint 054-A F4 — Verification section in drawer history view ────
+
+  it('054-A F4: drawer renders Verification section with verdict + per-variant reasoning when testResult present', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeDetail({ type: 'faq', id: 'f1', title: 'wifi', body: 'b', meta: {} }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{
+          artifact: 'faq',
+          artifactId: 'f1',
+          historyRow: {
+            id: 'h-1',
+            artifactType: 'faq',
+            artifactId: 'f1',
+            operation: 'UPDATE',
+            actorEmail: null,
+            conversationId: null,
+            createdAt: new Date().toISOString(),
+            prevBody: null,
+            newBody: null,
+            metadata: {
+              rationale: 'Added wifi FAQ.',
+              testResult: {
+                variants: [
+                  {
+                    triggerMessage: 't1',
+                    pipelineOutput: 'Yes',
+                    verdict: 'passed',
+                    judgeReasoning: 'Reply cites wifi FAQ correctly.',
+                    judgePromptVersion: 'v1',
+                    ranAt: new Date().toISOString(),
+                  },
+                  {
+                    triggerMessage: 't2',
+                    pipelineOutput: 'Maybe',
+                    verdict: 'failed',
+                    judgeReasoning: 'Reply hedged on the password location.',
+                    judgePromptVersion: 'v1',
+                    ranAt: new Date().toISOString(),
+                  },
+                ],
+                aggregateVerdict: 'partial',
+                ritualVersion: '054-a.1',
+              },
+            },
+          },
+        }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    const section = await screen.findByTestId('artifact-drawer-verification-section')
+    expect(section.getAttribute('data-aggregate')).toBe('partial')
+    expect(
+      screen.getByTestId('artifact-drawer-verification-headline').textContent,
+    ).toBe('1/2 passed — 1 failed')
+    expect(section.textContent).toContain('Reply cites wifi FAQ correctly.')
+    expect(section.textContent).toContain('Reply hedged on the password location.')
+  })
+
+  it('054-A F4: drawer Verification section absent when historyRow has no testResult', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeDetail({ type: 'faq', id: 'f1', title: 'wifi', body: 'b', meta: {} }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{
+          artifact: 'faq',
+          artifactId: 'f1',
+          historyRow: {
+            id: 'h-1',
+            artifactType: 'faq',
+            artifactId: 'f1',
+            operation: 'CREATE',
+            actorEmail: null,
+            conversationId: null,
+            createdAt: new Date().toISOString(),
+            prevBody: null,
+            newBody: null,
+            metadata: { rationale: 'Just rationale, no test yet.' },
+          },
+        }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    await screen.findByTestId('artifact-drawer-rationale-slot')
+    expect(
+      screen.queryByTestId('artifact-drawer-verification-section'),
+    ).toBeNull()
+  })
+
   it('054-A F2: drawer history view with missing rationale shows "No rationale recorded"', async () => {
     mockFetch.mockResolvedValueOnce(
       makeDetail({
