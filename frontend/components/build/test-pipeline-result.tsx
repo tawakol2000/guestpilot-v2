@@ -19,7 +19,7 @@
 import { useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
-import { TUNING_COLORS } from '../studio/tokens'
+import { TUNING_COLORS, attributedStyle } from '../studio/tokens'
 import {
   apiRevertArtifactFromHistory,
   type AggregateVerdict,
@@ -155,7 +155,7 @@ export function TestPipelineResult(props: TestPipelineResultProps) {
             <li
               key={i}
               className="text-[13px] leading-5"
-              style={{ color: TUNING_COLORS.inkMuted }}
+              style={attributedStyle('ai')}
             >
               <span
                 className="mr-1.5 font-semibold"
@@ -345,7 +345,7 @@ function VariantRow({ variant }: { variant: TestPipelineVariant }) {
         </span>
         <span
           className="truncate"
-          style={{ fontSize: 12, color: TUNING_COLORS.ink, flex: 1 }}
+          style={{ fontSize: 12, ...attributedStyle('ai'), flex: 1 }}
         >
           {variant.triggerMessage}
         </span>
@@ -369,7 +369,7 @@ function VariantRow({ variant }: { variant: TestPipelineVariant }) {
               style={{
                 borderColor: TUNING_COLORS.hairlineSoft,
                 background: TUNING_COLORS.canvas,
-                color: TUNING_COLORS.ink,
+                ...attributedStyle('ai'),
               }}
             >
               {variant.pipelineOutput}

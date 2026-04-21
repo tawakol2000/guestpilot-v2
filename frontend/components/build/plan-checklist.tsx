@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { STUDIO_COLORS } from '../studio/tokens'
+import { STUDIO_COLORS, attributedStyle } from '../studio/tokens'
 import {
   apiApproveBuildPlan,
   apiListBuildArtifactHistory,
@@ -345,7 +345,7 @@ export function PlanChecklist({
 
       {/* Body */}
       <div className="px-4 py-3" style={{ background: STUDIO_COLORS.surfaceRaised }}>
-        <p className="mb-3 text-[13px] leading-5" style={{ color: STUDIO_COLORS.ink }}>
+        <p className="mb-3 text-[13px] leading-5" style={attributedStyle('ai')}>
           {data.rationale}
         </p>
         <ul className="flex flex-col gap-1.5">
@@ -520,7 +520,7 @@ function PlanRow({
               </div>
               <div
                 className="mt-0.5 line-clamp-2 text-[11.5px]"
-                style={{ color: STUDIO_COLORS.inkMuted }}
+                style={attributedStyle('ai')}
               >
                 {item.rationale}
               </div>

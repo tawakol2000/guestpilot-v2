@@ -230,4 +230,39 @@ describe('TestPipelineResult', () => {
     // Button should now be disabled
     expect(screen.getByTestId('test-pipeline-result-rollback-btn')).toBeDisabled()
   })
+
+  // ── Sprint 057-A F2 — typographic attribution ────────────────────────────
+
+  it('057-A F2: judge reasoning list items render with AI (inkMuted) colour', async () => {
+    const { TUNING_COLORS } = await import('../../studio/tokens')
+    render(<TestPipelineResult data={makeData({
+      variants: [variant({ judgeReasoning: 'Correct late-checkout handling.' })],
+    })} />)
+    const reasoningList = screen.getByTestId('test-pipeline-result-reasoning-list')
+    const li = reasoningList.querySelector('li')!
+    expect(li).toHaveStyle({ color: TUNING_COLORS.inkMuted })
+  })
+
+  it('057-A F2: variant trigger message renders with AI (inkMuted) colour when row is expanded', async () => {
+    const { TUNING_COLORS } = await import('../../studio/tokens')
+    render(<TestPipelineResult data={makeData({
+      variants: [variant({ triggerMessage: 'Can I check out late?' })],
+    })} />)
+    // Open the per-variant details section
+    const rows = screen.getAllByTestId('test-pipeline-result-variant-row')
+    fireEvent.click(rows[0].querySelector('button')!)
+    const triggerSpan = screen.getByText('Can I check out late?')
+    expect(triggerSpan).toHaveStyle({ color: TUNING_COLORS.inkMuted })
+  })
+
+  it('057-A F2: pipeline reply renders with AI (inkMuted) colour when row is expanded', async () => {
+    const { TUNING_COLORS } = await import('../../studio/tokens')
+    render(<TestPipelineResult data={makeData({
+      variants: [variant({ pipelineOutput: 'Late checkout is complimentary.' })],
+    })} />)
+    const rows = screen.getAllByTestId('test-pipeline-result-variant-row')
+    fireEvent.click(rows[0].querySelector('button')!)
+    const replyEl = screen.getByText('Late checkout is complimentary.')
+    expect(replyEl).toHaveStyle({ color: TUNING_COLORS.inkMuted })
+  })
 })

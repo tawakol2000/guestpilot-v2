@@ -356,4 +356,46 @@ describe('PlanChecklist — 055-A F1', () => {
       expect(onOpenArtifact).toHaveBeenCalledWith('sop', 'sop-from-history')
     })
   })
+
+  // ── Sprint 057-A F2 — typographic attribution ──────────────────────────
+
+  it('057-A F2: plan rationale body renders with AI (inkMuted) colour', async () => {
+    mockApproveSuccess()
+    const { STUDIO_COLORS } = await import('../../studio/tokens')
+    const data = makePlan({ rationale: 'This is AI-authored rationale.' })
+
+    render(<PlanChecklist data={data} />)
+
+    await waitFor(() => screen.getByText('This is AI-authored rationale.'))
+    const rationaleEl = screen.getByText('This is AI-authored rationale.')
+    expect(rationaleEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+
+  it('057-A F2: per-row rationale sub-line renders with AI (inkMuted) colour', async () => {
+    mockApproveSuccess()
+    const { STUDIO_COLORS } = await import('../../studio/tokens')
+    const data = makePlan({
+      items: [{ type: 'sop', name: 'Check-in SOP', rationale: 'Per-row AI rationale text.' }],
+    })
+
+    render(<PlanChecklist data={data} />)
+
+    await waitFor(() => screen.getByText('Per-row AI rationale text.'))
+    const el = screen.getByText('Per-row AI rationale text.')
+    expect(el).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+
+  it('057-A F2: item name renders with ink (human/structural) colour', async () => {
+    mockApproveSuccess()
+    const { STUDIO_COLORS } = await import('../../studio/tokens')
+    const data = makePlan({
+      items: [{ type: 'sop', name: 'My Special SOP', rationale: 'reason.' }],
+    })
+
+    render(<PlanChecklist data={data} />)
+
+    await waitFor(() => screen.getByTitle('My Special SOP'))
+    const nameEl = screen.getByTitle('My Special SOP')
+    expect(nameEl).toHaveStyle({ color: STUDIO_COLORS.ink })
+  })
 })
