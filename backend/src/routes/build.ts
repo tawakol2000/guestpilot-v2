@@ -55,6 +55,10 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.post('/suggested-fix/:fixId/reject', (req: any, res) =>
     ctl.rejectSuggestedFix(req, res)
   );
+  // Sprint 051 A B1 — artifact drawer read-seam.
+  router.get('/artifact/:type/:id', (req: any, res) =>
+    ctl.getArtifact(req, res)
+  );
 
   return router;
 }

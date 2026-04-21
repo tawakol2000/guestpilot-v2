@@ -45,6 +45,10 @@ import {
   upsertSessionArtifact,
   type SessionArtifact,
 } from './session-artifacts'
+import {
+  ArtifactDrawer,
+  type ArtifactDrawerTarget,
+} from './artifact-drawer'
 import { STUDIO_COLORS } from './tokens'
 
 export interface StudioSurfaceProps {
@@ -80,6 +84,20 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   // Sprint 050 A3 — session artifacts panel. Resets when conversationId
   // changes (handled automatically by the bootstrap effect's reload).
   const [sessionArtifacts, setSessionArtifacts] = useState<SessionArtifact[]>([])
+  // Sprint 051 A B1 — unified artifact drawer state.
+  const [artifactDrawer, setArtifactDrawer] = useState<{
+    open: boolean
+    target: ArtifactDrawerTarget | null
+  }>({ open: false, target: null })
+  // Timestamp used by the drawer's "View changes" lookup — stable per
+  // session, refreshed on conversationId change via the same bootstrap
+  // reset that clears sessionArtifacts.
+  const [sessionStartIso, setSessionStartIso] = useState<string>(() =>
+    new Date().toISOString(),
+  )
+  // Element that held focus when the drawer opened, so we can restore
+  // it on close. Brief §1.1: focus returned to the opener.
+  const artifactDrawerOpenerRef = useRef<HTMLElement | null>(null)
   const bootstrapRef = useRef(false)
 
   // Fetch capabilities once on mount. Both flags default to false so a
@@ -104,6 +122,8 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     bootstrapRef.current = false
     // Session artifacts are per-conversation — empty on switch.
     setSessionArtifacts([])
+    // Sprint 051 A B2 — "this session" window restarts with the convo.
+    setSessionStartIso(new Date().toISOString())
   }, [conversationId])
 
   useEffect(() => {
@@ -208,6 +228,34 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     setSessionArtifacts((prev) => upsertSessionArtifact(prev, next))
   }, [])
 
+  const openArtifactDrawer = useCallback((target: ArtifactDrawerTarget) => {
+    if (typeof document !== 'undefined') {
+      artifactDrawerOpenerRef.current =
+        (document.activeElement as HTMLElement | null) ?? null
+    }
+    setArtifactDrawer({ open: true, target })
+  }, [])
+  const closeArtifactDrawer = useCallback(() => {
+    setArtifactDrawer((prev) => ({ ...prev, open: false }))
+    const opener = artifactDrawerOpenerRef.current
+    if (opener && typeof opener.focus === 'function') {
+      // Defer to avoid racing with the drawer's unmount focus churn.
+      requestAnimationFrame(() => opener.focus())
+    }
+    artifactDrawerOpenerRef.current = null
+  }, [])
+  const openArtifactFromRow = useCallback(
+    (a: SessionArtifact) => {
+      openArtifactDrawer({
+        artifact: a.artifact,
+        artifactId: a.artifactId,
+        sessionArtifact: a,
+        isPending: false,
+      })
+    },
+    [openArtifactDrawer],
+  )
+
   if (load.kind === 'loading') {
     return (
       <div
@@ -297,6 +345,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         snapshot={effectiveSnapshot}
         testResults={testResults}
         sessionArtifacts={sessionArtifacts}
+        onOpenArtifact={openArtifactFromRow}
         traceButtonVisible={capabilities.traceViewEnabled && capabilities.isAdmin}
         onOpenTrace={() => setTraceOpen(true)}
         rawPromptButtonVisible={
@@ -314,6 +363,15 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         open={rawPromptOpen}
         onClose={() => setRawPromptOpen(false)}
         conversationId={load.conversationId}
+      />
+      <ArtifactDrawer
+        open={artifactDrawer.open}
+        target={artifactDrawer.target}
+        onClose={closeArtifactDrawer}
+        isAdmin={capabilities.isAdmin}
+        traceViewEnabled={capabilities.traceViewEnabled}
+        rawPromptEditorEnabled={Boolean(capabilities.rawPromptEditorEnabled)}
+        sessionStartIso={sessionStartIso}
       />
     </div>
   )
@@ -465,6 +523,7 @@ function RightRail({
   snapshot,
   testResults,
   sessionArtifacts,
+  onOpenArtifact,
   traceButtonVisible,
   onOpenTrace,
   rawPromptButtonVisible,
@@ -473,6 +532,7 @@ function RightRail({
   snapshot: StateSnapshotData
   testResults: TestPipelineResultData[]
   sessionArtifacts: SessionArtifact[]
+  onOpenArtifact: (a: SessionArtifact) => void
   traceButtonVisible: boolean
   onOpenTrace: () => void
   rawPromptButtonVisible: boolean
@@ -490,7 +550,10 @@ function RightRail({
       }}
     >
       <StateSnapshotCard data={snapshot} />
-      <SessionArtifactsCard artifacts={sessionArtifacts} />
+      <SessionArtifactsCard
+        artifacts={sessionArtifacts}
+        onOpen={onOpenArtifact}
+      />
       {testResults.length > 0 && (
         <div
           className="rounded-md border bg-white p-3"

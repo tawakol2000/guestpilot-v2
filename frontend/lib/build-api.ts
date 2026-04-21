@@ -369,3 +369,65 @@ export interface TestPipelineResultData {
   replyModel: string
   latencyMs: number
 }
+
+// ─── Sprint 051 A B1 — artifact drawer read seam ──────────────────────────
+
+export type BuildArtifactType =
+  | 'sop'
+  | 'faq'
+  | 'system_prompt'
+  | 'tool'
+  | 'property_override'
+
+export interface BuildArtifactDetail {
+  type: BuildArtifactType
+  id: string
+  title: string
+  body: string
+  meta: Record<string, unknown>
+  /** Tool-view only — sanitise on render. */
+  webhookConfig?: Record<string, unknown>
+  /** B2 — populated when the caller passes `prevSince`. */
+  prevBody?: string | null
+  prevReason?:
+    | 'no-history-in-window'
+    | 'unsupported-type'
+    | 'artifact-missing'
+    | null
+}
+
+export class BuildArtifactNotFoundError extends Error {
+  constructor(
+    public artifact: BuildArtifactType,
+    public artifactId: string,
+  ) {
+    super('ARTIFACT_NOT_FOUND')
+    this.name = 'BuildArtifactNotFoundError'
+  }
+}
+
+/**
+ * Viewer-only artifact fetch. Tenant-scoped on the server. A 404
+ * returns a typed `BuildArtifactNotFoundError` the drawer renders as
+ * a "missing artifact" banner (brief §2: graceful degradation).
+ */
+export async function apiGetBuildArtifact(
+  artifact: BuildArtifactType,
+  id: string,
+  opts: { prevSince?: string } = {},
+): Promise<BuildArtifactDetail> {
+  const qs = new URLSearchParams()
+  if (opts.prevSince) qs.set('prevSince', opts.prevSince)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const path =
+    `/api/build/artifact/${encodeURIComponent(artifact)}` +
+    `/${encodeURIComponent(id)}${suffix}`
+  try {
+    return await buildFetch<BuildArtifactDetail>(path)
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      throw new BuildArtifactNotFoundError(artifact, id)
+    }
+    throw err
+  }
+}

@@ -126,9 +126,18 @@ function formatRelative(fromIso: string, now: number): string {
 
 export interface SessionArtifactsCardProps {
   artifacts: SessionArtifact[]
+  /**
+   * Sprint 051 A B1 — primary click target is the drawer, not the
+   * deep-link. Deep-link stays available via the drawer's footer
+   * "Open in tuning" button.
+   */
+  onOpen?: (artifact: SessionArtifact) => void
 }
 
-export function SessionArtifactsCard({ artifacts }: SessionArtifactsCardProps) {
+export function SessionArtifactsCard({
+  artifacts,
+  onOpen,
+}: SessionArtifactsCardProps) {
   // Ticks the relative-time labels without re-rendering the caller.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -193,7 +202,7 @@ export function SessionArtifactsCard({ artifacts }: SessionArtifactsCardProps) {
       ) : (
         <ul style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: 0, padding: 0, listStyle: 'none' }}>
           {artifacts.map((a) => (
-            <SessionArtifactRow key={a.id} artifact={a} now={now} />
+            <SessionArtifactRow key={a.id} artifact={a} now={now} onOpen={onOpen} />
           ))}
         </ul>
       )}
@@ -201,7 +210,15 @@ export function SessionArtifactsCard({ artifacts }: SessionArtifactsCardProps) {
   )
 }
 
-function SessionArtifactRow({ artifact, now }: { artifact: SessionArtifact; now: number }) {
+function SessionArtifactRow({
+  artifact,
+  now,
+  onOpen,
+}: {
+  artifact: SessionArtifact
+  now: number
+  onOpen?: (a: SessionArtifact) => void
+}) {
   const TypeIcon = TYPE_ICON[artifact.artifact]
   const ActionIcon = ACTION_ICON[artifact.action]
   const style = ACTION_STYLE[artifact.action]
@@ -291,9 +308,51 @@ function SessionArtifactRow({ artifact, now }: { artifact: SessionArtifact; now:
       </div>
     </div>
   )
+  // Sprint 051 A B1 — primary click target is the drawer when a handler
+  // is wired. Right-click "open in tab" still works via the fallback
+  // <a> below: we render a transparent anchor behind the button so
+  // middle-click / cmd-click / right-click land on a real href. The
+  // button sits on top and intercepts the primary click.
   return (
-    <li data-artifact-id={artifact.id}>
-      {href ? (
+    <li data-artifact-id={artifact.id} style={{ position: 'relative' }}>
+      {onOpen ? (
+        <>
+          {href ? (
+            <a
+              href={href}
+              aria-hidden
+              tabIndex={-1}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                textDecoration: 'none',
+                pointerEvents: 'auto',
+                zIndex: 0,
+              }}
+            />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onOpen(artifact)}
+            aria-label={`Open ${artifact.title}`}
+            style={{
+              position: 'relative',
+              zIndex: 1,
+              display: 'block',
+              width: '100%',
+              padding: 0,
+              border: 0,
+              background: 'transparent',
+              textAlign: 'left',
+              cursor: 'pointer',
+              color: 'inherit',
+              font: 'inherit',
+            }}
+          >
+            {body}
+          </button>
+        </>
+      ) : href ? (
         <a
           href={href}
           aria-label={`Open ${artifact.title}`}

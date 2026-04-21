@@ -55,6 +55,11 @@ import {
 } from '../build-tune-agent/config';
 import { listToolCalls } from '../services/build-tool-call-log.service';
 import {
+  getBuildArtifact,
+  getBuildArtifactPrevBody,
+  type BuildArtifactType,
+} from '../services/build-artifact.service';
+import {
   assembleSystemPromptRegions,
   type AgentMode,
   type SystemPromptContext,
@@ -940,6 +945,67 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err: any) {
         console.error('[build-controller] rollbackPlan failed:', err);
         res.status(500).json({ error: err?.message ?? 'ROLLBACK_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 051 A B1 — GET /api/build/artifact/:type/:id.
+     *
+     * Viewer-only read-seam for the Studio artifact drawer. Tenant-
+     * scoped; a cross-tenant or missing id returns 404 with a typed
+     * body the drawer renders as a "missing artifact" banner.
+     *
+     * Query params:
+     *   prevSince   (optional, ISO) — when present, the response also
+     *               carries `prevBody` (oldest SopVariantHistory /
+     *               FaqEntryHistory row whose editedAt ≥ prevSince).
+     *               Backs B2's "View changes" toggle.
+     */
+    async getArtifact(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      const type = (req.params.type ?? '') as BuildArtifactType;
+      const id = req.params.id ? String(req.params.id) : '';
+      const validTypes: BuildArtifactType[] = [
+        'sop',
+        'faq',
+        'system_prompt',
+        'tool',
+        'property_override',
+      ];
+      if (!validTypes.includes(type)) {
+        res.status(400).json({ error: 'INVALID_ARTIFACT_TYPE' });
+        return;
+      }
+      if (!id) {
+        res.status(400).json({ error: 'MISSING_ARTIFACT_ID' });
+        return;
+      }
+      try {
+        const result = await getBuildArtifact(prisma, req.tenantId, type, id);
+        if ('notFound' in result) {
+          res.status(404).json({ error: 'ARTIFACT_NOT_FOUND', type, id });
+          return;
+        }
+        const prevSince = req.query?.prevSince
+          ? String(req.query.prevSince)
+          : null;
+        if (!prevSince) {
+          res.json(result);
+          return;
+        }
+        const prev = await getBuildArtifactPrevBody(
+          prisma,
+          req.tenantId,
+          type,
+          id,
+          prevSince,
+        );
+        res.json({ ...result, prevBody: prev.prevBody, prevReason: prev.reason ?? null });
+      } catch (err) {
+        console.error('[build-controller] getArtifact failed:', err);
+        res.status(500).json({ error: 'ARTIFACT_READ_FAILED' });
       }
     },
   };
