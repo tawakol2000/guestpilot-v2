@@ -37,6 +37,7 @@ import {
 import { BuildDisabled } from '@/components/build/build-disabled'
 import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
+import { StudioErrorBoundary } from './studio-error-boundary'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { WriteLedgerCard, ledgerArtifactType } from './write-ledger'
 import {
@@ -389,20 +390,25 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           </div>
         ) : null}
         <div className="min-h-0 flex-1">
-          <StudioChat
-            conversationId={load.conversationId}
-            greenfield={tenantState.isGreenfield}
-            initialMessages={load.initialMessages}
-            onStateSnapshot={handleStateSnapshot}
-            onTestResult={handleTestResult}
-            onPlanApproved={handlePlanApproved}
-            onPlanRolledBack={handlePlanRolledBack}
-            onArtifactTouched={handleArtifactTouched}
-            onOpenArtifact={openArtifactFromCitation}
-            isAdmin={capabilities.isAdmin}
-            traceViewEnabled={capabilities.traceViewEnabled}
-            onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
-          />
+          {/* Sprint 058-A F9a — catch render errors inside StudioChat so the
+              whole Studio surface never blanks out. The boundary's recovery
+              card is itself a graceful-degradation surface (spec §1). */}
+          <StudioErrorBoundary>
+            <StudioChat
+              conversationId={load.conversationId}
+              greenfield={tenantState.isGreenfield}
+              initialMessages={load.initialMessages}
+              onStateSnapshot={handleStateSnapshot}
+              onTestResult={handleTestResult}
+              onPlanApproved={handlePlanApproved}
+              onPlanRolledBack={handlePlanRolledBack}
+              onArtifactTouched={handleArtifactTouched}
+              onOpenArtifact={openArtifactFromCitation}
+              isAdmin={capabilities.isAdmin}
+              traceViewEnabled={capabilities.traceViewEnabled}
+              onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
+            />
+          </StudioErrorBoundary>
         </div>
       </main>
 
