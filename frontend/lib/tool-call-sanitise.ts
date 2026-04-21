@@ -20,6 +20,16 @@ const REDACTED = '[redacted]'
 const TRUNCATE_AT = 1000
 const TRUNCATE_SUFFIX = '…[truncated]'
 
+// Length-heuristic fallback (sprint-051-A pre-flight tighten-up).
+// Custom-tool configs can put secrets at arbitrary field names the
+// redact-by-key regex doesn't know about. Any string that looks like
+// an opaque token (≥32 chars of alnum / `_` / `-`, no whitespace or
+// punctuation) is middle-redacted on operator tier. Admin tier is
+// untouched — the drawer's existing admin full-output toggle is the
+// single escape hatch.
+const LIKELY_SECRET_REGEX = /^[A-Za-z0-9_\-]{32,}$/
+const LIKELY_SECRET_MIDDLE = '…[likely-secret]…'
+
 export type SanitiseTier = 'operator' | 'admin'
 
 export interface SanitiseOptions {
@@ -38,7 +48,11 @@ export function sanitiseToolPayload(value: unknown, opts: SanitiseOptions = {}):
 
 function walk(value: unknown, tier: SanitiseTier, seen: WeakSet<object>): unknown {
   if (value === null || value === undefined) return value
-  if (typeof value === 'string') return tier === 'operator' ? truncate(value) : value
+  if (typeof value === 'string') {
+    if (tier !== 'operator') return value
+    if (LIKELY_SECRET_REGEX.test(value)) return middleRedact(value)
+    return truncate(value)
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (typeof value === 'bigint') return value.toString()
   if (typeof value === 'function' || typeof value === 'symbol') return undefined
@@ -70,10 +84,16 @@ function truncate(s: string): string {
   return s.slice(0, TRUNCATE_AT) + TRUNCATE_SUFFIX
 }
 
+function middleRedact(s: string): string {
+  return s.slice(0, 4) + LIKELY_SECRET_MIDDLE + s.slice(-4)
+}
+
 /** Exposed for tests. */
 export const TOOL_CALL_SANITISE_INTERNALS = {
   REDACTED,
   TRUNCATE_AT,
   TRUNCATE_SUFFIX,
   SENSITIVE_KEY_REGEX,
+  LIKELY_SECRET_REGEX,
+  LIKELY_SECRET_MIDDLE,
 }

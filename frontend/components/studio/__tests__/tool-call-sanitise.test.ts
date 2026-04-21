@@ -12,7 +12,12 @@ import {
   TOOL_CALL_SANITISE_INTERNALS,
 } from '@/lib/tool-call-sanitise'
 
-const { REDACTED, TRUNCATE_AT, TRUNCATE_SUFFIX } = TOOL_CALL_SANITISE_INTERNALS
+const {
+  REDACTED,
+  TRUNCATE_AT,
+  TRUNCATE_SUFFIX,
+  LIKELY_SECRET_MIDDLE,
+} = TOOL_CALL_SANITISE_INTERNALS
 
 describe('sanitiseToolPayload', () => {
   it('redacts values at known sensitive keys, case-insensitive and separator-tolerant', () => {
@@ -58,7 +63,10 @@ describe('sanitiseToolPayload', () => {
   })
 
   it('truncates operator-tier string values longer than 1000 chars', () => {
-    const big = 'a'.repeat(1500)
+    // Prose with spaces so the length-heuristic doesn't fire — we're
+    // exercising the plain truncate path here.
+    const big = ('lorem ipsum dolor sit amet ' as string).repeat(80)
+    expect(big.length).toBeGreaterThan(TRUNCATE_AT)
     const out = sanitiseToolPayload({ body: big }) as Record<string, unknown>
     const bodyStr = out.body as string
     expect(bodyStr.length).toBe(TRUNCATE_AT + TRUNCATE_SUFFIX.length)
@@ -66,7 +74,7 @@ describe('sanitiseToolPayload', () => {
   })
 
   it('admin tier preserves long strings verbatim and still redacts sensitive keys', () => {
-    const big = 'b'.repeat(1500)
+    const big = ('lorem ipsum dolor sit amet ' as string).repeat(80)
     const out = sanitiseToolPayload(
       { body: big, apiKey: 'sk-admin' },
       { tier: 'admin' },
@@ -88,6 +96,55 @@ describe('sanitiseToolPayload', () => {
     const out = sanitiseToolPayload(node) as any
     expect(out.name).toBe('root')
     expect(out.self).toBe('[cycle]')
+  })
+
+  it('middle-redacts opaque ≥32-char alnum strings on operator tier (length heuristic)', () => {
+    // Arbitrary custom-tool field name the key regex wouldn't catch; the
+    // value looks like a bearer-style token.
+    const likelySecret = 'A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6'
+    expect(likelySecret.length).toBe(32)
+    const out = sanitiseToolPayload({
+      customField: likelySecret,
+    }) as Record<string, unknown>
+    const redacted = out.customField as string
+    expect(redacted.startsWith('A1B2')).toBe(true)
+    expect(redacted.endsWith('O5P6')).toBe(true)
+    expect(redacted).toContain(LIKELY_SECRET_MIDDLE)
+    // And admin tier sees it verbatim (full-output escape hatch).
+    const adminOut = sanitiseToolPayload(
+      { customField: likelySecret },
+      { tier: 'admin' },
+    ) as Record<string, unknown>
+    expect(adminOut.customField).toBe(likelySecret)
+  })
+
+  it('length heuristic does not fire on strings with whitespace, punctuation, or short length', () => {
+    const prose = 'This is a perfectly normal sentence with spaces.'
+    const shortOpaque = 'abc-123'
+    const punctuated = 'value=42;flag=true;role=admin-user'
+    const out = sanitiseToolPayload({
+      prose,
+      shortOpaque,
+      punctuated,
+    }) as Record<string, unknown>
+    expect(out.prose).toBe(prose)
+    expect(out.shortOpaque).toBe(shortOpaque)
+    expect(out.punctuated).toBe(punctuated)
+  })
+
+  it('redact-by-key wins over the length heuristic when both would apply', () => {
+    // Value would match /^[A-Za-z0-9_\-]{32,}$/ on its own, but the key
+    // is sensitive — the key-based redaction short-circuits the walker
+    // before the string rule ever runs, so we get the literal [redacted]
+    // marker rather than a middle-redacted leak of the first/last 4.
+    // Fake opaque token — deliberately avoids any real SDK prefix so
+    // GitHub secret-scanning push-protection doesn't flag it.
+    const obviousSecret = 'fake_key_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6'
+    const out = sanitiseToolPayload({
+      apiKey: obviousSecret,
+    }) as Record<string, unknown>
+    expect(out.apiKey).toBe(REDACTED)
+    expect(out.apiKey).not.toContain(LIKELY_SECRET_MIDDLE)
   })
 
   it('passes primitives through and drops functions/symbols', () => {
