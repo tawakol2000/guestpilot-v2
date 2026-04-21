@@ -48,6 +48,8 @@ import {
   writeRejectionMemory,
   type RejectionIntent,
 } from '../build-tune-agent/memory/service';
+import { isBuildTraceViewEnabled } from '../build-tune-agent/config';
+import { listToolCalls } from '../services/build-tool-call-log.service';
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -82,6 +84,83 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[build-controller] tenantState failed:', err);
         res.status(500).json({ error: 'TENANT_STATE_FAILED' });
+      }
+    },
+
+    /**
+     * GET /api/build/capabilities — returns admin-only UI toggles for
+     * the Studio right-rail. Never 404s; always returns a shape. The
+     * frontend uses this to decide whether to render the gear menu
+     * trace-drawer entry.
+     */
+    async capabilities(req: AuthenticatedRequest, res: Response): Promise<void> {
+      const traceViewEnabled = isBuildTraceViewEnabled();
+      let isAdmin = false;
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true },
+        });
+        isAdmin = Boolean(tenant?.isAdmin);
+      } catch (err) {
+        console.warn('[build-controller] capabilities lookup failed:', err);
+      }
+      res.json({ traceViewEnabled, isAdmin });
+    },
+
+    /**
+     * GET /api/build/traces — admin-only BuildToolCallLog page.
+     *
+     * Two layers of gating:
+     *   1. ENABLE_BUILD_TRACE_VIEW env flag → 404 when off (don't even
+     *      signal the endpoint exists).
+     *   2. Tenant.isAdmin === true → 403 otherwise.
+     *
+     * Tenant-scoped. Cursor paginated (id-based). Optional filters on
+     * conversationId, tool, turn.
+     */
+    async listTraces(req: AuthenticatedRequest, res: Response): Promise<void> {
+      if (!isBuildTraceViewEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+        const q = req.query ?? {};
+        const limit = q.limit ? parseInt(String(q.limit), 10) : undefined;
+        const turn = q.turn ? parseInt(String(q.turn), 10) : undefined;
+        const page = await listToolCalls(prisma, {
+          tenantId: req.tenantId,
+          conversationId: q.conversationId ? String(q.conversationId) : null,
+          tool: q.tool ? String(q.tool) : null,
+          turn: Number.isFinite(turn) ? (turn as number) : null,
+          cursorId: q.cursor ? String(q.cursor) : null,
+          limit: Number.isFinite(limit) ? (limit as number) : null,
+        });
+        res.json({
+          rows: page.rows.map((r) => ({
+            id: r.id,
+            conversationId: r.conversationId,
+            turn: r.turn,
+            tool: r.tool,
+            paramsHash: r.paramsHash,
+            durationMs: r.durationMs,
+            success: r.success,
+            errorMessage: r.errorMessage,
+            createdAt: r.createdAt.toISOString(),
+          })),
+          nextCursor: page.nextCursor,
+        });
+      } catch (err) {
+        console.error('[build-controller] listTraces failed:', err);
+        res.status(500).json({ error: 'TRACES_LIST_FAILED' });
       }
     },
 

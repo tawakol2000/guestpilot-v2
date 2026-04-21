@@ -73,6 +73,12 @@ model Tenant {
   docHandoffEnabled           Boolean                @default(false)
   documentHandoffStates       DocumentHandoffState[]
   buildTransactions           BuildTransaction[] // Feature 045: BUILD mode
+
+  // Sprint 047 Session B — platform-admin flag. Gates the admin-only
+  // BuildToolCallLog trace view (ENABLE_BUILD_TRACE_VIEW). No User model
+  // exists today (Tenant == single-user account), so the "admin" role
+  // lives here. Flipped manually in the DB for platform operators.
+  isAdmin Boolean @default(false)
 }
 
 model Property {

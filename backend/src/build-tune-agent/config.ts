@@ -51,6 +51,27 @@ export function buildModeDisabledReason(): string | null {
 }
 
 /**
+ * Sprint 047 Session B: admin-only BuildToolCallLog trace view feature
+ * flag. Kept separate from ENABLE_BUILD_MODE so tenant admins can't see
+ * raw tool calls by accident — a platform operator must explicitly flip
+ * ENABLE_BUILD_TRACE_VIEW on, AND the requesting Tenant must have
+ * isAdmin=true in the DB.
+ *
+ * Off by default everywhere.
+ */
+export function isBuildTraceViewEnabled(): boolean {
+  const raw = process.env.ENABLE_BUILD_TRACE_VIEW;
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  );
+}
+
+/**
  * Boundary markers embedded into the assembled system prompt. They cost
  * ~30 tokens each and serve as (1) visual debugging aids and (2) future
  * switch points: if a later sprint bypasses the Agent SDK and calls
