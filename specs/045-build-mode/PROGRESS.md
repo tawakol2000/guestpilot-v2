@@ -1898,3 +1898,77 @@ the session can modify (SOP, FAQ, system_prompt, tool) has a
 "View changes" path. Tool diff's backend half (prev-schema from a
 history table) is the only forward-compatible seam that hasn't lit
 up yet — not a half-ship, a future-expandability seam.
+
+## Sprint 053 — Session A (2026-04-21, Bundle C opener — safety nets)
+
+Branch: `feat/053-session-a` stacked on `feat/052-session-a` (`7d49103`).
+Posture: backend-heavy plumbing + write-ledger rail. Opens Bundle C
+(safety nets); the closing half (tiered permissions + Try-it composer)
+is parked for 054-A.
+
+### Gates
+
+| Gate | Item | Status | SHA | Notes |
+|------|------|--------|-----|-------|
+| D1 | dryRun seam in write tools | ✅ | `207bede` | Each write tool (`create_faq`, `create_sop`, `create_tool_definition`, `write_system_prompt`) accepts `dryRun?: boolean`. Validation still runs in dry-run; DB write + data-part emission skipped. `create_tool_definition` preview is sanitised via the new shared `sanitiseArtifactPayload` helper — same function backs D2 storage. +11 backend tests (10 per-tool + 1 sanitiser parity). |
+| D2 | BuildArtifactHistory table + write-path emission | ✅ | `0ed5ec5` | New Prisma model captures every successful write; `npx prisma db push` applied. Emission is best-effort, OUTSIDE the write tx, try/catch — failure logs and continues, real write never rolls back. tool_definition rows sanitised before storage. SystemPromptView prev-body retired from `AiConfigVersion` to `BuildArtifactHistory` (oldest in-session row). Tool diff toggle unlocked: `getToolArtifactPrevJson` extracts `prevParameters`/`prevWebhookConfig` from history. ToolContext gains optional `actorEmail`. +11 backend tests. |
+| D3 | Dry-run preview in ArtifactDrawer | ✅ | `f2e3ac3` | New admin-only `POST /api/build/artifacts/:type/:id/apply` endpoint, gated twice (env + isAdmin). Per-type UPDATE executor in `artifact-apply.ts` shares the dry-run posture with the agent write tools. Drawer gains `pendingBody`/`conversationId`/`onApplied` props; footer renders Preview (primary) + Apply (subordinate, disabled until preview). Amber "Preview — not saved yet" banner with Clear Preview link. Validation errors render inline; Apply stays disabled. +9 frontend tests. |
+| D4 | Write-ledger rail + revert flow | ✅ | `a40bfe8` | Right-rail `<WriteLedgerCard/>` below state-snapshot, admin-gated (same posture as raw-prompt editor). Up to 10 rows session-scoped via conversationId. Click-to-open routes to ArtifactDrawer; UPDATE rows expose Revert. New endpoints: `GET /api/build/artifacts/history`, `POST /api/build/artifacts/history/:id/revert`. Revert reads prevBody → applies via the D3 executor → stamps the resulting row as REVERT with metadata.revertsHistoryId. Tenant isolation enforced (asserted in integration test). +9 frontend, +9 backend (6 unit + 3 integration). |
+| D5 | Verification + PROGRESS.md + NEXT.md | ✅ | (this commit) | Suite + tsc clean both sides; ai.service grep clean; manual smoke documented below. NEXT.md rewritten for 054-A; previous NEXT.md archived. |
+
+### Verification (D5)
+
+- **Backend `tsc --noEmit`:** clean (0 errors).
+- **Backend suite:** **340/340 pass** with `JWT_SECRET=test OPENAI_API_KEY=test-fake npx tsx --test 'src/**/*.test.ts'`. Was 309 at sprint start (pre-flight noted spec said 275 — actual baseline higher; counts grew between earlier sprints' close-outs and this kickoff). Delta this sprint: **+31** (+11 D1 + +11 D2 + +6 D4 unit + +3 D4 integration). One pre-existing flaky test (`messages-copilot-fromdraft.integration.test.ts`) intermittently fails when integration tests race on shared env-var flips; passes in isolation. Documented but not fixed in-sprint.
+- **Frontend `tsc --noEmit`:** clean.
+- **Frontend vitest:** **141/141 pass across 22 files** (was 123/123 across 20 files). Delta: **+18** (+9 D3 drawer preview + +9 D4 ledger card).
+- **Test delta total:** +49 across both sides — within the +~40 target band, slightly above because of the integration test trio. Backend LOC > frontend LOC this sprint as expected (opposite posture from 052-A).
+- **Dep budget:** **0 new dependencies.**
+- **`ai.service.ts` untouched:** confirmed via `grep -n "BuildArtifactHistory\|emitArtifactHistory" src/services/ai.service.ts` → empty. Seam stays out of the main pipeline.
+- **Schema delta:** one new model (`BuildArtifactHistory`) + two indexes + one Tenant relation. Applied via `npx prisma db push` per constitution §Development Workflow.
+
+### Manual smoke (D5)
+
+Documented for the staging walkthrough. Each step exercises plumbing end-to-end:
+
+1. **Trigger an SOP edit through the agent.** Open a Studio BUILD session, ask the agent to update an existing SOP. The agent's write tool runs, the artifact updates, and a row appears in the right-rail "Recent writes" card with operation `UPDATE` (or `CREATE` for a new SOP).
+2. **Open the drawer in preview mode.** From a chat message that surfaces a pending change, open the artifact drawer with a `pendingBody` set. Click **Preview**. The drawer fetches `POST /api/build/artifacts/:type/:id/apply` with `dryRun:true`, renders the diff via the existing per-type view, and shows the amber `Preview — not saved yet` banner with a `Clear preview` link.
+3. **Apply.** Click **Apply** (now enabled). The drawer closes; the toast/refresh seam fires; the right-rail rolls in a new history row.
+4. **Open a history row.** Click any row in the ledger — the artifact drawer opens at the artifact's current state. (054-A polish: dedicated history-view orientation; current MVP routes to the standard view.)
+5. **Revert.** Click the `Revert` link on an UPDATE row. Browser confirm appears (current MVP — in-drawer Preview Revert + Confirm Revert UX is parked for 054-A polish). Confirm → backend writes the prevBody back AND stamps the resulting history row as `REVERT` with `metadata.revertsHistoryId`. The rail refreshes.
+
+### Decisions made this sprint
+
+- **Revert UX shipped as 2-step browser confirm, not an in-drawer Preview Revert.** Spec §3 D4 called for a dedicated revert-mode drawer with `Preview Revert` + `Confirm Revert` buttons. Shipping that means a third drawer mode (apply / revert / read-only); the safety net is preserved by always running a dry-run preview before the confirm prompt. Surfaced as a 054-A polish carry-over rather than ballooning D4. Spec compliance: the safety net is intact (preview before commit, REVERT row written with metadata, refresh on success); only the rendering fidelity is downgraded vs the spec's "swap the drawer's semantic" target.
+- **`property_override` rows are not sanitised.** Override bodies are plain text (no API keys / secrets / tokens by current schema usage). Open question §8c in the sprint spec — punted to 054-A. Easy to lift if the answer is "yes, sanitise" — same shared helper.
+- **History rows are NOT tagged with the BUILD agent's tool-call ID.** Open question §8a — costs a column + a context plumb, gives a "this revert came from this tool call" trail. Cheap to add later, expensive to backfill. Surfaced for 054-A.
+- **Ledger scope defaults to session, not tenant.** Open question §8d — matches "what did this BUILD session do" intent. Can be widened later via a query-param or rail-toggle without schema change.
+- **System_prompt prev-body now reads BuildArtifactHistory, not AiConfigVersion.** AiConfigVersion is still written by `write_system_prompt` (it has independent uses); only the build-artifact-detail endpoint's read path retired. The two pre-existing `aiConfigVersion`-shaped tests in `build-artifact.test.ts` were updated to the new history shape.
+
+### Carry-overs closed by this sprint
+
+- **052-A C3 ledger-unlock carry-over:** the tool diff toggle no longer ships as renderer-only. `getToolArtifactPrevJson` populates `prevParameters`/`prevWebhookConfig` on the build-artifact detail payload from `BuildArtifactHistory`. The drawer's existing 052-A `hasPrevJson`-gated diff toggle now lights up automatically as soon as a tool_definition has at least one history row.
+- **050-A staging walkthrough:** still pending — the combined 050+051+052+053-A walkthrough is the merge gate. Out of this sprint's scope.
+
+### Caveats / scope drift
+
+- **Revert UX downgrade** — see Decisions above. Tracked as 054-A polish.
+- **D3 grew slightly via the apply executor.** Spec §3 D3 said "thin endpoint" — the actual `artifact-apply.ts` is ~270 LOC because it handles all five artifact types' UPDATE shapes plus dry-run + history emission. Within the per-gate ~300 LOC bound; surfaced for honesty.
+- **One backend integration test is flaky in parallel runs.** `messages-copilot-fromdraft.integration.test.ts` intermittently fails when other integration tests race on `ENABLE_BUILD_MODE`/`ENABLE_RAW_PROMPT_EDITOR` env-var flips. Passes 100% in isolation. Pre-existing pattern (each integration test toggles env vars in a try/finally); not introduced by this sprint. Worth converting to per-test isolated env dictionaries in a follow-up; not in this sprint's scope.
+- **Pre-flight backend test count discrepancy.** Sprint kickoff brief said baseline was 275 backend tests — actual was 309. Delta is consistent across the four sprint-052 successor counts being undercounted in the spec doc; not a real regression. Reported once at kickoff and proceeded.
+
+### Branch posture
+
+`feat/053-session-a` (commits: `207bede`, `0ed5ec5`, `f2e3ac3`, `a40bfe8`) stacks on `feat/052-session-a` (`7d49103`) → `feat/051-session-a` (`41b339c`) → `feat/050-session-a` (`d103c14`) → `main`. Stays off `main` until the combined 050+051+052+053 staging walkthrough.
+
+### What 053-A does NOT land (handoff)
+
+054-A candidates documented in the new NEXT.md:
+- **Bundle C closing half** (primary): tiered permissions dial + Try-it composer. Closes the bundle.
+- **Sprint-049 correctness carry-over sweep** (alternate): paydown of P1-2/3/4/5/6 + F1.
+
+Unblocked-but-deferred (history table now exists, drawer preview path now exists):
+- Artifact version slider — needs UI only.
+- Inline-edit-from-drawer — needs an editor input only.
+- In-drawer "Preview Revert + Confirm Revert" — drawer extension only.
+- Audit-quote emit — orthogonal but benefits from the apply endpoint existing.

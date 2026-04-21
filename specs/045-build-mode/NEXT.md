@@ -1,125 +1,142 @@
-# Next — after sprint-052 Session A close-out
+# Next — after sprint-053 Session A close-out
 
-> Sprint 052-A closed at `bf2aa36` on `feat/052-session-a`, stacked on
-> `feat/051-session-a` (tip `41b339c`) stacked on `feat/050-session-a`
-> (tip `d103c14`). All three branches stay off `main` until the owner
-> runs a combined 050-A + 051-A + 052-A staging walkthrough. The B
-> bundle is now complete — every artifact type the drawer renders has a
-> "view" and, where a history table exists, a diff. The only
-> forward-compatible seam is `ToolDefinitionHistory` (renderer shipped,
-> backend prev-schema not lit up yet).
-
-This kickoff surfaces two candidates for sprint-053 Session A. Either
-is a reasonable next sprint; the owner chooses.
+> Sprint 053-A closed at `a40bfe8` on `feat/053-session-a`, stacked on
+> `feat/052-session-a` (`7d49103`) → `feat/051-session-a` (`41b339c`)
+> → `feat/050-session-a` (`d103c14`) → `main`. All four branches stay
+> off `main` until the owner runs the combined 050-A + 051-A + 052-A +
+> 053-A staging walkthrough.
+>
+> Bundle C's opening half (safety nets — dry-run, history, ledger,
+> revert) is now live. Two complementary sprint shapes exist for 054-A.
+> The owner picks; either is a reasonable next step.
 
 ---
 
-## Candidate 1 — Bundle C primary (tiered permissions + Try-it + dry-run)
+## Candidate 1 — Bundle C closing half (primary)
 
-Closes the "operator trust" half of the roadmap. Operators need to be
-able to (a) experiment with a planned change before it lands, (b) feel
-in control of what each tier of user can do, and (c) understand the
-blast radius of a system-prompt write before approving it. This bundle
-bundles the three together because they share plumbing (the write
-ledger, the permission tier check, the preview pipeline) — splitting
-them into three sprints would touch the same files repeatedly.
+Closes Bundle C by shipping the **posture change**: tiered permissions
++ Try-it composer + revert-UX polish. 053-A built the safety nets;
+this candidate reclassifies who is allowed to use them.
 
 ### Gate sheet
 
 | Gate | Title | Why |
 |------|-------|-----|
-| C1 | Write-ledger unification + suggested-fix rollback "reverted" state | sprint-050-A caveat #3. The permissions work in C2 needs a single ledger to reason about, and the rollback → "reverted" UI is already half-modelled in `session-artifacts.tsx` (the `reverted` action exists; the backend flow doesn't emit it on suggested-fix rollbacks). Backend-leaning. Estimated 6–10h. |
-| C2 | Tiered permissions — operator / admin / owner | Capability-tier gate on `create_*` + `write_system_prompt` + `rollback` tools. Operator can read + propose; admin can approve in-session; owner can unlock dry-run-disabled paths. Reuses `BuildCapabilities` — no new wire format. Estimated 8–12h. |
-| C3 | Try-it composer in the drawer | Inline "compose a draft reply using this artifact" chip that calls `test_pipeline` with the artifact's current body bound. Read-only; viewer-only. Operator gets a preview of the AI's behaviour under the proposed content without committing. Estimated 10–14h. |
-| C4 | Dry-run-before-write for `system_prompt` only | Pre-flight `test_pipeline` against 2–3 canned incidents before any `write_system_prompt` approval. Surface the judge's score + the judge's rationale in the approval card. If the judge score drops vs baseline, make the "Approve" button a two-click confirmation. `system_prompt` only — SOP/FAQ writes are cheap enough to revert; a blown prompt is not. Estimated 6–10h. |
-| C5 | Verification | tsc + suites + manual walkthrough. Fold in the 050/051/052 combined walkthrough as the merge gate. Estimated 3h. |
+| E1 | Tiered permissions dial — suggest-only / one-click-apply / autopilot | Today every Apply path is admin-only. Operators have been asking since 048 to be able to *propose* without an admin in the loop. Capability-tier gate on the apply endpoint + the agent write tools' dry-run path. Reuses `BuildCapabilities` — no new wire format. Estimated 8–12h. |
+| E2 | Try-it composer in the drawer | Inline "compose a draft reply using this artifact" chip that calls `test_pipeline` with the artifact's current body bound. Read-only viewer-only — operator gets a preview of the AI's behaviour under the proposed content without committing. Same drawer-extension posture as D3's `pendingBody` prop. Estimated 10–14h. |
+| E3 | In-drawer Preview Revert + Confirm Revert | 053-A D4 carry-over. Replace the current 2-step browser-confirm revert flow with a third drawer mode (apply / revert / read-only) that swaps the diff semantic and renders dedicated `Preview Revert` + `Confirm Revert` buttons. Estimated 4–6h. |
+| E4 | Tool-call-ID column on history rows | 053-A D2 open question §8a. Adds a `toolCallId` column on `BuildArtifactHistory`, threads through from the BUILD agent context, surfaces in the rail row tooltip + the trace-drawer cross-link. Cheap to add now, expensive to backfill. Estimated 2–4h. |
+| E5 | Verification + walkthrough | tsc + suites + manual five-step. Fold in the combined 050+051+052+053-A staging walkthrough as the merge gate. Estimated 3–4h. |
 
-Total: **33–49 hours**. Medium-large sprint. C1 is the load-bearing
-prerequisite — do it first.
+Total: **27–40 hours**. Medium sprint. E3 is the smallest gate;
+schedule it first if the sprint runs hot and time pressure looks
+real — gives a clean cut-point.
 
 ### Why this is the primary pick
 
-- Operators have been asking for "can I see what this would do"
-  since 048. Try-it + dry-run directly answer that.
-- Permissions are the unlock for letting non-admins inside Studio.
-  The 050-A + 051-A sanitiser work was the security floor for this
-  sprint; C2 is the ceiling.
-- Write-ledger unification unblocks session-artifacts' "reverted"
-  state, which is the last grammar gap in the A1 origin rules.
+- It closes Bundle C cleanly: managers got the safety net in 053-A;
+  this gives them the posture change that makes the safety net
+  *useful to non-admins*.
+- E2 (Try-it composer) directly answers the operator question that
+  surfaced in 048 user research: "can I see what this would do."
+  053-A made the answer technically possible (the apply executor
+  exists, the dry-run seam exists); E2 surfaces it.
+- E3 closes the only sprint-053-A polish carry-over honestly noted
+  as "downgraded vs spec target."
+- E4 is cheap insurance against a column-add later. Backfilling a
+  `toolCallId` onto rows that didn't capture it is impossible.
 
 ### Non-goals (protect the scope)
 
-- No batch / golden-set / adversarial eval — `test_pipeline` stays
-  single-message.
-- No inline edit in the drawer. Still viewer-only.
-- No markdown-AST diff.
-- No `ToolDefinitionHistory` model (would bloat the sprint).
+- No new artifact types. SOP/FAQ/system_prompt/tool/property_override
+  remain the universe.
+- No autopilot mode itself — the *dial* exists; the autopilot tier's
+  "no-confirm" behavior is a separate sprint.
+- No version slider, no inline-edit-from-drawer, no audit-quote emit.
+  All unblocked by 053-A but not on this candidate's critical path.
 
 ---
 
-## Candidate 2 — Correctness carry-over bundle
+## Candidate 2 — Sprint-049 correctness carry-over sweep (alternate)
 
-Clears the sprint-049 tail + absorbs the 050-A / 051-A / 052-A caveats
-that haven't been handled. Not glamorous; also not load-bearing for
-any single operator flow. Interleave candidate if Bundle C feels too
-heavy to start this session.
+Paydown sprint. Pure correctness work — no new surface, no schema
+changes. Picks up the P1/P2/P3/P4/P5/P6 + F1 items the team has been
+deferring across the last four sprints.
 
-### Gate sheet
+### Why this exists
 
-| Gate | Title | Why / carryover |
-|------|-------|-----------------|
-| K1 | sprint-049 P1-5 — `PREVIEW_LOCKED` 409 refresh | Cheapest single item at ~2–3h. Ships the refresh-on-preview-lock UX. |
-| K2 | sprint-049 P1-2 — judge API stub | Test harness cleanliness; the test_pipeline judge call is currently hand-mocked per test. Saves 20m per new test. |
-| K3 | sprint-049 P1-4 — diagnostic transaction | Unwinds the multi-write path in `diagnostic.service.ts` into a single transaction. No user-facing change; one less race condition. |
-| K4 | sprint-049 P1-6 — atomic-claim revert race | Rare race when two managers hit "accept" on the same queued suggestion. Reproducible; low frequency. |
-| K5 | sprint-049 F1 — dead `POST /api/tuning/complaints` | Route is referenced nowhere in the frontend; safe to delete after a final grep. |
-| K6 | sprint-049 P1-3 DB half — backend persistence for diagnostic-failure badge | Completes the DB-backed badge flag; the frontend half shipped in 049. |
-| K7 | sprint-050-A caveat #3 (if not in C1) — write-ledger unification | Overlap with Bundle C; skip this gate if C1 is already scheduled. |
-| K8 | 051-A citation unknown-id UX polish | Currently an unknown id renders as a muted chip; polish to an inline "stale citation" tooltip. Low priority. |
-| K9 | 052-A `ToolDefinitionHistory` model (optional) | Unlocks the tool JSON diff end-to-end. Medium cost (schema change + write-path patches in every tool-touching service). Defer if Bundle C is planned. |
-| K10 | Verification | tsc + suites + PROGRESS.md. |
+The 050-A → 053-A arc was feature-forward. Each sprint's close-out
+notes a 1–2 line "pre-existing flake" or "unrelated tsc issue." Those
+add up — there are now ~7 pieces of correctness debt floating in the
+PROGRESS.md ledger. A paydown sprint clears the queue and gives the
+test suite the integrity it needs before Bundle D opens.
 
-Total: **14–22 hours**. Smaller than Bundle C, and each gate is
-independent — the sprint can drop any one if it runs long.
+### Items in scope (sprint-049 references)
 
-### Why this is the alternate pick
+- **P1-2 — `tenant-config-bypass.test.ts` requires OPENAI_API_KEY at
+  import time.** Restructure to lazy-import inside test so the env
+  workaround disappears.
+- **P3 — Integration tests race on shared `ENABLE_*` env vars.**
+  Surfaced in 053-A: `messages-copilot-fromdraft.integration.test.ts`
+  intermittently fails in parallel runs. Per-test isolated env
+  dictionaries instead of `process.env` mutation.
+- **P4 — Stale `prevBody: undefined as any` cast in test fixtures**
+  (introduced 053-A integration tests). Re-type so prisma JSON nulls
+  are first-class.
+- **P5 — Pre-existing `tsc --noEmit` drift** flagged in 050-A close-
+  out (3 files referenced; verify they're still drifting after
+  053-A's controller refactor).
+- **P6 — `AiConfigVersion` legacy callers** — now that 053-A retired
+  the build-artifact-detail read, audit remaining callers to confirm
+  none are doing the same prev-body lookup with the old shape.
+- **F1 — Test count discrepancy in PROGRESS.md ledger.** Reconcile
+  the 275 vs 309 vs 340 deltas across 050-A → 053-A close-outs.
 
-- The tail is small but real. P1-6 is a latent race; P1-3's DB half
-  would quiet a long-standing "why does this badge sometimes
-  disappear" thread.
-- Useful cold-start for a session where Bundle C feels too heavy.
-- Pairs well with P1-5 as "operator refresh polish" + the other K
-  items as "infra polish".
+### Estimated total
 
-### Non-goals
-
-- No new surfaces. This is a tail-sweep sprint.
-- No schema churn except K9 (optional).
-- No brand-new tests beyond the carry-overs' own suites.
+**14–20 hours.** Smaller than candidate 1; equally valuable as
+infrastructure. Schedule this if the team feels the test suite drifting
+or wants a "no surprises" sprint before Bundle D.
 
 ---
 
-## Owner notes
+## How to choose
 
-- All three branches (050/051/052) stay off `main` until the combined
-  walkthrough. If the owner can run it before 053-A kicks off,
-  053-A merges straight to `main` along with the three predecessors.
-- The slug-rule contract (`frontend/lib/slug.ts` ↔ backend
-  `<citation_grammar>` block ↔ `backend/src/build-tune-agent/lib/
-  slug.ts`) is the specific new surface worth eyeballing. A mismatch
-  would silently break `#section-*` citations across every future
-  session; the regression test locks the contract but a human read
-  is still worth it.
-- 051-A's "SystemPromptView already accepts showDiff" claim was
-  slightly off — the prop landed in 052-A along with the prevBody
-  path. Correction noted in 052-A's PROGRESS block.
+- **Pick Candidate 1** if the goal is "close Bundle C and let
+  non-admins into Studio."
+- **Pick Candidate 2** if the goal is "stabilize the foundation
+  before the next feature sprint."
 
-### Decision gate
+Both are reasonable. The owner's call.
 
-Pick one of:
+---
 
-1. **Bundle C primary** (C1–C5 above).
-2. **Correctness carry-over bundle** (K1–K10 above).
+## Unblocked-but-deferred (no sprint required to start; just needs UI/UX)
 
-If undecided: Bundle C. It's the load-bearing one; the K items keep
-interleaving well into sprint 055+.
+- **Artifact version slider** — `BuildArtifactHistory` table is the
+  data source; needs a small slider component on the drawer.
+- **Inline-edit-from-drawer** — preview/apply path exists; needs an
+  editor input on the drawer's body region. (Note: pairs naturally
+  with Candidate 1 E2's "compose a draft reply" UI.)
+- **Audit-quote emit** — orthogonal, but benefits from the apply
+  endpoint existing.
+- **Grouped ledger rows + filter-by-type + CSV export** — 053-A spec
+  §6 explicitly parked these as 054-A+ polish; not on candidate 1's
+  primary path but cheap individual lifts.
+
+---
+
+## Open questions surfaced by 053-A (not resolved in-sprint)
+
+These are noted at the bottom of `sprint-053-session-a.md` §8 and
+should be answered as part of whichever sprint touches the affected
+seam:
+
+- **Tool-call-ID column on history rows.** (Folded into Candidate 1
+  as gate E4.)
+- **Sanitisation of property_override rows.** Today plain-text;
+  schema is JSON, so future shape could include credentials. Cheap
+  insurance vs domain readability. Not urgent.
+- **Session-scoped vs tenant-scoped default for the ledger rail.**
+  Currently session-scoped. Could go either way; flag if the user
+  asks for tenant-wide history.
