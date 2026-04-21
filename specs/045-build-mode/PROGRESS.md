@@ -2136,3 +2136,68 @@ SSE part with `explicitCacheControlWired: false`). Explicit API wiring deferred 
 `feat/056-session-a` (commits: `6f015d0`, `3adb2bd`, `d982dd4`) stacks on
 `feat/055-session-a` (`ae863fc`) → `feat/054-session-a` (`88ccc9c`) → ... → `main`.
 Stays off `main` until combined staging walkthrough.
+
+---
+
+## Sprint 057-A — Pre-flight (2026-04-22)
+
+### Branch-tip SHAs
+
+| Branch | SHA |
+|--------|-----|
+| feat/050-session-a | d103c1495e233ca2488fe3437d47bf7dc0ae6d61 |
+| feat/051-session-a | 41b339c25cec0c958dba08ab7206648eed119512 |
+| feat/052-session-a | 7d49103735a929163b6fd57ccc8fd394cf08c886 |
+| feat/053-session-a | e5d1051c568838db5d1071f54d8c906fe6b94c48 |
+| feat/054-session-a | 88ccc9c5e53fa124e8b0471db84159e52e759b49 |
+| feat/055-session-a | ae863fcbf57702e3b9361f3a21a432d5e0910450 |
+| feat/056-session-a | 812bc55447573ec4555e0007f2f4b2d3601797b4 ✓ |
+
+`feat/056-session-a` tip matches close-out report SHA `812bc55`. ✓
+
+### Baseline test counts
+
+| Suite | Count | Notes |
+|-------|-------|-------|
+| Frontend (vitest) | 27 files / 220 tests | All passing ✓ |
+| Backend | N/A — no `npm test` script in package.json | build/dev/db scripts only; 056-A close-out recorded 402 tests via node:test runner |
+
+### Capability probes
+
+| Probe | Result |
+|-------|--------|
+| `ToolCallDrawer` / `openToolDrawer` / `ToolCallChip` | ✓ — wired at studio-chat.tsx:43,223,226,302,374,462,567,578,942 |
+| `data-origin` / A1 typographic attribution | ✓ — present in studio-chat.tsx:838,872,996,1016,1029 and suggested-fix.tsx:273 |
+| `scrollerRef` auto-scroll on messages | ✓ — scrollerRef at studio-chat.tsx:219, scrollTo(scrollHeight) at :242 |
+
+All three pre-requisites confirmed. Proceeding to dispatch.
+
+### Gate status
+
+| Gate | Description | Status |
+|------|-------------|--------|
+| F1 | Collapsed tool-chain summary per agent message | 🚧 |
+| F2 | Typographic attribution everywhere | 🚧 |
+| F3 | Scroll discipline + queue-while-busy | 🚧 |
+
+### Sprint 057-A — Gate status (final)
+
+| Gate | Description | Status | Commit |
+|------|-------------|--------|--------|
+| F1 | Collapsed tool-chain summary per agent message | ✅ | d4a89ea |
+| F2 | Typographic attribution everywhere (4 surface commits) | ✅ | 9fdda58, e8ac5c2, f7e025f, fb29b62 |
+| F3 | Scroll discipline + queue-while-busy | ✅ | 308186a |
+
+### Sprint 057-A — Close-out test counts
+
+| Suite | Before | After | Delta |
+|-------|--------|-------|-------|
+| Frontend (vitest) | 27 files / 220 tests | 30 files / 260 tests | +3 files / +40 tests |
+| Backend | N/A (no test script) | N/A | — |
+
+All 260 frontend tests pass. No new backend test failures.
+
+### Branch posture
+
+`feat/057-session-a` (commits: `d4a89ea`, `9fdda58`, `e8ac5c2`, `f7e025f`, `fb29b62`, `308186a`) stacks on
+`feat/056-session-a` (`812bc55`) → `feat/055-session-a` (`ae863fc`) → ... → `main`.

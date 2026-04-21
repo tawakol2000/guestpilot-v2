@@ -1,60 +1,51 @@
-# Next — after sprint-056 Session A close-out
+# Next — after sprint-057 Session A close-out
 
-> Sprint 056-A closed at `d982dd4` on `feat/056-session-a`, stacked on
-> `feat/055-session-a` (`ae863fc`) → `feat/054-session-a` → ... → `main`.
+> Sprint 057-A closed at `308186a` on `feat/057-session-a`, stacked on
+> `feat/056-session-a` (`812bc55`) → `feat/055-session-a` (`ae863fc`) → ... → `main`.
 >
-> **Five gates shipped:**
-> - F1: Compose-at-cursor bubble + `/api/build/compose-span` — highlight text in
->   the drawer, describe the change, Accept → merged into preview buffer → Apply writes.
-> - F2: `get_edit_history` tool — agent can now look up stored rationale for
->   "why did we change this?" questions against `BuildArtifactHistory`.
-> - F3: Prompt-cache breakpoint infrastructure wired (documentation stub; SDK
->   surface limitation blocks explicit `cache_control` — blocked region logged to
->   SSE and LangFuse as `explicitCacheControlWired: false`).
-> - F4: Plan-row click opens the artifact drawer — the checklist is now a
->   navigation surface.
-> - F5: Test-failure inline rollback CTA — one-click revert from a `0/3 passed`
->   card, no ledger hunt required.
+> **Three gates shipped:**
+> - F1: Collapsed tool-chain summary per agent message — each assistant turn now
+>   shows a one-line `⚙️ Read state · Got FAQ · Planned 3 writes · Ran test` summary
+>   above the body. Click `▸` to expand the full chip row. TOOL_VERB_MAP coverage
+>   regression test locks any new tool addition.
+> - F2: Typographic attribution everywhere — `attributedStyle('ai'|'human'|'mixed')`
+>   helper in `tokens.ts` applied to all six surfaces (write-ledger, plan-checklist,
+>   test-pipeline-result, artifact-drawer/rationale-card, compose-bubble,
+>   suggested-fix/audit-report). AI prose in grey (#52525B), operator prose in black.
+> - F3: Scroll discipline + queue-while-busy — unconditional auto-scroll replaced
+>   with `isAtBottom` tracking + "↓ N new" pill. Auto-queue accepts up to 3 follow-up
+>   messages while the agent is streaming; flushes in order on next `ready` transition.
 
-## Primary candidate — sprint-057: Session-wide diff summary
+## Primary candidate — sprint-058: Editable plan mode
 
-**What:** At the end of a BUILD session, the agent (or a triggered call) produces
-a concise human-readable summary of every artifact that changed: what was created,
-what was updated, what was reverted. Surfaced as a `data-session-diff-summary` SSE
-part rendered in the Studio chat as a collapsible card.
+**What:** Allow the manager to edit an in-flight `plan_build_changes` checklist before
+approving — reorder, delete, or add rows directly in the plan card. Edits are persisted
+to the `BuildTransaction.plan` JSON before the `approve` call fires.
 
-**Why now:** After F2 + F4, the operator can inspect individual artifacts from
-the plan. But there's no "here's everything that changed this session" view. The
-diff summary closes that gap without requiring the operator to scroll the ledger.
+**Why now:** The plan is now clickable (056 F4) and visible as a checklist (055 F1).
+The natural next affordance is mutability — the operator shouldn't have to accept the
+agent's exact plan verbatim when a few tweaks would make it better.
 
-**Scope estimate:** Small–medium. Needs a new tool `emit_session_summary` (or a
-turn-end trigger in the controller) that reads `BuildArtifactHistory` scoped to
-the `conversationId`, formats a structured diff, and emits the SSE part.
+**Scope estimate:** Medium. Needs an inline edit mode on `plan-checklist.tsx`, a new
+`PATCH /api/build/transaction/:id/plan` endpoint, and a client-side optimistic update.
+No schema change needed (the `plan` column already holds JSON).
 
-## Secondary candidates
+## Secondary candidate — sprint-058: Session-diff summary
 
-### F3 explicit `cache_control` — unblock when SDK supports it
+**What:** At the end of a BUILD session, produce a concise human-readable summary of
+every artifact that changed: created, updated, reverted. Surfaced as a collapsible
+card in Studio chat.
 
-The Agent SDK (`sdk.d.ts:1475`) currently accepts `systemPrompt: string | { type: 'preset' }` only.
-When a future SDK version exposes block-array system prompts, F3 step 2 can be completed
-by unwrapping `prompt-cache-blocks.ts` infrastructure that's already in place. Track the
-Anthropic Claude Agent SDK changelog for the `systemPrompt: ContentBlock[]` surface.
+**Why now:** After 055 F1 (plan-as-checklist) + 056 F4 (plan-row click), operators
+can inspect artifacts from the plan. But there's no "everything that changed this
+session" view. The diff summary closes that gap without requiring ledger scroll.
 
-### Verify-without-writing ritual
+**Scope estimate:** Small–medium. Needs a `emit_session_summary` trigger in the
+build controller that reads `BuildArtifactHistory` scoped to `conversationId`, emits
+a `data-session-diff-summary` SSE part, and a frontend renderer.
 
-Allow a manager to ask "test the current SOP without making any changes" — a
-single-turn `test_pipeline` call scoped to the existing saved artifact body, not
-a post-write ritual window.
+## Infrastructure
 
-### 049 P1 sweep
-
-Sprint-049 explore-report listed P1 gaps that have been deferred across 050–056.
-Reassess which are still open after the 055–056 inline-edit + compose-at-cursor
-changes; a sweep session may be able to close several in one go.
-
-## Infrastructure: staging walkthrough + stack merge to main
-
-Branches 050–056 are stacked. A live walkthrough session testing the full
-BUILD-mode flow end-to-end (green-field tenant, all five F1–F5 gates live)
-should precede any merge to main.
+Stack 050–057 still off `main`. A staging walkthrough (green-field tenant, full
+BUILD-mode flow end-to-end) should precede the merge.
 Prerequisite: `ENABLE_BUILD_MODE=true` on the staging Railway instance.
