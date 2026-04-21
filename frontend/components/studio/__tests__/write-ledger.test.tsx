@@ -351,4 +351,37 @@ describe('WriteLedgerCard', () => {
     expect(body.querySelector('h1')).toBeNull()
     expect(body.querySelector('em')).toBeNull()
   })
+
+  // ── Sprint 057-A F2 — typographic attribution ──────────────────────────
+
+  it('057-A F2: entry title (operation + typeLabel) renders with human (ink) colour', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [row({ id: 'h-attr', artifactType: 'sop', operation: 'UPDATE' })],
+    })
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    // The "UPDATE SOP" span carries the human colour.
+    const titleSpan = screen.getByText(/UPDATE SOP/)
+    expect(titleSpan).toHaveStyle({ color: STUDIO_COLORS.ink })
+  })
+
+  it('057-A F2: rationale body renders with AI (inkMuted) colour after expansion', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-rat',
+          metadata: { rationale: 'Agent tightened the SOP wording.' },
+        }),
+      ],
+    })
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('write-ledger-rationale-chevron'))
+    })
+    const body = screen.getByTestId('rationale-card-body')
+    expect(body).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
 })

@@ -28,7 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
-import { STUDIO_COLORS } from './tokens'
+import { STUDIO_COLORS, attributedStyle } from './tokens'
 import {
   apiListBuildArtifactHistory,
   type AggregateVerdict,
@@ -222,7 +222,7 @@ function LedgerRow({
         >
           <TypeIcon size={12} color={STUDIO_COLORS.inkMuted} />
           <OpIcon size={11} color={opColor} />
-          <span style={{ fontSize: 11.5, fontWeight: 500 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 500, ...attributedStyle('human') }}>
             {row.operation} {typeLabel}
           </span>
           <span

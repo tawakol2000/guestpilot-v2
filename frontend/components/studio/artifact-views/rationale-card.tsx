@@ -17,7 +17,7 @@
  * card shape even for pre-F1 rows so the ledger doesn't visually
  * flicker when older entries come back from pagination.
  */
-import { STUDIO_COLORS } from '../tokens'
+import { STUDIO_COLORS, attributedStyle } from '../tokens'
 
 export interface RationaleCardProps {
   rationale: string | null | undefined
@@ -75,7 +75,7 @@ export function RationaleCard({
           data-testid="rationale-card-body"
           style={{
             fontSize: 11.5,
-            color: STUDIO_COLORS.ink,
+            ...attributedStyle('ai'),
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}
@@ -99,7 +99,7 @@ export function RationaleCard({
           data-testid="rationale-card-operator-rationale"
           style={{
             fontSize: 11,
-            color: STUDIO_COLORS.inkMuted,
+            ...attributedStyle('human'),
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
             borderTop: `1px solid ${STUDIO_COLORS.hairlineSoft}`,

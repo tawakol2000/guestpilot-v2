@@ -123,6 +123,26 @@ export type StudioStatus = keyof typeof STUDIO_STATUS_DOT;
 // `accentHover` and `accentSoft` likewise map to Studio's tokens. The
 // category pastels are identical to plan §3.3's retained set.
 
+// ─── Sprint 057-A F2 — typographic attribution helper ──────────────────────
+//
+// Centralises the A1 data-origin grammar so every surface that renders
+// text can call `attributedStyle(origin)` rather than hard-coding colour
+// values. AI-authored prose → inkMuted grey (#666666). Operator-authored
+// prose → ink black (#0A0A0A). Mixed provenance falls to the AI colour
+// so the agent portion is never accidentally promoted to human weight.
+
+export type TextOrigin = 'ai' | 'human' | 'mixed'
+
+export function attributedStyle(origin: TextOrigin): React.CSSProperties {
+  switch (origin) {
+    case 'human':
+      return { color: STUDIO_COLORS.ink }
+    case 'mixed':
+    case 'ai':
+      return { color: STUDIO_COLORS.inkMuted }
+  }
+}
+
 import type { TuningDiagnosticCategory, TuningTriggerType } from '@/lib/api';
 
 export const TUNING_COLORS = {
