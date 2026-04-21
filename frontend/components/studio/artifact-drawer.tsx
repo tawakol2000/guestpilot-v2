@@ -21,11 +21,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import {
+  apiApplyArtifact,
   apiGetBuildArtifact,
   BuildArtifactNotFoundError,
+  type ApplyArtifactResult,
   type BuildArtifactDetail,
   type BuildArtifactType,
 } from '@/lib/build-api'
+import { ApiError } from '@/lib/api'
 import { slug as slugify } from '@/lib/slug'
 import { STUDIO_COLORS } from './tokens'
 import { resolveArtifactDeepLink, type SessionArtifact } from './session-artifacts'
@@ -56,6 +59,17 @@ export interface ArtifactDrawerProps {
   rawPromptEditorEnabled: boolean
   /** B2 — ISO timestamp that delimits "this session" for the prev-body lookup. */
   sessionStartIso?: string | null
+  /**
+   * Sprint 053-A D3 — agent-proposed update payload for this artifact.
+   * When set, the drawer footer renders Preview (primary) + Apply
+   * (subordinate, disabled until preview). Preview calls the apply
+   * endpoint with dryRun:true; Apply calls it with dryRun:false.
+   */
+  pendingBody?: Record<string, unknown> | null
+  /** Conversation threaded into apply calls for the write-ledger rail. */
+  conversationId?: string | null
+  /** Called after a successful Apply. Drawer auto-closes. */
+  onApplied?: (artifact: BuildArtifactType, id: string) => void
 }
 
 const TYPE_LABEL: Record<BuildArtifactType, string> = {
@@ -75,6 +89,9 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     traceViewEnabled,
     rawPromptEditorEnabled,
     sessionStartIso,
+    pendingBody,
+    conversationId,
+    onApplied,
   } = props
 
   const panelRef = useRef<HTMLDivElement>(null)
@@ -85,6 +102,13 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const [showDiff, setShowDiff] = useState(false)
   const [showFullSensitive, setShowFullSensitive] = useState(false)
   const contentBodyRef = useRef<HTMLDivElement>(null)
+  // D3: preview/apply state. `previewResult` holds the dryRun response
+  // once a preview has been fetched; `previewError` holds the inline
+  // validation error surfaced by the backend.
+  const [previewResult, setPreviewResult] = useState<ApplyArtifactResult | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [applying, setApplying] = useState(false)
 
   // Load the artifact whenever the target changes. Guarded by `open` to
   // avoid eager fetches when the drawer isn't mounted visibly.
@@ -96,6 +120,11 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     setError(null)
     setShowDiff(false)
     setShowFullSensitive(false)
+    // D3 — reset preview state whenever the target changes.
+    setPreviewResult(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
+    setApplying(false)
     setLoading(true)
     apiGetBuildArtifact(target.artifact, target.artifactId, {
       prevSince: sessionStartIso ?? undefined,
@@ -208,6 +237,75 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const deepLink =
     target.sessionArtifact && resolveArtifactDeepLink(target.sessionArtifact)
   const isPending = Boolean(target.isPending)
+  const hasPendingBody = !!pendingBody && Object.keys(pendingBody).length > 0
+  const previewActive = hasPendingBody && previewResult != null && previewResult.ok
+
+  async function handlePreviewClick() {
+    if (!target || !pendingBody) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    try {
+      const res = await apiApplyArtifact(target.artifact, target.artifactId, {
+        dryRun: true,
+        body: pendingBody,
+        conversationId: conversationId ?? null,
+      })
+      if (res.ok) {
+        setPreviewResult(res)
+      } else {
+        setPreviewError(res.error ?? 'Validation failed')
+        setPreviewResult(null)
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+        setPreviewError((err.data as any).error ?? err.message)
+      } else {
+        setPreviewError(err instanceof Error ? err.message : String(err))
+      }
+      setPreviewResult(null)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  async function handleApplyClick() {
+    if (!target || !pendingBody) return
+    setApplying(true)
+    try {
+      const res = await apiApplyArtifact(target.artifact, target.artifactId, {
+        dryRun: false,
+        body: pendingBody,
+        conversationId: conversationId ?? null,
+      })
+      if (res.ok) {
+        if (onApplied) onApplied(target.artifact, target.artifactId)
+        onClose()
+      } else {
+        setPreviewError(res.error ?? 'Apply failed')
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+        setPreviewError((err.data as any).error ?? err.message)
+      } else {
+        setPreviewError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  function clearPreview() {
+    setPreviewResult(null)
+    setPreviewError(null)
+  }
+
+  // Synthesize a preview detail by overlaying the preview body onto the
+  // loaded artifact. Keeps the existing per-type views unmodified.
+  const renderDetail: BuildArtifactDetail | null =
+    previewActive && detail
+      ? synthesizePreviewDetail(detail, previewResult)
+      : detail
+  const renderShowDiff = previewActive ? true : showDiff
   const adminGated = isAdmin && traceViewEnabled
   const showFullAffordance =
     target.artifact === 'tool' && adminGated && Boolean(detail?.webhookConfig)
@@ -323,14 +421,16 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
             />
           ) : null}
           {error ? <ErrorBanner message={error} /> : null}
-          {detail ? (
+          {previewActive ? <PreviewBanner onClear={clearPreview} /> : null}
+          {previewError ? <PreviewErrorBanner message={previewError} /> : null}
+          {renderDetail ? (
             <ViewSwitch
-              artifact={detail}
+              artifact={renderDetail}
               type={target.artifact}
               isAdmin={isAdmin}
               traceViewEnabled={traceViewEnabled}
               rawPromptEditorEnabled={rawPromptEditorEnabled}
-              showDiff={showDiff}
+              showDiff={renderShowDiff}
               showFullSensitive={showFullSensitive}
               isPending={isPending}
               scrollToSectionSlug={
@@ -393,6 +493,28 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
             </label>
           ) : null}
           <div style={{ flex: 1 }} />
+          {hasPendingBody ? (
+            <>
+              <button
+                type="button"
+                onClick={handlePreviewClick}
+                disabled={previewLoading || applying}
+                aria-label="Preview change"
+                style={footerButtonStyle(previewActive ? 'ghost' : 'primary', previewLoading)}
+              >
+                {previewLoading ? 'Previewing…' : previewActive ? 'Re-preview' : 'Preview'}
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyClick}
+                disabled={!previewActive || applying}
+                aria-label="Apply change"
+                style={footerButtonStyle('apply', applying)}
+              >
+                {applying ? 'Applying…' : 'Apply'}
+              </button>
+            </>
+          ) : null}
           {deepLink ? (
             <a
               href={deepLink}
@@ -575,5 +697,141 @@ function ErrorBanner({ message }: { message: string }) {
       Failed to load artifact: {message}
     </div>
   )
+}
+
+/**
+ * D3: amber "preview — not saved yet" banner with a Clear link. Kept
+ * inline (not in a token for now) because Studio's warning token may
+ * or may not exist per-theme; this pass uses a stable hex that reads
+ * as distinct from the notFound/error banners.
+ */
+function PreviewBanner({ onClear }: { onClear: () => void }) {
+  return (
+    <div
+      role="status"
+      data-testid="preview-banner"
+      style={{
+        padding: 10,
+        background: '#FFF5E4',
+        color: '#7A4A05',
+        borderLeft: '2px solid #D48A1B',
+        borderRadius: 5,
+        fontSize: 12,
+        lineHeight: 1.5,
+        marginBottom: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <span style={{ flex: 1, fontWeight: 500 }}>Preview — not saved yet</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Clear preview"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: '#7A4A05',
+          fontSize: 11.5,
+          fontWeight: 500,
+          textDecoration: 'underline',
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        Clear preview
+      </button>
+    </div>
+  )
+}
+
+function PreviewErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      data-testid="preview-error"
+      style={{
+        padding: 10,
+        background: STUDIO_COLORS.dangerBg,
+        color: STUDIO_COLORS.dangerFg,
+        borderLeft: `2px solid ${STUDIO_COLORS.dangerFg}`,
+        borderRadius: 5,
+        fontSize: 12,
+        lineHeight: 1.5,
+        marginBottom: 12,
+      }}
+    >
+      {message}
+    </div>
+  )
+}
+
+function footerButtonStyle(
+  variant: 'primary' | 'apply' | 'ghost',
+  busy: boolean,
+): React.CSSProperties {
+  const base: React.CSSProperties = {
+    fontSize: 12,
+    fontWeight: 500,
+    padding: '5px 10px',
+    borderRadius: 5,
+    cursor: busy ? 'progress' : 'pointer',
+    lineHeight: 1.3,
+  }
+  if (variant === 'primary') {
+    return {
+      ...base,
+      background: STUDIO_COLORS.accent,
+      color: '#fff',
+      border: `1px solid ${STUDIO_COLORS.accent}`,
+    }
+  }
+  if (variant === 'apply') {
+    return {
+      ...base,
+      background: STUDIO_COLORS.ink,
+      color: '#fff',
+      border: `1px solid ${STUDIO_COLORS.ink}`,
+      opacity: busy ? 0.6 : 1,
+    }
+  }
+  return {
+    ...base,
+    background: 'transparent',
+    color: STUDIO_COLORS.ink,
+    border: `1px solid ${STUDIO_COLORS.hairline}`,
+  }
+}
+
+/**
+ * Overlay the preview payload onto the loaded artifact detail so the
+ * existing per-type view renders the proposed body with `showDiff`
+ * flipped on. `prevBody` becomes the current saved body; `body` becomes
+ * the preview body. Fields that don't apply to a type are ignored.
+ */
+function synthesizePreviewDetail(
+  base: BuildArtifactDetail,
+  preview: ApplyArtifactResult | null,
+): BuildArtifactDetail {
+  if (!preview || !preview.preview || typeof preview.preview !== 'object') {
+    return base
+  }
+  const p = preview.preview as Record<string, unknown>
+  const nextBody =
+    typeof p.content === 'string'
+      ? p.content
+      : typeof p.text === 'string'
+      ? p.text
+      : typeof p.answer === 'string'
+      ? p.answer
+      : typeof p.description === 'string'
+      ? p.description
+      : base.body
+  return {
+    ...base,
+    body: nextBody,
+    prevBody: base.body,
+  }
 }
 

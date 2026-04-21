@@ -441,3 +441,68 @@ export async function apiGetBuildArtifact(
     throw err
   }
 }
+
+// ─── Sprint 053-A D3 — Preview + Apply write endpoint ─────────────────────
+
+export interface ApplyArtifactResult {
+  ok: boolean
+  dryRun: boolean
+  artifactType: BuildArtifactType
+  artifactId: string
+  preview?: unknown
+  diff?: unknown
+  error?: string
+}
+
+export async function apiApplyArtifact(
+  artifact: BuildArtifactType,
+  id: string,
+  input: {
+    dryRun: boolean
+    body: Record<string, unknown>
+    conversationId?: string | null
+  },
+): Promise<ApplyArtifactResult> {
+  const path =
+    `/api/build/artifacts/${encodeURIComponent(artifact)}` +
+    `/${encodeURIComponent(id)}/apply`
+  return buildFetch<ApplyArtifactResult>(path, {
+    method: 'POST',
+    body: JSON.stringify({
+      dryRun: input.dryRun,
+      body: input.body,
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+    }),
+  })
+}
+
+// ─── Sprint 053-A D4 — Write-ledger rail ──────────────────────────────────
+
+export interface BuildArtifactHistoryRow {
+  id: string
+  artifactType: BuildArtifactType | 'tool_definition'
+  artifactId: string
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'REVERT'
+  actorEmail: string | null
+  conversationId: string | null
+  createdAt: string
+  prevBody: unknown
+  newBody: unknown
+  metadata?: Record<string, unknown> | null
+}
+
+export interface BuildArtifactHistoryPage {
+  rows: BuildArtifactHistoryRow[]
+}
+
+export async function apiListBuildArtifactHistory(
+  opts: { conversationId?: string; limit?: number } = {},
+): Promise<BuildArtifactHistoryPage> {
+  const qs = new URLSearchParams()
+  if (opts.conversationId) qs.set('conversationId', opts.conversationId)
+  if (typeof opts.limit === 'number') qs.set('limit', String(opts.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return buildFetch<BuildArtifactHistoryPage>(
+    `/api/build/artifacts/history${suffix}`,
+  )
+}

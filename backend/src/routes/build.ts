@@ -59,6 +59,10 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.get('/artifact/:type/:id', (req: any, res) =>
     ctl.getArtifact(req, res)
   );
+  // Sprint 053-A D3 — admin-only Preview/Apply endpoint for the drawer.
+  router.post('/artifacts/:type/:id/apply', (req: any, res) =>
+    ctl.applyArtifact(req, res)
+  );
 
   return router;
 }

@@ -61,6 +61,10 @@ import {
   type BuildArtifactType,
 } from '../services/build-artifact.service';
 import {
+  applyArtifactUpdate,
+  type ApplyArtifactType,
+} from '../build-tune-agent/lib/artifact-apply';
+import {
   assembleSystemPromptRegions,
   type AgentMode,
   type SystemPromptContext,
@@ -1023,6 +1027,84 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[build-controller] getArtifact failed:', err);
         res.status(500).json({ error: 'ARTIFACT_READ_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 053-A D3 — POST /api/build/artifacts/:type/:id/apply
+     *
+     * Admin-only, gated twice (same posture as the raw-prompt editor):
+     *   1. ENABLE_RAW_PROMPT_EDITOR env flag → 404 when off.
+     *   2. Tenant.isAdmin === true → 403 otherwise.
+     *
+     * Body: { dryRun: boolean, body: <per-type payload> }.
+     * dryRun:true → returns { ok, dryRun: true, preview, diff }, no writes.
+     * dryRun:false → updates the artifact + emits a history row + returns
+     * { ok, dryRun: false, artifactType, artifactId }.
+     *
+     * Dispatches to the same artifact-apply executor that the drawer's
+     * Preview button targets — single source of truth for UPDATE writes.
+     */
+    async applyArtifact(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      if (!isRawPromptEditorEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true, email: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+        const rawType = String(req.params.type ?? '') as ApplyArtifactType;
+        const id = String(req.params.id ?? '');
+        const validTypes: ApplyArtifactType[] = [
+          'sop',
+          'faq',
+          'system_prompt',
+          'tool',
+          'property_override',
+        ];
+        if (!validTypes.includes(rawType)) {
+          res.status(400).json({ error: 'INVALID_ARTIFACT_TYPE' });
+          return;
+        }
+        if (!id) {
+          res.status(400).json({ error: 'MISSING_ARTIFACT_ID' });
+          return;
+        }
+        const b = req.body ?? {};
+        const dryRun = Boolean(b.dryRun);
+        const body =
+          b.body && typeof b.body === 'object' && !Array.isArray(b.body)
+            ? (b.body as Record<string, unknown>)
+            : {};
+        const conversationId =
+          typeof b.conversationId === 'string' ? b.conversationId : null;
+        const result = await applyArtifactUpdate(prisma, {
+          tenantId: req.tenantId,
+          type: rawType,
+          id,
+          dryRun,
+          body,
+          actorUserId: (req as any).userId ?? null,
+          actorEmail: tenant.email ?? null,
+          conversationId,
+        });
+        if (!result.ok) {
+          res.status(422).json(result);
+          return;
+        }
+        res.json(result);
+      } catch (err) {
+        console.error('[build-controller] applyArtifact failed:', err);
+        res.status(500).json({ error: 'ARTIFACT_APPLY_FAILED' });
       }
     },
   };
