@@ -1,222 +1,252 @@
-# Sprint 051 — kickoff
+# Sprint 052 — kickoff
 
-> Sprint 050 Session A closed clean at commit `80de3fd` + the A4 docs
-> commit that follows. Bundle A from the BUILD UX brainstorm landed:
-> typographic attribution (`f64b2e4`), tool-call drill-in drawer with
-> redact+truncate sanitiser (`a4e0722`), and a session-artifacts right-
-> rail card (`80de3fd`). tsc + test suites green both sides (backend
-> 249 unit + 34 integration, frontend 54 vitest). Archived kickoff at
-> [`NEXT.sprint-050-session-a.archive.md`](./NEXT.sprint-050-session-a.archive.md).
+> Sprint 051 Session A closed clean at commit `4c049e8`. Bundle B from
+> the BUILD UX brainstorm landed: unified artifact drawer + 5 type
+> views (`ffa6d50`), diff-body + prev-body coverage (`adb1a1d`), inline
+> citations (`f667d8b`), and the data-artifact-quote backend emitter
+> (`4c049e8`). A pre-flight sanitiser tighten-up (`d103c14`) landed on
+> `feat/050-session-a` before branching. tsc + test suites green both
+> sides: backend 268 unit + 34 integration, frontend 90 vitest across
+> 17 files. Archived kickoff at
+> [`NEXT.sprint-051-session-a.archive.md`](./NEXT.sprint-051-session-a.archive.md).
 >
-> Branch `feat/050-session-a` stays off `main` until the owner signs
-> off on operator-tier trace exposure on staging — the sanitisation
-> layer is the load-bearing guarantee behind that sign-off. Full
-> details in `PROGRESS.md` "Sprint 050 — Session A".
+> Branch `feat/051-session-a` stays off `main` — stacked on
+> `feat/050-session-a`, which is itself pending the combined owner-
+> side smoke walkthrough (sprint-050-A §1.4 steps 5–7 + the
+> sprint-051-A manual walk per the brief §1.5). Pre-flight was
+> owner-overridden this sprint (see `PROGRESS.md` "Sprint 051 —
+> Session A"); the live walkthrough is still the load-bearing check
+> before anything merges to `main`.
 >
-> Sprint 051's primary candidate is **Bundle B** from
-> [`ui-ux-brainstorm-build.md`](./ui-ux-brainstorm-build.md) §16 —
-> unified artifact drawer + inline citations + diff rendering. It
-> depends on Bundle A's attribution grammar (shipped) and the
-> `data-artifact-quote` part type (renderer shipped, emitter still
-> to write). The remaining sprint-049 correctness carry-overs stay
-> on deck in §2 for explicit re-choice.
+> Three candidates for sprint-052-A, ranked by operator impact:
 >
-> Read sections in order: §1 sprint-051 primary candidate (Bundle B),
-> §2 still-deferred, §3 non-negotiables, §4 context pointers.
+>   1. **Bundle C primary** (tiered permissions + Try-it composer +
+>      dry-run-before-write) — with sprint-050-A caveat #3 absorbed as
+>      gate C1. Natural follow-on now that depth (Bundle B) has
+>      shipped.
+>   2. **Correctness carry-over** — the still-deferred sprint-049
+>      P1s plus any 050-A / 051-A caveats that haven't been absorbed.
+>   3. **B-extension** — diff for system_prompt + tool_definition,
+>      version slider, inline-edit-from-the-drawer. Gated on explicit
+>      operator pressure; easy to start from `feat/051-session-a`.
+>
+> Read sections in order: §1 candidate C (primary), §2 candidate B
+> (correctness carry-over), §3 candidate B-ext (only if pressured),
+> §4 still-deferred, §5 non-negotiables, §6 context pointers.
 
 ---
 
-## 1. Sprint 051 — primary candidate: Bundle B (artifact drawer + citations + diff)
+## 1. Sprint 052 — primary candidate: Bundle C (permissions + Try-it + dry-run)
 
-Bundle B is the natural follow-on to the audit-unlock that Bundle A
-shipped. Three sub-gates, each a coherent session:
+Bundle C is the write-safety layer the brainstorm explicitly pairs with
+Bundle B's depth. With the drawer and citations in place operators can
+already *see* what the agent is about to do; Bundle C decides *who can
+sanction it* and gives the agent a safe place to experiment. Three
+gates, starting with the prerequisite mop-up.
 
-### 1.1 Artifact unified drawer shell (§6.1 of the BUILD brainstorm)
+### 1.1 Gate C1 — Write-ledger unification + suggested-fix "reverted" state
 
-**Goal.** A single 480px slide-out that replaces the coarse deep-link
-anchors the sprint-050 session-artifacts card now uses. Accepts
-`{ artifact, artifactId }`. Routes internally to five artifact-type
-views (SOP variant, FAQ entry, system-prompt section, tool definition,
-property override). Viewer-first — editing still happens in the
-dedicated Tuning pages.
+**Why first.** Sprint-050-A caveat #3 was explicitly flagged at the
+close of Bundle A ("per-artifact tx-id threading for suggested-fix
+rollbacks") and carried through sprint-051-A without being touched.
+The permissions work in C2 needs a single write surface to gate; any
+"reverted" affordance on a suggested-fix accept needs a ledger to
+flip. Cheaper to unify now than to back-fill once C2 is threaded.
 
-**Files.** *new* `frontend/components/studio/artifact-drawer.tsx`;
-`session-artifacts.tsx` (switch click handler from `href` anchor to
-`onOpen(artifact)` callback; keep the href as a right-click "open in
-tab" escape hatch); `studio-surface.tsx` (owns the drawer state
-alongside the already-shipped `sessionArtifacts` list). Potentially
-*new* `frontend/lib/artifact-api.ts` with per-type fetch helpers if
-the existing `/api/tuning/*` surface doesn't cleanly cover a single
-lookup-by-id path for each type.
+**Goal.** One `WriteLedgerEntry` (or equivalent shape on
+`BuildTransaction`) records every artifact write regardless of
+source: plan approval, suggested-fix accept, direct tune-page edit.
+Rollback reads this ledger and flips the session-artifact row to
+`reverted` for any write in scope, not just plan-approval-sourced
+ones. A4's row state chip already handles `reverted`; the gap is
+purely in the write path.
 
-**Sketch.** Mirror the Bundle A drawer geometry (slide-out from the
-right, Esc + click-outside close, focus restoration). Header = type
-icon + truncated title + "Open in full editor" link. Body = type-
-specific renderer. Admin-only sections (full system-prompt body,
-tool webhook secrets) stay behind the same gate Bundle A's drawer
-uses (`capabilities.isAdmin && capabilities.traceViewEnabled`).
+**Files.** *new* `backend/src/build-tune-agent/write-ledger.ts` (or
+extend `BuildTransaction` via additive Prisma change — push, not
+migrate, per constitution); `suggestion-action.ts`; rollback path in
+`version-history.ts`; frontend unchanged except possibly surfacing a
+ledger-id on the A3 row for debugging.
 
-**Effort.** 3–4 hours for shell + routing; +1–2 hours per artifact
-type renderer. Ship SOP + FAQ + system-prompt in the first session;
-tool + property override in the follow-up if time pressure shows.
+**Effort.** 6–8 hours. Schema change is additive so no migration
+ceremony. Tests = new write-ledger unit + integration on the
+suggested-fix accept+rollback loop.
 
-**Operator impact.** Very high — every session-artifacts row becomes
-a one-click audit surface instead of a navigation away from Studio.
+### 1.2 Gate C2 — Tiered permissions + typed-confirm for destructive writes
 
-### 1.2 Inline citations on factual claims (§3.7)
+**Goal.** Distinguish "operator" from "admin" at the write path, not
+just the read path. Operator-tier sanction is sufficient for FAQ
+edits, SOP tone tweaks, non-destructive tool param changes. Admin
+sanction required for: system_prompt edits, tool webhook-url changes,
+property-override creates, and anything marked `sensitive` by the
+agent's plan item.
 
-**Goal.** When the agent asserts "the current early-checkin SOP's
-CONFIRMED variant says …", the quoted span becomes clickable and
-opens the artifact drawer (1.1) scrolled to that span.
+**Sketch.** Add a `requiresAdminSanction: boolean` field on
+`BuildPlanItem` + `SuggestedFixData`. The agent emits it based on
+artifact type (system_prompt / tool webhook changes always true) +
+explicit sensitivity signals. Frontend renders a typed-confirm on
+admin-gated items ("type CONFIRM to approve"). Backend double-checks
+on the write path.
 
-**Files.** `backend/src/build-tune-agent/data-parts.ts` — add
-`artifact_citation: 'data-artifact-citation'` with
-`ArtifactCitationData { artifact, artifactId, quoteRange, displayText }`.
-`studio-chat.tsx` StandalonePart — render the citation as an
-underlined span with `cursor: pointer` that calls the drawer open
-callback (requires 1.1). Agent-side — teach `propose_suggestion` and
-`emit_audit` to emit citations when they reference an artifact by ID.
+**Effort.** 8–12 hours. Test surface is wide (every write seam).
 
-**Dependency.** 1.1 must land first (the click has nowhere to go
-without the drawer).
+### 1.3 Gate C3 — Dry-run-before-write + Try-it composer
 
-**Effort.** 2 hours for the part type + renderer; 2–4 hours for the
-agent-side emit (depends on how thorough we want the initial coverage
-to be — ship the two highest-signal call sites first).
+**Goal.** A scratchpad surface where the operator can author a
+proposed artifact change (FAQ answer, SOP body section) and hit
+"Try it" — runs through `test_pipeline` + the drawer's diff view
+without writing anything. Pairs with C2: the same typed-confirm
+pattern applies to an explicit "commit this draft" action.
 
-**Operator impact.** High — closes the "what the agent just quoted"
-loop without forcing the operator to hunt the artifact manually.
+**Effort.** 10–12 hours. Largest gate of the bundle.
 
-### 1.3 Diff rendering inside the drawer (§6.2)
-
-**Goal.** Any artifact in the drawer during/after a BUILD session
-shows a "view changes" toggle. When on, the body renders with red-
-strike / green-underline deltas against the prior version. One
-version slider per artifact.
-
-**Files.** Backend — add a `/api/build/artifact/:type/:id/versions`
-endpoint that returns the last 5 versions (data already lives in
-`AiConfigVersion` for prompts, in `SopVariant` history for SOPs;
-FAQs currently don't version → decide whether to bolt on version
-capture or ship the toggle SOP-first). Frontend — add the toggle +
-diff renderer to `artifact-drawer.tsx`. Reuse the existing diff
-palette from Bundle A's `STUDIO_COLORS.diffAddBg/diffDelBg`.
-
-**Sketch.** Start with SOPs (versioned already). FAQs + tool-definitions
-get added as their version-capture lands (not this sprint unless the
-operator signal demands it).
-
-**Effort.** 4–6 hours for SOP-first ship; +4 hours when FAQ version
-capture lands.
-
-**Operator impact.** High for long-running tenants — "what changed
-this week?" becomes a visible diff instead of a read of two raw
-bodies.
+**Bundle total.** 24–32 hours. Biggest yet — split into two sessions
+if time compresses; C1+C2 form a coherent "safety" ship, C3 follows.
 
 ---
 
-## 2. Still-deferred
+## 2. Sprint 052 — correctness carry-over candidate
 
-### 2.1 Deferred from sprint 049 (carry-forward, unchanged from sprint-050 NEXT §2)
+Unchanged from sprint-051-A NEXT §2.1 + §2.2 — the P1 docket has
+stayed deferred through three sprint cycles. If operator pressure on
+these lands between now and kickoff, swap this to §1:
 
 - **Explore P1-5** — `PREVIEW_LOCKED` 409 from `/send` doesn't refresh
   client state; manager sees a dead Send button after a socket drop.
-  `shadow-preview.service.ts` + inbox-v5 socket listener. 2–3 hours.
+  2–3 hours.
 - **Explore P1-2** — judge API failure returns `score: 0 +
   failureCategory: 'judge-error'` instead of a typed tool error,
-  fooling the BUILD iteration loop. `test-judge.ts:167–175`. 1–2 hours.
+  fooling the BUILD iteration loop. 1–2 hours.
 - **Explore P1-4** — diagnostic + suggestion-writer + evidence-bundle
-  writes not transactional. `diagnostic.service.ts` +
-  `suggestion-writer.service.ts`. 2 hours + integration cases.
+  writes not transactional. 2 hours + integration cases.
 - **Explore P1-6** — atomic-claim revert race on tuning-suggestion
-  accept. `tuning-suggestion.controller.ts`. 3–4 hours.
+  accept. 3–4 hours.
 - **Discovery F1** — dead `POST /api/tuning/complaints` route
-  (+ companion `GET /category-stats`). Read `docs/ios-handoff.md`
-  first — iOS may be the only remaining caller. 30min–1day.
+  (+ companion `GET /category-stats`). 30min–1day depending on iOS
+  caller audit.
 - **DB-backed `TUNING_DIAGNOSTIC_FAILURE` observability badge
   (DB half of explore P1-3).** Prereq: ≥1 week of production log
   signal from sprint-049's log-tag helper before thresholds calibrate.
 
-### 2.2 Deferred from sprint 050 — Session A (new this sprint)
+Plus the un-absorbed 050-A / 051-A items that didn't make Bundle C:
 
-- **Backend emitter for `data-artifact-quote`.** Renderer shipped A1;
-  emitter still pending. Agent-side enhancement to `propose_suggestion`
-  (or new dedicated `quote_artifact` tool). Pairs naturally with
-  Bundle B 1.2 — both teach the agent to emit references.
-- **Per-artifact tx-id threading for suggested-fix rollbacks.** Today
-  rollback flips only plan-approval-sourced artifacts ("reverted"
-  chip). Suggested-fix accepts live outside the tx scheme. Unified
-  write ledger is a Bundle B concern — tracks cleanly there.
-- **Manual live-walkthrough of Bundle A on staging.** Owner-side
-  smoke test. The branch `feat/050-session-a` stays off `main` until
-  this signs off. Sanitiser unit suite is the cheap load-bearing
-  check; the live walkthrough verifies that no captured tool payload
-  in the field leaks secrets or PII beyond what the sanitiser
-  redacts.
-- **A11y pass on A1 typographic attribution.** `data-origin` is
-  selector-queryable but not announced to screen readers. If an
-  audit surfaces next sprint, add `aria-label` on the role headers
-  + `role="quote"` on the `data-artifact-quote` pre. Not blocking.
-
-### 2.3 Carried forward unchanged (from sprint-049 NEXT §2.3 + sprint-050 NEXT §2.2)
-
-- **Discovery D1** — webhook drop-through on auto-create-failed.
-  Guest-message intake; demands a dedicated sprint per CLAUDE.md #1.
-- **R1 persist-time truncation (Path B).** Langfuse-dependent.
-- **Dashboards merge into main Analytics tab.** Awaits operator
-  feedback on the standalone Studio panel.
-- **R2 enforcement observability dashboard.** Langfuse work.
-- **Oscillation advisory on BUILD writes.** Needs a confidence
-  signal that doesn't exist today.
-- **Per-user admin distinctions.** `Tenant.isAdmin` conflates
-  tenant-owner and platform-admin; migrate only when a surface needs it.
-- **Raw-prompt editor edit path.** No operator pressure yet.
-- **RejectionMemory retention sweep + cleared-rejections UI.**
-- **Free-text rationale on reject card.**
-- **Full Path A ⇔ Path B semantic parity audit** (role, audit
-  fields, hostawayMessageId stamping).
-- **Explore P2s (×10)** — polish queue; see
-  [`sprint-049-explore-report.md`](./sprint-049-explore-report.md) §2.
+- **A11y pass on A1 origin-grammar + artifact-drawer focus trap.**
+  Cross-cutting — separate a11y sprint eventually, but a one-session
+  pass over `data-origin`, chip `aria-label`, and focus-trap +
+  `role="quote"` on the `data-artifact-quote` pre is cheap.
 
 ---
 
-## 3. Non-negotiables carried forward
+## 3. Sprint 052 — B-extension candidate (only if operator pressure surfaces)
+
+Start from `feat/051-session-a` so the drawer work is already in
+hand. Three gates, each small:
+
+### 3.1 Gate Bx-1 — Diff rendering for system_prompt
+
+The `SystemPromptView` already takes `showDiff` via the shell; the
+gap is a backend `AiConfigVersion`-sourced prevBody for the
+`prevSince` query. Add a branch to
+`getBuildArtifactPrevBody('system_prompt', …)` that returns the
+oldest `AiConfigVersion` body within the window for the requested
+variant. 2–3 hours.
+
+### 3.2 Gate Bx-2 — Diff rendering for tool_definition
+
+Similar shape to Bx-1 but reading from a tool-history source that
+doesn't exist yet — either add a `ToolDefinitionHistory` table
+(additive, push-not-migrate) or start the diff against the oldest
+`updatedAt`-earliest tool row in the plan. 4–6 hours (depends on
+history decision).
+
+### 3.3 Gate Bx-3 — Per-version navigation inside the drawer
+
+Version slider or prev/next buttons in the drawer footer. 4–6 hours.
+
+**Bundle total.** 10–15 hours. Only ship if the operator explicitly
+asks — Bundle C unblocks more value per hour.
+
+---
+
+## 4. Still-deferred (carry forward, explicit re-choice required)
+
+### 4.1 New in sprint-051-A
+
+- **emit_audit quote emit.** Deferred deliberately (B4 handoff) —
+  audit row notes aren't verbatim excerpts, so the natural quote
+  grammar doesn't fit. If Bundle D brings an audit drilldown
+  surface, this becomes a 1-hour wire-up.
+- **Citation parser for additional artifact types beyond the five
+  drawer types.** If a future artifact lands, extend
+  `CitationArtifactType` + the backend grammar block together —
+  the marker format is an API seam.
+
+### 4.2 Carried from sprint-050-A (now mostly absorbed by Bundle B)
+
+- ~~Backend emitter for `data-artifact-quote`~~ — ✅ shipped B4.
+- ~~Per-artifact tx-id threading for suggested-fix rollbacks~~ —
+  surfaces as Bundle C gate C1 above.
+- **Manual live-walkthrough of Bundle A + B on staging.** Blocker on
+  merging either branch to `main`. Owner override on sprint-051-A's
+  pre-flight means the combined walkthrough is now the single live
+  check for both sprints' sanitiser-leak risk + operator-vs-admin
+  gating.
+
+### 4.3 Carried from sprint-049 and earlier
+
+Unchanged from sprint-051-A §2.3 — Discovery D1 webhook drop-through,
+R1 persist-time truncation, dashboards merge, R2 enforcement
+observability, oscillation advisory, per-user admin distinctions,
+raw-prompt editor edit path, RejectionMemory retention sweep,
+free-text rationale on reject card, Path A ⇔ Path B parity audit,
+Explore P2s (×10).
+
+---
+
+## 5. Non-negotiables carried forward
 
 - `ai.service.ts` untouched. Guest messaging flow out of scope.
 - Prisma changes via `prisma db push`, not migrations.
 - Admin-only surfaces stay admin-only — triple-gated (env flag +
-  `tenant.isAdmin` + server-side route gate). Sprint-050's drawer
+  `tenant.isAdmin` + server-side route gate). The artifact-drawer
   reuses `capabilities.isAdmin && capabilities.traceViewEnabled`
-  for the "Show full output" toggle; Bundle B must do the same for
-  any new admin toggle it introduces.
-- Graceful degradation on every new API call (CLAUDE.md rule #2).
-- Legacy copilot `fromDraft` gate stays explicit opt-in — sprint
-  048-A A4 case 3 + sprint 049-A A3 case (b) regression-test it.
-- Sanitisation layer on the tool-call drawer stays the one-path
-  boundary between operator and admin; no code-side shortcut that
-  bypasses `sanitiseToolPayload`.
+  for the tool webhook full-output toggle, and
+  `capabilities.isAdmin && capabilities.rawPromptEditorEnabled` for
+  the system-prompt body view. Bundle C's typed-confirm must keep
+  the same gate surface.
+- Sanitisation is load-bearing. The 050-A redact-by-key regex +
+  051-A length-heuristic fallback form the one path into
+  operator-tier payload rendering. No code-side shortcut that
+  bypasses `sanitiseToolPayload`. Quote bodies on the backend go
+  through `sanitiseQuoteBody`.
+- The `[[cite:...]]` marker format is a versioned contract between
+  the backend prompt grammar and the frontend parser. Changing it
+  is a breaking change — document and coordinate.
+- Graceful degradation on every new API surface (CLAUDE.md rule #2).
+  The artifact-drawer's "missing artifact" banner + the citation
+  parser's pass-through-on-unknown-type are the current instances.
 
 ---
 
-## 4. Context pointers
+## 6. Context pointers
 
+- [`sprint-051-session-a.md`](./sprint-051-session-a.md) — sprint-051
+  Session A brief (Bundle B gates B1–B5, all closed).
 - [`sprint-050-session-a.md`](./sprint-050-session-a.md) — sprint-050
-  Session A brief (Bundle A gates A1–A4, all closed).
+  Session A brief (Bundle A gates A1–A4).
 - [`ui-ux-brainstorm-build.md`](./ui-ux-brainstorm-build.md) — BUILD
-  UX deep-dive; §6 (artifact drawer), §3.7 (citations), §6.2 (diff)
-  are Bundle B's spec anchors.
-- [`ui-ux-brainstorm-frontend.md`](./ui-ux-brainstorm-frontend.md) —
-  companion cross-surface UX brainstorm.
-- [`PROGRESS.md`](./PROGRESS.md) — "Sprint 050 — Session A"
-  subsection is the close-out log including the five operator-tier
-  caveats worth the next session's attention.
+  UX deep-dive; Bundle C's gate anchors live in §7 (permissions) +
+  §8 (Try-it composer) + §5 (dry-run semantics).
+- [`PROGRESS.md`](./PROGRESS.md) — "Sprint 051 — Session A"
+  subsection is the close-out log, including the pre-flight override
+  note, per-gate commit SHAs, and the decisions-worth-next-attention
+  list that seeded this kickoff.
+- [`NEXT.sprint-051-session-a.archive.md`](./NEXT.sprint-051-session-a.archive.md)
+  — archived sprint-051 kickoff brief.
 - [`NEXT.sprint-050-session-a.archive.md`](./NEXT.sprint-050-session-a.archive.md)
   — archived sprint-050 kickoff brief (the six correctness
   candidates from sprint-049's explore report). Re-surface from §2
-  if Bundle B is deferred.
+  if Bundle C is deferred.
 - [`sprint-049-explore-report.md`](./sprint-049-explore-report.md) —
   16-finding explore pass; carry-forward P1s come from §2.
-- [`NEXT.sprint-049-session-a.archive.md`](./NEXT.sprint-049-session-a.archive.md)
-  — archived sprint-049 kickoff brief.
 
 End of kickoff.

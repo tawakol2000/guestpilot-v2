@@ -1554,3 +1554,165 @@ registry entry; `ai.service.ts` untouched, no schema changes, no
   `data-artifact-quote` registry entry passed through
   `DATA_PART_TYPES` checks without breaking existing unit tests.
 
+
+---
+
+## Sprint 051 — Session A (2026-04-21, owner override on pre-flight)
+
+> Branch: `feat/051-session-a` off `feat/050-session-a`. Depends on
+> sprint-050-A's A3 session-artifacts panel as the click-target for the
+> new drawer; inherits the 050-A sanitiser for the new surfaces.
+>
+> **Pre-flight gate: owner-overridden.** The sprint-050-A manual
+> operator-vs-admin smoke test (sprint-050-session-a.md §1.4 steps 5–7)
+> has NOT been run on staging. Owner (ab.tawakol@gmail.com) is the
+> admin tenant and explicitly accepted the compounded sanitiser-leak
+> risk across B1/B2/B4's three new surfaces in favour of owner-side
+> eyeballing post-merge-to-local. Branch stays off `main` until the
+> owner runs a combined 050-A + 051-A drawer walkthrough on staging.
+> Safety-net commit ships first: length-heuristic fallback in
+> `tool-call-sanitise.ts`.
+
+### Per-gate commit sheet
+
+| Gate | SHA | Title | Tests added |
+|------|-----|-------|-------------|
+| Pre | `d103c14` | `tighten(050-A): length-heuristic fallback in tool-call sanitiser` | +3 (matches / no-match / redact-by-key wins) |
+| B1  | `ffa6d50` | `feat(051-A): B1 — unified artifact drawer + 5 type views` | +12 (10 drawer + 2 row-wire) |
+| B2  | `adb1a1d` | `test(051-A): B2 — diff-body + prev-body coverage` | +10 FE (5 diff + 2 render + 3 pending) + 7 BE (4 artifact + 3 prev-body) |
+| B3  | `f667d8b` | `feat(051-A): B3 — inline citations in Studio chat` | +9 FE (7 parser + 2 chip) + 2 BE (grammar regression) |
+| B4  | `4c049e8` | `feat(051-A): B4 — data-artifact-quote backend emitter` | +8 BE (quote-emit) + 2 BE (propose-suggestion) + 2 FE (click-through) |
+
+Pre-flight + B1–B4 total: +36 frontend cases, +24 backend unit cases.
+Ahead of the brief's ~+40 target when both sides are counted.
+
+### Verification run (at close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite: **268/268 pass** (was 249; +19 — 7 build-artifact
+  service, 2 propose-suggestion quote-emit, 8 quote-emit helper, 2
+  citation-grammar prompt regression).
+- Backend integration suite: **34/34 pass** (unchanged — B4's emit
+  sits alongside the existing suggested-fix path, no integration
+  surface changed).
+- Frontend `tsc --noEmit`: clean.
+- Frontend vitest: **90/90 pass across 17 files** (was 54/54 across
+  11 files; +36 across 6 new test files — sanitiser tighten-up (+3),
+  artifact-drawer (10), session-artifacts-drawer (2), diff-body (10),
+  citation-parser (7), citation-chip (2), artifact-quote-click (2)).
+
+### What shipped
+
+- **Safety net (d103c14).** `tool-call-sanitise.ts` now middle-redacts
+  any operator-tier string value of ≥32 opaque alnum/`_-` chars.
+  Catches custom-tool configs whose arbitrary field names the
+  redact-by-key regex doesn't enumerate. Admin tier full-output
+  toggle stays the single escape hatch.
+
+- **B1 — artifact drawer shell (ffa6d50).** One 480px slide-out
+  replaces A3's deep-link anchors. Five view components under
+  `frontend/components/studio/artifact-views/`. Viewer-only (brief
+  §2 non-negotiable); "Open in tuning" footer link preserves the edit
+  path. Backend: new `GET /api/build/artifact/:type/:id` tenant-
+  scoped read seam; 404 → typed `ARTIFACT_NOT_FOUND` the drawer
+  renders as a missing-artifact banner (graceful degradation,
+  brief §2). Esc + click-outside close; focus returns to opener.
+  Transparent underlay `<a>` on session-artifact rows preserves
+  middle/cmd-click "open in tab" on the existing deep-link routes.
+
+- **B2 — diff rendering (adb1a1d + shipped in B1).** Line-mode diff
+  for SOPs, token-mode for FAQs. Empty diff renders a "No changes"
+  notice so the toggle state is obvious. Backend: optional
+  `?prevSince=ISO` on the artifact read endpoint returns the
+  oldest `SopVariantHistory` / `FaqEntryHistory` body in-window —
+  zero-dep LCS, cheap query on the indexed `(tenantId, editedAt)`
+  column. A1 pending grammar (italic grey + "Unsaved" badge)
+  extends into the drawer body (brief §2 invariant).
+
+- **B3 — inline citations (f667d8b).** `[[cite:<type>:<id>#<section>]]`
+  sentinel format parses on the frontend and renders as a
+  clickable CitationChip. Backend: `<citation_grammar>` block in
+  the shared system-prompt prefix teaches the agent when to cite
+  vs quote; marker regex is an API contract called out in the
+  prompt so a future-prompt-writer doesn't silently break the
+  parser. Unknown types silently pass through as text;
+  malformed markers never surface as chips.
+
+- **B4 — data-artifact-quote emitter (4c049e8).** Wakes up the
+  renderer shipped in sprint-050-A1. `propose_suggestion` emits a
+  quote part alongside the suggested-fix card whenever a concrete
+  artifact is being rewritten (before-body non-empty + concrete
+  target). Net-new artifacts skip the emit. `sanitiseQuoteBody`
+  middle-redacts likely-secret values; emit is fire-and-forget
+  (caller never fails on stream errors). Frontend click path:
+  the quote renderer's source chip becomes a clickable button
+  when `onOpenArtifact` is wired; `tool_definition` maps to
+  `tool` for the drawer.
+
+### Decisions worth the next session's attention
+
+- **emit_audit quote wiring deferred, not a gap.** The audit row's
+  `note` is the agent's summary, not verbatim artifact content —
+  quoting it would either misrepresent the source or require
+  extra per-row prisma reads. `propose_suggestion`'s natural emit
+  covers the real "here's what it says today" operator need. If
+  Bundle D brings an audit drilldown surface, the emit site can
+  land there without touching the agent prompt.
+
+- **Version-at-time lookup scope (B2).** The brief flagged
+  possible scope reduction if version-at-time was expensive. It
+  wasn't — `SopVariantHistory` + `FaqEntryHistory` are both
+  indexed by `(tenantId, editedAt)` + `targetId`, so the
+  "oldest row ≥ sessionStart" query is a single index hit. Full
+  in-window semantics shipped. Persisted as the invariant in the
+  backend test.
+
+- **Citation marker format is an API seam.** Changing it between
+  this sprint and a future D/E is a breaking change — the grammar
+  block in the shared prefix carries the regex the frontend parser
+  expects, and the backend prompt regression test locks both
+  example markers in place.
+
+- **system_prompt + tool_definition diff deliberately deferred.**
+  Brief §0 non-goal. If the B-extension lands as sprint-052-A,
+  these are the first two to tackle — the `SystemPromptView`
+  renderer already takes a `showDiff` prop (we just didn't wire
+  a `prevBody` path for it).
+
+- **Drawer focus-trap vs accessibility.** The trap cycles within
+  the drawer's focusable elements when open, but it hasn't been
+  read-through with a screen reader. A11y sprint still owes the
+  cross-cutting audit (deferred in §3).
+
+- **scrollToSection match is slug-based.** The B3 deep-link wires
+  `target.scrollToSection` through to the SOP/FAQ body and
+  searches for a matching h1/h2/h3 or `[data-section]`. Markdown
+  isn't rendered yet, so the match only fires when the body has
+  embedded html headings. Good enough for a first-pass; a
+  markdown renderer sprint naturally picks up the anchor story.
+
+### Still-deferred (→ sprint-052-A candidates)
+
+- **sprint-050-A caveat #3 — write-ledger unification / suggested-
+  fix rollback "reverted" state.** Still the cleanest Bundle-C
+  gate-1 alignment: the permissions work naturally wants a
+  single write ledger. Surfaced as gate C1 in NEXT.md.
+- **emit_audit quote emit** (above) — B-extension tag.
+- **Diff for system_prompt + tool_definition** (above).
+- **Version slider / per-version navigation in the drawer.**
+- **Cross-artifact linking inside the drawer.**
+- **Inline edit + "Compose at cursor"** (brainstorm §6.3; Bundle C).
+- **A11y pass on origin-grammar + focus trap.**
+- sprint-049 carry-overs (P1-5, P1-2, P1-4, P1-6, F1, P1-3 DB half)
+  — unchanged from sprint-050-A §2.
+
+### Blocked / surfaced mid-sprint
+
+- **None that block the sprint.** The `lookupCrossSessionRejection`
+  call in `propose_suggestion` is not mocked in the existing
+  `propose-suggestion.test.ts` harness — it warns into console
+  and falls through, which is the correct degradation. Left in
+  place for this sprint; if the B4 tests grow, a minimal
+  `rejectionMemory.findUnique` stub on the fake prisma would
+  quiet the warning.
+
