@@ -1554,6 +1554,20 @@ registry entry; `ai.service.ts` untouched, no schema changes, no
   `data-artifact-quote` registry entry passed through
   `DATA_PART_TYPES` checks without breaking existing unit tests.
 
+### Pre-flight tighten (post-close, noted retroactively during 052-A)
+
+Between the 050-A close-out and the 051-A branch point, the tool-call
+sanitiser was widened with a length-heuristic fallback —
+`tool-call-sanitise.ts` now middle-redacts any operator-tier string
+value of ≥32 opaque alnum / `_-` chars. Catches custom-tool configs
+whose arbitrary field names the redact-by-key regex didn't enumerate.
+Admin tier full-output toggle remains the single escape hatch; admin
+tier still applies redact-by-key (A4 invariant). +3 test cases
+(matches / no-match / redact-by-key wins). Ships as the tip of
+`feat/050-session-a` before the 051-A stack cuts.
+
+- Commit: `d103c14 tighten(050-A): length-heuristic fallback in tool-call sanitiser`.
+
 
 ---
 
@@ -1716,3 +1730,171 @@ Ahead of the brief's ~+40 target when both sides are counted.
   `rejectionMemory.findUnique` stub on the fake prisma would
   quiet the warning.
 
+
+
+---
+
+## Sprint 052 — Session A (2026-04-21, B-extension mop-up)
+
+> Branch: `feat/052-session-a` off `feat/051-session-a` off
+> `feat/050-session-a`. All three stay off `main` until the owner runs a
+> combined 050-A + 051-A + 052-A staging walkthrough. Sprint closes the
+> B bundle — after this lands, the "viewer story" is actually finished
+> and 053-A can pick up Bundle C (tiered permissions / Try-it composer /
+> dry-run-before-write) without half-shipped viewer debt underneath it.
+
+### Per-gate commit sheet
+
+| Gate | SHA | Title | Tests added |
+|------|-----|-------|-------------|
+| C1 | `87ce44f` | `feat(052-A): C1 — markdown body + heading anchors for SOP/FAQ views` | +15 FE (7 slug + 8 markdown-body) + 1 FE (diff-body pending-grammar update) |
+| C2 | `000115d` | `feat(052-A): C2 — SystemPromptView diff activation` | +1 FE (drawer system_prompt toggle) + 4 BE (system_prompt prev-body paths) |
+| C3 | `41adcda` | `feat(052-A): C3 — ToolView JSON-schema diff with sanitisation on both sides` | +15 FE (7 pure diff + 8 JsonDiffBody) + 2 FE (drawer tool toggle + redaction regression) |
+| C4 | `bf2aa36` | `feat(052-A): C4 — regression-lock the citation slug rule` | +3 BE (slug-rule regression + prompt examples + edge cases) |
+
+Pre-flight + C1–C4 totals: **+33 frontend cases, +7 backend unit cases**
+(40 new — ahead of the brief's ~+30 target).
+
+### Verification run (at close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite: **275/275 pass** (was 268; +7 — 4 artifact
+  service prev-body paths for system_prompt + tool, 3 citation-grammar
+  slug-rule regression). One pre-existing test
+  (`tenant-config-bypass.test.ts`) requires `OPENAI_API_KEY` to be set;
+  passes with `OPENAI_API_KEY=test-fake` (unchanged since 050-A —
+  unrelated to this sprint).
+- Frontend `tsc --noEmit`: clean.
+- Frontend vitest: **123/123 pass across 20 files** (was 90/90 across
+  17 files; +33 across 3 new test files — slug (7), markdown-body (8),
+  json-diff-body (15), plus +3 drawer cases and a pending-grammar
+  update in the existing diff-body suite).
+
+### What shipped
+
+- **C1 — markdown body + heading anchors (`87ce44f`).** Replaces the
+  monospace `<pre>` that shipped in 051-B1 with a real markdown render
+  (`MarkdownBody` using `react-markdown` + `remark-gfm`) so operators
+  see headings / lists / code blocks / tables the way they were
+  authored. Every h1/h2/h3 gets a `data-section` slug. Shared slug
+  rule lives in `frontend/lib/slug.ts` + `backend/src/build-tune-agent/
+  lib/slug.ts` (byte-identical). `scrollToSection` is now actually-
+  works: B3 citation chips with `#section-*` fragments land on the
+  matching heading; stale fragments silently no-op. Diff mode still
+  renders raw text via `DiffBody` (markdown-AST diff deferred). A1
+  origin-grammar invariant (italic grey + "Unsaved" badge) extends
+  to the markdown body, regression-locked by an existing diff-body
+  pending test updated to the new element shape. Dep budget: two
+  frontend deps (`react-markdown` + `remark-gfm`, no `rehype-slug` —
+  an inline slugger does the job for 10 lines).
+
+- **C2 — SystemPromptView diff (`000115d`).** Wires `showDiff` +
+  `prevBody` on the system-prompt view. Line-level diff (paragraph-
+  grained reads better than token-grained for prompts). Footer toggle
+  only surfaces when the viewer can see the body (admin +
+  `rawPromptEditorEnabled`) AND the session-touched body differs —
+  `showDiffToggle` centralises the sop/faq/system_prompt rules next to
+  each other. Backend: extend `getBuildArtifactPrevBody` to read the
+  most recent `AiConfigVersion` written before `sessionStart` for the
+  `coordinator` / `screening` variant. No schema change. Tool artifacts
+  keep returning `unsupported-type` — no `ToolDefinitionHistory` table
+  exists yet; the seam is forward-compatible.
+
+- **C3 — ToolView JSON-schema diff (`41adcda`).** `JsonDiffBody` —
+  depth-first per-key diff over prev + current JSON with add / remove /
+  modify annotations. No heavyweight library. Sanitisation is the
+  load-bearing invariant: both sides feed through
+  `sanitiseToolPayload` BEFORE the walk so a removed apiKey can't leak
+  on the "removed value" line. Admin tier preserves verbatim values
+  except redact-by-key still applies (sprint-050-A4 invariant).
+  `BuildArtifactDetail` grows two forward-compatible optional fields
+  (`prevParameters`, `prevWebhookConfig`); backend leaves them
+  undefined until a history table ships, drawer toggle stays hidden.
+
+- **C4 — citation slug contract (`bf2aa36`).** The `<citation_grammar>`
+  block shipped in 051-B3 taught the marker format but left the
+  section-fragment slug rule as examples-only — a silent-drift risk.
+  This commit makes the rule explicit in the prompt (lowercase →
+  collapse non-alphanumeric runs to `-` → strip leading/trailing
+  `-`) and names both mirror files so the next reader finds the
+  contract. Regression test asserts each rule step, the two canonical
+  examples, and edge-case behaviour against the backend slug function.
+  A mismatch between frontend + backend slug would now fail the suite
+  rather than silently break every future `#section-*` citation.
+
+### Decisions worth the next session's attention
+
+- **Backend surface grew after all — the brief's "frontend-only"
+  premise was aspirational.** C2 needed a backend extension to
+  `getBuildArtifactPrevBody` to read the most recent pre-session
+  `AiConfigVersion` for system-prompt diff (no schema change, same
+  file). C4 needed a prompt + regression-test change. Neither is a
+  regression risk for the guest-messaging pipeline (`ai.service.ts`
+  still untouched). Noted here because the 052-A kickoff called it a
+  frontend-only sprint; reality was 90% frontend.
+
+- **Tool diff ships renderer-only; backend prev-schema is future
+  work.** No `ToolDefinitionHistory` table exists, so the JSON diff
+  surface is forward-compatible rather than lit up in production.
+  Tests exercise the full path via mocked `prevParameters` /
+  `prevWebhookConfig` so the renderer is regression-locked today;
+  when a history table ships (candidate for Bundle C's write-ledger
+  unification), no frontend change is needed.
+
+- **SystemPromptView extended — 051-A close-out note was slightly
+  off.** The 051-A block claimed the renderer "already takes a
+  `showDiff` prop (we just didn't wire a `prevBody` path for it)."
+  At sprint-052-A start the prop wasn't on the component either — it
+  landed here along with the `prevBody` path. Not a regression; the
+  claim was off by one prop. Both now ship together.
+
+- **Slug rule is the new API contract.** Two mirror files
+  (`frontend/lib/slug.ts` + `backend/src/build-tune-agent/lib/slug.ts`)
+  + one prompt block (`<citation_grammar>`) + one regression test
+  that asserts all three match. A naïve "oh let's support unicode"
+  future PR would have to update all four — that's the safety net
+  the test provides.
+
+### Still-deferred (→ sprint-053-A candidates)
+
+- **Bundle C primary** — tiered permissions + Try-it composer +
+  dry-run-before-write for system_prompt. Fold sprint-050-A caveat
+  #3 (suggested-fix rollback "reverted" state + write-ledger
+  unification) in as gate C1 since the permissions work naturally
+  wants a single write ledger. Surfaced in NEXT.md.
+- **Correctness carry-over bundle** — sprint-049 P1-5 / P1-2 / P1-4 /
+  P1-6 / F1 / P1-3 DB half + any 050-A / 051-A / 052-A caveats that
+  haven't been absorbed. P1-5 remains the cheapest single-item at
+  ~2–3h if an interleave feels overdue.
+- **Markdown-AST structured diff** — "view changes" still renders
+  raw text when the body is markdown. Operator value is fine without
+  it; if operator pressure surfaces, a markdown-aware diff is Bundle
+  C+ territory.
+- **Version slider / per-version navigation.** Still out of scope.
+- **Inline-edit from the drawer.** Still out of scope (viewer-only).
+- **Cross-artifact linking** (click a ref in one artifact jumps to
+  another).
+- **Audit-row quote emit** — deliberately deferred; audit rows are
+  agent summaries, not verbatim.
+- **A11y sprint** (focus trap + origin-grammar screen-reader
+  announcements).
+- **`ToolDefinitionHistory` model** — unlocks tool JSON diff
+  end-to-end. Not on the 053-A critical path; candidate for Bundle C
+  write-ledger work.
+
+### Blocked / surfaced mid-sprint
+
+- **None.** Pre-existing `tenant-config-bypass.test.ts` requires
+  `OPENAI_API_KEY` at import time; workaround is
+  `OPENAI_API_KEY=test-fake npx tsx --test ...`. Unrelated to this
+  sprint, predates 051-A.
+
+### B bundle status
+
+With C1–C4 landed, the B bundle is **complete**. Every artifact type
+in the drawer that operators actually touch (SOP, FAQ, system_prompt)
+renders as formatted markdown with heading anchors; every one that
+the session can modify (SOP, FAQ, system_prompt, tool) has a
+"View changes" path. Tool diff's backend half (prev-schema from a
+history table) is the only forward-compatible seam that hasn't lit
+up yet — not a half-ship, a future-expandability seam.
