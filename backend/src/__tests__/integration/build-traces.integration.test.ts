@@ -254,6 +254,7 @@ test('case 5: tool + turn filters narrow the result set', async () => {
 test('case 6: GET /capabilities reflects flag + isAdmin state', async () => {
   process.env.ENABLE_BUILD_MODE = 'true';
   process.env.ENABLE_BUILD_TRACE_VIEW = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
   await prisma.tenant.update({
     where: { id: fx.tenantId },
     data: { isAdmin: true },
@@ -265,11 +266,17 @@ test('case 6: GET /capabilities reflects flag + isAdmin state', async () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(on.status, 200);
-    const onBody = (await on.json()) as { traceViewEnabled: boolean; isAdmin: boolean };
+    const onBody = (await on.json()) as {
+      traceViewEnabled: boolean;
+      rawPromptEditorEnabled: boolean;
+      isAdmin: boolean;
+    };
     assert.equal(onBody.traceViewEnabled, true);
+    assert.equal(onBody.rawPromptEditorEnabled, true);
     assert.equal(onBody.isAdmin, true);
 
     delete process.env.ENABLE_BUILD_TRACE_VIEW;
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
     await prisma.tenant.update({
       where: { id: fx.tenantId },
       data: { isAdmin: false },
@@ -278,11 +285,197 @@ test('case 6: GET /capabilities reflects flag + isAdmin state', async () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(off.status, 200);
-    const offBody = (await off.json()) as { traceViewEnabled: boolean; isAdmin: boolean };
+    const offBody = (await off.json()) as {
+      traceViewEnabled: boolean;
+      rawPromptEditorEnabled: boolean;
+      isAdmin: boolean;
+    };
     assert.equal(offBody.traceViewEnabled, false);
+    assert.equal(offBody.rawPromptEditorEnabled, false);
     assert.equal(offBody.isAdmin, false);
   } finally {
     await srv.close();
+  }
+});
+
+// ─── Sprint 047 Session C — raw-prompt editor drawer integration ─────────
+
+test('case 8a: GET /system-prompt without ENABLE_RAW_PROMPT_EDITOR returns 404', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/system-prompt?conversationId=${encodeURIComponent(fx.conversationId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(res.status, 404);
+  } finally {
+    await srv.close();
+  }
+});
+
+test('case 8b: GET /system-prompt with flag on but non-admin tenant returns 403', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: false },
+  });
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/system-prompt?conversationId=${encodeURIComponent(fx.conversationId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(res.status, 403);
+  } finally {
+    await srv.close();
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
+test('case 8c: GET /system-prompt with admin tenant returns three regions + assembled body', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  // The fixture's conversationId is a Message conversation, not a
+  // TuningConversation; stand one up for this admin call.
+  const conv = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session C raw-prompt read',
+    },
+  });
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/system-prompt?conversationId=${encodeURIComponent(conv.id)}&mode=BUILD`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status}`);
+    const body = (await res.json()) as {
+      mode: string;
+      conversationId: string;
+      regions: { shared: string; modeAddendum: string; dynamic: string };
+      assembled: string;
+      bytes: {
+        shared: number;
+        modeAddendum: number;
+        dynamic: number;
+        total: number;
+      };
+    };
+    assert.equal(body.mode, 'BUILD');
+    assert.equal(body.conversationId, conv.id);
+    // Each region must be non-empty and the assembled body must
+    // contain each region substring so downstream consumers can
+    // round-trip without re-assembly.
+    assert.ok(body.regions.shared.length > 0, 'shared region non-empty');
+    assert.ok(body.regions.modeAddendum.length > 0, 'mode addendum non-empty');
+    assert.ok(body.regions.dynamic.length > 0, 'dynamic suffix non-empty');
+    assert.ok(body.assembled.includes(body.regions.shared));
+    assert.ok(body.assembled.includes(body.regions.modeAddendum));
+    assert.ok(body.assembled.includes(body.regions.dynamic));
+    assert.ok(body.bytes.total >= body.bytes.shared);
+    // BUILD mode emits <build_mode> (not <tune_mode>) in the addendum.
+    assert.ok(
+      body.regions.modeAddendum.includes('build_mode'),
+      'BUILD mode addendum must reference build_mode',
+    );
+  } finally {
+    await prisma.tuningConversation
+      .delete({ where: { id: conv.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
+test('case 8d: GET /system-prompt with mode=TUNE returns TUNE addendum', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  const conv = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session C raw-prompt TUNE mode',
+    },
+  });
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/system-prompt?conversationId=${encodeURIComponent(conv.id)}&mode=TUNE`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      mode: string;
+      regions: { modeAddendum: string };
+    };
+    assert.equal(body.mode, 'TUNE');
+    assert.ok(
+      body.regions.modeAddendum.includes('tune_mode'),
+      'TUNE mode addendum must reference tune_mode',
+    );
+  } finally {
+    await prisma.tuningConversation
+      .delete({ where: { id: conv.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
+test('case 8e: GET /system-prompt on a non-owned conversation returns 404', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  // Mint a second tenant + conversation owned by it; admin tenant must
+  // not be able to read across tenants even with isAdmin=true.
+  const otherTenant = await prisma.tenant.create({
+    data: {
+      email: `TEST_other_${Date.now()}@guestpilot.local`,
+      name: 'TEST other tenant',
+      passwordHash: 'TEST',
+      hostawayApiKey: 'TEST',
+      hostawayAccountId: `TEST_other_${Date.now()}`,
+    },
+  });
+  const otherConv = await prisma.tuningConversation.create({
+    data: {
+      tenantId: otherTenant.id,
+      triggerType: 'MANUAL',
+      title: 'TEST Session C — other tenant conv',
+    },
+  });
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/system-prompt?conversationId=${encodeURIComponent(otherConv.id)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(res.status, 404, `expected 404, got ${res.status}`);
+  } finally {
+    await prisma.tuningConversation
+      .delete({ where: { id: otherConv.id } })
+      .catch(() => undefined);
+    await prisma.tenant
+      .delete({ where: { id: otherTenant.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
   }
 });
 

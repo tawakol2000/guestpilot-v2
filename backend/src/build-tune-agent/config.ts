@@ -72,6 +72,28 @@ export function isBuildTraceViewEnabled(): boolean {
 }
 
 /**
+ * Sprint 047 Session C: admin-only raw-prompt editor drawer flag. Kept
+ * separate from ENABLE_BUILD_TRACE_VIEW so a staging operator exposing
+ * traces doesn't automatically expose the full assembled system prompt
+ * (which can contain tenant-private SOP and FAQ content). Same truthy
+ * set as the other flags. Off by default everywhere.
+ *
+ * Session C ships read-through only; the eventual edit path will reuse
+ * this same gate.
+ */
+export function isRawPromptEditorEnabled(): boolean {
+  const raw = process.env.ENABLE_RAW_PROMPT_EDITOR;
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  );
+}
+
+/**
  * Boundary markers embedded into the assembled system prompt. They cost
  * ~30 tokens each and serve as (1) visual debugging aids and (2) future
  * switch points: if a later sprint bypasses the Agent SDK and calls

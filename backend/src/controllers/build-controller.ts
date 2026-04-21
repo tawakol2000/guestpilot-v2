@@ -49,8 +49,17 @@ import {
   writeCrossSessionRejection,
   type RejectionIntent,
 } from '../build-tune-agent/memory/service';
-import { isBuildTraceViewEnabled } from '../build-tune-agent/config';
+import {
+  isBuildTraceViewEnabled,
+  isRawPromptEditorEnabled,
+} from '../build-tune-agent/config';
 import { listToolCalls } from '../services/build-tool-call-log.service';
+import {
+  assembleSystemPromptRegions,
+  type AgentMode,
+  type SystemPromptContext,
+} from '../build-tune-agent/system-prompt';
+import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -96,6 +105,7 @@ export function makeBuildController(prisma: PrismaClient) {
      */
     async capabilities(req: AuthenticatedRequest, res: Response): Promise<void> {
       const traceViewEnabled = isBuildTraceViewEnabled();
+      const rawPromptEditorEnabled = isRawPromptEditorEnabled();
       let isAdmin = false;
       try {
         const tenant = await prisma.tenant.findUnique({
@@ -106,7 +116,184 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.warn('[build-controller] capabilities lookup failed:', err);
       }
-      res.json({ traceViewEnabled, isAdmin });
+      res.json({ traceViewEnabled, rawPromptEditorEnabled, isAdmin });
+    },
+
+    /**
+     * GET /api/build/system-prompt — admin-only read-through of the
+     * three system-prompt regions for a given conversation.
+     *
+     * Gated twice, mirroring /traces:
+     *   1. ENABLE_RAW_PROMPT_EDITOR env flag → 404 when off (don't leak
+     *      the endpoint's existence).
+     *   2. Tenant.isAdmin === true → 403 otherwise.
+     *
+     * Query params:
+     *   conversationId  (required) — the Studio conversation we're
+     *                   rendering the prompt for.
+     *   mode            (optional) — 'BUILD' (default) | 'TUNE'. Drives
+     *                   which mode addendum and which dynamic suffix
+     *                   blocks get included.
+     *
+     * Sprint 047 Session C ships read-through only. The edit path lands
+     * in a later session; the same gates will reuse this route.
+     */
+    async getSystemPrompt(
+      req: AuthenticatedRequest,
+      res: Response
+    ): Promise<void> {
+      if (!isRawPromptEditorEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+
+        const q = req.query ?? {};
+        const conversationId = q.conversationId ? String(q.conversationId) : null;
+        if (!conversationId) {
+          res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
+          return;
+        }
+        const rawMode = q.mode ? String(q.mode).toUpperCase() : 'BUILD';
+        const mode: AgentMode =
+          rawMode === 'TUNE' ? 'TUNE' : 'BUILD';
+
+        // Tenant-scope the conversation before building the prompt.
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id: conversationId, tenantId: req.tenantId },
+          select: { id: true, anchorMessageId: true },
+        });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+
+        // Mirror the runtime's prompt-context assembly, minus anything
+        // that would require running an agent turn. The dynamic suffix
+        // is therefore best-effort: a missing tenant-state / interview-
+        // progress block falls back to null rather than 500-ing.
+        const [memory, pending, pendingTotal, tenantState, interviewProgress] =
+          await Promise.all([
+            listMemoryByPrefix(prisma, req.tenantId, 'preferences/', 30),
+            prisma.tuningSuggestion.findMany({
+              where: { tenantId: req.tenantId, status: 'PENDING' },
+              orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+              take: 10,
+              select: {
+                id: true,
+                diagnosticCategory: true,
+                diagnosticSubLabel: true,
+                confidence: true,
+                rationale: true,
+                createdAt: true,
+              },
+            }),
+            prisma.tuningSuggestion.count({
+              where: { tenantId: req.tenantId, status: 'PENDING' },
+            }),
+            getTenantStateSummary(prisma, req.tenantId).catch(() => null),
+            getInterviewProgressSummary(
+              prisma,
+              req.tenantId,
+              conversationId
+            ).catch(() => null),
+          ]);
+
+        const countsByCategory = pending.reduce<Record<string, number>>(
+          (acc, s) => {
+            const k = s.diagnosticCategory ?? 'LEGACY';
+            acc[k] = (acc[k] || 0) + 1;
+            return acc;
+          },
+          {}
+        );
+
+        const runtimeTenantState = tenantState
+          ? {
+              posture: (tenantState.isGreenfield
+                ? 'GREENFIELD'
+                : 'BROWNFIELD') as 'GREENFIELD' | 'BROWNFIELD',
+              systemPromptStatus: 'EMPTY' as
+                | 'EMPTY'
+                | 'DEFAULT'
+                | 'CUSTOMISED',
+              systemPromptEditCount: 0,
+              sopsDefined: tenantState.sopCount,
+              sopsDefaulted: 0,
+              faqsGlobal: tenantState.faqCounts.global,
+              faqsPropertyScoped: tenantState.faqCounts.perProperty,
+              customToolsDefined: tenantState.customToolCount,
+              propertiesImported: tenantState.propertyCount,
+              lastBuildSessionAt:
+                tenantState.lastBuildTransaction?.createdAt ?? null,
+            }
+          : null;
+
+        const runtimeInterviewProgress = interviewProgress
+          ? {
+              loadBearingFilled: interviewProgress.loadBearingFilled,
+              loadBearingTotal: 6,
+              nonLoadBearingFilled:
+                interviewProgress.filledSlots.length -
+                interviewProgress.loadBearingFilled,
+              nonLoadBearingTotal: 14,
+              defaultedSlots: [] as string[],
+            }
+          : null;
+
+        const ctx: SystemPromptContext = {
+          tenantId: req.tenantId,
+          conversationId,
+          anchorMessageId: conv.anchorMessageId ?? null,
+          selectedSuggestionId: null,
+          memorySnapshot: memory,
+          pending: {
+            total: pendingTotal,
+            countsByCategory,
+            topThree: pending.slice(0, 3).map((s) => ({
+              id: s.id,
+              diagnosticCategory: s.diagnosticCategory,
+              diagnosticSubLabel: s.diagnosticSubLabel,
+              confidence: s.confidence,
+              rationale: s.rationale,
+              createdAt: s.createdAt.toISOString(),
+            })),
+          },
+          mode,
+          tenantState: runtimeTenantState,
+          interviewProgress: runtimeInterviewProgress,
+        };
+
+        const regions = assembleSystemPromptRegions(ctx);
+        res.json({
+          mode,
+          conversationId,
+          regions: {
+            shared: regions.sharedPrefix,
+            modeAddendum: regions.modeAddendum,
+            dynamic: regions.dynamicSuffix,
+          },
+          assembled: regions.assembled,
+          /** Byte-count per region — cheap proxy for token cost. */
+          bytes: {
+            shared: Buffer.byteLength(regions.sharedPrefix, 'utf8'),
+            modeAddendum: Buffer.byteLength(regions.modeAddendum, 'utf8'),
+            dynamic: Buffer.byteLength(regions.dynamicSuffix, 'utf8'),
+            total: Buffer.byteLength(regions.assembled, 'utf8'),
+          },
+        });
+      } catch (err) {
+        console.error('[build-controller] getSystemPrompt failed:', err);
+        res.status(500).json({ error: 'SYSTEM_PROMPT_FAILED' });
+      }
     },
 
     /**

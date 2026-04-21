@@ -159,6 +159,10 @@ export function buildTurnEndpoint(): string {
 
 export interface BuildCapabilities {
   traceViewEnabled: boolean
+  // Sprint 047 Session C — admin-only raw-prompt editor drawer flag.
+  // Optional on the wire for back-compat with a pre-C backend (falls
+  // back to `false` if the field is absent).
+  rawPromptEditorEnabled?: boolean
   isAdmin: boolean
 }
 
@@ -202,6 +206,39 @@ export async function apiListBuildTraces(
   if (typeof opts.limit === 'number') qs.set('limit', String(opts.limit))
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
   return buildFetch<BuildTracePage>(`/api/build/traces${suffix}`)
+}
+
+// ─── Sprint 047 Session C — raw-prompt editor read-through ────────────────
+
+export type BuildAgentMode = 'BUILD' | 'TUNE'
+
+export interface BuildSystemPromptRegions {
+  shared: string
+  modeAddendum: string
+  dynamic: string
+}
+
+export interface BuildSystemPromptResponse {
+  mode: BuildAgentMode
+  conversationId: string
+  regions: BuildSystemPromptRegions
+  assembled: string
+  bytes: {
+    shared: number
+    modeAddendum: number
+    dynamic: number
+    total: number
+  }
+}
+
+export async function apiGetBuildSystemPrompt(
+  conversationId: string,
+  mode: BuildAgentMode = 'BUILD',
+): Promise<BuildSystemPromptResponse> {
+  const qs = new URLSearchParams({ conversationId, mode })
+  return buildFetch<BuildSystemPromptResponse>(
+    `/api/build/system-prompt?${qs.toString()}`,
+  )
 }
 
 export interface SuggestedFixActionResponse {

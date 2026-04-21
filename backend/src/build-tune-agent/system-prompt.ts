@@ -773,3 +773,30 @@ export function assembleSystemPrompt(ctx: SystemPromptContext): string {
 export function buildStaticPrefix(): string {
   return buildSharedPrefix();
 }
+
+/**
+ * Sprint 047 Session C — raw-prompt editor drawer helper. Returns the
+ * three regions separately alongside the fully-assembled string so the
+ * admin drawer can render each region in its own scrollable pane.
+ *
+ * Identical semantics to `assembleSystemPrompt` — this is a shape-only
+ * refactor of the same call, not a new composition.
+ */
+export function assembleSystemPromptRegions(ctx: SystemPromptContext): {
+  sharedPrefix: string;
+  modeAddendum: string;
+  dynamicSuffix: string;
+  assembled: string;
+} {
+  const sharedPrefix = buildSharedPrefix();
+  const modeAddendum = buildModeAddendum(ctx.mode);
+  const dynamicSuffix = buildDynamicSuffix(ctx);
+  const assembled = [
+    sharedPrefix,
+    SHARED_MODE_BOUNDARY_MARKER,
+    modeAddendum,
+    DYNAMIC_BOUNDARY_MARKER,
+    dynamicSuffix,
+  ].join('\n\n');
+  return { sharedPrefix, modeAddendum, dynamicSuffix, assembled };
+}

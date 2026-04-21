@@ -39,6 +39,7 @@ import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { TraceDrawer } from './trace-drawer'
+import { RawPromptDrawer } from './raw-prompt-drawer'
 import { STUDIO_COLORS } from './tokens'
 
 export interface StudioSurfaceProps {
@@ -66,9 +67,11 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   const [testResults, setTestResults] = useState<TestPipelineResultData[]>([])
   const [capabilities, setCapabilities] = useState<BuildCapabilities>({
     traceViewEnabled: false,
+    rawPromptEditorEnabled: false,
     isAdmin: false,
   })
   const [traceOpen, setTraceOpen] = useState(false)
+  const [rawPromptOpen, setRawPromptOpen] = useState(false)
   const bootstrapRef = useRef(false)
 
   // Fetch capabilities once on mount. Both flags default to false so a
@@ -262,11 +265,20 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         testResults={testResults}
         traceButtonVisible={capabilities.traceViewEnabled && capabilities.isAdmin}
         onOpenTrace={() => setTraceOpen(true)}
+        rawPromptButtonVisible={
+          Boolean(capabilities.rawPromptEditorEnabled) && capabilities.isAdmin
+        }
+        onOpenRawPrompt={() => setRawPromptOpen(true)}
       />
 
       <TraceDrawer
         open={traceOpen}
         onClose={() => setTraceOpen(false)}
+        conversationId={load.conversationId}
+      />
+      <RawPromptDrawer
+        open={rawPromptOpen}
+        onClose={() => setRawPromptOpen(false)}
         conversationId={load.conversationId}
       />
     </div>
@@ -420,11 +432,15 @@ function RightRail({
   testResults,
   traceButtonVisible,
   onOpenTrace,
+  rawPromptButtonVisible,
+  onOpenRawPrompt,
 }: {
   snapshot: StateSnapshotData
   testResults: TestPipelineResultData[]
   traceButtonVisible: boolean
   onOpenTrace: () => void
+  rawPromptButtonVisible: boolean
+  onOpenRawPrompt: () => void
 }) {
   return (
     <aside
@@ -465,31 +481,66 @@ function RightRail({
           </div>
         </div>
       )}
-      {traceButtonVisible ? (
-        <div style={{ marginTop: 'auto', paddingTop: 10 }}>
-          <button
-            type="button"
-            onClick={onOpenTrace}
-            aria-label="Open agent trace (admin)"
-            title="Agent trace (admin)"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              width: '100%',
-              padding: '6px 10px',
-              fontSize: 11,
-              fontWeight: 500,
-              border: `1px solid ${STUDIO_COLORS.hairline}`,
-              background: STUDIO_COLORS.surfaceRaised,
-              color: STUDIO_COLORS.inkMuted,
-              borderRadius: 5,
-              cursor: 'pointer',
-            }}
-          >
-            <GearIcon />
-            <span>Agent trace</span>
-          </button>
+      {traceButtonVisible || rawPromptButtonVisible ? (
+        <div
+          style={{
+            marginTop: 'auto',
+            paddingTop: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+          }}
+        >
+          {traceButtonVisible ? (
+            <button
+              type="button"
+              onClick={onOpenTrace}
+              aria-label="Open agent trace (admin)"
+              title="Agent trace (admin)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                width: '100%',
+                padding: '6px 10px',
+                fontSize: 11,
+                fontWeight: 500,
+                border: `1px solid ${STUDIO_COLORS.hairline}`,
+                background: STUDIO_COLORS.surfaceRaised,
+                color: STUDIO_COLORS.inkMuted,
+                borderRadius: 5,
+                cursor: 'pointer',
+              }}
+            >
+              <GearIcon />
+              <span>Agent trace</span>
+            </button>
+          ) : null}
+          {rawPromptButtonVisible ? (
+            <button
+              type="button"
+              onClick={onOpenRawPrompt}
+              aria-label="Open raw system prompt (admin)"
+              title="Raw system prompt (admin)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                width: '100%',
+                padding: '6px 10px',
+                fontSize: 11,
+                fontWeight: 500,
+                border: `1px solid ${STUDIO_COLORS.hairline}`,
+                background: STUDIO_COLORS.surfaceRaised,
+                color: STUDIO_COLORS.inkMuted,
+                borderRadius: 5,
+                cursor: 'pointer',
+              }}
+            >
+              <GearIcon />
+              <span>Raw system prompt</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
     </aside>

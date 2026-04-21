@@ -41,6 +41,10 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.get('/tenant-state', (req: any, res) => ctl.tenantState(req, res));
   router.get('/capabilities', (req: any, res) => ctl.capabilities(req, res));
   router.get('/traces', (req: any, res) => ctl.listTraces(req, res));
+  // Sprint 047 Session C — admin-only raw-prompt editor read-through.
+  router.get('/system-prompt', (req: any, res) =>
+    ctl.getSystemPrompt(req, res)
+  );
   router.post('/turn', (req: any, res) => ctl.turn(req, res));
   router.post('/plan/:id/approve', (req: any, res) => ctl.approvePlan(req, res));
   router.post('/plan/:id/rollback', (req: any, res) => ctl.rollbackPlan(req, res));
