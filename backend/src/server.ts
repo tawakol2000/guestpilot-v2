@@ -15,6 +15,7 @@ import { startFaqMaintenanceJob } from './jobs/faqMaintenance.job';
 import { startTuningRetentionJob } from './jobs/tuningRetention.job';
 import { startReservationSyncJob } from './jobs/reservationSync.job';
 import { startDocHandoffJob } from './jobs/docHandoff.job';
+import { startBuildToolCallLogRetentionJob } from './jobs/buildToolCallLogRetention.job';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -68,6 +69,10 @@ async function main() {
   // Feature 044: doc-handoff WhatsApp polling job (2 min tick).
   const docHandoffTimer = startDocHandoffJob(prisma);
 
+  // Sprint 047 Session B: 30-day retention sweep for BuildToolCallLog
+  // rows. Runs once per day at 03:00 UTC, bounded batches.
+  const buildToolCallLogRetentionTimer = startBuildToolCallLogRetentionJob(prisma);
+
   // Start BullMQ worker (graceful no-op if REDIS_URL missing)
   const aiReplyWorker = startAiReplyWorker(prisma);
 
@@ -85,6 +90,7 @@ async function main() {
     clearInterval(faqJobTimer);
     clearInterval(tuningRetentionTimer);
     clearInterval(docHandoffTimer);
+    clearInterval(buildToolCallLogRetentionTimer);
     if (aiReplyWorker) await aiReplyWorker.close();
     await closeQueue();
     await flushObservability();
