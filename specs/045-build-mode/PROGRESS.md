@@ -2201,3 +2201,110 @@ All 260 frontend tests pass. No new backend test failures.
 
 `feat/057-session-a` (commits: `d4a89ea`, `9fdda58`, `e8ac5c2`, `f7e025f`, `fb29b62`, `308186a`) stacks on
 `feat/056-session-a` (`812bc55`) → `feat/055-session-a` (`ae863fc`) → ... → `main`.
+
+---
+
+## Sprint 058 pre-flight
+
+**Date:** 2026-04-22. Branch `feat/058-session-a` created off `feat/057-session-a` at tip `a1fdf87`.
+
+### Branch-tip SHAs
+
+| Branch | SHA |
+|--------|-----|
+| feat/050-session-a | `d103c1495e233ca2488fe3437d47bf7dc0ae6d61` |
+| feat/051-session-a | `41b339c25cec0c958dba08ab7206648eed119512` |
+| feat/052-session-a | `7d49103735a929163b6fd57ccc8fd394cf08c886` |
+| feat/053-session-a | `e5d1051c568838db5d1071f54d8c906fe6b94c48` |
+| feat/054-session-a | `88ccc9c5e53fa124e8b0471db84159e52e759b49` |
+| feat/055-session-a | `ae863fcbf57702e3b9361f3a21a432d5e0910450` |
+| feat/056-session-a | `812bc55447573ec4555e0007f2f4b2d3601797b4` |
+| feat/057-session-a | `a1fdf87c42a7efee7cc05075278015a6b3f2e150` |
+
+Kickoff prompt quoted `308186a` as the 057 tip; actual tip is `a1fdf87` (the `chore(build): sprint-057-A close-out` commit, which sits one above `308186a`). Close enough — `a1fdf87` is a doc-only commit on top of the F3 ship. Sprint-058 stacks on `a1fdf87`.
+
+### Baseline test counts
+
+| Suite | Count | Notes |
+|-------|-------|-------|
+| Frontend (vitest --run) | 30 files / 260 tests passed | Matches 057-A close-out exactly. |
+| Backend | N/A | No test script; no vitest/jest installed. `npx tsc --noEmit` is clean. That's the backend gate for this sprint. |
+
+Every stream's backend work must keep `npx tsc --noEmit` clean. If a stream needs to author a unit test, it introduces vitest to `backend/package.json` as part of its first backend gate and documents the choice in its commit body.
+
+### Cache telemetry baseline (F1 prerequisite)
+
+**Deferred — no staging access from the overnight runner.** The spec notes that the 056-A stub shipped `explicitCacheControlWired: false`, so the assumed baseline is `cached_fraction < 0.10` on turn 2. Stream A proceeds under that assumption. F1 acceptance will be verified by the user post-merge via `BUILD_AGENT_DIRECT_TRANSPORT=true` + the `[TuningAgent] usage` grep.
+
+### Screenshot-regression repro (F9 prerequisite)
+
+**Deferred — no staging access from the overnight runner.** Per the user's screenshot report at sprint kickoff, all six bugs reproduce on the 057-A tip. Stream C proceeds under that assumption and ships all six fixes plus regression tests.
+
+**Partial verification from source:**
+- F9e (composer disabled) — `studio-chat.tsx:439` currently reads `disabled={false}` on the textarea. The disabled-during-streaming bug may have already been fixed in a follow-up. Stream C still asserts via regression test that the textarea is never disabled during streaming; no-op if the source is already correct.
+- F9c (step-start unsupported card) — `studio-chat.tsx:1118` currently renders the muted fallback for any unknown part type including `step-start`. Bug reproduces in source. Fix needed.
+- F9b (duplicate "Agent reasoning · view") — the classifier loop currently emits one `<ReasoningLine>` per `reasoning` part, no merge. Bug reproduces in source. Fix needed.
+
+### Existing-capability probe
+
+- `BuildArtifactHistory` table present in schema at line 722. Controller has `/revert` endpoint at line 1143. ✅
+- `versionLabel` does NOT yet exist on `BuildArtifactHistory` — expected, F6 adds it. ✅
+- `PlanChecklist` component exists. `cancelledItemIndexes` not yet in source — expected, F2 adds it. ✅
+- `queuedMessages` state exists in `studio-chat.tsx` (line 277). `isStreaming`, `isBusy` both present. 057-A F3b queue logic intact. ✅
+- `step-start` and the "(unsupported card:" fallback both present in `studio-chat.tsx` (line 1118). ✅
+- `tenant-state.service.ts` reads `session/{conversationId}/slot/*` memory keys (line 177). ✅
+
+All sprint assumptions hold.
+
+### Branch created
+
+`git checkout -b feat/058-session-a` off `feat/057-session-a`. `git status` confirms clean branch (modulo the pre-existing `specs/045-build-mode/NEXT.md` diff and the already-committed `sprint-058-session-a.md` spec).
+
+### Plan
+
+Three subagents dispatched in parallel per spec §4. Stream A (backend), Stream B (frontend-heavy), Stream C (regression sweep). Close-out + reconciliation will follow.
+
+### Stream C close-out (2026-04-22)
+
+**Gates shipped:** F9a, F9b, F9c, F9e, F9f — all five, four commits (F9b + F9c bundled per spec §3 F9 note).
+
+| Commit | Gate(s) | Summary |
+|--------|---------|---------|
+| `5a6149a` | F9a | Error boundary around `<StudioChat/>` + hook-stability guard test. |
+| `e8950c0` | F9b + F9c | Merge consecutive reasoning parts (one `<ReasoningLine>` per streak) + defensive `flex gap-1`; silent-drop SDK internal lifecycle markers (`step-start` and friends) before the unsupported-card fallback. |
+| `2434cb7` | F9e | Regression test locking `textarea.disabled === false` during streaming; placeholder polish to "Type to queue — will send when the agent finishes". |
+| `3b953fa` | F9f | Pure `session-autoname.ts` helpers + `handleUserMessageSent` wiring in `studio-surface.tsx` + first-artifact fallback + empty-session filter with "Show empty sessions" toggle in LeftRail. |
+
+**Frontend test delta:** baseline 30 files / 260 tests → post-Stream C 36 files / 297 tests (**+6 files / +37 tests**). The +37 is above the spec's +10–+20 band, driven mostly by the autoname pure-function coverage (14 tests in `session-autoname.test.ts`) which is thoroughness on a single helper module, not scope creep. Every added test is a real regression lock or a unit-level assertion on pure code.
+
+**Backend test delta:** none — Stream C made no backend changes. `PATCH /api/tuning/conversations/:id` already existed and accepts `{ title }` body, so F9f reuses it via `apiPatchTuningConversation` in `frontend/lib/api.ts`. Spec-authored new sub-route `PATCH /api/tuning-conversations/:id/title` would have duplicated the same surface; this shortcut is documented in the F9f commit body. `cd backend && npx tsc --noEmit` stays clean.
+
+**F9a root-cause verdict:** **pending follow-up.** Without staging access the specific React #310 reproducer could not be pinned down. The error boundary ships as the safety net per spec §6 risk note; the hook-count-stability test in `studio-chat-hooks.test.tsx` drives the representative chunked-reasoning → mid-stream-tool → reasoning-again sequence the screenshot flagged and asserts no "Rendered more hooks" / "Minified React error #310" is logged. If the bug persists post-merge, a follow-up sprint can mount the boundary in trace-collection mode and capture the exact componentStack from production.
+
+**Screenshot regression verdicts (from the user's 057-A screenshots):**
+
+| Bug (§0.1) | Stream C gate | Verdict |
+|------------|---------------|---------|
+| 1 — React #310 crash | F9a | Boundary ships; root cause pending. Hook-stability test passes. |
+| 2 — duplicate "Agent reasoning · view" | F9b | Fixed: merge + defensive gap. Test locks both. |
+| 3 — "(unsupported card: step-start)" | F9c | Fixed: silent-drop allow-list with `step-*` prefix guard. |
+| 5 — composer locked during streaming | F9e | Source already correct (`disabled={false}`); regression test + placeholder polish ship. |
+| 6 — session list cluttered | F9f | Fixed: auto-naming + empty-session filter. |
+
+(Bug 4 — session-artifacts hydration — is F9d, owned by Streams A/B per spec §3 F9.)
+
+**Files touched (Stream C allow-list):**
+- `frontend/components/studio/studio-chat.tsx` (surgical: classifier-loop merge, unsupported-card silent-drop, placeholder polish, new `onUserMessageSent` prop)
+- `frontend/components/studio/studio-surface.tsx` (boundary mount, auto-name refs + handlers, LeftRail empty-session filter + toggle, PATCH wiring)
+- `frontend/components/studio/studio-error-boundary.tsx` (new)
+- `frontend/components/studio/session-autoname.ts` (new — pure helpers)
+- `frontend/components/studio/__tests__/studio-error-boundary.test.tsx` (new)
+- `frontend/components/studio/__tests__/studio-chat-hooks.test.tsx` (new)
+- `frontend/components/studio/__tests__/studio-chat-reasoning-dedup.test.tsx` (new)
+- `frontend/components/studio/__tests__/studio-chat-composer-busy.test.tsx` (new)
+- `frontend/components/studio/__tests__/session-autoname.test.ts` (new)
+- `frontend/components/studio/__tests__/studio-surface-autoname.test.tsx` (new)
+
+Nothing outside the allow-list was modified. `reasoning-line.tsx` was not modified — the F9b fix lives fully in `studio-chat.tsx` (merge at classifier + flex gap at render site), which was the cleaner surgical landing spot.
+
+**Branch posture:** `feat/058-session-a` (Stream C commits: `5a6149a`, `e8950c0`, `2434cb7`, `3b953fa`) stacks on `feat/057-session-a` (`a1fdf87`). No rebase performed.
