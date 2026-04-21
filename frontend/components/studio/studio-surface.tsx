@@ -22,10 +22,17 @@ import {
   apiCreateTuningConversation,
   apiGetTuningConversation,
   apiListTuningConversations,
+  apiPatchTuningConversation,
   isAuthenticated,
   type TuningConversationMessage,
   type TuningConversationSummary,
 } from '@/lib/api'
+import {
+  autoTitleFromFirstArtifact,
+  autoTitleFromFirstMessage,
+  isDefaultTitle,
+  isFirstMessageTooShortForTitle,
+} from './session-autoname'
 import {
   apiGetBuildCapabilities,
   apiGetBuildTenantState,
@@ -110,6 +117,17 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   const artifactDrawerOpenerRef = useRef<HTMLElement | null>(null)
   const bootstrapRef = useRef(false)
 
+  // Sprint 058-A F9f — session auto-naming state.
+  //   currentTitleRef: title we last observed for the current session
+  //     (initially the bootstrap default like "Studio session"). Null
+  //     when no session is loaded yet.
+  //   autoTitleSetRef: whether we've already auto-named this session.
+  //     First-write wins — never overwrite once set.
+  //   Both reset on conversationId change via the same effect that
+  //   clears sessionArtifacts.
+  const currentTitleRef = useRef<string | null>(null)
+  const autoTitleSetRef = useRef<boolean>(false)
+
   // Fetch capabilities once on mount. Both flags default to false so a
   // failed fetch leaves the gear icon hidden — the safer direction.
   useEffect(() => {
@@ -134,6 +152,9 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     setSessionArtifacts([])
     // Sprint 051 A B2 — "this session" window restarts with the convo.
     setSessionStartIso(new Date().toISOString())
+    // Sprint 058-A F9f — auto-naming state is per-session.
+    currentTitleRef.current = null
+    autoTitleSetRef.current = false
   }, [conversationId])
 
   useEffect(() => {
@@ -157,6 +178,13 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           try {
             const { conversation } = await apiGetTuningConversation(selectedId)
             initialMessages = rehydrate(conversation.messages)
+            // F9f — remember the loaded title so we know whether to
+            // auto-rename on first user message. Also treat it as
+            // "already named" if it's non-default (operator edited).
+            currentTitleRef.current = conversation.title ?? null
+            if (!isDefaultTitle(conversation.title)) {
+              autoTitleSetRef.current = true
+            }
           } catch (err) {
             console.warn('[studio] conversation rehydrate failed, creating fresh:', err)
             selectedId = null
@@ -170,6 +198,10 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           })
           selectedId = conversation.id
           initialMessages = []
+          // F9f — fresh session starts at the default title, so auto-naming
+          // is free to overwrite on first intent.
+          currentTitleRef.current = conversation.title ?? null
+          autoTitleSetRef.current = false
           onConversationChange?.(selectedId)
         }
 
@@ -236,7 +268,52 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   }, [])
   const handleArtifactTouched = useCallback((next: SessionArtifact) => {
     setSessionArtifacts((prev) => upsertSessionArtifact(prev, next))
-  }, [])
+    // Sprint 058-A F9f step 2 — fallback auto-name: first artifact
+    // touched becomes the session title when the first user message was
+    // too short to title on. First-write wins.
+    if (autoTitleSetRef.current) return
+    if (load.kind !== 'ready') return
+    if (!isDefaultTitle(currentTitleRef.current)) {
+      autoTitleSetRef.current = true
+      return
+    }
+    const title = autoTitleFromFirstArtifact({
+      operation: next.action,
+      artifactType: next.artifact,
+      artifactName: next.title,
+    })
+    if (!title) return
+    autoTitleSetRef.current = true
+    currentTitleRef.current = title
+    apiPatchTuningConversation(load.conversationId, { title }).catch(() => {
+      // Silent — a failed rename is cosmetic; keep the cached title so
+      // we don't retry-spam the endpoint this session.
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load])
+
+  // Sprint 058-A F9f step 1 — on first substantive user message, auto-rename
+  // the session. First-write wins; too-short messages fall through to the
+  // artifact-based fallback in handleArtifactTouched.
+  const handleUserMessageSent = useCallback(
+    (text: string) => {
+      if (autoTitleSetRef.current) return
+      if (load.kind !== 'ready') return
+      if (!isDefaultTitle(currentTitleRef.current)) {
+        autoTitleSetRef.current = true
+        return
+      }
+      if (isFirstMessageTooShortForTitle(text)) return
+      const title = autoTitleFromFirstMessage(text)
+      if (!title) return
+      autoTitleSetRef.current = true
+      currentTitleRef.current = title
+      apiPatchTuningConversation(load.conversationId, { title }).catch(() => {
+        // Silent — same rationale as handleArtifactTouched.
+      })
+    },
+    [load],
+  )
 
   const openArtifactDrawer = useCallback((target: ArtifactDrawerTarget) => {
     if (typeof document !== 'undefined') {
@@ -407,6 +484,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               isAdmin={capabilities.isAdmin}
               traceViewEnabled={capabilities.traceViewEnabled}
               onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
+              onUserMessageSent={handleUserMessageSent}
             />
           </StudioErrorBoundary>
         </div>
@@ -509,6 +587,10 @@ function LeftRail({
   const [items, setItems] = useState<TuningConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Sprint 058-A F9f step 3 — hide zero-message sessions older than 1h
+  // by default so the sidebar stops reading as a graveyard of empty
+  // rows. Operator can flip this to show them via the toggle.
+  const [showEmpty, setShowEmpty] = useState(false)
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -526,6 +608,23 @@ function LeftRail({
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // F9f — empty-session filter. Hide messageCount===0 rows older than
+  // 1h unless the operator flipped the toggle. Also always show the
+  // currently-selected session so the operator never "loses" their
+  // active context to a filter.
+  const ONE_HOUR_MS = 60 * 60 * 1000
+  const now = Date.now()
+  const visibleItems = showEmpty
+    ? items
+    : items.filter((c) => {
+        if (c.id === selectedId) return true
+        if (c.messageCount > 0) return true
+        const createdAt = Date.parse(c.createdAt)
+        if (!Number.isFinite(createdAt)) return true
+        return now - createdAt < ONE_HOUR_MS
+      })
+  const hiddenCount = items.length - visibleItems.length
 
   async function startNew() {
     try {
@@ -606,7 +705,7 @@ function LeftRail({
             No sessions yet.
           </li>
         ) : null}
-        {items.map((c) => {
+        {visibleItems.map((c) => {
           const active = c.id === selectedId
           return (
             <li key={c.id}>
@@ -633,6 +732,36 @@ function LeftRail({
           )
         })}
       </ul>
+      {/* Sprint 058-A F9f — "Show empty sessions" toggle. Only renders
+          when there is at least one hidden session, so the control doesn't
+          clutter the rail for users who don't have the problem. */}
+      {(hiddenCount > 0 || showEmpty) && (
+        <footer
+          className="border-t px-3 py-2"
+          style={{ borderColor: STUDIO_COLORS.hairlineSoft }}
+        >
+          <label
+            className="flex items-center gap-2 text-[11px]"
+            style={{ color: STUDIO_COLORS.inkMuted, cursor: 'pointer' }}
+          >
+            <input
+              type="checkbox"
+              data-testid="show-empty-sessions-toggle"
+              checked={showEmpty}
+              onChange={(e) => setShowEmpty(e.target.checked)}
+            />
+            Show empty sessions
+            {!showEmpty && hiddenCount > 0 ? (
+              <span
+                className="ml-auto text-[10.5px]"
+                style={{ color: STUDIO_COLORS.inkSubtle }}
+              >
+                {hiddenCount} hidden
+              </span>
+            ) : null}
+          </label>
+        </footer>
+      )}
     </aside>
   )
 }

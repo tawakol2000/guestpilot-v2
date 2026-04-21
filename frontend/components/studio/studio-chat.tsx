@@ -91,6 +91,13 @@ export interface StudioChatProps {
    * visible. Wired by the parent which owns the drawer + ledger rows.
    */
   onOpenVerificationForHistoryId?: (historyId: string) => void
+  /**
+   * Sprint 058-A F9f — fired whenever the operator sends a new user
+   * message (live send OR queue flush, NOT seed/suggestion picks).
+   * StudioSurface uses this to auto-name the session from the first
+   * substantive user message.
+   */
+  onUserMessageSent?: (text: string) => void
 }
 
 // Sprint 058-A F9c — AI SDK internal lifecycle markers. These are
@@ -186,6 +193,7 @@ export function StudioChat({
   isAdmin = false,
   traceViewEnabled = false,
   onOpenVerificationForHistoryId,
+  onUserMessageSent,
 }: StudioChatProps) {
   const transport = useMemo(
     () =>
@@ -332,13 +340,19 @@ export function StudioChat({
         }
         setQueuedMessages((prev) => [...prev, text])
         setDraft('')
+        // F9f — still count as a user message for auto-naming purposes;
+        // the parent decides whether it's actually the session's first.
+        onUserMessageSent?.(text)
         return
       }
 
       setDraft('')
+      // F9f — notify the parent so it can auto-name the session on the
+      // first substantive user message.
+      onUserMessageSent?.(text)
       sendMessage({ text })
     },
-    [draft, isBusy, queuedMessages.length, sendMessage],
+    [draft, isBusy, queuedMessages.length, sendMessage, onUserMessageSent],
   )
 
   // Surface stream errors as toasts (once per distinct message).
