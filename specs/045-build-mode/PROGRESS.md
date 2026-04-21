@@ -975,3 +975,143 @@ the end of the full 045→046→047-A→047-B chain.
   a surprise.
 - **Vercel analytics not in-session.** Traffic verification on the
   deleted redirect stubs was deferred per the decision log above.
+
+## Sprint 047 — Session C (durable rejection memory + admin read-through + cleanup)
+
+Completed: 2026-04-21. Branch: `feat/047-session-c` off
+`feat/047-session-b` (HEAD `e6c4773` at Session C branch cut).
+End-of-stack merge to main remains deferred per Session B decision —
+C branches from B directly, no intermediate merge.
+
+| Gate | Item | Status | Commit | Notes |
+|------|------|--------|--------|-------|
+| C1   | Cross-session `RejectionMemory` Prisma model + write/read   | ✅ | `bf6b1f3` | Per-(tenantId, artifact, fixHash), 90d TTL via `expiresAt` at write time, dedicated table with FK cascade. Write path: build-controller `rejectSuggestedFix` now fires both AgentMemory (session-scoped, existing) and RejectionMemory (durable, new). Read path: propose_suggestion consults `lookupCrossSessionRejection` after the session-scoped `listRejectionHashes` check — a hit returns `SKIPPED_PRIOR_REJECTION` with the captured rationale. Missing memory ≠ no-suggestion: lookup errors fall through to emit, per NEXT.md §3. `prisma db push` applied against shared Railway Postgres (additive). |
+| C2   | Design doc + integration tests                              | ✅ | `dce4f2d` | [cross-session-rejection-memory.md](cross-session-rejection-memory.md) records decisions + alternatives-considered. +5 unit tests in memory.service.test.ts (round-trip / null-on-missing / TTL expiry / idempotent-TTL-refresh / artifact-type composite key) + case 6b integration test in build-controller.integration.test.ts proving convA rejection hits from convB (SC-1 end-to-end) + case 6 extended to assert durable row persists alongside session-scoped row with rationale round-trip + TTL drift check. |
+| C3   | Raw-prompt editor drawer (admin-only, read-through)         | ✅ | `19e8f60` | New `GET /api/build/system-prompt` returning three regions + assembled body + byte counts. Gated twice (env flag `ENABLE_RAW_PROMPT_EDITOR` → 404 when off; `Tenant.isAdmin` → 403 otherwise). New `<RawPromptDrawer/>` mounts on second right-rail gear button; BUILD/TUNE mode toggle re-fetches. Edit path deferred to Session D per NEXT.md §7 — read-through alone matches the load-bearing diagnostic need. New `assembleSystemPromptRegions(ctx)` helper in system-prompt.ts is a shape-only refactor of the existing composer. 4 vitest cases + 5 integration cases (404/403/200×BUILD/200×TUNE/cross-tenant-404). |
+| C4   | Pre-existing `tsc` drift cleanup (6 files, per-file commits) | ✅ | `3f7855c`, `bbfb097`, `5ded0e1`, `be5cad3`, `19ce1ea`, `d9e752f` | Fixed in isolation: calendar-v5 strictNullChecks on stats; configure-ai-v5 T.bg.card → .primary/.secondary (palette never had `card`); inbox-v5 reservation.createdAt + status.orange → amber + overview-v5 CheckInStatus widened to include `pending`+`expired`; listings-v5 VariablePreview keys aligned to backend response; sandbox-chat-v5 SandboxChatResponse.toolNames + ragContext SOP-tool fields; tools-v5 stray `setTools` in child scope → `onUpdate(updated)`. `tsc --noEmit` on frontend/ now clean. |
+| C5   | Stub-deletion traffic verification + loop closure           | ✅ | `282753a` | Traffic verification concluded as a no-op: the deleted stubs never reached production. `git log advanced-ai-v7 -- frontend/app/build frontend/app/tuning/agent` returns nothing — B5's deletion is the only commit that has ever touched those paths, and it lives on `feat/047-session-b`, which hasn't merged to production (Vercel deploys from `advanced-ai-v7`). Zero production traffic by construction, no restore warranted. Pre-flight nullable-sourceMessageId grep surfaced one type-level gap (`TuningSuggestion.sourceMessageId: string` in frontend/lib/api.ts); fixed as part of C5. No non-null-assertion callsites in the repo. |
+| C6   | Backend + frontend suites green; `tsc --noEmit` clean         | ✅ | (verification only) | Covered under gate notes above — details in the verification run at the bottom of this section. |
+| C7   | PROGRESS.md + NEXT.md rewritten for Session D / close       | ✅ | (this commit) | |
+
+### Decisions made this session
+
+- **Cross-session rejection cardinality: per-(tenantId, artifact, fixHash).**
+  Mirrors the session-scoped shape exactly, just lifted to durable
+  storage. Finer-grained than tenant-only (a single bad rejection
+  doesn't poison different targets); denormalising the existing
+  `fixHash` further (e.g., into artifactId + section separately)
+  adds complexity with no additional selectivity, since `fixHash`
+  already incorporates section/slot in its SHA-1 input. Decision
+  locked in NEXT.md §1.1 defaults; no operator feedback contradicted
+  at kickoff, so shipped as recommended.
+
+- **TTL: 90 days, stamped at write time.** Matches BuildToolCallLog's
+  retention window conceptually (though retention sweep for
+  RejectionMemory is deferred — row count is expected to be low
+  enough that a sweep isn't urgent). "Never decay" rejected because
+  a rejection from six months ago shouldn't block a genuinely-improved
+  fix. 30d rejected because a quarter of suppression feels more
+  proportionate to manager memory of "I already said no to this."
+  TTL is a write-time stamp, not a column default, so shortening
+  later is a one-line change, not a migration.
+
+- **Dedicated `RejectionMemory` table over AgentMemory prefix reuse.**
+  Clean FK cascade on Tenant delete, indexed `expiresAt` for any
+  later retention sweep, own composite unique key. Prefix-reuse would
+  have forced a scan on every lookup (AgentMemory has no per-row
+  TTL column).
+
+- **Durable write is best-effort.** If the `writeCrossSessionRejection`
+  call throws, the session-scoped write still succeeds and the
+  endpoint still returns 200. The session-scoped row is the
+  load-bearing path for next-tick suppression; a 500 on the reject
+  endpoint because the durable DB flickered would feel worse than
+  a silent fallback. The runtime read path is symmetrically
+  best-effort — lookup errors fall through to emit, per NEXT.md §3.
+
+- **Raw-prompt editor drawer: read-through only this session.**
+  Per NEXT.md §7: "If the raw-prompt editor drawer turns out to
+  need deep changes to the `buildSystemPrompt` composer (not just
+  a read-through), land only the read-through path this session
+  and file the edit-path as a Session D scope item." Edit path
+  punted — the composer is currently single-sourced across runtime
+  and admin read, which is fine for display but means a per-region
+  write would need its own override-merge layer. That's a larger
+  scope than fit alongside C1 + C4.
+
+- **Distinct `ENABLE_RAW_PROMPT_EDITOR` env flag.** Kept separate
+  from `ENABLE_BUILD_TRACE_VIEW` so a staging operator flipping on
+  traces doesn't automatically expose the full assembled prompt
+  (which can contain tenant-private SOP and FAQ content). Default-
+  off; admin tenant required on top.
+
+- **C4 per-file commits.** Each of the six files had an independent
+  failure mode (strictNullChecks, palette drift, type/schema drift,
+  scope bug) so per-file commits make a later surgical revert
+  possible. Not rewritten — each fix is the minimum that satisfies
+  `tsc --noEmit`.
+
+- **C5 traffic-verification conclusion: zero traffic by construction.**
+  `git log advanced-ai-v7 -- frontend/app/build …` returns nothing;
+  the stubs B5 deleted only ever lived on the feature-branch chain,
+  which hasn't merged to production. Vercel deploys from
+  `advanced-ai-v7`, so there is no production-facing path that
+  could ever have drawn a 404. The "7-day post-deploy check" in
+  NEXT.md §1.4 is moot until the end-of-stack merge; at that point,
+  the check can be re-run against Vercel analytics if operator
+  desire persists, but the decision log here closes the loop either
+  way.
+
+### Deferred to next session (or close)
+
+- **Raw-prompt editor edit path.** `TenantAiConfig` override write
+  with `origin: 'raw-editor'`. Needs the composer to grow an
+  override-merge layer; larger surface than fit this session.
+- **RejectionMemory retention sweep job.** Not urgent given
+  expected row count; can mirror `build-tool-call-log-retention.job.ts`
+  when it lands.
+- **End-of-stack merge to main.** 045 → 046 → 047-A → 047-B → 047-C
+  `merge -X theirs` onto `advanced-ai-v7`. Staging wet-test per
+  validation/sprint-047-session-a-staging-smoke.md runs at that time.
+- **Manager-visible "cleared rejections" UI.** Schema supports
+  captured `rationale` but the reject card currently sends `null`.
+  Product decision — defer until operators ask.
+- **Optional free-text rationale field on the reject card.** Would
+  make the cross-session hint substantially richer. Backend already
+  round-trips it; frontend card needs a small UI change.
+- **R1 persist-time truncation (Path B).** Unchanged — still
+  Langfuse-data-dependent.
+- **R2 enforcement observability dashboard.** Unchanged.
+- **Per-user admin distinctions.** Unchanged from Session B.
+
+### Blocked / surfaced
+
+- **End-of-stack merge remains the next non-code action.** Every
+  Session C gate is local to `feat/047-session-c`; nothing has
+  reached production yet. Staging wet-test fires at merge time;
+  if it surfaces issues, they become Session D's first unit of
+  work (same contingency pattern as Session C's §1.5).
+
+- **RejectionMemory ends up on the shared Railway Postgres via
+  `prisma db push`.** Additive table with FK cascade; no existing
+  rows to backfill. Same idempotency concern as Session B's
+  `Tenant.isAdmin` — worth logging, but safe.
+
+### Verification run (local, at session close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite (`npx tsx --test 'src/**/__tests__/*.test.ts'`
+  with JWT_SECRET + OPENAI_API_KEY pre-set): **245/245 pass**.
+  Includes 13/13 memory.service cases (+5 new Session C).
+  Pre-set env is required for `tenant-config-bypass.test.ts` —
+  pre-existing tsx static-hoist quirk, not a Session C regression.
+- Backend integration suite (`src/__tests__/integration/*.test.ts`):
+  **27/27 pass**. Includes 9/9 build-controller cases (6 + 6b) and
+  12/12 build-traces cases (8a–8e).
+- Frontend `tsc --noEmit` (ignoring stale `.next/dev/types/` from
+  Next.js type-gen cache): clean on all touched files and across the
+  six Session-B drift files. No pre-existing errors remain.
+- Frontend `vitest run`: **12/12 pass** across 3 files (audit-report,
+  trace-drawer, raw-prompt-drawer). +4 new cases from Session C.
+- Frontend `next build`: not re-run this session (no routing change
+  beyond what B5 already verified).
