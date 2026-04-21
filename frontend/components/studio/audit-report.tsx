@@ -8,7 +8,7 @@
  * the row that matches `topFindingId`. Status dots are pure colour,
  * never emoji (Response Contract rule 6).
  */
-import { STUDIO_COLORS, STUDIO_STATUS_DOT, type StudioStatus } from './tokens'
+import { STUDIO_COLORS, STUDIO_STATUS_DOT, attributedStyle, type StudioStatus } from './tokens'
 
 export interface AuditReportRowData {
   artifact: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property'
@@ -135,7 +135,7 @@ export function AuditReportCard(props: AuditReportCardProps) {
                 </div>
                 <div
                   style={{
-                    color: STUDIO_COLORS.inkMuted,
+                    ...attributedStyle('ai'),
                     fontSize: 12,
                     marginTop: 2,
                   }}

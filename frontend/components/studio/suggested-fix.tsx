@@ -13,7 +13,7 @@
  */
 import { useState } from 'react'
 import { Check, X } from 'lucide-react'
-import { STUDIO_COLORS, getStudioCategoryStyle } from './tokens'
+import { STUDIO_COLORS, getStudioCategoryStyle, attributedStyle } from './tokens'
 
 export interface SuggestedFixTarget {
   artifact?: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property_override'
@@ -165,7 +165,7 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
       <p
         style={{
           margin: '12px 0 0',
-          color: STUDIO_COLORS.ink,
+          ...attributedStyle('ai'),
           fontSize: 13,
           lineHeight: 1.55,
         }}
@@ -176,7 +176,7 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
         <p
           style={{
             margin: '4px 0 0',
-            color: STUDIO_COLORS.inkMuted,
+            ...attributedStyle('ai'),
             fontSize: 12,
             lineHeight: 1.5,
           }}

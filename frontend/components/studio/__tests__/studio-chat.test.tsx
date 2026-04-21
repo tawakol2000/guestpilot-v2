@@ -135,6 +135,43 @@ describe('SuggestedFixCard · pending origin grammar', () => {
   })
 })
 
+describe('SuggestedFixCard · 057-A F2 typographic attribution', () => {
+  it('rationale text renders with AI (inkMuted) colour', async () => {
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(
+      <SuggestedFixCard
+        id="fix-attr"
+        target={{ artifact: 'sop', artifactId: 'sop-1' }}
+        before="Old text."
+        after="New text."
+        rationale="AI-authored rationale explaining the fix."
+        onAccept={async () => {}}
+        onReject={async () => {}}
+      />,
+    )
+    const rationaleEl = screen.getByText('AI-authored rationale explaining the fix.')
+    expect(rationaleEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+
+  it('impact text renders with AI (inkMuted) colour', async () => {
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(
+      <SuggestedFixCard
+        id="fix-impact"
+        target={{ artifact: 'sop', artifactId: 'sop-1' }}
+        before="Old."
+        after="New."
+        rationale="rationale."
+        impact="AI-generated impact statement."
+        onAccept={async () => {}}
+        onReject={async () => {}}
+      />,
+    )
+    const impactEl = screen.getByText('AI-generated impact statement.')
+    expect(impactEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+})
+
 describe('PlanChecklist · diff preview', () => {
   // Sprint 055-A F1 — PlanChecklist no longer has "Unsaved" attribution or
   // italic/pending diff styles. The preview diff still renders; this test

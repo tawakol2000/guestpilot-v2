@@ -87,4 +87,46 @@ describe('AuditReportCard', () => {
     expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Fix' })).toHaveLength(1)
   })
+
+  // ── Sprint 057-A F2 — typographic attribution ─────────────────────────
+
+  it('057-A F2: row.note renders with AI (inkMuted) colour', async () => {
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(
+      <AuditReportCard
+        rows={[{
+          artifact: 'sop',
+          artifactId: 'sop-1',
+          label: 'Checkout SOP',
+          status: 'warn',
+          note: 'This note is AI-generated text.',
+          findingId: 'f1',
+        }]}
+        topFindingId={null}
+        onViewRow={() => {}}
+      />,
+    )
+    const noteEl = screen.getByText('This note is AI-generated text.')
+    expect(noteEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+
+  it('057-A F2: row.label (structural heading) renders with ink colour', async () => {
+    const { STUDIO_COLORS } = await import('../tokens')
+    render(
+      <AuditReportCard
+        rows={[{
+          artifact: 'sop',
+          artifactId: 'sop-1',
+          label: 'Checkout SOP Heading',
+          status: 'ok',
+          note: 'Fine.',
+          findingId: 'f1',
+        }]}
+        topFindingId={null}
+        onViewRow={() => {}}
+      />,
+    )
+    const labelEl = screen.getByText('Checkout SOP Heading')
+    expect(labelEl).toHaveStyle({ color: STUDIO_COLORS.ink })
+  })
 })
