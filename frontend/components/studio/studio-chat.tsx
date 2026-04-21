@@ -622,6 +622,8 @@ function StandalonePart({
       <PlanChecklist
         data={planData as BuildPlanData}
         appliedItems={appliedItems as Array<{ type: 'sop' | 'faq' | 'system_prompt' | 'tool_definition'; name: string }>}
+        conversationId={conversationId}
+        onOpenArtifact={onOpenArtifact ? (type, artifactId) => onOpenArtifact(type, artifactId) : undefined}
         onApproved={(txId) => {
           // Sprint 050 A3 — seed the session-artifacts rail from every
           // plan item so the operator can see "here's what this plan

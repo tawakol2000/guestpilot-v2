@@ -22,11 +22,17 @@ vi.mock('@/lib/build-api', async (importOriginal) => {
     ...actual,
     apiApproveBuildPlan: vi.fn(),
     apiRollbackBuildPlan: vi.fn(),
+    apiListBuildArtifactHistory: vi.fn(),
     withBuildToast: vi.fn(async (_msg: string, fn: () => Promise<unknown>) => fn()),
   }
 })
 
-import { apiApproveBuildPlan } from '@/lib/build-api'
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
+}))
+
+import { apiApproveBuildPlan, apiListBuildArtifactHistory } from '@/lib/build-api'
+import { toast } from 'sonner'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -206,5 +212,148 @@ describe('PlanChecklist — 055-A F1', () => {
 
     // Row rendering should still work — not blocked
     expect(screen.getAllByRole('listitem').length).toBe(3)
+  })
+
+  // ── F4: Plan-row click opens the artifact drawer ───────────────────────
+
+  it('056-A F4: click on a done row with direct artifactId calls onOpenArtifact', async () => {
+    mockApproveSuccess()
+    const data = makePlan({
+      items: [
+        { type: 'sop', name: 'Check-in SOP', rationale: 'Test.', target: { artifactId: 'sop-abc-123' } },
+      ],
+    })
+    const onOpenArtifact = vi.fn()
+    const appliedItems = [{ type: 'sop' as const, name: 'Check-in SOP' }]
+
+    render(
+      <PlanChecklist data={data} appliedItems={appliedItems} onOpenArtifact={onOpenArtifact} />,
+    )
+
+    await waitFor(() => screen.getByLabelText('done'))
+    fireEvent.click(screen.getAllByRole('listitem')[0])
+
+    expect(onOpenArtifact).toHaveBeenCalledWith('sop', 'sop-abc-123')
+  })
+
+  it('056-A F4: tool_definition type maps to "tool" artifact type', async () => {
+    mockApproveSuccess()
+    const data = makePlan({
+      items: [
+        { type: 'tool_definition', name: 'My Tool', rationale: 'Test.', target: { artifactId: 'tool-xyz' } },
+      ],
+    })
+    const onOpenArtifact = vi.fn()
+    const appliedItems = [{ type: 'tool_definition' as const, name: 'My Tool' }]
+
+    render(
+      <PlanChecklist data={data} appliedItems={appliedItems} onOpenArtifact={onOpenArtifact} />,
+    )
+
+    await waitFor(() => screen.getByLabelText('done'))
+    fireEvent.click(screen.getAllByRole('listitem')[0])
+
+    expect(onOpenArtifact).toHaveBeenCalledWith('tool', 'tool-xyz')
+  })
+
+  it('056-A F4: click on a pending row shows "not written yet" toast, no onOpenArtifact', async () => {
+    mockApproveSuccess()
+    // 3-item plan with 0 appliedItems → row 0 is current, rows 1+2 are pending
+    const data = makePlan()
+    const onOpenArtifact = vi.fn()
+
+    render(
+      <PlanChecklist
+        data={data}
+        appliedItems={[]}
+        onOpenArtifact={onOpenArtifact}
+        conversationId="conv-test"
+      />,
+    )
+
+    await waitFor(() => screen.getByLabelText('current'))
+
+    // Click the second row (index 1) which is 'pending'
+    fireEvent.click(screen.getAllByRole('listitem')[1])
+
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+      "This artifact hasn't been written yet — it'll open here when the agent writes it.",
+    )
+    expect(onOpenArtifact).not.toHaveBeenCalled()
+  })
+
+  it('056-A F4: click on + seed button does NOT trigger onOpenArtifact', async () => {
+    mockApproveSuccess()
+    const data = makePlan({
+      items: [
+        { type: 'sop', name: 'Check-in SOP', rationale: 'Test.', target: { artifactId: 'sop-abc' } },
+      ],
+    })
+    const onOpenArtifact = vi.fn()
+    const onSeedComposer = vi.fn()
+    const appliedItems = [{ type: 'sop' as const, name: 'Check-in SOP' }]
+
+    render(
+      <PlanChecklist
+        data={data}
+        appliedItems={appliedItems}
+        onOpenArtifact={onOpenArtifact}
+        onSeedComposer={onSeedComposer}
+      />,
+    )
+
+    await waitFor(() => screen.getByLabelText('done'))
+
+    // Hover to reveal the + button
+    const row = screen.getAllByRole('listitem')[0]
+    fireEvent.mouseEnter(row)
+
+    const seedBtn = screen.getByLabelText('Seed composer with Check-in SOP')
+    fireEvent.click(seedBtn)
+
+    // + button should seed composer
+    expect(onSeedComposer).toHaveBeenCalledWith('@item:sop:Check-in SOP')
+    // onOpenArtifact must NOT have been called (stopPropagation worked)
+    expect(onOpenArtifact).not.toHaveBeenCalled()
+  })
+
+  it('056-A F4: history lookup resolves artifactId for a done row without direct target', async () => {
+    mockApproveSuccess()
+    vi.mocked(apiListBuildArtifactHistory).mockResolvedValue({
+      rows: [
+        {
+          id: 'hist-1',
+          artifactType: 'sop',
+          artifactId: 'sop-from-history',
+          operation: 'CREATE',
+          actorEmail: null,
+          conversationId: 'conv-1',
+          createdAt: new Date().toISOString(),
+          prevBody: null,
+          newBody: {},
+        },
+      ],
+    })
+    const data = makePlan({
+      items: [{ type: 'sop', name: 'Check-in SOP', rationale: 'Test.' }], // no target.artifactId
+    })
+    const onOpenArtifact = vi.fn()
+    const appliedItems = [{ type: 'sop' as const, name: 'Check-in SOP' }]
+
+    render(
+      <PlanChecklist
+        data={data}
+        appliedItems={appliedItems}
+        onOpenArtifact={onOpenArtifact}
+        conversationId="conv-1"
+      />,
+    )
+
+    await waitFor(() => screen.getByLabelText('done'))
+    fireEvent.click(screen.getAllByRole('listitem')[0])
+
+    await waitFor(() => {
+      expect(onOpenArtifact).toHaveBeenCalledWith('sop', 'sop-from-history')
+    })
   })
 })

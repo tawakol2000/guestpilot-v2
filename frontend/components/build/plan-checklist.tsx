@@ -14,11 +14,14 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { STUDIO_COLORS } from '../studio/tokens'
 import {
   apiApproveBuildPlan,
+  apiListBuildArtifactHistory,
   apiRollbackBuildPlan,
   withBuildToast,
+  type BuildArtifactType,
   type BuildPlanData,
   type BuildPlanItem,
   type BuildPlanItemTarget,
@@ -60,6 +63,13 @@ const ROW_GLYPH_COLOR: Record<RowState, string> = {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+
+const PLAN_TYPE_TO_ARTIFACT: Record<BuildPlanItem['type'], BuildArtifactType> = {
+  sop: 'sop',
+  faq: 'faq',
+  system_prompt: 'system_prompt',
+  tool_definition: 'tool',
+}
 
 function renderTargetChip(target: BuildPlanItemTarget | undefined): string | null {
   if (!target) return null
@@ -114,15 +124,19 @@ function summariseRollback(items: BuildPlanItem[], transactionId: string): strin
 export function PlanChecklist({
   data,
   appliedItems = [],
+  conversationId,
   onApproved,
   onRolledBack,
   onSeedComposer,
+  onOpenArtifact,
 }: {
   data: BuildPlanData
   appliedItems?: Array<{ type: BuildPlanItem['type']; name: string }>
+  conversationId?: string | null
   onApproved?: (transactionId: string) => void
   onRolledBack?: (transactionId: string) => void
   onSeedComposer?: (text: string) => void
+  onOpenArtifact?: (type: BuildArtifactType, artifactId: string) => void
 }) {
   // Legacy graceful degradation: if transactionId is missing or the data
   // already carries an approvedAt, treat as already approved.
@@ -197,6 +211,43 @@ export function PlanChecklist({
 
   // Headline: "Plan proposed" for legacy (no transactionId), otherwise "Build plan"
   const headlineText = isLegacy ? 'Plan proposed' : 'Build plan'
+
+  async function handleRowClick(item: BuildPlanItem, rowState: RowState) {
+    if (!onOpenArtifact) return
+    const mappedType = PLAN_TYPE_TO_ARTIFACT[item.type]
+
+    // 1. Direct artifactId on the plan item target
+    if (item.target?.artifactId) {
+      onOpenArtifact(mappedType, item.target.artifactId)
+      return
+    }
+
+    // 2. Pending with no write yet → inform the operator
+    if (rowState === 'pending') {
+      toast("This artifact hasn't been written yet — it'll open here when the agent writes it.")
+      return
+    }
+
+    // 3. Look up the most recent matching history row via conversationId
+    if (!conversationId) {
+      toast("This artifact hasn't been written yet — it'll open here when the agent writes it.")
+      return
+    }
+    try {
+      const page = await apiListBuildArtifactHistory({ conversationId, limit: 100 })
+      const match = page.rows.find((r) => {
+        const rType: BuildArtifactType = r.artifactType === 'tool_definition' ? 'tool' : r.artifactType as BuildArtifactType
+        return rType === mappedType
+      })
+      if (match) {
+        onOpenArtifact(mappedType, match.artifactId)
+      } else {
+        toast("This artifact hasn't been written yet — it'll open here when the agent writes it.")
+      }
+    } catch {
+      toast.error("Couldn't look up the artifact.")
+    }
+  }
 
   return (
     <article
@@ -306,6 +357,7 @@ export function PlanChecklist({
                 item={item}
                 rowState={rowState}
                 onSeedComposer={onSeedComposer}
+                onRowClick={onOpenArtifact ? () => handleRowClick(item, rowState) : undefined}
               />
             )
           })}
@@ -388,10 +440,12 @@ function PlanRow({
   item,
   rowState,
   onSeedComposer,
+  onRowClick,
 }: {
   item: BuildPlanItem
   rowState: RowState
   onSeedComposer?: (text: string) => void
+  onRowClick?: () => void
 }) {
   const style = TYPE_STYLE[item.type] ?? {
     bg: STUDIO_COLORS.surfaceSunken,
@@ -415,9 +469,11 @@ function PlanRow({
       style={{
         borderColor: STUDIO_COLORS.hairlineSoft,
         background: STUDIO_COLORS.canvas,
+        cursor: onRowClick ? 'pointer' : undefined,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={onRowClick}
     >
       <div className="flex items-start gap-2">
         {/* State glyph */}
@@ -472,8 +528,12 @@ function PlanRow({
           </div>
         </div>
 
-        {/* Seed composer + button */}
-        <div className="shrink-0" style={{ width: 24, minHeight: 20 }}>
+        {/* Seed composer + button — stopPropagation prevents row-click */}
+        <div
+          className="shrink-0"
+          style={{ width: 24, minHeight: 20 }}
+          onClick={(e) => e.stopPropagation()}
+        >
           {showSeed && (
             <button
               type="button"
@@ -494,7 +554,7 @@ function PlanRow({
       </div>
 
       {hasDiff && (
-        <div className="pl-[118px]">
+        <div className="pl-[118px]" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => setDiffOpen((v) => !v)}

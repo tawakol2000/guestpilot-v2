@@ -1,10 +1,25 @@
 /**
  * Sprint 054-A F4 — TestPipelineResult (verdict-forward) component tests.
+ * Sprint 056-A F5 — Inline rollback CTA on failed rituals.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+vi.mock('@/lib/build-api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/build-api')>()
+  return {
+    ...actual,
+    apiRevertArtifactFromHistory: vi.fn(),
+  }
+})
+
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
+}))
 
 import { TestPipelineResult } from '../test-pipeline-result'
+import { apiRevertArtifactFromHistory } from '@/lib/build-api'
+import { toast } from 'sonner'
 import type {
   TestPipelineResultData,
   TestPipelineVariant,
@@ -148,5 +163,71 @@ describe('TestPipelineResult', () => {
       />,
     )
     expect(screen.queryByTestId('test-pipeline-result-source-chip')).toBeNull()
+  })
+
+  // ── 056-A F5: Inline rollback CTA ────────────────────────────────────────
+
+  it('056-A F5: rollback footer absent when all_passed', () => {
+    render(
+      <TestPipelineResult
+        data={makeData({ aggregateVerdict: 'all_passed', sourceWriteHistoryId: 'h-1' })}
+      />,
+    )
+    expect(screen.queryByTestId('test-pipeline-result-rollback-footer')).toBeNull()
+  })
+
+  it('056-A F5: rollback footer absent when failing but no sourceWriteHistoryId', () => {
+    render(
+      <TestPipelineResult
+        data={makeData({
+          variants: [variant({ verdict: 'failed', judgeScore: 0.2, judgeReasoning: 'off' })],
+          aggregateVerdict: 'all_failed',
+          sourceWriteHistoryId: null,
+        })}
+      />,
+    )
+    expect(screen.queryByTestId('test-pipeline-result-rollback-footer')).toBeNull()
+  })
+
+  it('056-A F5: rollback footer renders when failing AND sourceWriteHistoryId present', () => {
+    render(
+      <TestPipelineResult
+        data={makeData({
+          variants: [variant({ verdict: 'failed', judgeScore: 0.2, judgeReasoning: 'off' })],
+          aggregateVerdict: 'all_failed',
+          sourceWriteHistoryId: 'h-99',
+        })}
+      />,
+    )
+    expect(screen.getByTestId('test-pipeline-result-rollback-footer')).toBeDefined()
+    expect(screen.getByTestId('test-pipeline-result-rollback-btn')).toBeDefined()
+  })
+
+  it('056-A F5: confirm → revert API called → button disables → success toast', async () => {
+    vi.mocked(apiRevertArtifactFromHistory).mockResolvedValue({} as any)
+    render(
+      <TestPipelineResult
+        data={makeData({
+          variants: [variant({ verdict: 'failed', judgeScore: 0.2, judgeReasoning: 'off' })],
+          aggregateVerdict: 'all_failed',
+          sourceWriteHistoryId: 'h-55',
+        })}
+      />,
+    )
+
+    // Click the rollback button to open dialog
+    fireEvent.click(screen.getByTestId('test-pipeline-result-rollback-btn'))
+
+    // Dialog should appear — click the confirm "Roll back" button
+    const confirmBtn = await screen.findByText('Roll back')
+    fireEvent.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(apiRevertArtifactFromHistory).toHaveBeenCalledWith('h-55')
+      expect(vi.mocked(toast).success).toHaveBeenCalledWith('Write rolled back successfully.')
+    })
+
+    // Button should now be disabled
+    expect(screen.getByTestId('test-pipeline-result-rollback-btn')).toBeDisabled()
   })
 })

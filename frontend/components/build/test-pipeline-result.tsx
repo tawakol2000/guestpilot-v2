@@ -17,14 +17,17 @@
  * actually ran, not a fixed denominator.
  */
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { TUNING_COLORS } from '../studio/tokens'
-import type {
-  AggregateVerdict,
-  BuildArtifactType,
-  TestPipelineResultData,
-  TestPipelineVariant,
+import {
+  apiRevertArtifactFromHistory,
+  type AggregateVerdict,
+  type BuildArtifactType,
+  type TestPipelineResultData,
+  type TestPipelineVariant,
 } from '@/lib/build-api'
+import { ConfirmRollbackDialog } from './confirm-dialog'
 
 export interface TestPipelineResultProps {
   data: TestPipelineResultData
@@ -58,6 +61,9 @@ const TYPE_SHORT: Record<string, string> = {
 
 export function TestPipelineResult(props: TestPipelineResultProps) {
   const { data, onOpenSourceWrite, sourceWriteLabel } = props
+  const [rollbackOpen, setRollbackOpen] = useState(false)
+  const [alreadyReverted, setAlreadyReverted] = useState(false)
+  const [revertError, setRevertError] = useState(false)
   const variants = Array.isArray(data.variants) ? data.variants : []
   const total = variants.length
   const passed = variants.filter((v) => v.verdict === 'passed').length
@@ -192,6 +198,48 @@ export function TestPipelineResult(props: TestPipelineResultProps) {
           ))}
         </ul>
       </details>
+
+      {isFailing && data.sourceWriteHistoryId && (
+        <footer
+          data-testid="test-pipeline-result-rollback-footer"
+          className="flex items-center justify-between border-t px-4 py-2.5"
+          style={{ borderColor: TUNING_COLORS.hairlineSoft, background: TUNING_COLORS.surfaceSunken }}
+        >
+          <span className="text-[11.5px]" style={{ color: TUNING_COLORS.inkMuted }}>
+            Something not right? Roll back the write that triggered this test.
+          </span>
+          <button
+            type="button"
+            data-testid="test-pipeline-result-rollback-btn"
+            disabled={alreadyReverted}
+            title={alreadyReverted ? 'Already rolled back' : undefined}
+            onClick={() => {
+              setRevertError(false)
+              setRollbackOpen(true)
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              borderColor: TUNING_COLORS.dangerFg,
+              color: TUNING_COLORS.dangerFg,
+              background: 'transparent',
+            }}
+          >
+            <RotateCcw size={11} strokeWidth={2.25} />
+            {alreadyReverted ? 'Already rolled back' : 'Roll back this write'}
+          </button>
+          <ConfirmRollbackDialog
+            open={rollbackOpen}
+            onOpenChange={setRollbackOpen}
+            title="Roll back this write?"
+            summary="This will revert the artifact to its state before the write that triggered this test ritual. The main pipeline picks up the revert within 60 seconds."
+            onConfirm={async () => {
+              await apiRevertArtifactFromHistory(data.sourceWriteHistoryId!)
+              setAlreadyReverted(true)
+              toast.success('Write rolled back successfully.')
+            }}
+          />
+        </footer>
+      )}
     </article>
   )
 }
