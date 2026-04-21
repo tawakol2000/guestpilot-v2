@@ -46,6 +46,7 @@ import {
 import {
   computeRejectionFixHash,
   writeRejectionMemory,
+  writeCrossSessionRejection,
   type RejectionIntent,
 } from '../build-tune-agent/memory/service';
 import { isBuildTraceViewEnabled } from '../build-tune-agent/config';
@@ -592,12 +593,23 @@ export function makeBuildController(prisma: PrismaClient) {
           subLabel?: string;
         };
         target?: {
+          artifact?:
+            | 'system_prompt'
+            | 'sop'
+            | 'faq'
+            | 'tool_definition'
+            | 'property_override';
           artifactId?: string;
           sectionId?: string;
           slotKey?: string;
         };
         category?: string;
         subLabel?: string;
+        // Sprint 047 Session C — cross-session rejection memory. Optional
+        // rationale from the manager (if/when the reject card grows a
+        // free-text field). Stored on RejectionMemory.rationale so the
+        // propose_suggestion precheck can tell the agent *why*.
+        rationale?: string;
       };
       const conversationId = body.conversationId;
       if (!conversationId) {
@@ -648,6 +660,28 @@ export function makeBuildController(prisma: PrismaClient) {
           fixHash,
           intent
         );
+
+        // Sprint 047 Session C — durable parallel write. Best-effort:
+        // missing cross-session memory must not block the session-scoped
+        // write, per NEXT.md §3 ("missing memory ≠ no-suggestion").
+        const artifact = body.target?.artifact ?? '';
+        try {
+          await writeCrossSessionRejection(prisma, tenantId, {
+            artifact,
+            fixHash,
+            intent,
+            category: body.intent?.category ?? body.category ?? null,
+            subLabel: body.intent?.subLabel ?? body.subLabel ?? null,
+            rationale: body.rationale ?? null,
+            sourceConversationId: conversationId,
+          });
+        } catch (crossErr) {
+          console.warn(
+            '[build-controller] cross-session rejection write failed (continuing):',
+            crossErr
+          );
+        }
+
         res.json({
           ok: true,
           applied: false,

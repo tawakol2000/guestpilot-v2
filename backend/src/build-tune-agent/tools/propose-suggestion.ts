@@ -26,6 +26,7 @@ import {
 import {
   computeRejectionFixHash,
   listRejectionHashes,
+  lookupCrossSessionRejection,
   type RejectionIntent,
 } from '../memory/service';
 import { asCallToolResult, asError, type ToolContext } from './types';
@@ -169,13 +170,23 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
         // Before emitting the card, compute the fix hash and skip the
         // emit if the manager has already rejected a semantically-
         // equivalent fix in this conversation (per plan §4.4).
+        //
+        // Sprint 047 Session C — cross-session rejection memory. After
+        // the session-scoped check, look up (tenantId, artifact,
+        // fixHash) in RejectionMemory. A live hit means the manager
+        // hated this fix in a past conversation; we skip the emit and
+        // return the captured rationale so the agent can adjust its
+        // next proposal. Missing memory ≠ no-suggestion (NEXT.md §3):
+        // any lookup error falls through to the emit.
+        const intent = deriveRejectionIntent({
+          category: args.category,
+          subLabel: args.subLabel,
+          target: derivedTarget,
+        });
+        const fixHash = computeRejectionFixHash(intent);
+        const artifactType = derivedTarget.artifact ?? '';
+
         if (c.conversationId) {
-          const intent = deriveRejectionIntent({
-            category: args.category,
-            subLabel: args.subLabel,
-            target: derivedTarget,
-          });
-          const fixHash = computeRejectionFixHash(intent);
           try {
             const rejected = await listRejectionHashes(
               c.prisma,
@@ -199,6 +210,41 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
               err
             );
           }
+        }
+
+        try {
+          const prior = await lookupCrossSessionRejection(
+            c.prisma,
+            c.tenantId,
+            artifactType,
+            fixHash
+          );
+          if (prior) {
+            const skipPayload = {
+              previewId,
+              category: args.category,
+              editFormat,
+              status: 'SKIPPED_PRIOR_REJECTION',
+              priorRejection: {
+                rejectedAt: prior.rejectedAt,
+                expiresAt: prior.expiresAt,
+                sourceConversationId: prior.sourceConversationId,
+                rationale: prior.rationale,
+                category: prior.category,
+                subLabel: prior.subLabel,
+              },
+              hint: prior.rationale
+                ? `Manager previously rejected this fix (${prior.rejectedAt}): "${prior.rationale}". Rephrase, retarget, or pick a different intent.`
+                : `Manager previously rejected this fix (${prior.rejectedAt}). No rationale was captured — treat as a weak signal, but avoid re-proposing the exact same intent without new context.`,
+            };
+            span.end({ ...skipPayload, skippedDueToCrossSessionRejection: true });
+            return asCallToolResult(skipPayload);
+          }
+        } catch (err) {
+          console.warn(
+            '[propose_suggestion] cross-session rejection lookup failed:',
+            err
+          );
         }
 
         if (c.emitDataPart) {

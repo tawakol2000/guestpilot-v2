@@ -189,6 +189,132 @@ export async function listRejectionHashes(
   );
 }
 
+// ─── Cross-session rejection memory (sprint 047 Session C) ──────────────
+//
+// Durable equivalent of the session-scoped rejection above. A fix the
+// manager rejected in conversation A is still suppressed (or at least
+// surfaced with a prior-rejection signal) when the same intent is
+// proposed in conversation B, same tenant, within the TTL.
+//
+// Cardinality: per-(tenantId, artifact, fixHash).
+// TTL: 90 days — stamped at write time into `expiresAt` so a later
+// retention sweep can filter cheaply by a single indexed column.
+// See specs/045-build-mode/cross-session-rejection-memory.md for the
+// design narrative.
+
+const CROSS_SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+export interface CrossSessionRejection {
+  artifact: string;
+  fixHash: string;
+  artifactId: string;
+  sectionOrSlotKey: string;
+  semanticIntent: string;
+  rationale: string | null;
+  category: string | null;
+  subLabel: string | null;
+  sourceConversationId: string | null;
+  rejectedAt: string;
+  expiresAt: string;
+}
+
+export interface WriteCrossSessionArgs {
+  artifact: string; // FixTarget.artifact or '' when untargeted
+  fixHash: string;
+  intent: RejectionIntent;
+  category?: string | null;
+  subLabel?: string | null;
+  rationale?: string | null;
+  sourceConversationId?: string | null;
+  /** Optional override for tests; defaults to now. */
+  now?: Date;
+}
+
+/**
+ * Upsert a durable rejection. Re-rejecting the same fix refreshes
+ * `rejectedAt`, `expiresAt`, and any new rationale/source —
+ * intentionally, so a repeated rejection extends the TTL rather than
+ * leaving a stale record that's about to expire.
+ */
+export async function writeCrossSessionRejection(
+  prisma: PrismaClient,
+  tenantId: string,
+  args: WriteCrossSessionArgs
+): Promise<void> {
+  const now = args.now ?? new Date();
+  const expiresAt = new Date(now.getTime() + CROSS_SESSION_TTL_MS);
+  await prisma.rejectionMemory.upsert({
+    where: {
+      tenantId_artifact_fixHash: {
+        tenantId,
+        artifact: args.artifact,
+        fixHash: args.fixHash,
+      },
+    },
+    update: {
+      rejectedAt: now,
+      expiresAt,
+      rationale: args.rationale ?? null,
+      category: args.category ?? null,
+      subLabel: args.subLabel ?? null,
+      sourceConversationId: args.sourceConversationId ?? null,
+      artifactId: args.intent.artifactId,
+      sectionOrSlotKey: args.intent.sectionOrSlotKey,
+      semanticIntent: args.intent.semanticIntent,
+    },
+    create: {
+      tenantId,
+      artifact: args.artifact,
+      fixHash: args.fixHash,
+      artifactId: args.intent.artifactId,
+      sectionOrSlotKey: args.intent.sectionOrSlotKey,
+      semanticIntent: args.intent.semanticIntent,
+      rationale: args.rationale ?? null,
+      category: args.category ?? null,
+      subLabel: args.subLabel ?? null,
+      sourceConversationId: args.sourceConversationId ?? null,
+      rejectedAt: now,
+      expiresAt,
+    },
+  });
+}
+
+/**
+ * Look up a single cross-session rejection by (artifact, fixHash).
+ * Returns `null` when the row is absent OR expired — callers never
+ * need to check `expiresAt` themselves. Graceful on DB errors: the
+ * propose_suggestion precheck treats a thrown error as "not
+ * rejected", per NEXT.md §3 "missing memory ≠ no-suggestion".
+ */
+export async function lookupCrossSessionRejection(
+  prisma: PrismaClient,
+  tenantId: string,
+  artifact: string,
+  fixHash: string,
+  now: Date = new Date()
+): Promise<CrossSessionRejection | null> {
+  const row = await prisma.rejectionMemory.findUnique({
+    where: {
+      tenantId_artifact_fixHash: { tenantId, artifact, fixHash },
+    },
+  });
+  if (!row) return null;
+  if (row.expiresAt.getTime() <= now.getTime()) return null;
+  return {
+    artifact: row.artifact,
+    fixHash: row.fixHash,
+    artifactId: row.artifactId,
+    sectionOrSlotKey: row.sectionOrSlotKey,
+    semanticIntent: row.semanticIntent,
+    rationale: row.rationale,
+    category: row.category,
+    subLabel: row.subLabel,
+    sourceConversationId: row.sourceConversationId,
+    rejectedAt: row.rejectedAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+  };
+}
+
 /**
  * Used by the runtime's session-start preference injection and by the
  * PreCompact hook. Returns rows whose key starts with `prefix` (typically

@@ -256,15 +256,28 @@ export async function apiAcceptSuggestedFix(
 // rejection-memory row. Callers must pass enough of the suggested-fix
 // payload to derive the fix hash. The backend accepts either an explicit
 // `intent` or the convenience `(target, category, subLabel)` trio.
+//
+// Sprint 047 Session C — the same POST now ALSO writes a durable
+// RejectionMemory row keyed on (tenantId, target.artifact, fixHash).
+// `target.artifact` is the canonical FixTarget artifact type string.
+// `rationale` is an optional manager-provided reason surfaced back to
+// the agent on future proposals within the 90d TTL.
 export interface RejectSuggestedFixPayload {
   conversationId: string
   category?: string
   subLabel?: string
   target?: {
+    artifact?:
+      | 'system_prompt'
+      | 'sop'
+      | 'faq'
+      | 'tool_definition'
+      | 'property_override'
     artifactId?: string
     sectionId?: string
     slotKey?: string
   }
+  rationale?: string
 }
 
 export async function apiRejectSuggestedFix(

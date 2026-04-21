@@ -79,6 +79,9 @@ model Tenant {
   // exists today (Tenant == single-user account), so the "admin" role
   // lives here. Flipped manually in the DB for platform operators.
   isAdmin Boolean @default(false)
+
+  // Sprint 047 Session C — cross-session rejection memory.
+  rejectionMemories RejectionMemory[]
 }
 
 model Property {
@@ -1015,6 +1018,45 @@ model TuningMessage {
   conversation TuningConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
+}
+
+// Sprint 047 Session C — cross-session rejection memory.
+//
+// Session-scoped rejections live in AgentMemory under
+// `session/{conversationId}/rejected/{fixHash}`. This table is the
+// durable equivalent: a fix rejected in conversation A is still
+// suppressed (or surfaced with a prior-rejection advisory) when
+// proposed in conversation B, same tenant, within the TTL.
+//
+// Defaults per specs/045-build-mode/NEXT.md §1.1:
+//   - cardinality: per-(tenantId, artifact, fixHash)
+//   - TTL: 90 days via `expiresAt` (retention sweep out of scope for
+//     this session; a job can later delete where expiresAt < now())
+//   - dedicated table, FK cascade on Tenant delete
+//
+// fixHash matches the session-scoped hash exactly —
+// sha1(artifactId|sectionOrSlotKey|semanticIntent) — so lookups use
+// the same key the propose_suggestion guard already computes.
+model RejectionMemory {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  artifact             String // FixTarget.artifact — 'sop' | 'faq' | 'system_prompt' | 'tool_definition' | 'property_override' | '' when untargeted
+  fixHash              String
+  artifactId           String   @default("") // e.g. specific SOP/FAQ id; empty when category-level
+  sectionOrSlotKey     String   @default("")
+  semanticIntent       String // category:subLabel fingerprint
+  rationale            String?  @db.Text // manager-provided rejection reason, when captured
+  category             String? // echoes the propose_suggestion category, for analytics
+  subLabel             String?
+  sourceConversationId String? // which TuningConversation captured the rejection — forensic only
+  rejectedAt           DateTime @default(now())
+  expiresAt            DateTime // rejectedAt + 90d at write time
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, artifact, fixHash])
+  @@index([tenantId, expiresAt])
+  @@index([tenantId, artifact, fixHash, expiresAt])
 }
 
 model AgentMemory {

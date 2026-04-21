@@ -452,11 +452,28 @@ function StandalonePart({
           toast.success('Fix accepted')
         }}
         onReject={async (id) => {
+          // Sprint 047 Session C — pass `target.artifact` through so the
+          // backend can key the durable RejectionMemory row correctly.
+          const rejectTarget = (data.target ?? undefined) as
+            | {
+                artifact?: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property_override'
+                artifactId?: string
+                sectionId?: string
+                slotKey?: string
+              }
+            | undefined
           await apiRejectSuggestedFix(id, {
             conversationId: rejectionConversationId,
             category: typeof data.category === 'string' ? data.category : undefined,
             subLabel: typeof data.subLabel === 'string' ? data.subLabel : undefined,
-            target: (data.target as { artifactId?: string; sectionId?: string; slotKey?: string }) ?? undefined,
+            target: rejectTarget
+              ? {
+                  artifact: rejectTarget.artifact,
+                  artifactId: rejectTarget.artifactId,
+                  sectionId: rejectTarget.sectionId,
+                  slotKey: rejectTarget.slotKey,
+                }
+              : undefined,
           })
           toast.success('Fix rejected')
         }}
