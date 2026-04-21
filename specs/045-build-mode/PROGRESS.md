@@ -859,3 +859,119 @@ Sprint-047 Session A closes the gap between "branch ships" and
 The 046 branch is now ready for a staging wet-test; flipping to
 production is gated on a manager-driven accept succeeding on a real
 conversation.
+
+## Sprint 047 — Session B (observability + cleanup)
+
+Completed: 2026-04-21. Branch: `feat/047-session-b` off
+`feat/047-session-a` (commit `14a19e7`). End-of-stack merge to main
+deferred per Abdelrahman's direction — a single `merge -X theirs` at
+the end of the full 045→046→047-A→047-B chain.
+
+| Gate | Item | Status | Commit | Notes |
+|------|------|--------|--------|-------|
+| B1   | Frontend vitest harness + AuditReport reference test | ✅ | `d7abf12` | vitest 4 + @testing-library/react + jsdom in `frontend/`. Reference test covers Session A S5's `onViewRow` wiring. Legacy `components/tuning/__tests__/*` (node:test based) excluded from the vitest glob. |
+| B2   | `GET /api/build/traces` + capabilities + admin gate  | ✅ | `f757e16` | Two gates: `ENABLE_BUILD_TRACE_VIEW` → 404 when off; `Tenant.isAdmin` → 403 when false. Cursor paginated (id-based, `createdAt DESC, id DESC`). `/capabilities` endpoint returns `{ traceViewEnabled, isAdmin }` so the drawer knows when to render. Schema: `Tenant.isAdmin Boolean @default(false)`. 7 integration cases cover 404/403/admin-200/cursor/filters/capabilities/retention. |
+| B3   | Admin trace drawer (frontend) + gear-icon mount      | ✅ | `b841b22` | Right-rail slide-over with expandable rows (turn, tool, duration, success dot, paramsHash, errorMessage). Explicit "Load older" pagination (no infinite scroll — admins page deliberately). Gear icon hidden when capabilities fetch fails or either flag is off. 5 vitest cases against a mocked API client. |
+| B4   | 30-day `BuildToolCallLog` retention sweep job        | ✅ | `f9f6b20` | Daily at 03:00 UTC. Service-level `deleteOldToolCalls` does id-then-delete (short lock holds); the job loops batches of 10k until drained or a 50-batch safety cap hits, logging either case. Wired into `server.ts` startup alongside `tuningRetention` / `faqMaintenance` / `docHandoff`. 2 integration cases prove loop-until-drained + no-op-when-empty. |
+| B5   | Delete `/build`, `/tuning`, `/tuning/agent` stubs    | ✅ | `fd63b36` | Four files deleted. `/tuning/layout.tsx` retained — other `/tuning/*` sub-routes still depend on it. `next build` green; route map is now `/`, `/login`, `/tuning/{capability-requests,history,pairs,playground,sessions}`. |
+| B6   | Backend + frontend tests green; `tsc --noEmit` clean | ✅ | (no commit — verification only) | Backend `tsc`: clean. Backend unit tests: 162/162 pass. Backend integration (this session's two new files): 9/9 pass on Railway-proxied DB. Frontend `tsc`: clean for all files this session touched; pre-existing errors in `sandbox-chat-v5.tsx`, `tools-v5.tsx`, `calendar-v5.tsx`, `configure-ai-v5.tsx`, `inbox-v5.tsx`, `listings-v5.tsx` reproduce with all 047-B changes stashed and are not introduced by this session. Frontend `vitest`: 8/8 pass. Frontend `next build`: green. |
+| B7   | PROGRESS.md updated + NEXT.md rewritten for Session C | ✅ | (this commit) | |
+
+### Decisions made this session
+
+- **Staging smoke for Session A: deferred at Abdelrahman's direction.**
+  The four checks in `validation/sprint-047-session-a-staging-smoke.md`
+  remain open. Session B proceeded on the understanding that any
+  regression the smoke would have caught on Session A's S1 (Accept
+  path), nullable `sourceMessageId`, or auth-gated mount will surface
+  at the end-of-stack merge rather than in a scoped staging check.
+
+- **Admin role model: new `Tenant.isAdmin` column.** There is no
+  User model in the schema — `Tenant` doubles as both tenant and
+  the single user account (Tenant.email is `@unique`). Per
+  sprint-047-session-b.md §8 fall-back ("pick the strictest boundary
+  you have"), the admin bit lives on `Tenant` and is looked up per
+  `/traces` request rather than baked into the JWT (so revoking
+  admin doesn't have a 30-day tail via token expiry). Flipped
+  manually in the DB for platform operators; flag for revisit if
+  per-user admin distinctions matter later.
+
+- **Two-flag gating.** `ENABLE_BUILD_TRACE_VIEW` is separate from
+  `ENABLE_BUILD_MODE` so a staging operator flipping on BUILD for a
+  tenant doesn't automatically expose raw tool-call traces. Even
+  with both flags on, the endpoint still requires `Tenant.isAdmin`.
+  404 (not 403) when the env flag is off so an unauthenticated probe
+  can't distinguish the gate from a missing route.
+
+- **Capabilities endpoint chosen over JWT-claim (Option A in §2.3).**
+  Keeps the admin signal out of the hot auth path; frontend calls it
+  once at Studio mount and caches for the session. Default-false on
+  fetch failure so a transient error leaves the gear icon hidden.
+
+- **Cursor shape: id-based, newest-first.** `createdAt DESC, id DESC`
+  ordering with `id < cursor` strict-less-than. cuid ids are
+  monotonically increasing within a process so clock-skew between
+  Railway pods doesn't cause cursor duplication in practice.
+
+- **Retention sweep cadence: daily at 03:00 UTC, bounded batches.**
+  Mirrors `tuningRetention.job.ts` shape (setTimeout first-run +
+  setInterval 24h). Batch of 10k rows × up to 50 iterations/run; a
+  run that hits the 50-batch cap logs a warning and defers the rest
+  to tomorrow — avoids runaway loops but can't silently leak either.
+
+- **Stub-deletion traffic verification: not performed in-session.**
+  Vercel analytics weren't reachable from this session's context;
+  the courtesy period was explicitly expired per the scope sheet.
+  If staging telemetry shows measurable hits on `/build`, `/tuning`,
+  or `/tuning/agent` in the post-deploy week, the restore is a
+  one-file revert each — surfaced as a Session C follow-up.
+
+- **Pre-existing tsc drift tolerated, not fixed.** Six files outside
+  this session's scope (`sandbox-chat-v5`, `tools-v5`, `calendar-v5`,
+  `configure-ai-v5`, `inbox-v5`, `listings-v5`) emit `tsc` errors
+  on the Session A base that are unrelated to Session B. They
+  remained unresolved through 045→046→047-A. Flagged for Session C
+  or later — cleaning them up is not an observability item.
+
+### Deferred to next session
+
+- **Cross-session rejection memory.** Still needs a Prisma model
+  design exercise. Carry-over from 046 §4.4 and 047-A.
+- **Raw-prompt editor drawer (admin-only).** Plan §6.5 — larger
+  surface than the trace drawer. Belongs to its own session.
+- **R1 persist-time truncation (Path B).** Conditional on Langfuse
+  data showing prose-heavy turns surviving Path A's advisory
+  without self-correction. Re-evaluate after a week of 046+047-A
+  production telemetry.
+- **Session A staging smoke** — four checks still open, to be run
+  as part of the end-of-stack merge's wet-test rather than
+  mid-stack.
+- **Pre-existing tsc drift (six files, see above).** Cleanup
+  candidate for a future housekeeping sprint.
+- **Traffic verification of the deleted stubs** — check post-deploy
+  whether `/build`, `/tuning`, `/tuning/agent` draw measurable 404s;
+  if yes, rewrite as a pinned Studio deep link.
+- **Oscillation advisory on BUILD writes.** Still requires a
+  confidence signal on BUILD creators that doesn't exist today.
+- **R2 enforcement observability dashboard.** Langfuse work, out
+  of the code-session pattern.
+
+### Blocked / surfaced
+
+- **Admin-gate population is manual.** `Tenant.isAdmin` is `false`
+  by default everywhere. Before the trace drawer renders for
+  Abdelrahman on staging + production, someone needs to flip his
+  `Tenant.isAdmin` to `true` directly in the DB (Prisma Studio or a
+  single `UPDATE "Tenant" SET "isAdmin" = true WHERE email = ?`).
+  `ENABLE_BUILD_TRACE_VIEW=true` also has to be set in the Railway
+  environment. Neither is automated — spec-intended.
+- **Live-DB schema push on local `prisma db push`.** The local
+  `.env`'s `DATABASE_URL` points at the Railway-proxied Postgres —
+  running `npx prisma db push` from `backend/` applies against the
+  shared DB, which is the documented dev workflow but means the
+  `Tenant.isAdmin` column is already present on the shared
+  instance. Additive change (nullable with default `false`), safe
+  for existing rows, but worth logging if a later session inherits
+  a surprise.
+- **Vercel analytics not in-session.** Traffic verification on the
+  deleted redirect stubs was deferred per the decision log above.
