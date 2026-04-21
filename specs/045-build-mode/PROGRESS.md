@@ -1380,3 +1380,177 @@ End-of-stack merge posture unchanged; chain is now
   pill's optimistic clear of `aiSuggestion` plus restore-on-throw
   was already compatible with the new 502 shape).
 
+## Sprint 050 — Session A
+
+First pure-UX sprint on the BUILD / Studio screen. Scope was Bundle A
+from [`ui-ux-brainstorm-build.md`](./ui-ux-brainstorm-build.md) §16:
+typographic attribution, tool-call drill-in drawer, session artifacts
+panel. Together they convert BUILD from "watch the agent work and hope"
+into "audit the agent's work before approving it" — without promoting
+the admin-only Trace drawer.
+
+Completed: 2026-04-21. Branch: `feat/050-session-a` off
+`feat/049-session-a` @ `b884483`. Frontend-only + one additive backend
+registry entry; `ai.service.ts` untouched, no schema changes, no
+`prisma db push`.
+
+### Gate sheet ↔ commits
+
+| Gate | Commit    | Landed |
+|------|-----------|--------|
+| kickoff | `ff3be4a` | docs(050-A): sprint-050 Session A brief + BUILD/frontend UX brainstorms |
+| A1   | `f64b2e4` | typographic attribution (user/agent/quoted/pending grammar) |
+| A2   | `a4e0722` | tool-call drill-in drawer + redact+truncate sanitiser |
+| A3   | `80de3fd` | session artifacts panel in right rail |
+| A4   | (this commit) | verification + PROGRESS + NEXT rewrite |
+
+### Decisions made
+
+- **`data-artifact-quote` shipped as renderer-only.** The brief (§1.1)
+  explicitly allows this: add the part type to
+  `DATA_PART_TYPES` + type interface, ship the frontend renderer, let
+  the backend emitter land later as a `propose_suggestion` enhancement.
+  This keeps Bundle A truly frontend-only and unblocks Bundle B's
+  citation feature without forcing an agent-side change this session.
+
+- **Operator-tier sanitisation covers both operator AND admin code
+  paths.** The spec said redact-by-key is mandatory for operator tier
+  and truncation is operator-only. The implementation (`tool-call-
+  sanitise.ts`) applies redact-by-key unconditionally — even the admin
+  "Show full output" toggle won't render a raw `apiKey`. Truncation is
+  the only axis the admin toggle flips. Rationale: a live API key
+  surfaced in a drawer on a screen-share is a leak regardless of
+  tier; the admin toggle is about seeing full model payloads, not
+  about unlocking secrets.
+
+- **Plan-rollback → "reverted" is best-effort.** The current
+  `SessionArtifact.id` is namespaced by transactionId
+  (`tx:<txId>:<type>:<artifactId>`), so a rollback can cleanly flip
+  just that plan's rows. Suggested-fix accepts live outside the tx
+  scheme (`fix:<type>:<artifactId>`) because accepts go through
+  `apiAcceptSuggestedFix` without a parent transaction. A suggested-
+  fix accept cannot be rolled back from this surface today — tracked
+  as a Bundle B consideration once the artifact drawer unifies the
+  write histories.
+
+- **"Show full output" toggle lifted to controlled prop.** The drawer
+  takes `showFull` + `onToggleShowFull` from StudioChat rather than
+  owning local state. This was the cheapest way to reset the toggle
+  on close without triggering re-render flicker, and leaves the per-
+  session preference path open if an operator setting lands later.
+
+- **ToolCallChip is now a `<button>`, not a `<span>`.** Required for
+  the click handler, keyboard focusability, and the "focus returns to
+  chip on close" contract (SC-2). No visible style change — the border
+  is reset to 0 and the pill geometry is identical to the prior span.
+
+- **Session artifacts reset on conversationId switch via the existing
+  `bootstrapRef.current = false` effect.** Rather than wire a new
+  prop path, the same effect that invalidates the bootstrap on
+  conversation change also clears `sessionArtifacts`. Single source of
+  truth for "this is a new session," matching how `testResults`
+  already behaved implicitly.
+
+### Caveats / non-ideal
+
+- **Manual walkthrough (§1.4 steps 5–7) pending owner confirmation
+  on staging.** Auto-mode session cannot spin up the live backend
+  with a valid `OPENAI_API_KEY` + an admin/non-admin tenant pair.
+  Component tests lock the observable grammar for each gate (chip
+  click → drawer, admin toggle gated, Esc closes, artifact rows
+  appear on plan approval, rollback flips to "reverted"). Brief §6's
+  owner-sign-off posture — branch stays off `main` until the operator-
+  tier trace exposure is validated live — is the right place for the
+  tenant-specific smoke test. The sanitiser unit suite is the load-
+  bearing guarantee behind that sign-off.
+
+- **PlanChecklist "Unsaved" badge relies on local React state, not
+  server state.** The approval API returns success → state flips to
+  `approved` → the italic/badge grammar drops. On a page reload after
+  approval the badge never reappears (correct), but a transient
+  network failure between approve-click and response leaves the badge
+  visible until the retry — acceptable because the state stays
+  `approving` and the operator hasn't been told it succeeded yet.
+
+- **`data-artifact-quote` emitter still unwritten.** Renderer lands
+  this sprint; the agent-side change that actually emits it is a
+  follow-up on `propose_suggestion` (or a new tool dedicated to
+  quoting). Not a regression — today nothing emits the part, and the
+  renderer is inert until something does.
+
+- **A1's text-origin distinction is weaker for screen-readers than
+  for sighted reviewers.** The `data-origin` attribute is selector-
+  queryable but not announced. If an accessibility audit surfaces
+  next sprint we'll add role + aria-label hints on the user/agent
+  headers. Out of scope for Bundle A.
+
+### Verification run (local, at session close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite (`npx tsx --test 'src/**/__tests__/*.test.ts'`
+  with JWT_SECRET + OPENAI_API_KEY pre-set): **249/249 pass**
+  (unchanged — A1's `data-parts.ts` additive edit is renderer-gated).
+- Backend integration suite (`src/__tests__/integration/*.test.ts`):
+  **34/34 pass** (unchanged).
+- Frontend `tsc --noEmit`: clean.
+- Frontend `vitest run`: **54/54 pass across 11 files** (was 28/28
+  across 6 files; +26 cases across 5 new test files — studio-chat (5),
+  tool-call-sanitise (7), tool-call-drawer (7), session-artifacts (5),
+  studio-artifacts-wiring (1), with +1 file for the new `.test.tsx`
+  studio-chat suite that replaced the brief's mis-named `.spec.tsx`).
+
+### Success criteria
+
+- **SC-1** Every text span in Studio chat has a consistent origin
+  style — ✅ enforced by `data-origin` attribute assertions in
+  `studio-chat.test.tsx` (user=ink, agent=inkMuted, quoted=monospace
+  left-rule, pending=italic + "Unsaved" badge on PlanChecklist +
+  SuggestedFixCard).
+- **SC-2** Clicking any tool-call chip opens a drawer with input,
+  output (sanitised), state chip, and error state; Esc closes — ✅
+  `tool-call-drawer.test.tsx` (7 cases). Operator-tier users see
+  redacted api-keys + 1000-char truncation; admin toggle gated on
+  `capabilities.isAdmin && traceViewEnabled`.
+- **SC-3** Approving a plan / accepting a suggested fix inserts a
+  row within 500ms — ✅ `studio-artifacts-wiring.test.tsx` fires the
+  callback synchronously before the network call returns, so the
+  rail updates on the same React commit as the button click.
+- **SC-4** Clicking a session artifact row navigates to the tuning
+  page — ✅ `session-artifacts.test.tsx` asserts href values per
+  artifact type. Placeholder routing per brief §1.3; Bundle B drawer
+  supersedes.
+- **SC-5** `npx tsc --noEmit` clean both sides, both suites green —
+  ✅ above.
+- **SC-6** No regression on existing BUILD flows — ✅ prior 28
+  vitest cases + 249+34 backend cases unchanged.
+- **SC-7** PROGRESS.md has a Sprint 050 — Session A section with
+  commits, tests, and caveats — ✅ this section.
+
+### Deferred / carried forward (into sprint-051 candidate list)
+
+- **Bundle B** — unified artifact drawer shell (§6.1), inline
+  citations (§3.7), diff rendering in drawer (§6.2). A3's deep-link
+  map is the placeholder this bundle replaces.
+- **Backend emitter for `data-artifact-quote`.** Ship as a
+  `propose_suggestion` enhancement (or a new `quote_artifact` tool);
+  renderer already in place.
+- **Per-artifact tx-id threading for suggested-fix rollbacks.**
+  Needed to land a clean "reverted" state on a fix that was accepted
+  earlier in the session — pairs with Bundle B's unified write ledger.
+- **sprint-049 carry-overs.** P1-5 (PREVIEW_LOCKED 409 refresh),
+  P1-2 (judge API stub), P1-4 (diagnostic transaction), P1-6 (atomic-
+  claim revert race), F1 (dead `POST /api/tuning/complaints`),
+  P1-3 DB-backed diagnostic-failure badge. All still-deferred on
+  sprint-051 §2.
+- **Manual live-walkthrough on staging.** Brief §1.4 steps 5–7 —
+  owner-side smoke test before merging to `main`; the branch stays
+  on `feat/050-session-a` until that sign-off.
+
+### Blocked / surfaced
+
+- **None.** Existing capability flags (`traceViewEnabled`,
+  `rawPromptEditorEnabled`, `isAdmin`) are already surfaced on
+  `BuildCapabilities` — no new gate wiring required. The additive
+  `data-artifact-quote` registry entry passed through
+  `DATA_PART_TYPES` checks without breaking existing unit tests.
+
