@@ -344,8 +344,14 @@ export async function apiSummarizeAll(): Promise<{ count: number }> {
 }
 
 export interface VariablePreview {
+  // Sprint 047 Session C — keys aligned with the backend response in
+  // `routes/properties.ts` (/variable-preview). The old shape only
+  // listed a four-key subset that predated the six-variable list
+  // template-variable.service.ts actually returns.
   variables: {
-    PROPERTY_GUEST_INFO: string
+    RESERVATION_DETAILS: string
+    ACCESS_CONNECTIVITY: string
+    PROPERTY_DESCRIPTION: string
     AVAILABLE_AMENITIES: string
     ON_REQUEST_AMENITIES: string
     DOCUMENT_CHECKLIST: string
