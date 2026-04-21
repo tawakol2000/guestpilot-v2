@@ -591,7 +591,12 @@ export interface TuningSuggestion {
   faqPropertyId: string | null
   faqQuestion: string | null
   faqAnswer: string | null
-  sourceMessageId: string
+  // Sprint 047 Session A made this column nullable (Studio-origin
+  // accepts on preview:* ids have no inbox-message anchor).
+  // The one consumer that passes it to `apiCreateTuningConversation`
+  // already accepts `string | null` on the wire, so widening the
+  // type is a no-op at the callsite.
+  sourceMessageId: string | null
   sourceConversationId: string | null
   createdAt: string
   // Feature 041 sprint 02/03 extensions — null on legacy rows.
