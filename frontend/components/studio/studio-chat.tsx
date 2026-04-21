@@ -292,6 +292,8 @@ export function StudioChat({
               message={m}
               isLast={idx === messages.length - 1}
               conversationId={conversationId}
+              conversationMessages={messages}
+              setDraft={setDraft}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onArtifactTouched={onArtifactTouched}
@@ -433,6 +435,8 @@ function MessageRow({
   message,
   isLast,
   conversationId,
+  conversationMessages,
+  setDraft,
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
@@ -444,6 +448,8 @@ function MessageRow({
   message: UIMessage
   isLast: boolean
   conversationId: string
+  conversationMessages: UIMessage[]
+  setDraft: React.Dispatch<React.SetStateAction<string>>
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onArtifactTouched?: (artifact: SessionArtifact) => void
@@ -511,6 +517,8 @@ function MessageRow({
               key={`s:${i}`}
               part={p}
               conversationId={conversationId}
+              conversationMessages={conversationMessages}
+              setDraft={setDraft}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onArtifactTouched={onArtifactTouched}
@@ -533,6 +541,8 @@ function MessageRow({
 function StandalonePart({
   part,
   conversationId,
+  conversationMessages,
+  setDraft,
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
@@ -543,6 +553,8 @@ function StandalonePart({
 }: {
   part: Record<string, any>
   conversationId: string
+  conversationMessages: UIMessage[]
+  setDraft: React.Dispatch<React.SetStateAction<string>>
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onArtifactTouched?: (artifact: SessionArtifact) => void
@@ -586,9 +598,30 @@ function StandalonePart({
 
   if (type === 'data-build-plan') {
     const planData = part.data as BuildPlanData | undefined
+    // Sprint 055-A F1 — accumulate write history from data-build-history
+    // parts scoped to this transactionId. Since data-build-history is not
+    // yet emitted by the backend the list gracefully stays empty and rows
+    // render in pending/current state.
+    const txId = planData?.transactionId
+    const appliedItems: Array<{ type: string; name: string }> = []
+    if (txId) {
+      for (const m of conversationMessages) {
+        const mParts = (m as any).parts as Array<Record<string, any>> | undefined
+        if (!Array.isArray(mParts)) continue
+        for (const mp of mParts) {
+          if (mp?.type === 'data-build-history' && mp?.data?.transactionId === txId) {
+            const entries = Array.isArray(mp.data.entries) ? mp.data.entries : []
+            for (const e of entries) {
+              if (e?.type && e?.name) appliedItems.push({ type: e.type, name: e.name })
+            }
+          }
+        }
+      }
+    }
     return (
       <PlanChecklist
         data={planData as BuildPlanData}
+        appliedItems={appliedItems as Array<{ type: 'sop' | 'faq' | 'system_prompt' | 'tool_definition'; name: string }>}
         onApproved={(txId) => {
           // Sprint 050 A3 — seed the session-artifacts rail from every
           // plan item so the operator can see "here's what this plan
@@ -603,6 +636,7 @@ function StandalonePart({
           onPlanApproved?.(txId)
         }}
         onRolledBack={onPlanRolledBack}
+        onSeedComposer={(text) => setDraft((prev) => prev ? prev + ' ' + text : text)}
       />
     )
   }

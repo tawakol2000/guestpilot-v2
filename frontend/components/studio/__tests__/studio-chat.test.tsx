@@ -135,7 +135,10 @@ describe('SuggestedFixCard · pending origin grammar', () => {
   })
 })
 
-describe('PlanChecklist · pending diff grammar', () => {
+describe('PlanChecklist · diff preview', () => {
+  // Sprint 055-A F1 — PlanChecklist no longer has "Unsaved" attribution or
+  // italic/pending diff styles. The preview diff still renders; this test
+  // verifies the disclosure + after-block are present in the new design.
   const plan: BuildPlanData = {
     ok: true,
     transactionId: 'tx-12345678',
@@ -156,16 +159,14 @@ describe('PlanChecklist · pending diff grammar', () => {
     ],
   }
 
-  it('renders the Unsaved badge + italic after-block while idle', async () => {
+  it('renders the after-block inside a PRE tag when the diff disclosure is opened', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     render(<PlanChecklist data={plan} />)
     // Open the preview disclosure to reveal the diff block.
     await user.click(screen.getByText('Preview diff'))
-    expect(screen.getByText('Unsaved')).toBeInTheDocument()
     const after = screen.getByText('Check in after 14:00.')
     expect(after.tagName).toBe('PRE')
-    expect(after).toHaveStyle({ fontStyle: 'italic' })
-    const wrapper = after.closest('[data-origin]') as HTMLElement | null
-    expect(wrapper?.dataset.origin).toBe('pending')
+    // Unsaved badge and italic style were removed in Sprint 055-A F1.
+    expect(screen.queryByText('Unsaved')).toBeNull()
   })
 })

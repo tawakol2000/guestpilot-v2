@@ -823,3 +823,62 @@ test('case 053-D4-revert-real: revert applies prevBody + writes a REVERT history
     delete process.env.ENABLE_RAW_PROMPT_EDITOR;
   }
 });
+
+// ─── Sprint 055-A F1 — concurrent-approve idempotency ──────────────────────
+
+test('case 055-F1: concurrent approvePlan × 5 → exactly one alreadyApproved:false, rest are true, DB has one approvedAt', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  const tx = await prisma.buildTransaction.create({
+    data: {
+      tenantId: fx.tenantId,
+      plannedItems: [
+        { type: 'sop', name: 'concurrent-test-sop', rationale: 'concurrent test' },
+      ] as any,
+      status: 'PLANNED',
+      rationale: 'concurrent approve integration test',
+    },
+  });
+  const srv = await startServer();
+  try {
+    // Fire 5 concurrent POST /plan/:id/approve requests.
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        fetch(`${srv.baseUrl}/api/build/plan/${tx.id}/approve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: '{}',
+        }).then(async (r) => ({ status: r.status, body: (await r.json()) as any })),
+      ),
+    );
+
+    // All must be 200.
+    for (const r of results) {
+      assert.equal(r.status, 200, `expected 200, got ${r.status}`);
+    }
+
+    // Exactly one has alreadyApproved: false.
+    const firstApprovals = results.filter((r) => r.body.alreadyApproved === false);
+    const idempotentApprovals = results.filter((r) => r.body.alreadyApproved === true);
+    assert.equal(
+      firstApprovals.length,
+      1,
+      `expected exactly 1 alreadyApproved:false, got ${firstApprovals.length}`,
+    );
+    assert.equal(
+      idempotentApprovals.length,
+      4,
+      `expected exactly 4 alreadyApproved:true, got ${idempotentApprovals.length}`,
+    );
+
+    // DB row has exactly one approvedAt (not null).
+    const txAfter = await prisma.buildTransaction.findUnique({ where: { id: tx.id } });
+    assert.ok(txAfter?.approvedAt, 'approvedAt must be set in DB');
+  } finally {
+    await prisma.buildTransaction.delete({ where: { id: tx.id } }).catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+  }
+});

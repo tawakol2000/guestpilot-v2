@@ -4,7 +4,7 @@
  * StudioSurface wires into the right-rail artifacts card.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { UIMessage } from 'ai'
 
@@ -77,11 +77,11 @@ const planMessage = {
 } satisfies Partial<UIMessage> as unknown as UIMessage
 
 describe('StudioChat · plan approval → onArtifactTouched', () => {
-  it('fires onArtifactTouched once per plan item when the operator approves', async () => {
+  it('fires onArtifactTouched once per plan item when the plan auto-approves on mount', async () => {
     const onArtifactTouched = vi.fn()
     const onPlanApproved = vi.fn()
 
-    render(
+    const { unmount } = render(
       <StudioChat
         conversationId="c-1"
         greenfield={false}
@@ -91,13 +91,16 @@ describe('StudioChat · plan approval → onArtifactTouched', () => {
       />,
     )
 
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /Approve plan/i }))
+    // Sprint 055-A F1 — auto-approve fires on mount (no "Approve plan" button).
+    // Wait for the async approval to resolve.
+    await waitFor(() => {
+      expect(approveSpy).toHaveBeenCalledWith('tx-deadbeef1234')
+    })
 
-    // The approve spy is called once with the transactionId.
-    expect(approveSpy).toHaveBeenCalledWith('tx-deadbeef1234')
     // Both items became session artifacts.
-    expect(onArtifactTouched).toHaveBeenCalledTimes(2)
+    await waitFor(() => {
+      expect(onArtifactTouched).toHaveBeenCalledTimes(2)
+    })
     const called = onArtifactTouched.mock.calls.map((c) => c[0])
     expect(called[0].artifact).toBe('sop')
     expect(called[0].artifactId).toBe('sop-early-checkin')
@@ -106,5 +109,7 @@ describe('StudioChat · plan approval → onArtifactTouched', () => {
     expect(called[1].artifactId).toBe('faq-early')
     // Legacy callback still fires.
     expect(onPlanApproved).toHaveBeenCalledWith('tx-deadbeef1234')
+
+    unmount()
   })
 })
