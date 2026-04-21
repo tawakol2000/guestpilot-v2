@@ -93,6 +93,20 @@ export interface StudioChatProps {
   onOpenVerificationForHistoryId?: (historyId: string) => void
 }
 
+// Sprint 058-A F9c — AI SDK internal lifecycle markers. These are
+// stream-ordering delimiters (step-start / step-finish / start /
+// finish), not user-visible content. Any part whose type is in this
+// set, or whose type starts with "step-", is silently dropped before
+// the unsupported-card fallback renders.
+const SDK_INTERNAL_LIFECYCLE_TYPES = new Set<string>([
+  'step-start',
+  'step-finish',
+  'start-step',
+  'finish-step',
+  'start',
+  'finish',
+])
+
 // Sprint 050 A3 — helpers that turn a plan-approval or suggested-fix
 // accept into SessionArtifact records. Lives here because this is the
 // file that sees both callback shapes.
@@ -613,12 +627,32 @@ function MessageRow({
   const reasoningParts: Array<Record<string, any>> = []
   const toolParts: Array<Record<string, any>> = []
   const standaloneParts: Array<Record<string, any>> = []
+  // Sprint 058-A F9b — merge consecutive reasoning parts into a single
+  // entry so each reasoning streak renders as one <ReasoningLine>, not
+  // one per SDK chunk. Without this, chunk boundaries produce the
+  // duplicate "Agent reasoning · viewAgent reasoning · view" regression.
+  let lastClassified: 'text' | 'reasoning' | 'tool' | 'standalone' | null = null
   for (const p of parts) {
     const t = typeof p?.type === 'string' ? p.type : ''
-    if (t === 'text') textParts.push(p)
-    else if (t === 'reasoning') reasoningParts.push(p)
-    else if (t.startsWith('tool-')) toolParts.push(p)
-    else standaloneParts.push(p)
+    if (t === 'text') {
+      textParts.push(p)
+      lastClassified = 'text'
+    } else if (t === 'reasoning') {
+      if (lastClassified === 'reasoning' && reasoningParts.length > 0) {
+        const prev = reasoningParts[reasoningParts.length - 1]
+        const merged = `${prev.text ?? ''}${p.text ?? ''}`
+        reasoningParts[reasoningParts.length - 1] = { ...prev, text: merged }
+      } else {
+        reasoningParts.push(p)
+      }
+      lastClassified = 'reasoning'
+    } else if (t.startsWith('tool-')) {
+      toolParts.push(p)
+      lastClassified = 'tool'
+    } else {
+      standaloneParts.push(p)
+      lastClassified = 'standalone'
+    }
   }
 
   return (
@@ -659,7 +693,10 @@ function MessageRow({
       )}
 
       {reasoningParts.length > 0 && (
-        <div className="mt-1.5">
+        // Sprint 058-A F9b — `flex flex-col gap-1` defensively separates
+        // adjacent <ReasoningLine> instances so their inline labels never
+        // run together (e.g. "Agent reasoning · viewAgent reasoning · view").
+        <div className="mt-1.5 flex flex-col gap-1">
           {reasoningParts.map((p, i) => (
             <ReasoningLine key={`r:${i}`} content={p.text ?? ''} />
           ))}
@@ -753,6 +790,14 @@ function StandalonePart({
   const rejectionConversationId = conversationId
   if (!part || typeof part !== 'object') return null
   const type = typeof part.type === 'string' ? part.type : ''
+
+  // Sprint 058-A F9c — AI SDK internal lifecycle markers are delimiters,
+  // not content. Silent-drop them before they fall through to the
+  // unsupported-card fallback and leak "(unsupported card: step-start)"
+  // into the message body.
+  if (SDK_INTERNAL_LIFECYCLE_TYPES.has(type) || type.startsWith('step-')) {
+    return null
+  }
 
   if (type.startsWith('tool-')) {
     const toolName = part.toolName ?? type.slice('tool-'.length)
