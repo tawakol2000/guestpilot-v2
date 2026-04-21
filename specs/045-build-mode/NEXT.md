@@ -1,75 +1,53 @@
-# Sprint 049 — kickoff
+# Sprint 049 — Session A kickoff
 
-> Sprint 048 closed at Session A's commit `944b08f` with both
-> operator-facing bugs fixed: copilot-mode edits now fire the tuning
-> diagnostic via a new pill-side Edit affordance + gated `fromDraft`
-> signal, and "Discuss in tuning" now surfaces errors via sonner
-> toast with a visible busy state. Both ship at tsc+test-green.
+> Sprint 048 closed clean at Session A's commit `c206db0` (both
+> operator-facing bugs fixed, tsc+test-green). Sprint 049 picks up
+> from two parallel audit passes:
 >
-> The three candidates previously queued in sprint-048's NEXT.md §2.1
-> remain unstarted and carry forward as the sprint-049 candidate
-> scope. The archived session brief is at
-> [`NEXT.sprint-048-session-a.archive.md`](./NEXT.sprint-048-session-a.archive.md).
+> - [`sprint-049-discovery-report.md`](./sprint-049-discovery-report.md)
+>   — pre-compaction triple-check; surfaced two P0s in one controller
+>   plus two UX bugs and a stale endpoint.
+> - [`sprint-049-explore-report.md`](./sprint-049-explore-report.md)
+>   — 16-finding explore pass over copilot / BUILD / RejectionMemory /
+>   tuning-handoff surfaces. 6 P1 + 10 P2.
 >
-> Read sections in order: §1 close-out still owed, §2 sprint-049
-> candidates (pick one), §3 still-deferred, §4 context pointers.
+> Session A scope is fixed. Read sections in order: §1 session pointer,
+> §2 still-deferred, §3 context pointers.
 
 ---
 
-## 1. Sprints 047 + 048 — pending close-out
+## 1. Sprint 049 — Session A scope (fixed)
 
-### 1.1 End-of-stack merge to `advanced-ai-v7`
+**Read [`sprint-049-session-a.md`](./sprint-049-session-a.md) for the
+full brief.** Nine gates (A1-A9):
 
-Unchanged from sprint-047 Session C's exit, with one more segment
-now in the chain (`feat/048-session-a`). Still deferred per
-Abdelrahman's posture of merging once at the end so staging
-wet-tests run against a single merged commit.
+- **A1 + A2** — `approveSuggestion` controller repair. Reorder so
+  Hostaway fires before DB writes (fixes P0 orphan on Hostaway failure),
+  then wire the tuning diagnostic fire + `cancelPendingAiReply` (fixes
+  the Path A/B divergence from sprint 048).
+- **A3** — Backend integration tests for A1+A2 (4 cases).
+- **A4** — Remove dead `/tuning` + `/tuning/agent` route references
+  from top-nav + playground. Two nav entries currently 404 on every
+  tuning page.
+- **A5** — `sonner` toasts on document-checklist write failures (two
+  silent-swallow sites).
+- **A6** — Stale API endpoint cleanup (discovery-report F2).
+- **A7** — `[TUNING_DIAGNOSTIC_FAILURE]` structured log tag on every
+  diagnostic / suggestion-writer / compaction fire-and-forget (four
+  sites after A2). Closes the log-greppable half of the observability
+  hole; DB-backed badge defers to sprint-050.
+- **A8** — Suites green + tsc clean.
+- **A9** — PROGRESS.md + NEXT.md rewrite for sprint-050.
 
-**Do the merge via `git merge -X theirs feat/048-session-a` onto
-`advanced-ai-v7`.** Rationale unchanged: 045 → 046 → 047-A/B/C →
-048-A all touch overlapping files (system-prompt.ts,
-build-controller.ts, studio-chat.tsx, schema.prisma, frontend
-api.ts types, inbox-v5.tsx). The head of the chain contains the
-authoritative view of every touched file; `-X theirs` sidesteps
-dozens of ancient conflicts that were hand-resolved along the way.
+**Pre-flight** (from sprint-049-session-a.md §0.1):
 
-```bash
-git fetch origin
-git checkout advanced-ai-v7
-git pull --ff-only origin advanced-ai-v7
-git merge -X theirs feat/048-session-a --no-ff \
-  -m "merge 045→048-A: BUILD mode + Studio merge + cross-session rejection memory + copilot edit signal"
-```
+- Confirm both audit reports (discovery + explore) are committed on
+  `feat/048-session-a` before cutting `feat/049-session-a`.
+- No schema changes. No `prisma db push`.
+- No new API routes.
 
-**Pre-merge sanity:** diff the merge result against main and
-confirm zero changes land in `ai.service.ts` (CLAUDE.md critical
-rule #1). The chain is designed to stay clear of the main guest
-pipeline.
-
-**After the merge:** Railway auto-deploys backend, Vercel
-auto-deploys frontend. Run:
-
-1. [`validation/sprint-047-session-a-staging-smoke.md`](./validation/sprint-047-session-a-staging-smoke.md)
-   C-1 / C-2 / C-4 / C-5 checks (still open from sprint-047).
-2. [`validation/sprint-048-discuss-in-tuning-smoke.md`](./validation/sprint-048-discuss-in-tuning-smoke.md)
-   curl + fill in the Run log stanza.
-3. Ad-hoc: send a copilot-mode reply via the new pill Edit button
-   with real edits → confirm a `TuningSuggestion` row lands in
-   `/tuning` within 5s (SC-1a).
-
-If any fails, the failing check is sprint-049's first unit of work
-(same §1.5 contingency pattern used in Session C).
-
-### 1.2 Admin flags on production
-
-Unchanged from sprint-047 Session C NEXT.md. For the raw-prompt
-drawer + trace drawer to render for Abdelrahman after deploy:
-
-```sql
-UPDATE "Tenant" SET "isAdmin" = true WHERE email = 'ab.tawakol@gmail.com';
-```
-
-Railway env:
+**Admin flags on production** (still pending from sprint 047 close-out,
+operator-side only):
 
 ```
 ENABLE_BUILD_MODE=true
@@ -77,102 +55,88 @@ ENABLE_BUILD_TRACE_VIEW=true
 ENABLE_RAW_PROMPT_EDITOR=true
 ```
 
-Spec-intended; not automated.
+Set on Railway when ready. Not part of this session's code scope.
 
 ---
 
-## 2. Sprint 049 — candidate scope
+## 2. Still-deferred (updated)
 
-Three candidates carry forward from sprint-048's §3 list. Pick the
-one with the most operator pressure; the others defer to sprint 050.
+### 2.1 Deferred from explore report to sprint-050 candidate list
 
-### 2.1 Raw-prompt editor edit path (finishing C3)
+- **P1-4** — Transactional diagnostic + suggestion + evidence writes.
+- **P1-6** — Atomic-claim revert race on tuning-suggestion accept.
+- **P1-2** — Judge infra failure returning `score: 0` (real BUILD
+  correctness bug; agent iterates on infra failures).
+- **P1-5** — `PREVIEW_LOCKED` 409 from `/send` doesn't refresh client
+  state; manager sees dead button.
+- **P1-1** — Legacy `approveSuggestion` `editedText` diagnostic fire.
+  Being shipped by A2 in this session; the NEXT.md §2.4 framing from
+  the prior kickoff is subsumed. **Mark closed at end of session.**
+- **DB-backed observability badge for `TUNING_DIAGNOSTIC_FAILURE`**
+  (the DB half of P1-3). Log-tag half ships in A7; table + badge need
+  a week of production log signal to calibrate thresholds.
+- All ten P2s from the explore report — polish queue.
 
-[Plan §6.5](./sprint-046-plan.md) + sprint-047 Session C §7. The
-read-through drawer is live behind two flags; the composer needs an
-override-merge layer so region-scoped edits write a
-`TenantAiConfig` override with `origin: 'raw-editor'` without
-rewriting the full assembled prompt. Estimate: 1.5–2 days.
+### 2.2 Deferred from discovery report to Session B (or sprint 050)
 
-Load-bearing decision: does the override live per-region (coordinator
-vs screening vs shared prefix) or per-byte-range? Per-region is
-cleaner but requires the composer to track region boundaries; the
-current `assembleSystemPromptRegions` helper is shape-only. A
-per-region override table feels right; lock in at kickoff.
+- **F1** — Dead `POST /api/tuning/complaints`. Needs `docs/ios-handoff.md`
+  read to confirm no mobile client still calls it.
+- **D1** — Webhook drop-through on auto-create-failed. Touches guest-
+  message intake; CLAUDE.md rule #1 says never break it without a
+  dedicated sprint.
 
-### 2.2 RejectionMemory retention sweep + cleared-rejections UI
+### 2.3 Carried forward unchanged
 
-The 90d TTL is stamped per-row; a retention job to delete
-`WHERE expiresAt < now()` would mirror
-`build-tool-call-log-retention.job.ts` (daily 03:00 UTC, batched
-10k). Pair with a small admin-only "Cleared rejections" list that
-lets a manager manually unblock a rejection ahead of 90d ("that
-was the old SOP, propose again"). Requires operator feedback on
-whether the UI is worth the surface area. Estimate: 0.5–1 day for
-the job, +1 day for the UI.
+- **R1 persist-time truncation (Path B).** Langfuse-data-dependent.
+- **Dashboards merge into main Analytics tab.** Depends on operator
+  feedback on the standalone Studio panel.
+- **R2 enforcement observability dashboard.** Langfuse work, out of
+  the code-session pattern.
+- **Oscillation advisory on BUILD writes.** Needs a confidence signal
+  on BUILD creators that doesn't exist today.
+- **Per-user admin distinctions.** `Tenant.isAdmin` conflates tenant-
+  owner and platform-admin. Migrate to a User model only if product
+  surfaces a need for per-operator gating.
+- **Raw-prompt editor edit path** (prior NEXT.md §2.1 / Plan §6.5).
+- **RejectionMemory retention sweep + cleared-rejections UI** (prior
+  §2.2).
+- **Free-text rationale on reject card** (prior §2.3).
 
-### 2.3 Free-text rationale on the reject card
+### 2.4 Non-negotiables carried forward
 
-Backend already captures and round-trips `RejectionMemory.rationale`;
-the Studio reject UI currently sends null. A small optional text
-field on the reject button would dramatically enrich the
-`SKIPPED_PRIOR_REJECTION` hints the agent sees. Product question:
-is the extra click worth the agent-behaviour upside? Estimate:
-0.5 day.
-
-### 2.4 Path A/B unification for legacy copilot edits
-
-New in sprint-049: `conversations.controller.ts#approveSuggestion`
-still doesn't fire the diagnostic when `editedText !== suggestion`.
-Not load-bearing today (the frontend only sends unchanged text down
-that path), but worth harmonising so a future UX addition — e.g.
-an edit-then-approve option on the arrow button — gets the fire
-for free. Estimate: 0.5 day (add the same EDIT/REJECT split as
-`messages.controller.ts#send`).
-
----
-
-## 3. Still-deferred (unchanged from sprint 048)
-
-- **R1 persist-time truncation (Path B).** Langfuse-data-dependent;
-  re-evaluate when a week of production telemetry is in.
-- **Dashboards merge into main Analytics tab.** Depends on
-  operator feedback on the standalone Studio panel.
-- **R2 enforcement observability dashboard.** Langfuse work, out
-  of the code-session pattern.
-- **Oscillation advisory on BUILD writes.** Needs a confidence
-  signal on BUILD creators that doesn't exist today.
-- **Per-user admin distinctions.** `Tenant.isAdmin` conflates
-  tenant-owner and platform-admin. Migrate to a User model only if
-  product surfaces a need for per-operator gating.
-
-### 3.1 Non-negotiables carried forward
-
-- `ai.service.ts` untouched. Guest messaging flow is out of scope
-  for any /build / /tuning / /copilot work.
-- Prisma changes via `prisma db push`, not migrations.
+- `ai.service.ts` untouched. Guest messaging flow out of scope.
+- Prisma changes via `prisma db push`, not migrations. (No schema
+  changes this session regardless.)
 - Admin-only surfaces stay admin-only.
-- Graceful degradation on every new DB lookup: missing memory ≠
-  silencing a suggestion.
+- Graceful degradation on every new DB lookup.
 - Legacy copilot `fromDraft` gate stays explicit opt-in — the
-  sprint-10 false-positive lockdown is load-bearing and sprint 048
-  Session A adds a new regression test (A4 case 3) guarding it.
+  sprint-10 false-positive lockdown is load-bearing; sprint 048
+  Session A's A4 case 3 regression test guards it.
 
 ---
 
-## 4. Context pointers
+## 3. Context pointers
 
-- [sprint-046-plan.md](./sprint-046-plan.md) — the unified plan
-  Sessions 045 / 046 / 047 all implement against. §6.5 (raw-prompt
-  editor) and §4.4 (rejection memory) are still the authoritative
-  contract specs.
-- [cross-session-rejection-memory.md](./cross-session-rejection-memory.md)
-  — sprint-047 Session C design doc.
-- [sprint-048-session-a.md](./sprint-048-session-a.md) — sprint-048
-  Session A scope sheet (kept for audit; session closed).
-- [PROGRESS.md](./PROGRESS.md) "Sprint 048 — Session A" —
-  decisions + verification log.
-- [NEXT.sprint-048-session-a.archive.md](./NEXT.sprint-048-session-a.archive.md)
+- [`sprint-049-session-a.md`](./sprint-049-session-a.md) — this
+  session's full brief. Nine gates, six sub-items, three acceptance
+  criteria each.
+- [`sprint-049-discovery-report.md`](./sprint-049-discovery-report.md)
+  — audit that surfaced A1+A2+A4+A5+A6.
+- [`sprint-049-explore-report.md`](./sprint-049-explore-report.md) —
+  explore pass that surfaced A7 (the log-tag half of P1-3) and the
+  sprint-050 candidate list.
+- [`sprint-046-plan.md`](./sprint-046-plan.md) §8 — legacy-Copilot
+  contract + sprint-10 `fromDraft` lockdown. A2 inherits by design.
+- [`sprint-048-session-a.md`](./sprint-048-session-a.md) §1.1 — Path A
+  half of the legacy-Copilot diagnostic fix. A2 lands Path B half.
+- [`cross-session-rejection-memory.md`](./cross-session-rejection-memory.md)
+  — sprint-047 Session C design doc (context for explore report bucket 3).
+- [`PROGRESS.md`](./PROGRESS.md) — decisions + verification log;
+  "Sprint 048 — Session A" subsection is the extract-to-helper
+  testing pattern A7's tests should reuse.
+- [`NEXT.sprint-048-session-a.archive.md`](./NEXT.sprint-048-session-a.archive.md)
   — archived sprint-048 kickoff brief.
+- [`NEXT.sprint-049-kickoff-candidate-list.archive.md`](./NEXT.sprint-049-kickoff-candidate-list.archive.md)
+  — superseded pre-discovery-report four-candidate list.
 
-End of handoff.
+End of kickoff.
