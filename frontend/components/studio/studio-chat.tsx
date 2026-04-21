@@ -41,6 +41,7 @@ import { ReasoningLine } from './reasoning-line'
 import { PlanChecklist } from '../build/plan-checklist'
 import { TestPipelineResult } from '../build/test-pipeline-result'
 import { ToolCallDrawer, type ToolCallDrawerPart } from './tool-call-drawer'
+import { ToolChainSummary } from './tool-chain-summary'
 import type {
   SessionArtifact,
   SessionArtifactType,
@@ -465,13 +466,19 @@ function MessageRow({
   const isUser = message.role === 'user'
   const parts = ((message as any).parts as Array<Record<string, any>>) ?? []
 
+  // Sprint 057-A F1 — track whether the tool-chain summary is expanded so
+  // we can show/hide the standalone tool-chip section in sync.
+  const [toolChainExpanded, setToolChainExpanded] = useState(false)
+
   const textParts: Array<Record<string, any>> = []
   const reasoningParts: Array<Record<string, any>> = []
+  const toolParts: Array<Record<string, any>> = []
   const standaloneParts: Array<Record<string, any>> = []
   for (const p of parts) {
     const t = typeof p?.type === 'string' ? p.type : ''
     if (t === 'text') textParts.push(p)
     else if (t === 'reasoning') reasoningParts.push(p)
+    else if (t.startsWith('tool-')) toolParts.push(p)
     else standaloneParts.push(p)
   }
 
@@ -488,6 +495,16 @@ function MessageRow({
       >
         {isUser ? 'You' : 'Agent'}
       </div>
+
+      {/* Sprint 057-A F1 — tool-chain summary (assistant messages only).
+          Renders nothing when there are no tool-call parts. */}
+      {!isUser && (
+        <ToolChainSummary
+          parts={toolParts}
+          onOpenToolDrawer={onOpenToolDrawer}
+          onExpandedChange={setToolChainExpanded}
+        />
+      )}
 
       {textParts.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -506,6 +523,33 @@ function MessageRow({
         <div className="mt-1.5">
           {reasoningParts.map((p, i) => (
             <ReasoningLine key={`r:${i}`} content={p.text ?? ''} />
+          ))}
+        </div>
+      )}
+
+      {/* Standalone tool chips — hidden via CSS when the summary is
+          collapsed; visible when expanded. Non-tool parts always visible. */}
+      {toolParts.length > 0 && (
+        <div
+          className="mt-2 flex flex-col gap-2"
+          style={{ display: toolChainExpanded ? undefined : 'none' }}
+          aria-hidden={!toolChainExpanded}
+        >
+          {toolParts.map((p, i) => (
+            <StandalonePart
+              key={`tool:${i}`}
+              part={p}
+              conversationId={conversationId}
+              conversationMessages={conversationMessages}
+              setDraft={setDraft}
+              onPlanApproved={onPlanApproved}
+              onPlanRolledBack={onPlanRolledBack}
+              onArtifactTouched={onArtifactTouched}
+              onOpenArtifact={onOpenArtifact}
+              onSendText={onSendText}
+              onOpenToolDrawer={onOpenToolDrawer}
+              onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+            />
           ))}
         </div>
       )}
