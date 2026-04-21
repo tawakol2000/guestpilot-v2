@@ -106,10 +106,19 @@ import {
 } from '../build-tune-agent/system-prompt';
 import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
 import { composeSpanHandler, type ComposeSpanRateLimiter } from '../build-tune-agent/compose-span';
+import {
+  enhancePromptDraft,
+  checkEnhanceRateLimit,
+  type RateLimitBucket as EnhanceRateLimitBucket,
+} from '../services/enhance-prompt.service';
 
 // Sprint 056-A F1 — in-memory rate limiter keyed by conversationId or tenantId.
 // Window = 60s, limit = 10 requests. Shared across all requests to this process.
 const composeSpanRateLimiter: ComposeSpanRateLimiter = new Map();
+
+// Sprint 058-A F8 — same-process enhance-prompt rate limiter. 20 req/min
+// keyed by conversationId (or tenantId if none in scope).
+const enhancePromptRateLimiter = new Map<string, EnhanceRateLimitBucket>();
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -1359,5 +1368,71 @@ export function makeBuildController(prisma: PrismaClient) {
         res.status(500).json({ error: 'ARTIFACT_APPLY_FAILED' });
       }
     },
+
+    /**
+     * Sprint 058-A F8 — POST /api/build/enhance-prompt
+     *
+     * Body: { draft: string, conversationId?: string }
+     *
+     * Runs the composer draft through GPT-5-Nano for clarity/concision
+     * rewriting (preserves facts, max 3 sentences, no added scope). Non-
+     * streaming. Tenant-scoped via JWT; rate-limited in-process at 20
+     * requests per 60 seconds per conversation (or per tenant if no
+     * conversationId is provided).
+     *
+     * On Nano failure / missing API key, returns 200 with `{ ok: false,
+     * reason }` so the Studio can render a calm "couldn't enhance" toast
+     * rather than an error banner.
+     */
+    async enhancePrompt(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const body = req.body ?? {};
+        const draft = typeof body.draft === 'string' ? body.draft : '';
+        const conversationId =
+          typeof body.conversationId === 'string' && body.conversationId.length > 0
+            ? body.conversationId
+            : null;
+
+        // Rate-limit key: prefer conversation-scoped bucket; fall back to
+        // tenant-scoped so unauthenticated / cross-conversation floods
+        // still get caught.
+        const rateKey = conversationId
+          ? `conv:${req.tenantId}:${conversationId}`
+          : `tenant:${req.tenantId}`;
+        const rate = checkEnhanceRateLimit(enhancePromptRateLimiter, rateKey);
+        if (!rate.ok) {
+          res.setHeader(
+            'Retry-After',
+            String(Math.ceil(rate.retryAfterMs / 1000)),
+          );
+          res
+            .status(429)
+            .json({ ok: false, reason: 'rate_limited', retryAfterMs: rate.retryAfterMs });
+          return;
+        }
+
+        // If a conversationId was supplied, require that it belong to
+        // this tenant — prevents a tenant-A user from warming / probing
+        // a tenant-B conversation's rate bucket.
+        if (conversationId) {
+          const owned = await prisma.tuningConversation.findFirst({
+            where: { id: conversationId, tenantId: req.tenantId },
+            select: { id: true },
+          });
+          if (!owned) {
+            res.status(404).json({ ok: false, reason: 'CONVERSATION_NOT_FOUND' });
+            return;
+          }
+        }
+
+        const result = await enhancePromptDraft(draft);
+        // Always 200 — the Studio handles `{ ok: false }` with a toast.
+        res.json(result);
+      } catch (err) {
+        console.error('[build-controller] enhancePrompt failed:', err);
+        res.status(500).json({ ok: false, reason: 'server_error' });
+      }
+    },
+
   };
 }

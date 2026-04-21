@@ -76,5 +76,10 @@ export function buildRouter(prisma: PrismaClient): Router {
     ctl.revertArtifactFromHistory(req, res)
   );
 
+  // Sprint 058-A F8 — Nano-backed composer draft rewrite.
+  router.post('/enhance-prompt', (req: any, res) =>
+    ctl.enhancePrompt(req, res)
+  );
+
   return router;
 }
