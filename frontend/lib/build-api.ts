@@ -540,6 +540,52 @@ export async function apiListBuildArtifactHistory(
   )
 }
 
+// ─── Sprint 056-A F1 — Compose-at-cursor ─────────────────────────────────────
+
+export interface ComposeSpanSelection {
+  start: number
+  end: number
+  text: string
+}
+
+export interface ComposeSpanRequest {
+  artifactId: string
+  artifactType: string
+  selection: ComposeSpanSelection
+  surroundingBody: string
+  instruction: string
+  conversationId?: string | null
+  /** Optional prior attempt — for redo context. */
+  priorAttempt?: string | null
+}
+
+export interface ComposeSpanResult {
+  replacement: string
+  rationale: string
+}
+
+/**
+ * POST /api/build/compose-span — returns a proposed replacement span
+ * for the selected text range. The manager then Accepts (merges into
+ * preview buffer) and Applies (writes) via the normal drawer path.
+ */
+export async function apiComposeSpan(
+  input: ComposeSpanRequest,
+): Promise<ComposeSpanResult> {
+  return buildFetch<ComposeSpanResult>('/api/build/compose-span', {
+    method: 'POST',
+    body: JSON.stringify({
+      artifactId: input.artifactId,
+      artifactType: input.artifactType,
+      selection: input.selection,
+      surroundingBody: input.surroundingBody,
+      instruction: input.instruction,
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.priorAttempt ? { priorAttempt: input.priorAttempt } : {}),
+    }),
+  })
+}
+
 /**
  * Sprint 053-A D4 — revert an artifact to its pre-row state. The backend
  * restores the artifact from the named history row's prevBody and writes

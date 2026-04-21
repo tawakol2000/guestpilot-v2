@@ -46,6 +46,8 @@ export function buildRouter(prisma: PrismaClient): Router {
     ctl.getSystemPrompt(req, res)
   );
   router.post('/turn', (req: any, res) => ctl.turn(req, res));
+  // Sprint 056-A F1 — compose-at-cursor span edit endpoint.
+  router.post('/compose-span', (req: any, res) => ctl.composeSpan(req, res));
   router.post('/plan/:id/approve', (req: any, res) => ctl.approvePlan(req, res));
   router.post('/plan/:id/rollback', (req: any, res) => ctl.rollbackPlan(req, res));
   // Sprint 046 Session C — thin accept/reject proxies for Studio cards.

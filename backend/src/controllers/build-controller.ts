@@ -105,6 +105,11 @@ import {
   type SystemPromptContext,
 } from '../build-tune-agent/system-prompt';
 import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
+import { composeSpanHandler, type ComposeSpanRateLimiter } from '../build-tune-agent/compose-span';
+
+// Sprint 056-A F1 — in-memory rate limiter keyed by conversationId or tenantId.
+// Window = 60s, limit = 10 requests. Shared across all requests to this process.
+const composeSpanRateLimiter: ComposeSpanRateLimiter = new Map();
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -1247,6 +1252,28 @@ export function makeBuildController(prisma: PrismaClient) {
         console.error('[build-controller] revertArtifact failed:', err);
         res.status(500).json({ error: 'REVERT_FAILED' });
       }
+    },
+
+    /**
+     * Sprint 056-A F1 — POST /api/build/compose-span
+     *
+     * Non-streaming. Accepts a text selection + instruction, returns a
+     * proposed replacement string scoped to the selection span only.
+     * Uses a restricted agent query with allowedTools: [] and maxTurns: 1.
+     *
+     * Rate limit: 10/min per conversationId (or tenantId fallback).
+     * Tenant-scope: artifactId must belong to the calling tenant.
+     */
+    async composeSpan(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      await composeSpanHandler(
+        req,
+        res,
+        prisma,
+        composeSpanRateLimiter,
+      );
     },
 
     /**

@@ -28,7 +28,7 @@
  * appears for an optional "why did you change this?" note. The
  * rationale is forwarded to the history row via metadata.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Pencil } from 'lucide-react'
 import {
   apiApplyArtifact,
@@ -59,6 +59,12 @@ import { SystemPromptEditor } from './artifact-views/system-prompt-editor'
 import { ToolEditor } from './artifact-views/tool-editor'
 import { PropertyOverrideEditor } from './artifact-views/property-override-editor'
 import type { BuildArtifactHistoryRow } from '@/lib/build-api'
+// Sprint 056-A F1 — compose-at-cursor bubble
+import {
+  ComposeBubble,
+  mergeSpan,
+  type ComposeBubbleSelection,
+} from './compose-bubble'
 
 export interface ArtifactDrawerTarget {
   artifact: BuildArtifactType
@@ -169,6 +175,9 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const [operatorRationale, setOperatorRationale] = useState('')
   // Debounce timer for re-preview on edit.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Sprint 056-A F1 — compose-at-cursor bubble state.
+  const [composeBubbleSelection, setComposeBubbleSelection] =
+    useState<ComposeBubbleSelection | null>(null)
 
   // Load the artifact whenever the target changes. Guarded by `open` to
   // avoid eager fetches when the drawer isn't mounted visibly.
@@ -189,6 +198,8 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     setEditMode(false)
     setEditedBody(null)
     setOperatorRationale('')
+    // 056-A F1 — reset compose bubble on target change.
+    setComposeBubbleSelection(null)
     setLoading(true)
     apiGetBuildArtifact(target.artifact, target.artifactId, {
       prevSince: sessionStartIso ?? undefined,
@@ -421,6 +432,66 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     setPreviewError(null)
   }
 
+  // Sprint 056-A F1 — extract the active body text string for compose-span.
+  // For SOP/property_override: "content", for FAQ: "answer", for
+  // system_prompt: "text". Falls back to the raw `detail.body`.
+  function extractBodyText(): string {
+    const src = activeBody ?? (detail ? { body: detail.body } : null)
+    if (!src) return ''
+    if (typeof (src as any).content === 'string') return (src as any).content as string
+    if (typeof (src as any).answer === 'string') return (src as any).answer as string
+    if (typeof (src as any).text === 'string') return (src as any).text as string
+    if (detail?.body) return detail.body
+    return ''
+  }
+
+  // Sprint 056-A F1 — selection capture. Fires on mouseup inside the
+  // content body. We convert the DOM selection to character offsets within
+  // the body-text string. Only fires when a non-empty range is selected.
+  const handleContentMouseUp = useCallback(() => {
+    const domSel = window.getSelection()
+    if (!domSel || domSel.isCollapsed || !domSel.toString().trim()) return
+    const selectedText = domSel.toString()
+
+    const bodyText = extractBodyText()
+    if (!bodyText) return
+
+    // Find the first occurrence of the selected text in the body string.
+    // Character-offset anchoring — not DOM range — so it survives re-renders.
+    const start = bodyText.indexOf(selectedText)
+    if (start === -1) {
+      // Fall back: use raw selection text with offsets 0..0 so the bubble
+      // still appears, but the merge won't be position-accurate.
+      setComposeBubbleSelection({ start: 0, end: 0, text: selectedText })
+      return
+    }
+    setComposeBubbleSelection({ start, end: start + selectedText.length, text: selectedText })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, activeBody])
+
+  // Sprint 056-A F1 — apply accepted replacement into the preview buffer.
+  function handleBubbleAccept(replacement: string) {
+    if (!composeBubbleSelection) return
+    const bodyText = extractBodyText()
+    const { start, end } = composeBubbleSelection
+    const merged = mergeSpan(bodyText, start, end, replacement)
+    // Rebuild the activeBody shape with the merged body string.
+    const currentBase = activeBody ?? (pendingBody ?? {})
+    const updatedBody: Record<string, unknown> = { ...currentBase }
+    if (typeof updatedBody.content === 'string') {
+      updatedBody.content = merged
+    } else if (typeof updatedBody.answer === 'string') {
+      updatedBody.answer = merged
+    } else if (typeof updatedBody.text === 'string') {
+      updatedBody.text = merged
+    } else {
+      // Fallback: store as content
+      updatedBody.content = merged
+    }
+    setEditedBody(updatedBody)
+    setComposeBubbleSelection(null)
+  }
+
   // Synthesize a preview detail by overlaying the preview body onto the
   // loaded artifact. Keeps the existing per-type views unmodified.
   const renderDetail: BuildArtifactDetail | null =
@@ -565,6 +636,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
 
         <div
           ref={contentBodyRef}
+          onMouseUp={handleContentMouseUp}
           style={{
             flex: 1,
             overflow: 'auto',
@@ -779,6 +851,18 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
           ) : null}
         </footer>
       </aside>
+      {/* Sprint 056-A F1 — compose-at-cursor bubble */}
+      {composeBubbleSelection && target ? (
+        <ComposeBubble
+          selection={composeBubbleSelection}
+          bodyText={extractBodyText()}
+          artifactId={target.artifactId}
+          artifactType={target.artifact}
+          conversationId={conversationId}
+          onAccept={handleBubbleAccept}
+          onDismiss={() => setComposeBubbleSelection(null)}
+        />
+      ) : null}
     </>
   )
 }
