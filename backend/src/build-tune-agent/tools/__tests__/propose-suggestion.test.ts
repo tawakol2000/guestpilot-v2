@@ -192,3 +192,57 @@ test('rejection hash is stable across minor rationale rephrasing', () => {
   });
   assert.notEqual(computeRejectionFixHash(a), computeRejectionFixHash(c));
 });
+
+// ─── Sprint 051 A B4 — artifact-quote emission ────────────────────────────
+
+test('propose_suggestion emits a data-artifact-quote alongside the suggested-fix when rewriting an existing artifact', async () => {
+  const ctx = makeCtx();
+  const { factory, invoke } = captureTool();
+  buildProposeSuggestionTool(factory, () => ctx);
+  await invoke({
+    category: 'SOP_CONTENT',
+    subLabel: 'early-checkin-tone',
+    rationale: 'Manager softened the CONFIRMED variant.',
+    editFormat: 'full_replacement',
+    beforeText: 'Arrival window 14:00–22:00.',
+    proposedText: 'Arrival window 14:00–22:00 — flexible on request.',
+    target: {
+      artifact: 'sop',
+      artifactId: 'v1',
+    },
+    targetHint: { sopCategory: 'early-checkin', sopStatus: 'CONFIRMED' },
+  });
+
+  const types = ctx._emitted.map((p) => p.type);
+  assert.ok(types.includes('data-suggested-fix'));
+  assert.ok(
+    types.includes('data-artifact-quote'),
+    'expected data-artifact-quote emission when before-body is non-empty',
+  );
+  const quote = ctx._emitted.find((p) => p.type === 'data-artifact-quote')!
+    .data as any;
+  assert.equal(quote.artifact, 'sop');
+  assert.equal(quote.artifactId, 'v1');
+  assert.equal(quote.body, 'Arrival window 14:00–22:00.');
+  // sourceLabel carries the SOP category + status so the chip reads
+  // consistently with the session-artifacts rail.
+  assert.match(quote.sourceLabel, /SOP/);
+});
+
+test('propose_suggestion skips the quote emit when the before-body is empty (net-new artifact)', async () => {
+  const ctx = makeCtx();
+  const { factory, invoke } = captureTool();
+  buildProposeSuggestionTool(factory, () => ctx);
+  await invoke({
+    category: 'FAQ',
+    subLabel: 'new-wifi-entry',
+    rationale: 'No FAQ covers WiFi yet — add one.',
+    editFormat: 'full_replacement',
+    beforeText: '',
+    proposedText: 'Network: Guest, password: ****',
+    target: { artifact: 'faq' },
+  });
+  const types = ctx._emitted.map((p) => p.type);
+  assert.ok(types.includes('data-suggested-fix'));
+  assert.ok(!types.includes('data-artifact-quote'));
+});

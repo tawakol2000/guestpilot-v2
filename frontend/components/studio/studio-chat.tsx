@@ -504,6 +504,7 @@ function MessageRow({
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onArtifactTouched={onArtifactTouched}
+              onOpenArtifact={onOpenArtifact}
               onSendText={onSendText}
               onOpenToolDrawer={onOpenToolDrawer}
             />
@@ -524,6 +525,7 @@ function StandalonePart({
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
+  onOpenArtifact,
   onSendText,
   onOpenToolDrawer,
 }: {
@@ -532,6 +534,11 @@ function StandalonePart({
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onArtifactTouched?: (artifact: SessionArtifact) => void
+  onOpenArtifact?: (
+    artifact: SessionArtifactType,
+    artifactId: string,
+    section?: string | null,
+  ) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
@@ -773,6 +780,8 @@ function StandalonePart({
     // Sprint 050 A1 — typographic attribution. Renders existing artifact
     // content (what `get_current_state` surfaced) as a monospace block
     // with a left-rule + source chip, distinct from agent-authored prose.
+    // Sprint 051 A B4 — clickable source chip opens the B1 artifact
+    // drawer when onOpenArtifact is wired.
     const data = (part.data ?? {}) as {
       artifact?: string
       artifactId?: string
@@ -787,18 +796,52 @@ function StandalonePart({
           ? `From ${data.artifact}${data.artifactId ? ` · ${data.artifactId.slice(0, 8)}` : ''}`
           : 'Quoted'
     if (!body) return null
+    const drawerType = mapQuoteArtifactToDrawer(data.artifact)
+    const canOpen =
+      Boolean(onOpenArtifact) &&
+      drawerType !== null &&
+      typeof data.artifactId === 'string' &&
+      data.artifactId.length > 0
+    const chipProps = canOpen
+      ? {
+          as: 'button' as const,
+          onClick: () =>
+            onOpenArtifact?.(drawerType!, data.artifactId!, null),
+          title: `Open ${label}`,
+        }
+      : { as: 'span' as const }
     return (
       <div className="flex flex-col gap-1" data-origin="quoted">
-        <span
-          className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
-          style={{
-            background: STUDIO_COLORS.surfaceSunken,
-            borderColor: STUDIO_COLORS.hairlineSoft,
-            color: STUDIO_COLORS.inkMuted,
-          }}
-        >
-          {label}
-        </span>
+        {chipProps.as === 'button' ? (
+          <button
+            type="button"
+            onClick={chipProps.onClick}
+            title={chipProps.title}
+            aria-label={chipProps.title}
+            className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
+            style={{
+              background: STUDIO_COLORS.surfaceSunken,
+              borderColor: STUDIO_COLORS.hairlineSoft,
+              color: STUDIO_COLORS.accent,
+              cursor: 'pointer',
+              font: 'inherit',
+              letterSpacing: 'inherit',
+            }}
+          >
+            {label} ↗
+          </button>
+        ) : (
+          <span
+            className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
+            style={{
+              background: STUDIO_COLORS.surfaceSunken,
+              borderColor: STUDIO_COLORS.hairlineSoft,
+              color: STUDIO_COLORS.inkMuted,
+            }}
+          >
+            {label}
+          </span>
+        )}
         <pre
           className="max-h-56 overflow-auto whitespace-pre-wrap rounded-r-md px-3 py-2 font-mono text-[12px] leading-[1.5]"
           style={{
@@ -956,6 +999,30 @@ function AttributedText({
       )}
     </p>
   )
+}
+
+/**
+ * Sprint 051 A B4 — map the quote-part's artifact enum (which includes
+ * 'tool_definition') to the drawer's BuildArtifactType enum (which
+ * uses 'tool'). Return null for unknown values so the chip stays
+ * non-interactive.
+ */
+function mapQuoteArtifactToDrawer(raw: unknown): SessionArtifactType | null {
+  switch (raw) {
+    case 'sop':
+      return 'sop'
+    case 'faq':
+      return 'faq'
+    case 'system_prompt':
+      return 'system_prompt'
+    case 'tool':
+    case 'tool_definition':
+      return 'tool'
+    case 'property_override':
+      return 'property_override'
+    default:
+      return null
+  }
 }
 
 function TypingIndicator() {

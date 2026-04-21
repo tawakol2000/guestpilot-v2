@@ -30,6 +30,7 @@ import {
   type RejectionIntent,
 } from '../memory/service';
 import { asCallToolResult, asError, type ToolContext } from './types';
+import { emitArtifactQuoteIfPossible } from '../quote-emit';
 
 /**
  * Derive the (artifactId, sectionOrSlotKey, semanticIntent) triple that
@@ -97,6 +98,34 @@ function deriveTargetFromHint(
   if (hint.sopPropertyId) return { ...base, artifact: 'property_override', artifactId: hint.sopPropertyId };
   if (hint.sopCategory || hint.sopStatus) return { ...base, artifact: 'sop' };
   return base;
+}
+
+function buildSourceLabel(target: FixTarget): string {
+  // Human-readable attribution for the quote chip. Mirrors the title
+  // shapes used in session-artifacts + the artifact-drawer header so
+  // the same artifact reads consistently across surfaces.
+  switch (target.artifact) {
+    case 'sop': {
+      const pieces = ['SOP'];
+      if (target.sopCategory) pieces.push(target.sopCategory);
+      if (target.sopStatus) pieces.push(target.sopStatus);
+      return pieces.join(' · ');
+    }
+    case 'faq':
+      return target.faqEntryId ? `FAQ · ${target.faqEntryId}` : 'FAQ';
+    case 'system_prompt':
+      return target.systemPromptVariant
+        ? `System prompt · ${target.systemPromptVariant}`
+        : 'System prompt';
+    case 'tool_definition':
+      return target.artifactId ? `Tool · ${target.artifactId}` : 'Tool';
+    case 'property_override':
+      return target.sopPropertyId
+        ? `Property override · ${target.sopPropertyId}`
+        : 'Property override';
+    default:
+      return target.artifactId ?? 'Artifact';
+  }
 }
 
 export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
@@ -283,6 +312,28 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
             id: `suggested-fix:${previewId}`,
             data: fixData,
           });
+
+          // Sprint 051 A B4 — fire-and-forget `data-artifact-quote`
+          // alongside the suggested-fix card. Only when we have a
+          // concrete target + a non-empty before body (an artifact is
+          // being rewritten, not net-new). The quote gives operators a
+          // direct anchor back to the source artifact; the frontend
+          // renders it with a clickable source chip that opens the B1
+          // drawer. Sanitisation + suppression-on-empty are inside the
+          // helper; failure is never fatal.
+          if (
+            derivedTarget.artifact &&
+            derivedTarget.artifactId &&
+            before.trim().length > 0
+          ) {
+            const sourceLabel = buildSourceLabel(derivedTarget);
+            emitArtifactQuoteIfPossible(c.emitDataPart, {
+              artifact: derivedTarget.artifact,
+              artifactId: derivedTarget.artifactId,
+              sourceLabel,
+              body: before,
+            });
+          }
         }
 
         const payload = {
