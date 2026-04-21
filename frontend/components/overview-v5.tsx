@@ -24,14 +24,21 @@ const T = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// Sprint 047 Session C — widened to match inbox-v5's source-of-truth
+// CheckInStatus union so `OverviewV5` can receive the same
+// `Conversation[]` shape without a nominal-type mismatch. The new
+// `pending` and `expired` values come from the inquiry accept/reject
+// flow (feature 029).
 type CheckInStatus =
   | 'upcoming'
   | 'checked-in'
   | 'checked-out'
   | 'inquiry'
+  | 'pending'
   | 'cancelled'
   | 'checking-in-today'
   | 'checking-out-today'
+  | 'expired'
 type Channel = 'airbnb' | 'booking' | 'direct' | 'vrbo' | 'whatsapp'
 type AiMode = 'autopilot' | 'copilot' | 'off'
 type Sender = 'guest' | 'host' | 'ai' | 'private'
@@ -86,7 +93,9 @@ const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   'checked-out': { label: 'Checked Out', color: T.text.tertiary },
   'checking-out-today': { label: 'Checkout Today', color: T.status.amber },
   inquiry: { label: 'Inquiry', color: T.accent },
+  pending: { label: 'Pending', color: T.accent },
   cancelled: { label: 'Cancelled', color: T.status.red },
+  expired: { label: 'Expired', color: T.text.tertiary },
 }
 
 const channelAbbrev: Record<string, string> = {

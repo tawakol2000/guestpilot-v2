@@ -185,6 +185,10 @@ export interface ApiConversationDetail {
     // Feature 043 — per-reservation HH:MM overrides of property default check-in/out times
     scheduledCheckInAt?: string | null
     scheduledCheckOutAt?: string | null
+    // Sprint 047 Session C — backend returns the row's createdAt so
+    // the inbox can apply inquiry accept/reject courtesy rules to
+    // freshly-arrived reservations. Used by mergeDetail.
+    createdAt?: string
   }
   messages: ApiMessage[]
   documentChecklist?: {

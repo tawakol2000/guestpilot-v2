@@ -4553,7 +4553,7 @@ export default function InboxV5() {
                                       fontSize: 9,
                                       fontFamily: T.font.mono,
                                       color: tn === 'get_faq' ? '#0891B2' : T.text.tertiary,
-                                      background: tn === 'get_faq' ? '#0891B218' : T.status.orange + '18',
+                                      background: tn === 'get_faq' ? '#0891B218' : T.status.amber + '18',
                                       padding: '1px 5px',
                                       borderRadius: 4,
                                     }}
