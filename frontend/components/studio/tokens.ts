@@ -46,6 +46,15 @@ export const STUDIO_COLORS = {
   diffAddFg: '#117A3D',
   diffDelBg: 'rgba(180, 35, 24, 0.10)',
   diffDelFg: '#B42318',
+
+  // Sprint 050 A1 — typographic attribution. Quoted artifact content
+  // (what `get_current_state` surfaced) renders as monospace on a tinted
+  // background with a left-rule in `attributionQuoteRule`. Pending agent-
+  // proposed content (inside a not-yet-approved plan or suggested fix)
+  // renders in italic `attributionUnsavedFg` until the plan approves.
+  attributionQuoteBg: '#FAFAFA',
+  attributionQuoteRule: '#CBD5E1',
+  attributionUnsavedFg: '#6B7280',
 } as const;
 
 // Artifact-type pill palette. Retained from the tuning palette per plan

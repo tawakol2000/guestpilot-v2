@@ -156,7 +156,11 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
         </button>
       </header>
 
-      <DiffBlock before={props.before} after={props.after} />
+      <DiffBlock
+        before={props.before}
+        after={props.after}
+        pending={state === 'idle' || state === 'accepting'}
+      />
 
       <p
         style={{
@@ -242,7 +246,15 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
   )
 }
 
-function DiffBlock({ before, after }: { before: string; after: string }) {
+function DiffBlock({
+  before,
+  after,
+  pending,
+}: {
+  before: string
+  after: string
+  pending: boolean
+}) {
   const mono =
     'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace'
   const cellStyle: React.CSSProperties = {
@@ -258,7 +270,7 @@ function DiffBlock({ before, after }: { before: string; after: string }) {
     overflowY: 'auto',
   }
   return (
-    <div style={{ display: 'grid', gap: 6 }}>
+    <div style={{ display: 'grid', gap: 6 }} data-origin={pending ? 'pending' : 'agent'}>
       {before.length > 0 && (
         <pre
           aria-label="Before"
@@ -273,6 +285,28 @@ function DiffBlock({ before, after }: { before: string; after: string }) {
           {before}
         </pre>
       )}
+      {pending && (
+        <span
+          aria-label="Unsaved"
+          style={{
+            display: 'inline-flex',
+            width: 'fit-content',
+            alignItems: 'center',
+            padding: '1px 6px',
+            background: STUDIO_COLORS.surfaceSunken,
+            color: STUDIO_COLORS.attributionUnsavedFg,
+            border: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: 0.1,
+            fontStyle: 'italic',
+          }}
+        >
+          Unsaved
+        </span>
+      )}
       <pre
         aria-label="After"
         style={{
@@ -281,6 +315,7 @@ function DiffBlock({ before, after }: { before: string; after: string }) {
           color: STUDIO_COLORS.diffAddFg,
           borderColor: 'rgba(17, 122, 61, 0.25)',
           margin: 0,
+          fontStyle: pending ? 'italic' : 'normal',
         }}
       >
         {after}

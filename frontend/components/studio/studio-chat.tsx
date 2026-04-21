@@ -328,8 +328,12 @@ function MessageRow({
           {textParts.map((p, i) => (
             <p
               key={`t:${i}`}
+              data-origin={isUser ? 'user' : 'agent'}
               className="whitespace-pre-wrap text-[14px] leading-[1.55]"
-              style={{ color: STUDIO_COLORS.ink, margin: 0 }}
+              style={{
+                color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+                margin: 0,
+              }}
             >
               {p.text ?? ''}
             </p>
@@ -560,6 +564,52 @@ function StandalonePart({
         }}
       >
         The agent is currently disabled.
+      </div>
+    )
+  }
+
+  if (type === 'data-artifact-quote') {
+    // Sprint 050 A1 — typographic attribution. Renders existing artifact
+    // content (what `get_current_state` surfaced) as a monospace block
+    // with a left-rule + source chip, distinct from agent-authored prose.
+    const data = (part.data ?? {}) as {
+      artifact?: string
+      artifactId?: string
+      sourceLabel?: string
+      body?: string
+    }
+    const body = typeof data.body === 'string' ? data.body : ''
+    const label =
+      typeof data.sourceLabel === 'string' && data.sourceLabel
+        ? data.sourceLabel
+        : typeof data.artifact === 'string'
+          ? `From ${data.artifact}${data.artifactId ? ` · ${data.artifactId.slice(0, 8)}` : ''}`
+          : 'Quoted'
+    if (!body) return null
+    return (
+      <div className="flex flex-col gap-1" data-origin="quoted">
+        <span
+          className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
+          style={{
+            background: STUDIO_COLORS.surfaceSunken,
+            borderColor: STUDIO_COLORS.hairlineSoft,
+            color: STUDIO_COLORS.inkMuted,
+          }}
+        >
+          {label}
+        </span>
+        <pre
+          className="max-h-56 overflow-auto whitespace-pre-wrap rounded-r-md px-3 py-2 font-mono text-[12px] leading-[1.5]"
+          style={{
+            background: STUDIO_COLORS.attributionQuoteBg,
+            color: STUDIO_COLORS.ink,
+            borderLeft: `2px solid ${STUDIO_COLORS.attributionQuoteRule}`,
+            wordBreak: 'break-word',
+            margin: 0,
+          }}
+        >
+          {body}
+        </pre>
       </div>
     )
   }

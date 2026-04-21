@@ -38,6 +38,14 @@ export const DATA_PART_TYPES = {
    */
   suggestion_preview: 'data-suggestion-preview',
   agent_disabled: 'data-agent-disabled',
+  /**
+   * Sprint 050 A1 — typographic-attribution artifact quote. Additive,
+   * renderer-only this sprint: the Studio frontend knows how to show
+   * these as monospace blocks with a left-rule + source chip, so the
+   * emitter (a future `propose_suggestion` enhancement) can ship
+   * independently whenever it lands.
+   */
+  artifact_quote: 'data-artifact-quote',
 } as const;
 
 export type DataPartType = (typeof DATA_PART_TYPES)[keyof typeof DATA_PART_TYPES];
@@ -133,6 +141,21 @@ export interface AdvisoryData {
   message: string;
   /** Optional structured context — recent-edit carries the prior edit ts. */
   context?: Record<string, unknown>;
+}
+
+/**
+ * Sprint 050 A1 — inline quote of existing artifact content (what
+ * `get_current_state` surfaced) that the agent wants to reference
+ * verbatim inside a message. Rendered by Studio as a monospace block
+ * with a left-rule and source chip — distinct from agent-authored prose.
+ */
+export interface ArtifactQuoteData {
+  artifact: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property_override';
+  artifactId: string;
+  /** Human-readable label — e.g. "SOP: early-checkin · CONFIRMED". */
+  sourceLabel: string;
+  /** The quoted verbatim content. */
+  body: string;
 }
 
 // ─── Typed helper (non-enforcing) ──────────────────────────────────────

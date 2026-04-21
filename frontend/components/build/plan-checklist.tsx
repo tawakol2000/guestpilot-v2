@@ -61,6 +61,10 @@ export function PlanChecklist({
 }) {
   const [state, setState] = useState<PlanState>({ kind: 'idle' })
   const [rollbackOpen, setRollbackOpen] = useState(false)
+  // Sprint 050 A1 — "unsaved" typographic grammar while the plan is
+  // still proposed-but-not-approved. Drops as soon as the operator
+  // approves so the diff moves to a committed-agent-write style.
+  const isPending = state.kind === 'idle' || state.kind === 'approving'
 
   async function approve() {
     setState({ kind: 'approving' })
@@ -137,7 +141,7 @@ export function PlanChecklist({
         </p>
         <ul className="flex flex-col gap-1.5">
           {data.items.map((item, idx) => (
-            <PlanRow key={idx} item={item} />
+            <PlanRow key={idx} item={item} pending={isPending} />
           ))}
         </ul>
       </div>
@@ -241,7 +245,7 @@ export function PlanChecklist({
   )
 }
 
-function PlanRow({ item }: { item: BuildPlanItem }) {
+function PlanRow({ item, pending }: { item: BuildPlanItem; pending: boolean }) {
   const style = TYPE_STYLE[item.type] ?? {
     bg: STUDIO_COLORS.surfaceSunken,
     fg: STUDIO_COLORS.inkMuted,
@@ -323,18 +327,34 @@ function PlanRow({ item }: { item: BuildPlanItem }) {
                   {item.previewDiff.before}
                 </pre>
               )}
-              <pre
-                className="max-h-40 overflow-auto rounded border px-2 py-1.5 font-mono text-[11px]"
-                style={{
-                  background: STUDIO_COLORS.diffAddBg,
-                  color: STUDIO_COLORS.diffAddFg,
-                  borderColor: 'rgba(17,122,61,0.25)',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {item.previewDiff.after}
-              </pre>
+              <div className="flex flex-col gap-1" data-origin={pending ? 'pending' : 'agent'}>
+                {pending && (
+                  <span
+                    className="inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    style={{
+                      background: STUDIO_COLORS.surfaceSunken,
+                      color: STUDIO_COLORS.attributionUnsavedFg,
+                      border: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    Unsaved
+                  </span>
+                )}
+                <pre
+                  className="max-h-40 overflow-auto rounded border px-2 py-1.5 font-mono text-[11px]"
+                  style={{
+                    background: STUDIO_COLORS.diffAddBg,
+                    color: STUDIO_COLORS.diffAddFg,
+                    borderColor: 'rgba(17,122,61,0.25)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontStyle: pending ? 'italic' : 'normal',
+                  }}
+                >
+                  {item.previewDiff.after}
+                </pre>
+              </div>
             </div>
           )}
         </div>
