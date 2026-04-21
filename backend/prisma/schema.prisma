@@ -885,7 +885,7 @@ enum TuningSuggestionStatus {
 model TuningSuggestion {
   id               String                 @id @default(cuid())
   tenantId         String
-  sourceMessageId  String // Preview Message that triggered the analyzer run
+  sourceMessageId  String? // Preview Message that triggered the analyzer run. Nullable since sprint-047 Session A — Studio accepts on preview:* ids have no inbox-message anchor.
   sourceAiApiLogId String? // Mirrors sourceMessage.aiApiLogId at creation time (convenience)
   actionType       TuningActionType
   status           TuningSuggestionStatus @default(PENDING)
@@ -942,7 +942,7 @@ model TuningSuggestion {
   updatedAt DateTime @updatedAt
 
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceMessage  Message             @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  sourceMessage  Message?            @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
   conversation   TuningConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   evidenceBundle EvidenceBundle?     @relation(fields: [evidenceBundleId], references: [id], onDelete: SetNull)
 

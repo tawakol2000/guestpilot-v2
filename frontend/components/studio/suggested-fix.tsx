@@ -21,6 +21,14 @@ export interface SuggestedFixTarget {
   sectionId?: string
   slotKey?: string
   lineRange?: [number, number]
+  // Sprint 047 Session A — category-specific apply hints threaded through
+  // so the Studio accept-on-preview path can dispatch the write without
+  // re-asking the agent. Additive; pre-session-A emitters omit them.
+  sopCategory?: string
+  sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  sopPropertyId?: string
+  faqEntryId?: string
+  systemPromptVariant?: 'coordinator' | 'screening'
 }
 
 export interface SuggestedFixCardProps {

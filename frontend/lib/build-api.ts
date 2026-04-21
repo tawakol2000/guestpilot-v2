@@ -158,15 +158,48 @@ export function buildTurnEndpoint(): string {
 export interface SuggestedFixActionResponse {
   ok: boolean
   applied: boolean
+  alreadyApplied?: boolean
   appliedVia?: 'suggestion_action' | 'no-op-stub' | 'rejection-memory'
+  suggestionId?: string
+  appliedAt?: string | null
   message?: string
   fixHash?: string
+  target?: { kind: string; id: string }
 }
 
-export async function apiAcceptSuggestedFix(fixId: string): Promise<SuggestedFixActionResponse> {
+// Sprint 047 Session A — accept endpoint can now persist ephemeral
+// preview:* ids. Callers pass the full data-suggested-fix payload when
+// the id is ephemeral; the backend uses the `preview:*` prefix to tell
+// the two cases apart.
+export interface AcceptSuggestedFixPayload {
+  conversationId: string
+  category?: string
+  subLabel?: string
+  rationale?: string
+  before?: string
+  after?: string
+  target?: {
+    artifactId?: string
+    sectionId?: string
+    slotKey?: string
+    sopCategory?: string
+    sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+    sopPropertyId?: string
+    faqEntryId?: string
+    systemPromptVariant?: 'coordinator' | 'screening'
+  }
+}
+
+export async function apiAcceptSuggestedFix(
+  fixId: string,
+  payload?: AcceptSuggestedFixPayload,
+): Promise<SuggestedFixActionResponse> {
   return buildFetch<SuggestedFixActionResponse>(
     `/api/build/suggested-fix/${encodeURIComponent(fixId)}/accept`,
-    { method: 'POST', body: '{}' },
+    {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    },
   )
 }
 

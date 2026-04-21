@@ -31,6 +31,13 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from '../types';
 import { runTuningAgentTurn } from '../build-tune-agent';
 import { buildRollbackTool } from '../build-tune-agent/tools/version-history';
+import {
+  buildSuggestionActionTool,
+} from '../build-tune-agent/tools/suggestion-action';
+import {
+  applyArtifactChangeFromUi,
+  type ApplyFromUiInput,
+} from '../build-tune-agent/tools/suggestion-action';
 import type { ToolContext } from '../build-tune-agent/tools/types';
 import {
   getTenantStateSummary,
@@ -298,47 +305,183 @@ export function makeBuildController(prisma: PrismaClient) {
     },
 
     /**
-     * POST /api/build/suggested-fix/:fixId/accept — (sprint 046 Session C)
+     * POST /api/build/suggested-fix/:fixId/accept — (sprint 047 Session A)
      *
-     * Thin proxy. If `fixId` maps to an existing PENDING TuningSuggestion
-     * row, invoke the suggestion_action tool with `{action:'apply'}`.
-     * Otherwise return a 200 stub so the frontend card can settle into
-     * its "accepted" state — rejection-memory + real apply wiring for
-     * ephemeral `preview:*` ids lands in Session D.
+     * Two cases, same endpoint:
+     *   - Case A: `fixId` matches a TuningSuggestion row the agent persisted
+     *     (legacy TUNE flow). Dispatch into `suggestion_action({action:'apply'})`
+     *     directly via the stub-tool pattern — the manager's UI click is
+     *     the compliance signal, so the PreToolUse hook is deliberately
+     *     bypassed.
+     *   - Case B: `fixId` is a `preview:*` ephemeral id emitted by
+     *     `propose_suggestion`. No DB row exists yet. The POST body must
+     *     carry the payload needed to execute the write (target, before,
+     *     after, category, rationale, conversationId). Dispatch into
+     *     `applyArtifactChangeFromUi` which persists an ACCEPTED
+     *     TuningSuggestion row + executes the artifact write atomically.
+     *
+     * Idempotent: re-posting the same fixId after a flaky network
+     * returns 200 without double-applying.
      */
     async acceptSuggestedFix(
       req: AuthenticatedRequest,
       res: Response
     ): Promise<void> {
       const { tenantId } = req;
+      const userId = (req as any).userId ?? null;
       const fixId = req.params.fixId;
       if (!fixId) {
         res.status(400).json({ error: 'MISSING_FIX_ID' });
         return;
       }
-      try {
-        const hit = await prisma.tuningSuggestion.findFirst({
-          where: { id: fixId, tenantId },
-          select: { id: true, status: true },
-        });
-        if (!hit) {
+
+      const isPreviewId = fixId.startsWith('preview:');
+      const body = (req.body ?? {}) as {
+        conversationId?: string;
+        target?: ApplyFromUiInput['target'] & Record<string, unknown>;
+        before?: string;
+        after?: string;
+        category?: string;
+        subLabel?: string;
+        rationale?: string;
+      };
+
+      // Case A — existing TuningSuggestion row.
+      if (!isPreviewId) {
+        try {
+          const hit = await prisma.tuningSuggestion.findFirst({
+            where: { id: fixId, tenantId },
+            select: { id: true, status: true, appliedAt: true },
+          });
+          if (!hit) {
+            res.status(404).json({ error: 'FIX_NOT_FOUND' });
+            return;
+          }
+          // Idempotent re-click on an already-applied row.
+          if (hit.status === 'ACCEPTED') {
+            res.json({
+              ok: true,
+              applied: true,
+              alreadyApplied: true,
+              appliedVia: 'suggestion_action',
+              suggestionId: hit.id,
+              appliedAt: hit.appliedAt?.toISOString() ?? null,
+            });
+            return;
+          }
+          if (hit.status !== 'PENDING' && hit.status !== 'AUTO_SUPPRESSED') {
+            res.status(409).json({
+              error: 'FIX_NOT_APPLICABLE',
+              status: hit.status,
+            });
+            return;
+          }
+          // Stub-tool dispatch — same pattern as rollbackPlan.
+          let captured: any = null;
+          function stubTool(_name: string, _desc: string, _schema: any, handler: any) {
+            captured = handler;
+            return { name: _name, handler };
+          }
+          const ctx: ToolContext = {
+            prisma,
+            tenantId,
+            conversationId: body.conversationId ?? null,
+            userId,
+            lastUserSanctionedApply: true,
+          };
+          buildSuggestionActionTool(stubTool as any, () => ctx);
+          if (!captured) {
+            res.status(500).json({ error: 'SUGGESTION_ACTION_TOOL_NOT_REGISTERED' });
+            return;
+          }
+          const result = await captured({ suggestionId: fixId, action: 'apply' });
+          if (result?.isError) {
+            const message = result.content?.[0]?.text ?? 'apply failed';
+            res.status(500).json({ error: message });
+            return;
+          }
+          const payload = result?.structuredContent ?? {};
           res.json({
             ok: true,
-            applied: false,
-            appliedVia: 'no-op-stub',
-            message: 'No matching suggestion row — ephemeral preview.',
+            applied: true,
+            alreadyApplied: false,
+            appliedVia: 'suggestion_action',
+            suggestionId: payload.suggestionId ?? fixId,
+            target: payload.target,
           });
           return;
+        } catch (err) {
+          console.error('[build-controller] acceptSuggestedFix (case A) failed:', err);
+          res.status(500).json({ error: 'ACCEPT_FAILED' });
+          return;
         }
+      }
+
+      // Case B — ephemeral `preview:*` id. Validate body + dispatch.
+      const conversationId = body.conversationId;
+      if (!conversationId) {
+        res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
+        return;
+      }
+      if (typeof body.after !== 'string' || body.after.length === 0) {
+        res.status(400).json({ error: 'MISSING_AFTER_TEXT' });
+        return;
+      }
+      const category = body.category;
+      if (
+        category !== 'SOP_CONTENT' &&
+        category !== 'SOP_ROUTING' &&
+        category !== 'FAQ' &&
+        category !== 'SYSTEM_PROMPT' &&
+        category !== 'TOOL_CONFIG' &&
+        category !== 'PROPERTY_OVERRIDE'
+      ) {
+        res.status(400).json({ error: 'INVALID_CATEGORY', category });
+        return;
+      }
+
+      try {
+        // Tenant scoping on the conversation before we commit a write.
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id: conversationId, tenantId },
+          select: { id: true },
+        });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+        const result = await applyArtifactChangeFromUi({
+          prisma,
+          tenantId,
+          userId,
+          conversationId,
+          previewId: fixId,
+          sanctionedBy: 'ui',
+          category,
+          subLabel: body.subLabel,
+          rationale: body.rationale ?? '(accepted from Studio UI)',
+          before: body.before ?? '',
+          after: body.after,
+          target: {
+            sopCategory: body.target?.sopCategory,
+            sopStatus: body.target?.sopStatus,
+            sopPropertyId: body.target?.sopPropertyId,
+            faqEntryId: body.target?.faqEntryId,
+            systemPromptVariant: body.target?.systemPromptVariant,
+          },
+        });
         res.json({
           ok: true,
-          applied: false,
+          applied: true,
+          alreadyApplied: result.alreadyApplied,
           appliedVia: 'suggestion_action',
-          message: `Suggestion ${hit.status} — real apply wiring lands in Session D.`,
+          suggestionId: result.suggestionId,
+          appliedAt: result.appliedAt.toISOString(),
+          target: result.target,
         });
-      } catch (err) {
-        console.error('[build-controller] acceptSuggestedFix failed:', err);
-        res.status(500).json({ error: 'ACCEPT_FAILED' });
+      } catch (err: any) {
+        console.error('[build-controller] acceptSuggestedFix (case B) failed:', err);
+        res.status(500).json({ error: err?.message ?? 'ACCEPT_FAILED' });
       }
     },
 

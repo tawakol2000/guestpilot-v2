@@ -430,7 +430,25 @@ function StandalonePart({
         category={typeof data.category === 'string' ? data.category : undefined}
         createdAt={typeof data.createdAt === 'string' ? data.createdAt : undefined}
         onAccept={async (id) => {
-          await apiAcceptSuggestedFix(id)
+          const target = (data.target as SuggestedFixTarget | undefined) ?? {}
+          await apiAcceptSuggestedFix(id, {
+            conversationId: rejectionConversationId,
+            category: typeof data.category === 'string' ? data.category : undefined,
+            subLabel: typeof data.subLabel === 'string' ? data.subLabel : undefined,
+            rationale: typeof data.rationale === 'string' ? data.rationale : undefined,
+            before: typeof data.before === 'string' ? data.before : undefined,
+            after: typeof data.after === 'string' ? data.after : undefined,
+            target: {
+              artifactId: target.artifactId,
+              sectionId: target.sectionId,
+              slotKey: target.slotKey,
+              sopCategory: (target as any).sopCategory,
+              sopStatus: (target as any).sopStatus,
+              sopPropertyId: (target as any).sopPropertyId,
+              faqEntryId: (target as any).faqEntryId,
+              systemPromptVariant: (target as any).systemPromptVariant,
+            },
+          })
           toast.success('Fix accepted')
         }}
         onReject={async (id) => {

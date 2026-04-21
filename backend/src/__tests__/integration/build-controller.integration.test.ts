@@ -193,6 +193,147 @@ test('case 4: POST /turn with ENABLE_BUILD_MODE=true returns 200 SSE stream', as
   }
 });
 
+test('case 7: POST /suggested-fix/preview:*/accept writes FAQ + creates ACCEPTED TuningSuggestion (sprint 047 Session A)', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  const conv = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session A preview accept',
+    },
+  });
+  const faq = await prisma.faqEntry.create({
+    data: {
+      tenantId: fx.tenantId,
+      propertyId: fx.propertyId,
+      question: 'TEST Session A FAQ Q?',
+      answer: 'TEST Session A FAQ original answer.',
+      category: 'WIFI',
+      scope: 'PROPERTY',
+      status: 'ACTIVE',
+      source: 'MANUAL',
+    },
+  });
+  const previewId = `preview:session-a:${Date.now().toString(36)}`;
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/suggested-fix/${encodeURIComponent(previewId)}/accept`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          conversationId: conv.id,
+          category: 'FAQ',
+          subLabel: 'tone',
+          rationale: 'Softened tone for FAQ.',
+          before: 'TEST Session A FAQ original answer.',
+          after: 'TEST Session A FAQ softened answer.',
+          target: { faqEntryId: faq.id },
+        }),
+      }
+    );
+    assert.equal(res.status, 200, `expected 200, got ${res.status}`);
+    const body = (await res.json()) as any;
+    assert.equal(body.ok, true);
+    assert.equal(body.applied, true);
+    assert.equal(body.appliedVia, 'suggestion_action');
+    assert.ok(body.suggestionId, 'expected a persisted suggestionId');
+
+    // Artifact write happened.
+    const faqAfter = await prisma.faqEntry.findUnique({ where: { id: faq.id } });
+    assert.match(String(faqAfter?.answer), /softened/);
+
+    // TuningSuggestion row persisted with ACCEPTED + appliedAt + conversationId.
+    const row = await prisma.tuningSuggestion.findUnique({
+      where: { id: body.suggestionId },
+    });
+    assert.ok(row, 'expected TuningSuggestion row to exist');
+    assert.equal(row?.status, 'ACCEPTED');
+    assert.ok(row?.appliedAt);
+    assert.equal(row?.conversationId, conv.id);
+    assert.equal(row?.faqEntryId, faq.id);
+    const applied = (row?.appliedPayload ?? {}) as any;
+    assert.equal(applied.previewId, previewId);
+
+    // Idempotency: re-accept with the same previewId returns 200 and does
+    // NOT create a second row.
+    const res2 = await fetch(
+      `${srv.baseUrl}/api/build/suggested-fix/${encodeURIComponent(previewId)}/accept`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          conversationId: conv.id,
+          category: 'FAQ',
+          subLabel: 'tone',
+          rationale: 'Softened tone for FAQ.',
+          before: 'TEST Session A FAQ original answer.',
+          after: 'TEST Session A FAQ softened answer.',
+          target: { faqEntryId: faq.id },
+        }),
+      }
+    );
+    assert.equal(res2.status, 200);
+    const body2 = (await res2.json()) as any;
+    assert.equal(body2.alreadyApplied, true);
+    assert.equal(body2.suggestionId, body.suggestionId);
+
+    const rows = await prisma.tuningSuggestion.findMany({
+      where: {
+        tenantId: fx.tenantId,
+        conversationId: conv.id,
+      },
+    });
+    assert.equal(rows.length, 1, 'exactly one row persisted');
+  } finally {
+    await prisma.tuningSuggestion
+      .deleteMany({ where: { tenantId: fx.tenantId, conversationId: conv.id } })
+      .catch(() => undefined);
+    await prisma.faqEntry.delete({ where: { id: faq.id } }).catch(() => undefined);
+    await prisma.tuningConversation
+      .delete({ where: { id: conv.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+  }
+});
+
+test('case 8: POST /suggested-fix/preview:*/accept fails with 400 when conversationId missing (sprint 047 Session A)', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  const srv = await startServer();
+  try {
+    const res = await fetch(
+      `${srv.baseUrl}/api/build/suggested-fix/preview:no-conv/accept`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          category: 'FAQ',
+          before: 'a',
+          after: 'b',
+          target: { faqEntryId: 'faq-x' },
+        }),
+      }
+    );
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as any;
+    assert.equal(body.error, 'MISSING_CONVERSATION_ID');
+  } finally {
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+  }
+});
+
 test('case 6: POST /suggested-fix/:id/reject persists rejection memory (sprint 046 Session D)', async () => {
   process.env.ENABLE_BUILD_MODE = 'true';
   const conv = await prisma.tuningConversation.create({

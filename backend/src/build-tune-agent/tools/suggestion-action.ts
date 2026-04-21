@@ -18,6 +18,7 @@ import { z } from 'zod/v4';
 import type { tool as ToolFactory, SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import {
   Prisma,
+  PrismaClient,
   TuningActionType,
   TuningDiagnosticCategory,
   TuningSuggestionStatus,
@@ -429,6 +430,8 @@ interface ApplyOutcome {
  * agent path reuses the same update pattern directly to avoid coupling
  * to an Express controller.
  */
+export { applyArtifactWrite, CATEGORY_TO_ACTION_TYPE };
+
 async function applyArtifactWrite(
   c: ToolContext,
   suggestion: {
@@ -956,4 +959,172 @@ async function resolveCurrentArtifactText(
     return match?.description ?? null;
   }
   return null;
+}
+
+// ─── Sprint 047 Session A — controller-facing helper ──────────────────────
+//
+// The Studio `/api/build/suggested-fix/:fixId/accept` endpoint needs to
+// apply an artifact change directly when the click targets an ephemeral
+// `preview:*` id (no TuningSuggestion row exists yet). The manager's
+// button press IS the compliance signal — we bypass the PreToolUse
+// compliance hook by calling the write path directly, but we still
+// persist a TuningSuggestion row with `status: 'ACCEPTED'` so the
+// recent-edit / oscillation hooks have a history entry to detect
+// against, and so admin-only trace views can reconstruct the accept.
+
+type UiFixCategory =
+  | 'SOP_CONTENT'
+  | 'SOP_ROUTING'
+  | 'FAQ'
+  | 'SYSTEM_PROMPT'
+  | 'TOOL_CONFIG'
+  | 'PROPERTY_OVERRIDE';
+
+export interface ApplyFromUiInput {
+  prisma: PrismaClient;
+  tenantId: string;
+  userId: string | null;
+  conversationId: string;
+  /** The `preview:*` id the agent emitted alongside the data-suggested-fix card. */
+  previewId: string;
+  /** Manager's last turn text — unused today, captured for audit trails. */
+  sanctionedBy: 'ui';
+  category: UiFixCategory;
+  subLabel?: string;
+  rationale: string;
+  before: string;
+  after: string;
+  target: {
+    sopCategory?: string;
+    sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN';
+    sopPropertyId?: string;
+    faqEntryId?: string;
+    systemPromptVariant?: 'coordinator' | 'screening';
+  };
+}
+
+export interface ApplyFromUiResult {
+  suggestionId: string;
+  appliedAt: Date;
+  alreadyApplied: boolean;
+  target?: { kind: string; id: string };
+}
+
+/**
+ * Applies a Studio suggested-fix (ephemeral `preview:*` id) and records
+ * an ACCEPTED TuningSuggestion row so history hooks can see it. Returns
+ * early if a prior accept for the same `previewId` already landed
+ * (idempotency per sprint-047 Session A non-negotiable §6).
+ */
+export async function applyArtifactChangeFromUi(
+  input: ApplyFromUiInput
+): Promise<ApplyFromUiResult> {
+  const { prisma, tenantId, userId, conversationId, previewId } = input;
+
+  // Idempotency — re-click after flaky network must not double-apply. We
+  // look up any TuningSuggestion row whose appliedPayload carries this
+  // previewId. Postgres JSONB supports this via Prisma's `path` filter.
+  const prior = await prisma.tuningSuggestion.findFirst({
+    where: {
+      tenantId,
+      status: 'ACCEPTED',
+      appliedPayload: { path: ['previewId'], equals: previewId } as any,
+    },
+    select: { id: true, appliedAt: true, appliedPayload: true },
+  });
+  if (prior && prior.appliedAt) {
+    const pp = (prior.appliedPayload ?? {}) as any;
+    const target = pp?.target as { kind: string; id: string } | undefined;
+    return {
+      suggestionId: prior.id,
+      appliedAt: prior.appliedAt,
+      alreadyApplied: true,
+      target,
+    };
+  }
+
+  const actionType = CATEGORY_TO_ACTION_TYPE[input.category] ?? 'EDIT_SYSTEM_PROMPT';
+  const created = await prisma.tuningSuggestion.create({
+    data: {
+      tenantId,
+      // sourceMessageId is nullable from sprint-047 Session A onwards —
+      // Studio accepts have no inbox-message anchor.
+      sourceMessageId: null,
+      actionType,
+      status: 'ACCEPTED',
+      rationale: input.rationale,
+      beforeText: input.before || null,
+      proposedText: input.after || null,
+      sopCategory: input.target.sopCategory ?? null,
+      sopStatus: input.target.sopStatus ?? null,
+      sopPropertyId: input.target.sopPropertyId ?? null,
+      systemPromptVariant: input.target.systemPromptVariant ?? null,
+      faqEntryId: input.target.faqEntryId ?? null,
+      diagnosticCategory: input.category as TuningDiagnosticCategory,
+      diagnosticSubLabel: input.subLabel ?? null,
+      conversationId,
+      appliedAt: new Date(),
+      appliedByUserId: userId,
+      applyMode: 'IMMEDIATE',
+    },
+    select: { id: true, appliedAt: true },
+  });
+
+  const outcome = await applyArtifactWrite(
+    {
+      prisma,
+      tenantId,
+      userId,
+      conversationId,
+      lastUserSanctionedApply: true,
+    },
+    {
+      id: created.id,
+      actionType,
+      diagnosticCategory: input.category as TuningDiagnosticCategory,
+      systemPromptVariant: input.target.systemPromptVariant ?? null,
+      sopCategory: input.target.sopCategory ?? null,
+      sopStatus: input.target.sopStatus ?? null,
+      sopPropertyId: input.target.sopPropertyId ?? null,
+      sopToolDescription: null,
+      faqEntryId: input.target.faqEntryId ?? null,
+      faqQuestion: null,
+      faqCategory: null,
+      faqScope: null,
+      faqPropertyId: null,
+      beforeText: input.before || null,
+      proposedText: input.after || null,
+      sourceMessageId: null,
+    },
+    input.after
+  );
+
+  if (!outcome.ok) {
+    // Revert the ACCEPTED row so the manager can retry without a stale
+    // history entry blocking the recent-edit advisory.
+    await prisma.tuningSuggestion
+      .delete({ where: { id: created.id } })
+      .catch((err) =>
+        console.warn('[applyArtifactChangeFromUi] cleanup failed:', err)
+      );
+    throw new Error(outcome.error ?? 'ARTIFACT_WRITE_FAILED');
+  }
+
+  const appliedPayload: Record<string, unknown> = {
+    ...(outcome.appliedPayload ?? {}),
+    previewId,
+    sanctionedBy: input.sanctionedBy,
+    target: outcome.target,
+  };
+  await prisma.tuningSuggestion.update({
+    where: { id: created.id },
+    data: { appliedPayload: appliedPayload as Prisma.InputJsonValue },
+  });
+
+  return {
+    suggestionId: created.id,
+    appliedAt: created.appliedAt!,
+    alreadyApplied: false,
+    target: outcome.target,
+  };
 }

@@ -63,10 +63,10 @@ function deriveTargetFromHint(
   hint:
     | {
         sopCategory?: string;
-        sopStatus?: string;
+        sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN';
         sopPropertyId?: string;
         faqEntryId?: string;
-        systemPromptVariant?: string;
+        systemPromptVariant?: 'coordinator' | 'screening';
         toolDefinitionId?: string;
       }
     | undefined
@@ -79,12 +79,23 @@ function deriveTargetFromHint(
     if (category === 'PROPERTY_OVERRIDE') return { artifact: 'property_override' };
     return {};
   }
-  if (hint.systemPromptVariant) return { artifact: 'system_prompt', sectionId: hint.systemPromptVariant };
-  if (hint.faqEntryId) return { artifact: 'faq', artifactId: hint.faqEntryId };
-  if (hint.toolDefinitionId) return { artifact: 'tool_definition', artifactId: hint.toolDefinitionId };
-  if (hint.sopPropertyId) return { artifact: 'property_override', artifactId: hint.sopPropertyId };
-  if (hint.sopCategory || hint.sopStatus) return { artifact: 'sop' };
-  return {};
+  // Sprint 047 Session A — carry every hint field through to FixTarget so
+  // the Studio accept-on-preview path has enough context to dispatch the
+  // write without re-asking the agent. Still set the primary `artifact`
+  // + `sectionId` / `artifactId` so the card chip stays legible.
+  const base: FixTarget = {
+    sopCategory: hint.sopCategory,
+    sopStatus: hint.sopStatus,
+    sopPropertyId: hint.sopPropertyId,
+    faqEntryId: hint.faqEntryId,
+    systemPromptVariant: hint.systemPromptVariant,
+  };
+  if (hint.systemPromptVariant) return { ...base, artifact: 'system_prompt', sectionId: hint.systemPromptVariant };
+  if (hint.faqEntryId) return { ...base, artifact: 'faq', artifactId: hint.faqEntryId };
+  if (hint.toolDefinitionId) return { ...base, artifact: 'tool_definition', artifactId: hint.toolDefinitionId };
+  if (hint.sopPropertyId) return { ...base, artifact: 'property_override', artifactId: hint.sopPropertyId };
+  if (hint.sopCategory || hint.sopStatus) return { ...base, artifact: 'sop' };
+  return base;
 }
 
 export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolContext) {

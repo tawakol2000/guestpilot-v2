@@ -48,6 +48,14 @@ export type DataPartType = (typeof DATA_PART_TYPES)[keyof typeof DATA_PART_TYPES
  * Machine-readable target for a proposed edit. At least one field must
  * be present. Consumed by the suggested-fix card to render a chip and
  * by rollback / apply paths to locate the artifact.
+ *
+ * Sprint 047 Session A — extended with optional category-specific apply
+ * hints (sopCategory/sopStatus/sopPropertyId/faqEntryId/systemPromptVariant)
+ * so the Studio accept-on-preview path has everything it needs to
+ * dispatch the write. These mirror the fields the legacy TUNE
+ * `targetHint` shape carries; propose_suggestion populates them when
+ * the hint is present. All additive; existing consumers ignore unknown
+ * fields.
  */
 export interface FixTarget {
   artifact?: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property_override';
@@ -55,6 +63,11 @@ export interface FixTarget {
   sectionId?: string;
   slotKey?: string;
   lineRange?: [number, number];
+  sopCategory?: string;
+  sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN';
+  sopPropertyId?: string;
+  faqEntryId?: string;
+  systemPromptVariant?: 'coordinator' | 'screening';
 }
 
 export interface SuggestedFixData {
