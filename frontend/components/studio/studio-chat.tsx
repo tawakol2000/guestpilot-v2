@@ -238,28 +238,94 @@ export function StudioChat({
     lastChipRef.current?.focus()
   }, [])
 
-  useEffect(() => {
+  // ─── F3a — scroll discipline ─────────────────────────────────────────────
+  // Track whether the operator is scrolled to the bottom. Messages that
+  // arrive while scrolled away increment the pill counter instead of
+  // force-scrolling.
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [newMsgCount, setNewMsgCount] = useState(0)
+  // Tracks message ids we have already accounted for so re-renders don't
+  // double-count. Cleared on each fresh conversation via the dependency on
+  // `conversationId` is implicit — the component re-mounts on id change.
+  const seenMsgIds = useRef<Set<string>>(new Set())
+
+  const handleScroll = useCallback(() => {
     if (!scrollerRef.current) return
-    scrollerRef.current.scrollTo({
-      top: scrollerRef.current.scrollHeight,
-      behavior: 'smooth',
-    })
-  }, [messages])
+    const { scrollTop, scrollHeight, clientHeight } = scrollerRef.current
+    setIsAtBottom(scrollHeight - scrollTop - clientHeight < 64)
+  }, [])
+
+  // Replace unconditional scroll with conditional logic: auto-scroll when
+  // at the bottom, otherwise show the pill.
+  useEffect(() => {
+    if (!messages.length) return
+    const newIds = messages.filter((m) => !seenMsgIds.current.has(m.id))
+    newIds.forEach((m) => seenMsgIds.current.add(m.id))
+
+    if (isAtBottom) {
+      scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: 'smooth' })
+      setNewMsgCount(0)
+    } else {
+      setNewMsgCount((prev) => prev + newIds.length)
+    }
+  }, [messages, isAtBottom])
+
+  // ─── F3b — auto-queue while agent is working ─────────────────────────────
+  // Queue is in-memory only and resets on page reload (intentional per spec:
+  // persisting a partial conversation queue across reloads would confuse the
+  // agent context. Use localStorage only if a future spec explicitly allows it.)
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [showQueuePopover, setShowQueuePopover] = useState(false)
+  const isFlushingRef = useRef(false)
+
+  // Flush the first queued message when the agent returns to ready.
+  useEffect(() => {
+    if (status !== 'ready' || queuedMessages.length === 0 || isFlushingRef.current) return
+    isFlushingRef.current = true
+    const [first, ...rest] = queuedMessages
+    setQueuedMessages(rest)
+    // Treat as an operator-initiated send — jump to bottom so the message
+    // is visible when it lands.
+    setIsAtBottom(true)
+    scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: 'smooth' })
+    sendMessage({ text: first })
+  }, [status, queuedMessages, sendMessage])
+
+  // Reset the flushing guard whenever the agent leaves ready (i.e. it just
+  // picked up the flushed message and started processing).
+  useEffect(() => {
+    if (status !== 'ready') {
+      isFlushingRef.current = false
+    }
+  }, [status])
+
+  const isStreaming = status === 'streaming'
+  const isSending = status === 'submitted'
+  const isBusy = isStreaming || isSending || status === 'error'
+  const canSend = !!draft.trim() && !isBusy
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
       const text = draft.trim()
       if (!text) return
+
+      // When agent is busy, queue the message instead of blocking the send.
+      if (isBusy) {
+        if (queuedMessages.length >= 3) {
+          toast('Queue full — wait for the agent to finish before sending more.')
+          return
+        }
+        setQueuedMessages((prev) => [...prev, text])
+        setDraft('')
+        return
+      }
+
       setDraft('')
       sendMessage({ text })
     },
-    [draft, sendMessage],
+    [draft, isBusy, queuedMessages.length, sendMessage],
   )
-
-  const isStreaming = status === 'streaming'
-  const isSending = status === 'submitted'
-  const canSend = !!draft.trim() && !isStreaming && !isSending
 
   // Surface stream errors as toasts (once per distinct message).
   const lastReportedErrorRef = useRef<string | null>(null)
@@ -283,7 +349,24 @@ export function StudioChat({
       className="flex h-full min-h-0 flex-col"
       style={{ background: STUDIO_COLORS.canvas, position: 'relative' }}
     >
-      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto" style={{ position: 'relative' }} onScroll={handleScroll}>
+        {/* F3a — jump-to-latest pill. Appears when operator has scrolled
+            up and new messages have arrived. Clicking jumps to bottom and
+            clears the counter. */}
+        {!isAtBottom && newMsgCount > 0 && (
+          <button
+            data-testid="scroll-to-bottom-pill"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full text-sm font-medium shadow-md"
+            style={{ background: STUDIO_COLORS.accent, color: '#fff' }}
+            onClick={() => {
+              scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: 'smooth' })
+              setNewMsgCount(0)
+              setIsAtBottom(true)
+            }}
+          >
+            ↓ {newMsgCount} new
+          </button>
+        )}
         <div className="mx-auto flex max-w-3xl flex-col">
           {empty ? <StudioEmptyState greenfield={greenfield} onPick={(text) => sendMessage({ text })} /> : null}
 
@@ -305,7 +388,7 @@ export function StudioChat({
             />
           ))}
 
-          {isStreaming || isSending ? <TypingIndicator /> : null}
+          {isBusy ? <TypingIndicator /> : null}
 
           {error ? (
             <div
@@ -340,23 +423,79 @@ export function StudioChat({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
-                if (isStreaming || isSending) return
                 onSubmit(e as unknown as React.FormEvent)
               }
             }}
             rows={2}
             placeholder={
-              isStreaming || isSending
-                ? 'Agent is replying…'
+              isBusy
+                ? queuedMessages.length > 0
+                  ? `Queuing… (${queuedMessages.length}/3 queued)`
+                  : 'Agent is replying…'
                 : greenfield
                   ? 'Tell me about your properties.'
                   : 'What do you want to build or change?'
             }
-            disabled={isStreaming || isSending}
+            disabled={false}
             className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-5 outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
             style={{ color: STUDIO_COLORS.ink }}
             aria-label="Message the studio agent"
           />
+          {/* F3b — queued-messages badge. Shows count + popover to inspect/remove
+              queued messages while the agent is processing. Clicking × on an
+              item removes it from the queue. */}
+          {queuedMessages.length > 0 && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                data-testid="queue-badge"
+                className="text-xs font-medium px-2 py-1 rounded"
+                style={{ color: STUDIO_COLORS.accent }}
+                onClick={() => setShowQueuePopover((v) => !v)}
+                aria-label={`${queuedMessages.length} message${queuedMessages.length === 1 ? '' : 's'} queued`}
+              >
+                Queued ({queuedMessages.length})
+              </button>
+              {showQueuePopover && (
+                <div
+                  data-testid="queue-popover"
+                  className="absolute bottom-8 right-0 bg-white border rounded shadow-lg p-2 w-56 z-20"
+                  style={{ borderColor: STUDIO_COLORS.hairline }}
+                >
+                  {queuedMessages.map((msg, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1">
+                      <span
+                        className="truncate flex-1 mr-2"
+                        style={{ color: STUDIO_COLORS.ink, fontSize: 12 }}
+                      >
+                        {msg}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove queued message: ${msg}`}
+                        data-testid="queue-item-remove"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setQueuedMessages((prev) => prev.filter((_, j) => j !== i))
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: STUDIO_COLORS.inkMuted,
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          padding: '0 2px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="submit"
             disabled={!canSend}
