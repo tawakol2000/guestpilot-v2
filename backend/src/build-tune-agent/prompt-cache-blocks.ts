@@ -160,3 +160,89 @@ export function buildCacheStatsPayload(usage: {
     explicitCacheControlWired: false,
   };
 }
+
+// ─── Sprint 058-A F1 — direct-transport block/tool builders ─────────────
+//
+// When BUILD_AGENT_DIRECT_TRANSPORT=true the runtime bypasses the Claude
+// Agent SDK's `systemPrompt: string` surface and calls
+// `@anthropic-ai/sdk`'s `messages.create({ stream: true })` directly with a
+// structured system-prompt content-block array so we can attach explicit
+// `cache_control: { type: 'ephemeral' }` markers per Anthropic prompt-cache
+// rules. The helpers below produce the exact shapes the direct path sends.
+//
+// Shape reference (Anthropic docs, prompt caching):
+//   system: [
+//     { type: 'text', text: regionA, cache_control: { type: 'ephemeral' } },
+//     { type: 'text', text: regionB, cache_control: { type: 'ephemeral' } },
+//     { type: 'text', text: regionC },            // dynamic, uncached
+//   ]
+// Caching applies to the entire prefix UP TO a cache_control marker, so
+// attaching ephemeral to blocks 0 and 1 caches (A) and (A+B). Block C is
+// the short per-turn dynamic suffix.
+
+/** Anthropic-shaped text block for the `system` parameter. */
+export interface AnthropicSystemTextBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+}
+
+/**
+ * Produce the three-block Anthropic `system` parameter from an assembled
+ * prompt. Blocks 0 and 1 carry `cache_control: { type: 'ephemeral' }`;
+ * block 2 is the dynamic suffix and carries no cache marker.
+ *
+ * If the boundary markers are missing (shouldn't happen in production),
+ * returns a single uncached block — the caller still sends a valid prompt,
+ * just without cache benefits. Matches the graceful fallback in
+ * splitSystemPromptIntoBlocks().
+ */
+export function buildAnthropicSystemBlocks(
+  assembled: string,
+): AnthropicSystemTextBlock[] {
+  const regions = splitSystemPromptIntoBlocks(assembled);
+  if (regions.length === 1) {
+    // Boundary markers missing — single uncached block.
+    return [{ type: 'text', text: regions[0].text }];
+  }
+  return regions.map<AnthropicSystemTextBlock>((r) =>
+    r.shouldCache
+      ? { type: 'text', text: r.text, cache_control: { type: 'ephemeral' } }
+      : { type: 'text', text: r.text },
+  );
+}
+
+/**
+ * Attach a single `cache_control: { type: 'ephemeral' }` to the LAST entry
+ * of a tools[] array, cloning the input so the caller's array is not
+ * mutated. Per Anthropic prompt-cache rules, this caches the full tools
+ * block for all subsequent turns with the same tools prefix.
+ *
+ * Returns the original array unchanged if it is empty (no last tool to
+ * mark). Never throws.
+ */
+export function withLastToolCacheControl<T extends Record<string, unknown>>(
+  tools: T[],
+): T[] {
+  if (!Array.isArray(tools) || tools.length === 0) return tools;
+  const last = tools[tools.length - 1];
+  const marked = { ...last, cache_control: { type: 'ephemeral' } } as T;
+  return [...tools.slice(0, -1), marked];
+}
+
+/**
+ * Env-flag check for the direct-transport path. Default OFF — the SDK path
+ * stays the default until the MCP tool-call loop is reproduced in the
+ * direct transport (tracked separately; see runtime-direct.ts header).
+ */
+export function isDirectTransportEnabled(): boolean {
+  const raw = process.env.BUILD_AGENT_DIRECT_TRANSPORT;
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  );
+}

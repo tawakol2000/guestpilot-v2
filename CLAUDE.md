@@ -133,6 +133,16 @@ DRY_RUN                # Restrict to specific conversation IDs
 VAPID_PUBLIC_KEY       # Web Push (optional — push disabled without)
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT          # mailto:support@guestpilot.com
+BUILD_AGENT_DIRECT_TRANSPORT  # Sprint 058-A F1 — when "true"/"1"/"yes"/"on",
+                              # the BUILD tuning-agent bypasses the Claude
+                              # Agent SDK's string-only systemPrompt surface
+                              # and calls @anthropic-ai/sdk directly with a
+                              # block-array system + cache_control markers
+                              # on system blocks 0/1 and the last tool.
+                              # Default OFF. Flip on in staging only after
+                              # the MCP tool-call loop is reproduced in the
+                              # direct path (tracked separately). See
+                              # backend/src/build-tune-agent/runtime-direct.ts.
 ```
 
 ## Critical Rules
