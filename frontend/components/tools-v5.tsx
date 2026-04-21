@@ -421,8 +421,18 @@ function ToolCard({ tool, index, onUpdate, onDelete }: {
                     const cleaned = [...new Set(newStatuses.filter(Boolean))]
                     if (cleaned.length === 0) return // can't have zero statuses
                     const newScope = cleaned.join(',')
-                    setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: newScope } : t))
-                    try { await apiUpdateTool(tool.id, { agentScope: newScope }) } catch { setTools(prev => prev.map(t => t.id === tool.id ? { ...t, agentScope: tool.agentScope } : t)) }
+                    // Sprint 047 Session C — tsc cleanup. Prior shape
+                    // referenced a non-existent `setTools` in the
+                    // ToolCard child scope; the parent exposes an
+                    // `onUpdate(updated)` callback for exactly this.
+                    // Optimistic update via onUpdate, rollback to
+                    // the original tool object on error.
+                    onUpdate({ ...tool, agentScope: newScope })
+                    try {
+                      await apiUpdateTool(tool.id, { agentScope: newScope })
+                    } catch {
+                      onUpdate(tool)
+                    }
                   }}
                   style={{
                     fontSize: 9, fontWeight: 600, fontFamily: T.font.mono,
