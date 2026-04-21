@@ -742,3 +742,120 @@ Sprint-047 carry-over: D9 (BuildToolCallLog admin trace view),
 dashboards merge, raw-prompt editor drawer, deletion of the three
 redirect stubs, cross-session rejection memory, R1 persist-time
 truncation (conditional on Langfuse signal).
+
+## Sprint 047 — Session A (bug-fix: finish the 046 happy path)
+
+Completed: 2026-04-21. Branch: `feat/047-session-a` (off
+`feat/046-studio-unification` per sprint-047-session-a §0.1 Option B —
+Abdelrahman unavailable at kickoff; default applied + recorded per
+spec).
+
+| Gate | Item | Status | Notes |
+|------|------|--------|-------|
+| S1   | `acceptSuggestedFix` wired for PENDING + preview ids | ✅ | Case A dispatches into `suggestion_action({action:'apply'})` via stub-tool; Case B persists an ACCEPTED TuningSuggestion row + calls `applyArtifactChangeFromUi` which wraps `applyArtifactWrite`. Idempotent on both paths (row status CAS for A, JSONB path lookup on `appliedPayload.previewId` for B). Schema: `TuningSuggestion.sourceMessageId String?` applied via `prisma db push`. `FixTarget` + frontend `SuggestedFixTarget` extended with optional sopCategory/sopStatus/sopPropertyId/faqEntryId/systemPromptVariant hints; `studio-chat.tsx` threads them from the `data-suggested-fix` payload. |
+| S2   | Stale principle #8 replaced | ✅ | 48h cooldown text retired (removed in 046-D); replaced with "Recent edits surface as advisories, not blocks" matching actual runtime behaviour. Cache baselines refreshed below. |
+| S3   | R1 advisory text fixed (Path A) | ✅ | "(card omitted — …)" replaced with "Agent reply was long-form prose without a structured card. Asking for a card-shaped summary usually helps." The linter never truncates, so the prior copy was misleading. Path B (persist-time truncation) left deferred per NEXT.md §1.1. |
+| S4   | Recent-edit advisory extended to BUILD writes | ✅ | `BUILD_WRITE_TOOL_NAMES` set covers create_sop / create_faq / create_tool_definition / write_system_prompt. `buildWriteTargetWhere` derives a Prisma fragment mirroring the existing `artifactTargetWhere` shape. No compliance check on BUILD creators — advisory only, never blocks. Oscillation deliberately NOT wired (existing check needs confidence on both sides; BUILD creators don't carry confidence). |
+| S5   | Audit-report View buttons wired | ✅ | `onViewRow` threaded through in `studio-chat.tsx` → `onSendText("Show me the current <artifact> (<artifactId>).")`. Natural-language routing lets the agent resolve via `get_current_state`. |
+| S6   | Full backend + frontend test suites green; `tsc` clean | ✅ | Backend `tsc --noEmit` clean. build-tune-agent 162/162 green (was 158 at Session D close → +4 BUILD-creator advisory tests). `src/__tests__/integration/*.test.ts` 12/12 green (was 10 → +2 Session A accept-preview cases). `tests/integration/build-e2e.test.ts` 3/3 plumbing green (live test env-gated, skipped). Frontend `tsc --noEmit` = 32 lines, identical to Session C baseline — zero new errors in `components/studio/*`. |
+| S7   | PROGRESS.md updated + NEXT.md rewritten for Session B | ✅ | This section + new `NEXT.md` scaffolded for sprint-047 Session B. Old `NEXT.md` (sprint-047 kickoff scope) archived as `NEXT.sprint-047-kickoff.archive.md`. |
+
+### Cache baselines (post-Session A)
+
+Principle-#8 rewrite is roughly length-neutral per session-a §2.2 hint:
+
+| Slice | Chars | Est. tokens | Δ vs Session D close |
+|-------|-------|-------------|----------------------|
+| Region A (shared prefix) | 14,242 | 3,561 | +80 / +20 |
+| TUNE cacheable (A + addendum) | 17,345 | 4,337 | +80 / +20 |
+| BUILD cacheable (A + addendum) | 19,643 | 4,911 | +80 / +20 |
+| Tools array only (17 tools) | 12,286 | 3,072 | 0 |
+
+All four slices stay comfortably above the 2,048-token Sonnet 4.5/4.6
+per-layer cache floor. +20 tokens well under the +200 budget hint in
+session-a §2.2.
+
+### Decisions made this session
+
+- **Branch strategy: Option B (branch off 046).** Sprint-047-session-a
+  §0.1 default per unavailable owner at kickoff. The branch chain is
+  now sprint-045 → 046 → 047-session-a, all unmerged to main. The
+  combined 046+047-A surface is what ships next.
+- **Schema change applied.** `TuningSuggestion.sourceMessageId`
+  made nullable via `prisma db push`. Studio accepts on preview:*
+  ids have no inbox-message anchor; the existing diagnostic pipeline's
+  `SuggestionWriter` already handles `null sourceMessageId` by
+  logging + skipping, so no call-site regressions. The FK still
+  targets `Message` with `onDelete: Cascade` for non-null rows.
+- **Case B persistence keyed by previewId in appliedPayload.** Used
+  Prisma's JSONB `path`-filter for the idempotency lookup rather than
+  adding a dedicated column; zero schema churn for the idempotency
+  concern beyond what S1 already required.
+- **S1 helper shape: `applyArtifactChangeFromUi`.** The session-a §8
+  Help Channels paragraph flagged a `skipComplianceCheck: true` flag
+  as the anti-pattern. Instead the new helper calls `applyArtifactWrite`
+  directly (exported from suggestion-action.ts), persists a minimal
+  ACCEPTED TuningSuggestion row, and rolls the row back on write
+  failure so the manager can retry without a stale history entry
+  blocking recent-edit advisories. The hook-gated agent path is
+  untouched — it still goes through the PreToolUse compliance check.
+- **S3 path: A.** Rewrote the R1 advisory message. Path B would have
+  required rewriting the Vercel AI SDK `onFinish` event stream in
+  order to truncate already-streamed text — heavier lift, and the
+  value-add only materialises if Langfuse shows long-prose turns
+  failing to self-correct under Path A. Left in sprint-047 backlog.
+- **S4 scope: recent-edit only; oscillation deferred for BUILD writes.**
+  The existing oscillation check requires confidence on both prior and
+  new; BUILD creators don't carry a confidence field today. If any
+  future BUILD tool gains one the helper can be reused. No scope
+  creep to invent a BUILD-creator confidence signal this session.
+- **S5 component test deferred.** The frontend tree has no existing
+  vitest/jest harness (`frontend/package.json` has no `test` script,
+  no `__tests__` or `tests/` directory). Standing one up to cover a
+  three-line onClick handler is out of scope for a bug-fix session.
+  Spec-required C-5 acceptance is verified via `tsc --noEmit` clean
+  on `studio-chat.tsx` + the prompt routing is trivially inspectable.
+
+### Deferred to next session
+
+- **R1 persist-time text truncation (Path B).** Conditional on
+  Langfuse showing long-prose turns surviving the Path A advisory
+  without self-correction. Carry-over from sprint 046 NEXT §1.1.
+- **Frontend component-test harness for Studio cards.** Would let us
+  lock in S5's behaviour as a unit test rather than a manual smoke.
+  Wider scope than this session.
+- **D9 `BuildToolCallLog` admin trace view + 30-day retention.**
+  Inherited from sprint 046; not in Session A scope.
+- **Cross-session rejection memory.** Still needs a Prisma model
+  design exercise.
+- **Deletion of the three redirect stubs** (`/build`, `/tuning`,
+  `/tuning/agent`). Courtesy period already expired.
+- **Oscillation advisory on BUILD writes.** Requires a confidence
+  signal on BUILD creators.
+
+### Blocked / surfaced
+
+- **Staging smoke behind auth still unverified in-session.** Same
+  constraint as Sessions C and D. The runtime environment has no
+  valid JWT, so the first real-tenant click-through happens after
+  the branch deploys to Railway + the user signs in. S1's new
+  end-to-end path (click Accept → artifact updated → fresh
+  TuningSuggestion row) needs a post-deploy wet-test before the
+  046+047-A surface is flipped to production. Integration-test
+  coverage + tsc clean should catch any regressions in the
+  meantime.
+- **Nullable `sourceMessageId` is a schema-level loosening.** Every
+  consumer already handles `null` gracefully (verified via grep +
+  code inspection), but if any future caller assumes non-null it
+  will now break at runtime instead of at the DB layer. Flag for
+  review if we introduce a consumer that wants strict non-null
+  semantics — the alternative is a dedicated synthetic-Message
+  sentinel pattern.
+
+## Sprint 046 — closed (047-A appended above)
+
+Sprint-047 Session A closes the gap between "branch ships" and
+"product works end-to-end" that was identified in the post-046 audit.
+The 046 branch is now ready for a staging wet-test; flipping to
+production is gated on a manager-driven accept succeeding on a real
+conversation.
