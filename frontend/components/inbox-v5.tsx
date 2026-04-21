@@ -50,7 +50,9 @@ import {
   CheckCircle2,
   RefreshCw,
   ShieldAlert,
+  Pencil,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import {
   apiGetConversations,
@@ -118,6 +120,7 @@ import WebhookLogsV5 from '@/components/webhook-logs-v5'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { StudioSurface } from '@/components/studio'
 import { getActionCardFor } from '@/components/actions/action-card-registry'
+import { shouldSendAsFromDraft, seedReplyFromDraft } from './inbox/copilot-edit'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -1524,6 +1527,16 @@ export default function InboxV5() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [aiTyping, setAiTyping] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
+  // Sprint 048 Session A — legacy-Copilot edit signal. Holds the original AI
+  // draft text that was seeded into `replyText` via the suggestion pill's Edit
+  // affordance. `sendReply()` consults this to decide whether to tag the
+  // outgoing send with `fromDraft: true` (which is the backend's gate for
+  // firing `runDiagnostic`). Cleared on conversation switch, on fresh
+  // suggestions arriving, on send (success + error), and on approve-as-is.
+  const [seededFromDraft, setSeededFromDraft] = useState<string | null>(null)
+  // Sprint 048 Session A — "discuss in tuning" in-flight message id so the
+  // button can show busy state + stay disabled against double-clicks.
+  const [discussingMsgId, setDiscussingMsgId] = useState<string | null>(null)
   // Streaming text accumulator: conversationId → partial text received so far
   const [streamingText, setStreamingText] = useState<Record<string, string>>({})
   // Feature 042 — per-conversation Translate toggle. Map keyed by conversation id.
@@ -1897,6 +1910,7 @@ export default function InboxV5() {
   useEffect(() => {
     // Clear copilot suggestion, typing state, and FAQ suggestion when switching conversations
     setAiSuggestion(null)
+    setSeededFromDraft(null)
     setAiTyping(false)
     setFaqSuggestion(null)
     seenMessageIds.current.clear()
@@ -2039,6 +2053,7 @@ export default function InboxV5() {
       if (sender === 'ai' && selectedIdRef.current === convId) {
         setAiTyping(false)
         setAiSuggestion(null)
+        setSeededFromDraft(null)
         setStreamingText(prev => {
           const next = { ...prev }
           delete next[convId]
@@ -2143,6 +2158,9 @@ export default function InboxV5() {
       if (data.conversationId === selectedIdRef.current) {
         setAiTyping(false)
         setAiSuggestion(data.suggestion)
+        // A fresh suggestion invalidates any earlier edit-seed — the compose
+        // box is no longer tied to that older draft.
+        setSeededFromDraft(null)
       }
       if (typeof ack === 'function') ack()
     })
@@ -2536,9 +2554,20 @@ export default function InboxV5() {
     setSendingMessage(true)
     const text = replyText.trim()
     const channelOverride = sendChannel !== 'channel' ? sendChannel : undefined
+    // Sprint 048 Session A — gated `fromDraft` signal for the legacy-copilot
+    // tuning diagnostic. Only `true` when the manager seeded the compose box
+    // from the AI suggestion pill's Edit affordance AND then changed the
+    // text. Captured BEFORE resetTextarea()/state resets wipe the inputs.
+    const fromDraft = shouldSendAsFromDraft(selectedConv.aiMode, seededFromDraft, text)
     resetTextarea()
+    setSeededFromDraft(null)
     try {
-      const msg = await apiSendMessage(selectedConv.id, text, channelOverride)
+      const msg = await apiSendMessage(
+        selectedConv.id,
+        text,
+        channelOverride,
+        fromDraft ? { fromDraft: true } : undefined,
+      )
       const newMsg: Message = {
         id: msg.id,
         sender: 'host',
@@ -4664,9 +4693,12 @@ export default function InboxV5() {
                                     correction saved
                                   </span>
                                 )}
-                                {/* Feature 041 sprint 04 — anchor this message into a tuning conversation */}
+                                {/* Feature 041 sprint 04 — anchor this message into a tuning conversation.
+                                    Sprint 048 Session A — toast-on-error, busy state, visible click target. */}
                                 <button
                                   onClick={async () => {
+                                    if (discussingMsgId) return
+                                    setDiscussingMsgId(msg.id)
                                     try {
                                       const { conversation } = await apiCreateTuningConversation({
                                         anchorMessageId: msg.id,
@@ -4676,25 +4708,37 @@ export default function InboxV5() {
                                       updateStudioConversationId(conversation.id)
                                       setNavTab('studio')
                                     } catch (err) {
-                                      console.error('[DiscussInTuning] failed:', err)
+                                      toast.error('Could not open tuning discussion', {
+                                        description: err instanceof Error ? err.message : String(err),
+                                      })
+                                    } finally {
+                                      setDiscussingMsgId(null)
                                     }
                                   }}
+                                  disabled={discussingMsgId === msg.id}
                                   title="Open a Studio chat anchored to this message"
                                   aria-label="Discuss this message in Studio"
                                   style={{
                                     background: 'none',
                                     border: 'none',
-                                    cursor: 'pointer',
-                                    padding: '1px 4px',
+                                    cursor: discussingMsgId === msg.id ? 'wait' : 'pointer',
+                                    padding: '2px 6px',
                                     marginLeft: 2,
                                     color: T.text.tertiary + 'AA',
-                                    fontSize: 9,
+                                    fontSize: 10,
                                     fontFamily: T.font.mono,
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.08em',
+                                    opacity: discussingMsgId === msg.id ? 0.6 : 1,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
                                   }}
                                 >
-                                  discuss in tuning
+                                  {discussingMsgId === msg.id && (
+                                    <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} aria-hidden />
+                                  )}
+                                  <span>{discussingMsgId === msg.id ? 'opening…' : 'discuss in tuning'}</span>
                                 </button>
                               </span>
                             )}
@@ -4993,7 +5037,7 @@ export default function InboxV5() {
                             background: isGlowing ? 'rgba(188, 130, 243, 0.07)' : T.accent + '14',
                             border: isGlowing ? '1px solid transparent' : `1px solid ${T.accent}33`,
                             borderRadius: 10,
-                            padding: aiSuggestion ? '8px 44px 8px 12px' : '6px 12px',
+                            padding: aiSuggestion ? '8px 80px 8px 12px' : '6px 12px',
                             fontSize: 12,
                             color: isGlowing ? T.text.primary : T.accent,
                             fontWeight: aiTyping ? 600 : aiSuggestion ? 400 : 500,
@@ -5013,24 +5057,56 @@ export default function InboxV5() {
                                   : <ShimmerText text="Generating response…" />)
                               : aiSuggestion ?? (selectedConv.aiMode === 'copilot' ? 'Copilot will suggest replies' : 'AI is handling responses automatically')}
                             {aiSuggestion && (
-                              <button
-                                onClick={async () => {
-                                  const s = aiSuggestion
-                                  setAiSuggestion(null)
-                                  try { await apiApproveSuggestion(selectedConv.id, s) } catch { setAiSuggestion(s) }
-                                }}
-                                title="Send this response"
-                                aria-label="Approve and send AI suggestion"
-                                style={{
-                                  position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-                                  width: 28, height: 28, borderRadius: '50%', border: 'none',
-                                  background: T.text.primary, cursor: 'pointer',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                <ArrowUp size={13} color="#fff" />
-                              </button>
+                              <>
+                                {/* Sprint 048 Session A — Edit-suggestion affordance.
+                                    Seeds `replyText` with the AI draft, clears the pill,
+                                    and records the original in `seededFromDraft` so a
+                                    later edit triggers the tuning diagnostic via
+                                    `fromDraft: true`. Approval-as-is (arrow button)
+                                    intentionally does NOT set `seededFromDraft`. */}
+                                <button
+                                  onClick={() => {
+                                    seedReplyFromDraft(
+                                      aiSuggestion,
+                                      setReplyText,
+                                      setAiSuggestion,
+                                      setSeededFromDraft,
+                                    )
+                                    // Focus textarea so cursor lands live.
+                                    setTimeout(() => composeTextareaRef.current?.focus(), 0)
+                                  }}
+                                  title="Edit this response before sending"
+                                  aria-label="Edit AI suggestion"
+                                  style={{
+                                    position: 'absolute', right: 40, top: '50%', transform: 'translateY(-50%)',
+                                    width: 28, height: 28, borderRadius: '50%', border: `1px solid ${T.border.default}`,
+                                    background: T.bg.primary, cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <Pencil size={12} color={T.text.primary} />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    const s = aiSuggestion
+                                    setAiSuggestion(null)
+                                    setSeededFromDraft(null)
+                                    try { await apiApproveSuggestion(selectedConv.id, s) } catch { setAiSuggestion(s) }
+                                  }}
+                                  title="Send this response"
+                                  aria-label="Approve and send AI suggestion"
+                                  style={{
+                                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                                    width: 28, height: 28, borderRadius: '50%', border: 'none',
+                                    background: T.text.primary, cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <ArrowUp size={13} color="#fff" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
