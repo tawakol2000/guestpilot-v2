@@ -304,6 +304,25 @@ describe('ComposeBubble — 056-A F1', () => {
     })
   })
 
+  // ── Sprint 057-A F2 — typographic attribution ────────────────────────────
+
+  it('057-A F2: agent rationale text in result state renders with AI (inkMuted) colour', async () => {
+    const { STUDIO_COLORS } = await import('../../studio/tokens')
+    vi.mocked(apiComposeSpan).mockResolvedValue({
+      replacement: 'New wording.',
+      rationale: 'AI-authored rationale here.',
+    })
+
+    render(<ComposeBubble {...makeProps()} />)
+    const input = screen.getByTestId('compose-bubble-input')
+    fireEvent.change(input, { target: { value: 'improve' } })
+    fireEvent.click(screen.getByTestId('compose-bubble-submit'))
+
+    await waitFor(() => screen.getByTestId('compose-bubble-result'))
+    const rationaleEl = screen.getByText('AI-authored rationale here.')
+    expect(rationaleEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+  })
+
   // ── Redo limit ─────────────────────────────────────────────────────────
 
   it('Redo button disappears after 3 redos', async () => {

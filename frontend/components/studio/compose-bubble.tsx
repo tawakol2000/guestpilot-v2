@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, RotateCcw, Check } from 'lucide-react'
 import { apiComposeSpan } from '@/lib/build-api'
-import { STUDIO_COLORS } from './tokens'
+import { STUDIO_COLORS, attributedStyle } from './tokens'
 
 export interface ComposeBubbleSelection {
   start: number
@@ -280,7 +280,7 @@ export function ComposeBubble({
               <div
                 style={{
                   fontSize: 10.5,
-                  color: STUDIO_COLORS.inkSubtle,
+                  ...attributedStyle('ai'),
                   fontStyle: 'italic',
                 }}
               >

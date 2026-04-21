@@ -40,7 +40,7 @@ import {
 } from '@/lib/build-api'
 import { ApiError } from '@/lib/api'
 import { slug as slugify } from '@/lib/slug'
-import { STUDIO_COLORS } from './tokens'
+import { STUDIO_COLORS, attributedStyle } from './tokens'
 import { resolveArtifactDeepLink, type SessionArtifact } from './session-artifacts'
 import { SopView } from './artifact-views/sop-view'
 import { FaqView } from './artifact-views/faq-view'
@@ -1287,7 +1287,7 @@ function VerificationSection({
             key={i}
             style={{
               fontSize: 12,
-              color: STUDIO_COLORS.inkMuted,
+              ...attributedStyle('ai'),
               borderLeft:
                 v.verdict === 'failed'
                   ? `3px solid ${STUDIO_COLORS.warnFg}`

@@ -682,4 +682,42 @@ describe('ArtifactDrawer', () => {
       'No rationale recorded',
     )
   })
+
+  // ── Sprint 057-A F2 — typographic attribution in drawer ─────────────────
+
+  it('057-A F2: rationale-card body text renders with AI (inkMuted) colour', async () => {
+    const { STUDIO_COLORS } = await import('../tokens')
+    mockFetch.mockResolvedValue(
+      makeDetail({ type: 'sop', body: 'SOP body.' }),
+    )
+    render(
+      <ArtifactDrawer
+        open
+        target={{
+          artifact: 'sop',
+          artifactId: 'sop-1',
+          historyRow: {
+            id: 'h-1',
+            artifactType: 'sop',
+            artifactId: 'sop-1',
+            operation: 'UPDATE',
+            actorEmail: 'a@b.com',
+            conversationId: 'c1',
+            createdAt: new Date().toISOString(),
+            prevBody: null,
+            newBody: {},
+            metadata: { rationale: 'Agent wrote this rationale text.' },
+          },
+        }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+      />,
+    )
+    await screen.findByTestId('rationale-card-body')
+    expect(screen.getByTestId('rationale-card-body')).toHaveStyle({
+      color: STUDIO_COLORS.inkMuted,
+    })
+  })
 })
