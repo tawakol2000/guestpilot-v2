@@ -1434,5 +1434,73 @@ export function makeBuildController(prisma: PrismaClient) {
       }
     },
 
+    /**
+     * Sprint 058-A F9d — GET /api/build/sessions/:conversationId/artifacts
+     *
+     * Session-artifacts hydration endpoint. Returns every
+     * BuildArtifactHistory row attached to the given conversation so the
+     * Studio's session-artifacts rail can seed itself on page reload
+     * (rather than starting empty and relying entirely on live
+     * data-build-history SSE parts for its state, which is what the
+     * "No artifacts touched in this session yet" lie-on-reload bug was).
+     *
+     * Admin-gating mirrors listArtifactHistory — this is an observational
+     * surface that exposes BuildArtifactHistory metadata, so only tenants
+     * with isAdmin=true can read it. Tenant isolation is enforced via
+     * `req.tenantId`: a tenant-A user passing a tenant-B conversationId
+     * receives an empty list, not an error (consistent with the existing
+     * history endpoint).
+     */
+    async sessionArtifacts(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      try {
+        const conversationId = String(req.params.conversationId ?? '');
+        if (!conversationId) {
+          res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
+          return;
+        }
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+
+        const rows = await prisma.buildArtifactHistory.findMany({
+          where: { tenantId: req.tenantId, conversationId },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            artifactType: true,
+            artifactId: true,
+            operation: true,
+            actorEmail: true,
+            conversationId: true,
+            createdAt: true,
+            metadata: true,
+          },
+        });
+
+        res.json({
+          rows: rows.map((r) => ({
+            historyId: r.id,
+            artifactType: r.artifactType,
+            artifactId: r.artifactId,
+            operation: r.operation,
+            actorEmail: r.actorEmail,
+            conversationId: r.conversationId,
+            touchedAt: r.createdAt.toISOString(),
+            metadata: r.metadata,
+          })),
+        });
+      } catch (err) {
+        console.error('[build-controller] sessionArtifacts failed:', err);
+        res.status(500).json({ error: 'SESSION_ARTIFACTS_FAILED' });
+      }
+    },
   };
 }

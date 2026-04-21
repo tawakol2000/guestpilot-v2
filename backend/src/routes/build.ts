@@ -81,5 +81,10 @@ export function buildRouter(prisma: PrismaClient): Router {
     ctl.enhancePrompt(req, res)
   );
 
+  // Sprint 058-A F9d — session-artifacts hydration for page reload.
+  router.get('/sessions/:conversationId/artifacts', (req: any, res) =>
+    ctl.sessionArtifacts(req, res)
+  );
+
   return router;
 }
