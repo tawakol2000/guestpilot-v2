@@ -1115,3 +1115,107 @@ C branches from B directly, no intermediate merge.
   trace-drawer, raw-prompt-drawer). +4 new cases from Session C.
 - Frontend `next build`: not re-run this session (no routing change
   beyond what B5 already verified).
+
+## Sprint 048 — Session A (two-bug jump: copilot edit signal + discuss-in-tuning polish)
+
+Completed: 2026-04-21. Branch: `feat/048-session-a` off
+`feat/047-session-c` (HEAD `d46aefe` at Session C close). End-of-stack
+merge to `advanced-ai-v7` remains deferred per sprint-047 Session C
+posture — this session just extends the stack by one more segment.
+
+| Gate | Item | Status | Commit | Notes |
+|------|------|--------|--------|-------|
+| A1+A2 | Edit-pill affordance + `seededFromDraft` state + `sendReply()` `fromDraft` wire-through | ✅ | `ea990ce` | New pencil button on the suggestion pill next to the existing approve-arrow. Click seeds `replyText` with the AI draft, clears the pill, stamps `seededFromDraft`. `sendReply()` now consults `shouldSendAsFromDraft(aiMode, seededFromDraft, sentText)` — gate: copilot + seeded + edited. On match, passes `{ fromDraft: true }` to `apiSendMessage`. `seededFromDraft` resets on conversation switch, fresh `ai_suggestion` socket events, AI message arrival, approve-as-is, and post-send (both success + error). A5 (discuss-in-tuning UI polish) landed here too because the state + button markup are adjacent in inbox-v5; the logic+tests split into A5+A6 below. Pure helper extracted to `components/inbox/copilot-edit.ts`. |
+| A3 | Frontend vitest for A1/A2 | ✅ | `b443af0` | 10/10 cases in `inbox-v5.editPill.test.tsx`. Pure helper tests + an EditPillWrapper that mirrors the inbox onClick handler line-for-line and drives through userEvent. Covers SC-1a (seeded+edited → fromDraft:true), SC-1b (seeded+unchanged → undefined), SC-1c (fresh-typed → undefined), and non-copilot modes always return false. |
+| A4 | Backend integration test for `fromDraft:true` fire path | ✅ | `9b11ea1` | 3/3 cases in `messages-copilot-fromdraft.integration.test.ts`. Live Prisma fixture, OpenAI stubbed via require-cache injection. Asserts (1) POST with fromDraft:true + edited content → TuningSuggestion row within 5s, (2) 60s dedup key present for repeat, (3) POST without fromDraft → zero TuningSuggestion rows AND `originalAiText` stays null on the Message row (sprint-10 false-positive guard). |
+| A5 | Discuss-in-tuning toast + busy state + visible click target | ✅ | `ea990ce` | Landed inline with A1/A2 because the button sits in the same component scope. Toast via `sonner` on error (err.message only, no stack leakage). Busy state via `discussingMsgId`, disables the button + shows `<Loader2>` spinner. Padding bumped 1px→2px, fontSize 9→10; disabled cursor switches to `wait`. |
+| A6 | Discuss-in-tuning vitest | ✅ | `0d1ff52` | Extracted the onClick handler to a pure `handleDiscussInTuning(messageId, deps)` helper in `components/inbox/discuss-in-tuning.ts`. 4/4 cases: SC-2a success (onSuccess fires with conversation), SC-2b error (onError fires with the thrown value, never throws out), SC-2c re-entrancy guard via `isBusy()`, and a stack-leakage regression that asserts the helper passes the raw Error so the caller's toast surfaces `.message` only. inbox-v5 now calls the helper directly — no behavioural change, just the testability seam. |
+| A7 | Validation smoke one-liner | ✅ | `944b08f` | `validation/sprint-048-discuss-in-tuning-smoke.md`. Curl + expected outcomes (201/401/4xx/500) + triage steps (logs under `[TuningChat]`, confirm TuningConversation table, confirm cross-tenant anchor). Run log stanza left blank for the next operator. |
+| A8 | Suites green + `tsc --noEmit` clean | ✅ | (verification only) | See verification run below. |
+| A9 | PROGRESS.md + NEXT.md rewritten for Session B or sprint-049 kickoff | ✅ | (this commit) | |
+
+### Decisions made this session
+
+- **Frontend test scope: helper-level, not full-inbox render.**
+  inbox-v5.tsx is ~5k lines; mounting it for a test that only needs
+  to exercise the edit-pill's onClick handler is disproportionate.
+  Extracted two pure helpers (`shouldSendAsFromDraft`,
+  `seedReplyFromDraft`) and wrote a test that mirrors the exact
+  production onClick handler in a small wrapper component. Same
+  pattern used for discuss-in-tuning (`handleDiscussInTuning`). The
+  tests exercise the real callables the inbox imports — no mocks
+  beyond the api/setter callbacks. Trade-off: the test doesn't
+  catch regressions if the onClick handler diverges from the helper
+  extract; mitigated by the fact that the handler is now a
+  one-liner that calls the helper.
+
+- **A5 landed with A1/A2 rather than its own commit.** The inbox-v5
+  suggestion pill and the per-message action bar are adjacent in
+  the JSX tree; touching one invariably requires rebasing the other
+  at edit time. Shipped the UI polish inline with A1/A2 and split
+  the logic+tests into A5/A6 commits. The gate sheet's A5 row is
+  cross-referenced back to commit `ea990ce`.
+
+- **`hostawayConversationId` cleared, not nulled, in A4 fixture.**
+  Prisma column is non-nullable with empty-string default. The
+  controller's truthy check (`if (conversation.hostawayConversationId)`)
+  treats both empty-string and null-like the same — skip HTTP. So
+  the integration test just clears the field, which keeps the
+  fixture schema-faithful without requiring a migration.
+
+- **`fromDraft` passthrough stays client-driven.** Backend behaviour
+  unchanged from sprint-10: gate still hinges on `fromDraft === true`
+  in the request body. Frontend now correctly opts in for the edit
+  path. A later session could unify the two legacy copilot paths
+  (Path A `/messages` vs Path B `/approve-suggestion`) — deliberately
+  deferred per scope sheet §2. No ai.service.ts changes.
+
+### Deferred / carried forward
+
+- **End-of-stack merge to `advanced-ai-v7`.** Still the non-code
+  close-out ritual from sprint 047 Session C. One more segment
+  (`feat/048-session-a`) is now in the chain; the merge command
+  becomes `git merge -X theirs feat/048-session-a`. Staging wet-test
+  per `validation/sprint-047-session-a-staging-smoke.md` + the new
+  `validation/sprint-048-discuss-in-tuning-smoke.md` runs after the
+  merge deploys.
+
+- **Unify Path A + Path B for legacy copilot edits.**
+  `conversations.controller.ts#approveSuggestion` still doesn't fire
+  the diagnostic when `editedText !== suggestion`. The frontend
+  never exercises that branch (the arrow button sends unchanged
+  text; the new pencil button routes through `/messages`), so it's
+  not load-bearing — filed as a sprint 049 candidate.
+
+- **Raw-prompt editor edit path.** Unchanged — still the primary
+  sprint-049 kickoff candidate.
+
+- **RejectionMemory retention sweep job.** Unchanged.
+
+- **Free-text rationale field on the reject card.** Unchanged.
+
+### Blocked / surfaced
+
+- **inbox-v5.tsx test surface is very wide.** A6-scope tests
+  sidestepped this by extracting helpers. If Session B's raw-prompt
+  editor-edit work touches inbox-v5, factor the test seams up-front
+  rather than retrofitting a wrapper component per gate.
+
+- **Discuss-in-tuning runtime failure mode unknown until smoke runs.**
+  Code-path audit came back clean, so staging smoke output will
+  decide whether A5's toast-on-failure work surfaces a real backend
+  500 or whether the original report was a UX-only issue (tiny
+  click target → misclick). Either way the A5 polish is shipped.
+
+### Verification run (local, at session close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite (`npx tsx --test 'src/**/__tests__/*.test.ts'`
+  with JWT_SECRET + OPENAI_API_KEY pre-set): **245/245 pass**.
+  No new unit cases this session — all new tests are integration.
+- Backend integration suite (`src/__tests__/integration/*.test.ts`):
+  **30/30 pass** (was 27/27; +3 new cases from A4).
+- Frontend `tsc --noEmit`: clean.
+- Frontend `vitest run`: **26/26 pass across 5 files** (was 12/12
+  across 3 files; +10 cases from A3 inbox-v5.editPill, +4 from A6
+  inbox-v5.discussInTuning).
