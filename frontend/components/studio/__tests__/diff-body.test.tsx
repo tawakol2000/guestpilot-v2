@@ -95,8 +95,16 @@ describe('A1 pending grammar extends into the drawer', () => {
       />,
     )
     expect(screen.getByText(/Unsaved · pending approval/i)).toBeInTheDocument()
-    const pre = document.querySelector('pre[data-origin="pending"]')
-    expect(pre).not.toBeNull()
+    // 052-C1 — MarkdownBody is now the pending-grammar carrier (was <pre>
+    // in 051). The A1 invariant is element-agnostic — what matters is
+    // that the body node has data-origin="pending" + italic styling.
+    // `PendingBadge` also stamps data-origin="pending" on its own node
+    // (shared grammar), so filter by inline italic to land on the body.
+    const bodies = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-origin="pending"]'),
+    )
+    const italicBody = bodies.find((el) => el.style.fontStyle === 'italic')
+    expect(italicBody).toBeDefined()
   })
   it('FAQ view renders pending grammar identically', () => {
     render(

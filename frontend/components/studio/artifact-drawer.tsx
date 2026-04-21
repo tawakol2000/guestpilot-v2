@@ -26,6 +26,7 @@ import {
   type BuildArtifactDetail,
   type BuildArtifactType,
 } from '@/lib/build-api'
+import { slug as slugify } from '@/lib/slug'
 import { STUDIO_COLORS } from './tokens'
 import { resolveArtifactDeepLink, type SessionArtifact } from './session-artifacts'
 import { SopView } from './artifact-views/sop-view'
@@ -153,22 +154,27 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  // B3: scroll-to-section after detail loads. Matches an h1/h2/h3 whose
-  // textContent slug equals the requested section. Graceful no-op if
-  // nothing matches.
+  // B3/C1: scroll-to-section is delegated to `MarkdownBody` (which owns
+  // the rendered body + slug rule). The drawer retains a fallback scroll
+  // for non-markdown views and for the diff branch — if the body is
+  // rendered raw, we still try a best-effort DOM walk so the feature
+  // degrades instead of silently doing nothing. Stale fragments no-op.
   useEffect(() => {
     if (!detail || !target?.scrollToSection) return
     const root = contentBodyRef.current
     if (!root) return
-    const section = target.scrollToSection
-    const headings = root.querySelectorAll('h1, h2, h3, [data-section]')
-    const match = Array.from(headings).find((h) => {
-      const slug =
-        (h as HTMLElement).dataset?.section ??
-        slugify(h.textContent ?? '')
-      return slug === section || slugify(slug) === slugify(section)
-    }) as HTMLElement | undefined
-    if (match) match.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    const sectionSlug = slugify(target.scrollToSection)
+    const frame = requestAnimationFrame(() => {
+      const headings = root.querySelectorAll<HTMLElement>(
+        'h1, h2, h3, [data-section]',
+      )
+      const match = Array.from(headings).find((h) => {
+        const s = h.dataset?.section ?? slugify(h.textContent ?? '')
+        return s === sectionSlug
+      })
+      if (match) match.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(frame)
   }, [detail, target?.scrollToSection])
 
   const hasPrev = useMemo(
@@ -310,6 +316,11 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
               showDiff={showDiff}
               showFullSensitive={showFullSensitive}
               isPending={isPending}
+              scrollToSectionSlug={
+                target.scrollToSection
+                  ? slugify(target.scrollToSection)
+                  : null
+              }
             />
           ) : null}
         </div>
@@ -395,6 +406,7 @@ function ViewSwitch(props: {
   showDiff: boolean
   showFullSensitive: boolean
   isPending: boolean
+  scrollToSectionSlug: string | null
 }) {
   const {
     artifact,
@@ -405,12 +417,27 @@ function ViewSwitch(props: {
     showDiff,
     showFullSensitive,
     isPending,
+    scrollToSectionSlug,
   } = props
   switch (type) {
     case 'sop':
-      return <SopView artifact={artifact} showDiff={showDiff} isPending={isPending} />
+      return (
+        <SopView
+          artifact={artifact}
+          showDiff={showDiff}
+          isPending={isPending}
+          scrollToSectionSlug={scrollToSectionSlug}
+        />
+      )
     case 'faq':
-      return <FaqView artifact={artifact} showDiff={showDiff} isPending={isPending} />
+      return (
+        <FaqView
+          artifact={artifact}
+          showDiff={showDiff}
+          isPending={isPending}
+          scrollToSectionSlug={scrollToSectionSlug}
+        />
+      )
     case 'system_prompt':
       return (
         <SystemPromptView
@@ -508,10 +535,3 @@ function ErrorBanner({ message }: { message: string }) {
   )
 }
 
-function slugify(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}

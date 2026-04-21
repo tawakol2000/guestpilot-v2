@@ -3,14 +3,15 @@
 /**
  * Sprint 051 A B1 — SOP artifact viewer (SopVariant).
  *
- * Markdown-style body renders as a pre-wrapped block (no parser yet —
- * keeps the diff diff; markdown can layer on later without changing the
- * viewer's data shape). B2 wires the optional diff path via the shared
- * `DiffBody` component.
+ * Sprint 052 A C1 — markdown-rendered body via `MarkdownBody`. Diff mode
+ * (toggle ON) still renders raw text through `DiffBody` per
+ * brief §2 (markdown-AST diff deferred). Heading anchors power B3
+ * citation scroll.
  */
 import type { BuildArtifactDetail } from '@/lib/build-api'
 import { STUDIO_COLORS } from '../tokens'
 import { DiffBody } from './diff-body'
+import { MarkdownBody } from './markdown-body'
 import { ArtifactMetaGrid } from './meta-grid'
 import { PendingBadge } from './pending-badge'
 
@@ -20,9 +21,16 @@ export interface SopViewProps {
   showDiff: boolean
   /** A1 origin grammar: session-touched-but-not-approved artifacts. */
   isPending: boolean
+  /** 052-C1: heading slug to scroll to once the body is rendered. */
+  scrollToSectionSlug?: string | null
 }
 
-export function SopView({ artifact, showDiff, isPending }: SopViewProps) {
+export function SopView({
+  artifact,
+  showDiff,
+  isPending,
+  scrollToSectionSlug,
+}: SopViewProps) {
   const meta = artifact.meta as {
     category?: string
     status?: string
@@ -66,7 +74,11 @@ export function SopView({ artifact, showDiff, isPending }: SopViewProps) {
         {showDiff && prev != null ? (
           <DiffBody prev={prev} next={artifact.body} mode="line" />
         ) : (
-          <PreBody body={artifact.body} isPending={isPending} />
+          <MarkdownBody
+            body={artifact.body}
+            isPending={isPending}
+            scrollToSectionSlug={scrollToSectionSlug}
+          />
         )}
       </div>
     </div>

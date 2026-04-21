@@ -5,22 +5,31 @@
  *
  * Q is shown above the A so the scanning order matches how operators
  * remember FAQs ("the question about early check-in…"). B2 wires
- * token-level diff on the answer body.
+ * token-level diff on the answer body. 052 A C1 replaces the monospace
+ * answer block with markdown rendering when the diff toggle is off.
  */
 import type { BuildArtifactDetail } from '@/lib/build-api'
 import { STUDIO_COLORS } from '../tokens'
 import { DiffBody } from './diff-body'
+import { MarkdownBody } from './markdown-body'
 import { ArtifactMetaGrid } from './meta-grid'
 import { PendingBadge } from './pending-badge'
-import { PreBody, SectionHeading } from './sop-view'
+import { SectionHeading } from './sop-view'
 
 export interface FaqViewProps {
   artifact: BuildArtifactDetail
   showDiff: boolean
   isPending: boolean
+  /** 052-C1: heading slug to scroll to once the body is rendered. */
+  scrollToSectionSlug?: string | null
 }
 
-export function FaqView({ artifact, showDiff, isPending }: FaqViewProps) {
+export function FaqView({
+  artifact,
+  showDiff,
+  isPending,
+  scrollToSectionSlug,
+}: FaqViewProps) {
   const meta = artifact.meta as {
     question?: string
     category?: string
@@ -80,7 +89,11 @@ export function FaqView({ artifact, showDiff, isPending }: FaqViewProps) {
         {showDiff && prev != null ? (
           <DiffBody prev={prev} next={artifact.body} mode="token" />
         ) : (
-          <PreBody body={artifact.body} isPending={isPending} />
+          <MarkdownBody
+            body={artifact.body}
+            isPending={isPending}
+            scrollToSectionSlug={scrollToSectionSlug}
+          />
         )}
       </div>
     </div>
