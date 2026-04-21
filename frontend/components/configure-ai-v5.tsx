@@ -2053,7 +2053,7 @@ function SystemPromptsSection({
                 <div key={i} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '8px 12px', borderRadius: T.radius.sm,
-                  background: i % 2 === 0 ? T.bg.primary : T.bg.card,
+                  background: i % 2 === 0 ? T.bg.primary : T.bg.secondary,
                   marginBottom: 2,
                 }}>
                   <div>
@@ -2155,7 +2155,7 @@ function ImageHandlingSection({
   }
 
   return (
-    <div style={{ background: T.bg.card, borderRadius: T.radius.lg, border: `1px solid ${T.border.default}`, boxShadow: T.shadow.sm, overflow: 'hidden' }}>
+    <div style={{ background: T.bg.primary, borderRadius: T.radius.lg, border: `1px solid ${T.border.default}`, boxShadow: T.shadow.sm, overflow: 'hidden' }}>
       <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${T.border.default}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 30, height: 30, borderRadius: T.radius.sm, background: '#EA580C18', border: '1px solid #EA580C28', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
