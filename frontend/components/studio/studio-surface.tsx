@@ -40,6 +40,11 @@ import { StudioChat } from './studio-chat'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { TraceDrawer } from './trace-drawer'
 import { RawPromptDrawer } from './raw-prompt-drawer'
+import {
+  SessionArtifactsCard,
+  upsertSessionArtifact,
+  type SessionArtifact,
+} from './session-artifacts'
 import { STUDIO_COLORS } from './tokens'
 
 export interface StudioSurfaceProps {
@@ -72,6 +77,9 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   })
   const [traceOpen, setTraceOpen] = useState(false)
   const [rawPromptOpen, setRawPromptOpen] = useState(false)
+  // Sprint 050 A3 — session artifacts panel. Resets when conversationId
+  // changes (handled automatically by the bootstrap effect's reload).
+  const [sessionArtifacts, setSessionArtifacts] = useState<SessionArtifact[]>([])
   const bootstrapRef = useRef(false)
 
   // Fetch capabilities once on mount. Both flags default to false so a
@@ -94,6 +102,8 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   // can rehydrate from the new row.
   useEffect(() => {
     bootstrapRef.current = false
+    // Session artifacts are per-conversation — empty on switch.
+    setSessionArtifacts([])
   }, [conversationId])
 
   useEffect(() => {
@@ -168,7 +178,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   const handlePlanApproved = useCallback(() => {
     setShowPropagationBanner(true)
   }, [])
-  const handlePlanRolledBack = useCallback(() => {
+  const handlePlanRolledBack = useCallback((transactionId: string) => {
     apiGetBuildTenantState()
       .then((next) => {
         setLoad((prev) => (prev.kind === 'ready' ? { ...prev, tenantState: next } : prev))
@@ -176,6 +186,26 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
       .catch(() => {
         /* stays on stale state — a reload will refresh */
       })
+    // Flip any session artifacts that came from this transaction to
+    // "reverted". We don't track transaction→artifact mapping locally,
+    // so the safest thing is to mark every existing row as reverted
+    // when the only plan just rolled back. A finer-grained fix lands
+    // when Bundle B lifts the per-artifact tx id into the payload.
+    setSessionArtifacts((prev) =>
+      prev.map((a) =>
+        a.id.startsWith(`tx:${transactionId}:`)
+          ? {
+              ...a,
+              id: a.id,
+              action: 'reverted',
+              at: new Date().toISOString(),
+            }
+          : a,
+      ),
+    )
+  }, [])
+  const handleArtifactTouched = useCallback((next: SessionArtifact) => {
+    setSessionArtifacts((prev) => upsertSessionArtifact(prev, next))
   }, [])
 
   if (load.kind === 'loading') {
@@ -256,6 +286,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             onTestResult={handleTestResult}
             onPlanApproved={handlePlanApproved}
             onPlanRolledBack={handlePlanRolledBack}
+            onArtifactTouched={handleArtifactTouched}
             isAdmin={capabilities.isAdmin}
             traceViewEnabled={capabilities.traceViewEnabled}
           />
@@ -265,6 +296,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
       <RightRail
         snapshot={effectiveSnapshot}
         testResults={testResults}
+        sessionArtifacts={sessionArtifacts}
         traceButtonVisible={capabilities.traceViewEnabled && capabilities.isAdmin}
         onOpenTrace={() => setTraceOpen(true)}
         rawPromptButtonVisible={
@@ -432,6 +464,7 @@ function LeftRail({
 function RightRail({
   snapshot,
   testResults,
+  sessionArtifacts,
   traceButtonVisible,
   onOpenTrace,
   rawPromptButtonVisible,
@@ -439,6 +472,7 @@ function RightRail({
 }: {
   snapshot: StateSnapshotData
   testResults: TestPipelineResultData[]
+  sessionArtifacts: SessionArtifact[]
   traceButtonVisible: boolean
   onOpenTrace: () => void
   rawPromptButtonVisible: boolean
@@ -456,6 +490,7 @@ function RightRail({
       }}
     >
       <StateSnapshotCard data={snapshot} />
+      <SessionArtifactsCard artifacts={sessionArtifacts} />
       {testResults.length > 0 && (
         <div
           className="rounded-md border bg-white p-3"

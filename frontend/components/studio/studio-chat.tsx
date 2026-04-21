@@ -41,6 +41,10 @@ import { ReasoningLine } from './reasoning-line'
 import { PlanChecklist } from '../build/plan-checklist'
 import { TestPipelineResult } from '../build/test-pipeline-result'
 import { ToolCallDrawer, type ToolCallDrawerPart } from './tool-call-drawer'
+import type {
+  SessionArtifact,
+  SessionArtifactType,
+} from './session-artifacts'
 
 export interface StudioChatProps {
   conversationId: string
@@ -51,6 +55,12 @@ export interface StudioChatProps {
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   /**
+   * Sprint 050 A3 — emitted when a plan is approved or a suggested fix
+   * is accepted. Parent (StudioSurface) upserts into the right-rail
+   * session-artifacts panel.
+   */
+  onArtifactTouched?: (artifact: SessionArtifact) => void
+  /**
    * Sprint 050 A2 — admin-only "Show full output" toggle inside the
    * tool-call drawer. Both flags must be true to surface the toggle; the
    * sanitiser defaults to operator-tier redaction+truncation when the
@@ -58,6 +68,72 @@ export interface StudioChatProps {
    */
   isAdmin?: boolean
   traceViewEnabled?: boolean
+}
+
+// Sprint 050 A3 — helpers that turn a plan-approval or suggested-fix
+// accept into SessionArtifact records. Lives here because this is the
+// file that sees both callback shapes.
+const PLAN_ITEM_TYPE_TO_ARTIFACT: Record<string, SessionArtifactType> = {
+  sop: 'sop',
+  faq: 'faq',
+  system_prompt: 'system_prompt',
+  tool_definition: 'tool',
+}
+const FIX_ARTIFACT_TO_TYPE: Record<string, SessionArtifactType> = {
+  sop: 'sop',
+  faq: 'faq',
+  system_prompt: 'system_prompt',
+  tool_definition: 'tool',
+  property_override: 'property_override',
+}
+function planItemToArtifact(
+  transactionId: string,
+  item: { type: string; name: string; target?: { artifactId?: string; sectionId?: string; slotKey?: string } },
+  now: string,
+): SessionArtifact | null {
+  const type = PLAN_ITEM_TYPE_TO_ARTIFACT[item.type]
+  if (!type) return null
+  const artifactId = item.target?.artifactId ?? `${item.type}:${item.name}`
+  // Stable key — transactionId scopes the artifact to this approval so
+  // a rollback can flip it to "reverted" without touching later work.
+  const id = `tx:${transactionId}:${type}:${artifactId}`
+  return {
+    id,
+    artifact: type,
+    artifactId,
+    title: item.name,
+    action: 'created',
+    at: now,
+  }
+}
+function fixToArtifact(
+  data: {
+    id?: string
+    target?: { artifact?: string; artifactId?: string; sectionId?: string }
+    category?: string
+  },
+  now: string,
+): SessionArtifact | null {
+  const artifactKey = data.target?.artifact ?? ''
+  const type = FIX_ARTIFACT_TO_TYPE[artifactKey]
+  if (!type) return null
+  const artifactId =
+    data.target?.artifactId ??
+    data.target?.sectionId ??
+    `fix:${data.id ?? Date.now()}`
+  const id = `fix:${type}:${artifactId}`
+  const title =
+    artifactKey === 'system_prompt' && data.target?.sectionId
+      ? `Prompt · §${data.target.sectionId}`
+      : `${type.toUpperCase()} · ${artifactId.slice(0, 12)}`
+  return {
+    id,
+    artifact: type,
+    artifactId,
+    title,
+    action: 'modified',
+    at: now,
+  }
 }
 
 export function StudioChat({
@@ -68,6 +144,7 @@ export function StudioChat({
   onTestResult,
   onPlanApproved,
   onPlanRolledBack,
+  onArtifactTouched,
   isAdmin = false,
   traceViewEnabled = false,
 }: StudioChatProps) {
@@ -193,6 +270,7 @@ export function StudioChat({
               conversationId={conversationId}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
+              onArtifactTouched={onArtifactTouched}
               onSendText={(text) => sendMessage({ text })}
               onOpenToolDrawer={openToolDrawer}
             />
@@ -331,6 +409,7 @@ function MessageRow({
   conversationId,
   onPlanApproved,
   onPlanRolledBack,
+  onArtifactTouched,
   onSendText,
   onOpenToolDrawer,
 }: {
@@ -339,6 +418,7 @@ function MessageRow({
   conversationId: string
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
+  onArtifactTouched?: (artifact: SessionArtifact) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
@@ -404,6 +484,7 @@ function MessageRow({
               conversationId={conversationId}
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
+              onArtifactTouched={onArtifactTouched}
               onSendText={onSendText}
               onOpenToolDrawer={onOpenToolDrawer}
             />
@@ -423,6 +504,7 @@ function StandalonePart({
   conversationId,
   onPlanApproved,
   onPlanRolledBack,
+  onArtifactTouched,
   onSendText,
   onOpenToolDrawer,
 }: {
@@ -430,6 +512,7 @@ function StandalonePart({
   conversationId: string
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
+  onArtifactTouched?: (artifact: SessionArtifact) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
@@ -463,10 +546,23 @@ function StandalonePart({
   }
 
   if (type === 'data-build-plan') {
+    const planData = part.data as BuildPlanData | undefined
     return (
       <PlanChecklist
-        data={part.data as BuildPlanData}
-        onApproved={onPlanApproved}
+        data={planData as BuildPlanData}
+        onApproved={(txId) => {
+          // Sprint 050 A3 — seed the session-artifacts rail from every
+          // plan item so the operator can see "here's what this plan
+          // wrote" the moment they approve it.
+          if (planData && onArtifactTouched) {
+            const now = new Date().toISOString()
+            for (const it of planData.items ?? []) {
+              const artifact = planItemToArtifact(txId, it, now)
+              if (artifact) onArtifactTouched(artifact)
+            }
+          }
+          onPlanApproved?.(txId)
+        }}
         onRolledBack={onPlanRolledBack}
       />
     )
@@ -503,6 +599,24 @@ function StandalonePart({
         createdAt={typeof data.createdAt === 'string' ? data.createdAt : undefined}
         onAccept={async (id) => {
           const target = (data.target as SuggestedFixTarget | undefined) ?? {}
+          // Sprint 050 A3 — emit the session-artifact record before the
+          // network call so the rail updates immediately; if the write
+          // throws the later toast still surfaces the failure.
+          if (onArtifactTouched) {
+            const artifact = fixToArtifact(
+              {
+                id: typeof data.id === 'string' ? data.id : id,
+                target: {
+                  artifact: (target as any).artifact,
+                  artifactId: target.artifactId,
+                  sectionId: target.sectionId,
+                },
+                category: typeof data.category === 'string' ? data.category : undefined,
+              },
+              new Date().toISOString(),
+            )
+            if (artifact) onArtifactTouched(artifact)
+          }
           await apiAcceptSuggestedFix(id, {
             conversationId: rejectionConversationId,
             category: typeof data.category === 'string' ? data.category : undefined,
