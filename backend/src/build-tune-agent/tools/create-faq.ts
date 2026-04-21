@@ -19,6 +19,7 @@ import {
   validateBuildTransaction,
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
+import { emitArtifactHistory } from '../lib/artifact-history';
 
 // The spec §11 tool description is load-bearing for dispatch. WHEN TO USE
 // / WHEN NOT TO USE text copied verbatim.
@@ -131,6 +132,28 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
           c.tenantId,
           args.transactionId
         );
+
+        // D2 — observational history row, best-effort, OUTSIDE the write tx.
+        await emitArtifactHistory(c.prisma, {
+          tenantId: c.tenantId,
+          artifactType: 'faq',
+          artifactId: created.id,
+          operation: 'CREATE',
+          newBody: {
+            question: args.question.trim(),
+            answer: args.answer.trim(),
+            category: args.category,
+            scope,
+            propertyId: args.propertyId ?? null,
+          },
+          actorUserId: c.userId,
+          actorEmail: c.actorEmail ?? null,
+          conversationId: c.conversationId,
+          metadata: args.transactionId
+            ? { buildTransactionId: args.transactionId }
+            : null,
+        });
+
         const previewUrl = `/faqs/${created.id}`;
         if (c.emitDataPart) {
           c.emitDataPart({

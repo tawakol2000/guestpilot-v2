@@ -257,16 +257,11 @@ export async function getBuildArtifactPrevBody(
   id: string,
   sessionStartIso: string,
 ): Promise<BuildArtifactPrevBody> {
-  if (type !== 'sop' && type !== 'faq' && type !== 'system_prompt') {
-    // Sprint 052 A C3 — tool artifacts still have no history table, so
-    // fall through as unsupported-type. The frontend seam is forward-
-    // compatible: once a ToolDefinitionHistory ships, extend here.
-    return { prevBody: null, reason: 'unsupported-type' };
-  }
   const since = new Date(sessionStartIso);
   if (Number.isNaN(since.getTime())) {
     return { prevBody: null, reason: 'no-history-in-window' };
   }
+
   if (type === 'sop') {
     const row = await prisma.sopVariantHistory.findFirst({
       where: { tenantId, targetId: id, editedAt: { gte: since } },
@@ -285,21 +280,96 @@ export async function getBuildArtifactPrevBody(
     if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
     return { prevBody: prev };
   }
-  // type === 'system_prompt' — read the most recent AiConfigVersion
-  // written before `since`. `config` is a JSON snapshot of the whole
-  // TenantAiConfig row (written by the save path); we pull the matching
-  // variant's body off it. If no version exists before the session
-  // start the rail has nothing to diff against (fresh tenant).
-  if (id !== 'coordinator' && id !== 'screening') {
-    return { prevBody: null, reason: 'artifact-missing' };
+  if (type === 'system_prompt') {
+    // Sprint 053-A D2 — retire the AiConfigVersion read in favor of the
+    // unified BuildArtifactHistory table. AiConfigVersion is still written
+    // by the tenant-config service for its own purposes; we just stop
+    // reading it here.
+    if (id !== 'coordinator' && id !== 'screening') {
+      return { prevBody: null, reason: 'artifact-missing' };
+    }
+    const row = await prisma.buildArtifactHistory.findFirst({
+      where: {
+        tenantId,
+        artifactType: 'system_prompt',
+        artifactId: id,
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const prev = extractSystemPromptPrevFromHistory(row?.prevBody);
+    if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
+    return { prevBody: prev };
   }
-  const row = await prisma.aiConfigVersion.findFirst({
-    where: { tenantId, createdAt: { lt: since } },
-    orderBy: { createdAt: 'desc' },
+  if (type === 'tool') {
+    // Sprint 053-A D2 — tool_definition rows are now available from the
+    // shared history table. The caller (controller) splits prevParameters
+    // and prevWebhookConfig out onto the detail payload so the 052-A
+    // JSON-diff toggle has fields to diff against.
+    const row = await prisma.buildArtifactHistory.findFirst({
+      where: {
+        tenantId,
+        artifactType: 'tool_definition',
+        artifactId: id,
+        createdAt: { gte: since },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    // We return prevBody: null here (tool artifact bodies are the
+    // description string; diff is on the JSON fields). The caller reads
+    // the raw row separately when it wants prevParameters.
+    return { prevBody: null, reason: 'unsupported-type' };
+  }
+  return { prevBody: null, reason: 'unsupported-type' };
+}
+
+/**
+ * Sprint 053-A D2 — fetch the most recent pre-session tool_definition
+ * history row so the drawer can surface prevParameters + prevWebhookConfig
+ * for the 052-A JSON-diff toggle.
+ */
+export interface ToolPrevJsonFields {
+  prevParameters?: unknown;
+  prevWebhookConfig?: unknown;
+}
+
+export async function getToolArtifactPrevJson(
+  prisma: PrismaClient,
+  tenantId: string,
+  id: string,
+  sessionStartIso: string,
+): Promise<ToolPrevJsonFields | null> {
+  const since = new Date(sessionStartIso);
+  if (Number.isNaN(since.getTime())) return null;
+  const row = await prisma.buildArtifactHistory.findFirst({
+    where: {
+      tenantId,
+      artifactType: 'tool_definition',
+      artifactId: id,
+      createdAt: { gte: since },
+    },
+    orderBy: { createdAt: 'asc' },
   });
-  const prev = extractSystemPromptFromConfig(row?.config, id);
-  if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
-  return { prevBody: prev };
+  const prev = row?.prevBody;
+  if (!prev || typeof prev !== 'object') return null;
+  const obj = prev as Record<string, unknown>;
+  const out: ToolPrevJsonFields = {};
+  if ('parameters' in obj) out.prevParameters = obj.parameters;
+  if ('webhookUrl' in obj || 'webhookTimeout' in obj || 'webhookAuth' in obj) {
+    out.prevWebhookConfig = {
+      webhookUrl: obj.webhookUrl,
+      webhookTimeout: obj.webhookTimeout,
+      webhookAuth: obj.webhookAuth,
+    };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function extractSystemPromptPrevFromHistory(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const text = obj.text;
+  return typeof text === 'string' ? text : null;
 }
 
 function extractSopPrevContent(raw: unknown): string | null {

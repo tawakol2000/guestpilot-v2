@@ -73,6 +73,7 @@ model Tenant {
   docHandoffEnabled           Boolean                @default(false)
   documentHandoffStates       DocumentHandoffState[]
   buildTransactions           BuildTransaction[] // Feature 045: BUILD mode
+  buildArtifactHistory        BuildArtifactHistory[] // Sprint 053-A D2
 
   // Sprint 047 Session B — platform-admin flag. Gates the admin-only
   // BuildToolCallLog trace view (ENABLE_BUILD_TRACE_VIEW). No User model
@@ -703,6 +704,39 @@ model BuildTransaction {
   aiConfigVersions     AiConfigVersion[]
 
   @@index([tenantId, createdAt])
+}
+
+// ─── Sprint 053-A D2: BuildArtifactHistory — observational write ledger ─────
+//
+// One row per successful write from the BUILD-tool layer (create_sop,
+// create_faq, create_tool_definition, write_system_prompt). Best-effort:
+// emission is wrapped in try/catch outside the write transaction; an
+// insert failure logs and continues without rolling back the real write.
+//
+// Sanitiser parity: tool_definition rows must run prevBody/newBody through
+// sanitiseArtifactPayload BEFORE storage so credentials never land in this
+// table. The same function backs the D1 dry-run preview path.
+//
+// REVERT operation rows carry metadata.revertsHistoryId pointing at the
+// source row whose state was restored.
+model BuildArtifactHistory {
+  id             String   @id @default(cuid())
+  tenantId       String
+  artifactType   String // "sop" | "faq" | "system_prompt" | "tool_definition" | "property_override"
+  artifactId     String // FK-ish; points at the artifact's primary key. String because types differ.
+  operation      String // "CREATE" | "UPDATE" | "DELETE" | "REVERT"
+  prevBody       Json? // null for CREATE
+  newBody        Json? // null for DELETE
+  actorUserId    String?
+  actorEmail     String?
+  conversationId String? // BUILD session context, if available
+  metadata       Json? // { revertsHistoryId?, ... }
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, artifactType, artifactId, createdAt])
+  @@index([tenantId, conversationId, createdAt])
 }
 
 // ─── Sprint 046 Session A: BUILD/TUNE tool-call observability ───────────────

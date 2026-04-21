@@ -37,6 +37,7 @@ import {
   validateBuildTransaction,
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
+import { emitArtifactHistory } from '../lib/artifact-history';
 
 // Spec §6 graduation criteria — load-bearing slots must be covered with
 // non-default values before write_system_prompt is allowed.
@@ -269,6 +270,38 @@ export function buildWriteSystemPromptTool(
           c.tenantId,
           args.transactionId
         );
+
+        // D2 — observational history row. artifactId is the variant name
+        // ("coordinator" | "screening") to match the drawer's read-seam.
+        // prevBody holds whatever was in the target field before this
+        // write (null for a fresh tenant).
+        const prevField = current
+          ? args.variant === 'coordinator'
+            ? current.systemPromptCoordinator
+            : current.systemPromptScreening
+          : null;
+        const operation: 'CREATE' | 'UPDATE' = prevField ? 'UPDATE' : 'CREATE';
+        await emitArtifactHistory(c.prisma, {
+          tenantId: c.tenantId,
+          artifactType: 'system_prompt',
+          artifactId: args.variant,
+          operation,
+          prevBody: prevField ? { text: prevField, variant: args.variant } : null,
+          newBody: {
+            text: args.text,
+            variant: args.variant,
+            sourceTemplateVersion: args.sourceTemplateVersion,
+            slotValues: args.slotValues,
+          },
+          actorUserId: c.userId,
+          actorEmail: c.actorEmail ?? null,
+          conversationId: c.conversationId,
+          metadata: {
+            version: versionRow.version,
+            ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
+          },
+        });
+
         const previewUrl = `/system-prompt/${versionRow.id}`;
         const payload = {
           ok: true,

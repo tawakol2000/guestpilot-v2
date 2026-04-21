@@ -29,6 +29,7 @@ import {
   validateBuildTransaction,
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
+import { emitArtifactHistory } from '../lib/artifact-history';
 
 const SOP_STATUSES = [
   'DEFAULT',
@@ -227,6 +228,26 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             c.tenantId,
             args.transactionId
           );
+          // D2 — observational history row (override branch).
+          await emitArtifactHistory(c.prisma, {
+            tenantId: c.tenantId,
+            artifactType: 'property_override',
+            artifactId: override.id,
+            operation: 'CREATE',
+            newBody: {
+              sopCategory: definition.category,
+              status,
+              propertyId: args.propertyId,
+              content: args.body,
+              title: titleLine,
+            },
+            actorUserId: c.userId,
+            actorEmail: c.actorEmail ?? null,
+            conversationId: c.conversationId,
+            metadata: args.transactionId
+              ? { buildTransactionId: args.transactionId, sopDefinitionId: definition.id }
+              : { sopDefinitionId: definition.id },
+          });
           const previewUrl = `/sops/${definition.id}/override/${override.id}`;
           const payload = {
             ok: true,
@@ -285,6 +306,25 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           c.tenantId,
           args.transactionId
         );
+        // D2 — observational history row (variant branch).
+        await emitArtifactHistory(c.prisma, {
+          tenantId: c.tenantId,
+          artifactType: 'sop',
+          artifactId: variant.id,
+          operation: 'CREATE',
+          newBody: {
+            sopCategory: definition.category,
+            status,
+            content: args.body,
+            title: titleLine,
+          },
+          actorUserId: c.userId,
+          actorEmail: c.actorEmail ?? null,
+          conversationId: c.conversationId,
+          metadata: args.transactionId
+            ? { buildTransactionId: args.transactionId, sopDefinitionId: definition.id }
+            : { sopDefinitionId: definition.id },
+        });
         const previewUrl = `/sops/${definition.id}/variant/${variant.id}`;
         const payload = {
           ok: true,

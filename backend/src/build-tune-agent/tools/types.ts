@@ -13,6 +13,8 @@ export interface ToolContext {
   tenantId: string;
   conversationId: string | null;
   userId: string | null;
+  /** Sprint 053-A D2 — populated when known; written into BuildArtifactHistory.actorEmail. */
+  actorEmail?: string | null;
   /** Emits an ad-hoc client data part. Wired by the runtime; no-op in tests. */
   emitDataPart?: (part: { type: string; id?: string; data: unknown; transient?: boolean }) => void;
   /** Signals last user turn explicitly sanctioned an apply. Read by suggestion_action. */

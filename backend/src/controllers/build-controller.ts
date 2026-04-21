@@ -57,6 +57,7 @@ import { listToolCalls } from '../services/build-tool-call-log.service';
 import {
   getBuildArtifact,
   getBuildArtifactPrevBody,
+  getToolArtifactPrevJson,
   type BuildArtifactType,
 } from '../services/build-artifact.service';
 import {
@@ -1002,7 +1003,23 @@ export function makeBuildController(prisma: PrismaClient) {
           id,
           prevSince,
         );
-        res.json({ ...result, prevBody: prev.prevBody, prevReason: prev.reason ?? null });
+        // Sprint 053-A D2 — tool artifacts now carry prev JSON fields sourced
+        // from the BuildArtifactHistory table (unlocks the 052-A diff toggle).
+        let toolPrev: Awaited<ReturnType<typeof getToolArtifactPrevJson>> = null;
+        if (type === 'tool') {
+          toolPrev = await getToolArtifactPrevJson(
+            prisma,
+            req.tenantId,
+            id,
+            prevSince,
+          );
+        }
+        res.json({
+          ...result,
+          prevBody: prev.prevBody,
+          prevReason: prev.reason ?? null,
+          ...(toolPrev ?? {}),
+        });
       } catch (err) {
         console.error('[build-controller] getArtifact failed:', err);
         res.status(500).json({ error: 'ARTIFACT_READ_FAILED' });

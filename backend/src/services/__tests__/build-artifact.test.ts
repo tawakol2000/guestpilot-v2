@@ -22,6 +22,7 @@ function makePrisma(data: {
   sopHistory?: any[];
   faqHistory?: any[];
   aiConfigVersions?: any[];
+  buildArtifactHistory?: any[];
 }) {
   return {
     sopVariant: {
@@ -104,6 +105,20 @@ function makePrisma(data: {
               r.createdAt < where.createdAt.lt,
           )
           .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        return rows[0] ?? null;
+      },
+    },
+    buildArtifactHistory: {
+      findFirst: async ({ where, orderBy: _orderBy }: any) => {
+        const rows = (data.buildArtifactHistory ?? [])
+          .filter(
+            (r: any) =>
+              r.tenantId === where.tenantId &&
+              r.artifactType === where.artifactType &&
+              r.artifactId === where.artifactId &&
+              r.createdAt >= where.createdAt.gte,
+          )
+          .sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
         return rows[0] ?? null;
       },
     },
@@ -296,38 +311,45 @@ test('getBuildArtifactPrevBody returns null + reason when no history row exists'
   assert.equal(out.reason, 'no-history-in-window');
 });
 
-// Sprint 052 A C2 — system_prompt prev-body via AiConfigVersion.
+// Sprint 053-A D2 — system_prompt prev-body now reads BuildArtifactHistory.
+// The oldest history row whose createdAt ≥ sessionStart carries the
+// prevBody of the first in-session write; that's effectively the pre-
+// session state of the artifact.
 
-test('getBuildArtifactPrevBody returns the most recent pre-session AiConfigVersion body for coordinator', async () => {
+test('getBuildArtifactPrevBody returns oldest in-session history prevBody for coordinator', async () => {
   const t0 = new Date('2026-04-20T12:00:00Z');
-  const olderPre = new Date('2026-04-19T09:00:00Z');
-  const newerPre = new Date('2026-04-20T09:00:00Z'); // still pre-session
-  const postSession = new Date('2026-04-20T13:00:00Z');
+  const firstInSession = new Date('2026-04-20T12:30:00Z');
+  const secondInSession = new Date('2026-04-20T13:15:00Z');
+  const preSession = new Date('2026-04-20T08:00:00Z'); // ignored (before t0)
   const prisma = makePrisma({
-    aiConfigVersions: [
+    buildArtifactHistory: [
       {
         tenantId: 't1',
-        createdAt: olderPre,
-        config: {
-          systemPromptCoordinator: 'stale v1',
-          systemPromptScreening: 'stale screen',
-        },
+        artifactType: 'system_prompt',
+        artifactId: 'coordinator',
+        createdAt: preSession,
+        prevBody: { text: 'ancient v0', variant: 'coordinator' },
       },
       {
         tenantId: 't1',
-        createdAt: newerPre,
-        config: {
-          systemPromptCoordinator: 'pre-session v2',
-          systemPromptScreening: 'pre-session screen v2',
-        },
+        artifactType: 'system_prompt',
+        artifactId: 'coordinator',
+        createdAt: firstInSession,
+        prevBody: { text: 'pre-session v2', variant: 'coordinator' },
       },
       {
         tenantId: 't1',
-        createdAt: postSession,
-        config: {
-          systemPromptCoordinator: 'written this session — must be ignored',
-          systemPromptScreening: 'also post-session',
-        },
+        artifactType: 'system_prompt',
+        artifactId: 'coordinator',
+        createdAt: secondInSession,
+        prevBody: { text: 'mid-session (ignored; not oldest)', variant: 'coordinator' },
+      },
+      {
+        tenantId: 't1',
+        artifactType: 'system_prompt',
+        artifactId: 'screening',
+        createdAt: firstInSession,
+        prevBody: { text: 'pre-session screen v2', variant: 'screening' },
       },
     ],
   });
@@ -349,8 +371,8 @@ test('getBuildArtifactPrevBody returns the most recent pre-session AiConfigVersi
   assert.equal(screen.prevBody, 'pre-session screen v2');
 });
 
-test('getBuildArtifactPrevBody on system_prompt returns null + no-history when no pre-session version exists', async () => {
-  const prisma = makePrisma({ aiConfigVersions: [] });
+test('getBuildArtifactPrevBody on system_prompt returns null when no history row exists', async () => {
+  const prisma = makePrisma({ buildArtifactHistory: [] });
   const out = await getBuildArtifactPrevBody(
     prisma,
     't1',

@@ -28,6 +28,7 @@ import {
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { sanitiseArtifactPayload } from '../lib/sanitise-artifact-payload';
+import { emitArtifactHistory } from '../lib/artifact-history';
 
 // snake_case — same convention the main AI's system tools use
 // (get_sop, get_faq, search_available_properties, …). Prevents drift
@@ -188,6 +189,32 @@ export function buildCreateToolDefinitionTool(
           c.tenantId,
           args.transactionId
         );
+
+        // D2 — observational history row. tool_definition rows are
+        // sanitised inside emitArtifactHistory — parity with D1 preview.
+        await emitArtifactHistory(c.prisma, {
+          tenantId: c.tenantId,
+          artifactType: 'tool_definition',
+          artifactId: created.id,
+          operation: 'CREATE',
+          newBody: {
+            name: created.name,
+            displayName: created.displayName,
+            description: args.description,
+            parameters: args.parameters,
+            agentScope: created.agentScope,
+            webhookUrl: args.webhookUrl,
+            webhookTimeout: args.webhookTimeoutMs ?? 10000,
+            webhookAuth: { type: args.webhookAuth.type, secretName: args.webhookAuth.secretName ?? null },
+            availableStatuses: args.availableStatuses,
+          },
+          actorUserId: c.userId,
+          actorEmail: c.actorEmail ?? null,
+          conversationId: c.conversationId,
+          metadata: args.transactionId
+            ? { buildTransactionId: args.transactionId }
+            : null,
+        });
 
         const previewUrl = `/tools/${created.id}`;
         const payload = {
