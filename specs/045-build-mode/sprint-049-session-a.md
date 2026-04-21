@@ -333,15 +333,15 @@ returns exactly four sites. Each unit test passes.
 
 | Gate | Item                                                           | Status |
 |------|----------------------------------------------------------------|--------|
-| A1   | `approveSuggestion` reorder: Hostaway first, rollback-safe     | ☐      |
-| A2   | `approveSuggestion` diagnostic fire + `cancelPendingAiReply`   | ☐      |
-| A3   | Backend integration tests for A1+A2 (4 cases)                  | ☐      |
-| A4   | Dead tuning nav + playground link cleanup (finding #4)         | ☐      |
-| A5   | Document-checklist toast feedback (finding #7 narrowed)        | ☐      |
-| A6   | Stale API endpoint cleanup (finding F2 per discovery report)   | ☐      |
-| A7   | `[TUNING_DIAGNOSTIC_FAILURE]` structured log tag (§1.5, 4 sites) | ☐    |
-| A8   | Backend + frontend suites green; `tsc --noEmit` clean          | ☐      |
-| A9   | PROGRESS.md "Sprint 049 — Session A" + NEXT.md rewrite         | ☐      |
+| A1   | `approveSuggestion` reorder: Hostaway first, rollback-safe     | ☑ `b13783f` |
+| A2   | `approveSuggestion` diagnostic fire + `cancelPendingAiReply`   | ☑ `91b4eac` |
+| A3   | Backend integration tests for A1+A2 (4 cases)                  | ☑ `cf94ad3` |
+| A4   | Dead tuning nav + playground link cleanup (finding #4)         | ☑ `b26161f` |
+| A5   | Document-checklist toast feedback (finding #7 narrowed)        | ☑ `5c5d7e7` |
+| A6   | Stale API endpoint cleanup (finding F2 per discovery report)   | ☑ `102098c` (shipped as toast per discovery F2 — see PROGRESS) |
+| A7   | `[TUNING_DIAGNOSTIC_FAILURE]` structured log tag (§1.5, 4 sites) | ☑ `3f419c3` (helper-extracted — see PROGRESS) |
+| A8   | Backend + frontend suites green; `tsc --noEmit` clean          | ☑ 249 unit / 34 integration / 28 vitest all green |
+| A9   | PROGRESS.md "Sprint 049 — Session A" + NEXT.md rewrite         | ☑ (this commit) |
 
 Order: A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8 → A9. A1 and A2 share
 `approveSuggestion`; land as two commits on the same branch with

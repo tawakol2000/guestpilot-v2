@@ -1219,3 +1219,164 @@ posture — this session just extends the stack by one more segment.
 - Frontend `vitest run`: **26/26 pass across 5 files** (was 12/12
   across 3 files; +10 cases from A3 inbox-v5.editPill, +4 from A6
   inbox-v5.discussInTuning).
+
+## Sprint 049 — Session A
+
+Completed: 2026-04-21. Branch: `feat/049-session-a` off
+`feat/048-session-a` @ `148c8c0` (pre-flight kickoff-docs commit on
+top of `c206db0`). Seven code commits + one kickoff-docs commit.
+End-of-stack merge posture unchanged; chain is now
+045→046→047-A→047-B→047-C→048-A→049-A.
+
+### Gate sheet ↔ commits
+
+| Gate | Commit    | Landed |
+|------|-----------|--------|
+| kickoff | `148c8c0` on 048-A | docs(049): discovery + explore reports + Session A brief |
+| A1   | `b13783f` | approveSuggestion Hostaway-first rollback-safe ordering |
+| A2   | `91b4eac` | approveSuggestion Path B diagnostic fire + log tag |
+| A3   | `cf94ad3` | approveSuggestion integration suite (4 cases) |
+| A4   | `b26161f` | dead /tuning + /tuning/agent nav + link cleanup |
+| A5   | `5c5d7e7` | checklist toast + revert on failure |
+| A6   | `102098c` | approveSuggestion pill toast on failure (discovery F2) |
+| A7   | `3f419c3` | [TUNING_DIAGNOSTIC_FAILURE] helper + 4 call-site migration |
+| A8   | (no commit — verification gate) | suites green, tsc clean both sides |
+| A9   | (this commit) | PROGRESS + NEXT rewrite |
+
+### Decisions made
+
+- **Kickoff-docs commit on 048-A before cutting 049-A.** Per
+  brief §0.1: the discovery report, explore report, session-A brief,
+  and rewritten NEXT.md were uncommitted on 048-A. Committed as
+  `148c8c0` on 048-A first so the branch chain stays clean; 049-A
+  branches off the post-commit HEAD. The brief's "Cut from c206db0"
+  referred to the pre-kickoff state.
+
+- **A1 + A2 landed as two commits on the same controller.** The
+  reorder (A1) is structurally risky — ai.service.ts untouched, but
+  `approveSuggestion` is the legacy-Copilot send surface and a bad
+  reorder strands sent messages. Landing the reorder first (no
+  diagnostic wiring) made A1 reviewable in isolation and let A3
+  gate the riskier half (integration tests lock the Hostaway-first
+  contract before A2 adds the fire-and-forget).
+
+- **Removed the redundant `await import('../services/hostaway.service')`**
+  inside approveSuggestion in favour of the already-available
+  top-level `import * as hostawayService` at the file head. The
+  dynamic import dated to an older scope-conflict that no longer
+  applies and made A3 Hostaway stubbing much harder (two module
+  identities in require.cache, only one proxied). Verified no other
+  caller relies on the dynamic import.
+
+- **A6 terminology mismatch: brief §1.4 vs discovery §additional-sweep.F2.**
+  The brief titles A6 "Stale API endpoint cleanup" and SC-4 reads
+  "The F2 stale endpoint is gone". But discovery-report §additional-
+  sweep.F2 is the **swallowed approveSuggestion toast** — not a
+  stale endpoint. The stale-endpoint shape is discovery F1 (dead
+  `POST /api/tuning/complaints`), which the brief §2 explicitly
+  defers to Session B. Brief §1.1 step 3 also explicitly asks for a
+  sonner toast on the inbox pill's catch. Interpretation: A6 ==
+  discovery F2 (toast), not a stale-endpoint removal. Committed the
+  toast. The real stale-endpoint cleanup (F1 + any other orphaned
+  `api*` functions) carries forward to sprint-050.
+
+- **A7 extracted to `logTuningDiagnosticFailure` helper rather than
+  inlining console.error at each site.** SC-5's literal "grep returns
+  exactly four sites" for `[TUNING_DIAGNOSTIC_FAILURE]` would have
+  required duplicating the 7-line payload four times. Extracted a
+  shared helper so the literal tag + field shape live in one place
+  (`backend/src/services/tuning/diagnostic-failure-log.ts`). The
+  operator handle is now `grep -rn "logTuningDiagnosticFailure("
+  backend/src/controllers/` → 4 matches (shadow-preview ×2,
+  messages ×1, conversations ×1). Equivalent observability,
+  single source of truth.
+
+- **A3 case (d) uses a Proxy-based diagnostic.service override.**
+  tsx compiles `export function` to a non-configurable getter on
+  the module exports, so direct `Object.defineProperty` for the
+  swap fails. Installed the real diagnostic.service at file-top,
+  then inserted a `Proxy(realModule, { get })` under
+  `require.cache[diagnosticPath]` BEFORE loading the controller.
+  The proxy's `get` trap dispatches `runDiagnostic` to an
+  overridable variable. Same pattern is portable to any future
+  integration test that needs to swap an ESM-compiled service
+  export.
+
+### Caveats / non-ideal
+
+- **A6 shipped the toast, not a stale-endpoint removal.** Anyone
+  reading SC-4 as literally "stale endpoint deleted" should treat
+  that criterion as redirected per the discovery report's actual F2
+  definition. The raw session brief text was retained unchanged —
+  only the PROGRESS.md close-out documents the interpretation.
+
+- **SC-5 literal grep count diverged from spec.** Spec requested
+  exactly four `[TUNING_DIAGNOSTIC_FAILURE]` matches in
+  backend/src/; after the helper extraction, the literal string
+  lives at one production site (the helper). The spirit is still
+  satisfied: four call sites, centralised format, four unit tests
+  pinning the shape.
+
+- **DB-backed observability badge for `TUNING_DIAGNOSTIC_FAILURE`
+  not shipped.** Per brief §1.5 + §2: the DB half (schema retention
+  badge admin endpoint) defers to sprint-050 once a week of
+  production log signal calibrates thresholds. This session ships
+  the log-tag-only half.
+
+- **Full Path A ⇔ Path B semantic parity** beyond the diagnostic
+  fire stays deferred. `Message.role` = `HOST` on Path A vs `AI` on
+  Path B, different audit fields on each. Brief §2 explicitly marks
+  this as sprint-050 candidate-list material.
+
+### Verification run (local, at session close)
+
+- Backend `tsc --noEmit`: clean (0 errors).
+- Backend unit suite (`npx tsx --test 'src/**/__tests__/*.test.ts'`
+  with JWT_SECRET + OPENAI_API_KEY pre-set): **249/249 pass**
+  (was 245/245; +4 new cases from A7
+  `diagnostic-failure-log.test.ts`).
+- Backend integration suite (`src/__tests__/integration/*.test.ts`):
+  **34/34 pass** (was 30/30; +4 new cases from A3
+  `approve-suggestion.integration.test.ts`).
+- Frontend `tsc --noEmit`: clean.
+- Frontend `vitest run`: **28/28 pass across 6 files** (was 26/26
+  across 5 files; +2 cases from A4 `top-nav.test.tsx`).
+
+### Deferred / carried forward (into sprint-050 candidate list)
+
+- **Discovery F1** — dead `POST /api/tuning/complaints` route. Needs
+  `docs/ios-handoff.md` read to confirm no mobile consumer.
+- **Discovery D1** — webhook drop-through on auto-create-failed.
+  Touches guest-message intake; CLAUDE.md rule #1 demands a
+  dedicated sprint.
+- **Explore P1-2** — judge API failure returned as `score: 0`
+  ("judge-error") fooling the BUILD iteration loop.
+- **Explore P1-4** — diagnostic + suggestion-writer + evidence-bundle
+  not transactional; orphan audit rows possible on mid-sequence
+  failure.
+- **Explore P1-5** — PREVIEW_LOCKED 409 from /send doesn't refresh
+  client state; manager sees a dead Send button after socket drop.
+- **Explore P1-6** — approve/reject status-claim revert not atomic;
+  concurrent-apply race window ~10ms.
+- **DB-backed observability badge for `TUNING_DIAGNOSTIC_FAILURE`
+  (DB half of P1-3).** Week of production log signal first, then
+  schema + retention + admin-only query endpoint + /tuning nav
+  badge.
+- **Full Path A ⇔ Path B semantic-parity pass** (role, audit fields,
+  hostawayMessageId stamping) — sprint-050 candidate-list material.
+- **Explore P2s (×10)** — polish queue.
+- **NEXT.md §2.3 carry-forwards** — raw-prompt editor edit path,
+  RejectionMemory retention sweep + cleared-rejections UI, free-text
+  reject-card rationale, dashboards merge, R1 persist-time
+  truncation, R2 enforcement observability dashboard, oscillation
+  advisory, per-user admin distinctions.
+
+### Blocked / surfaced
+
+- **None.** No help-channel case from brief §7 fired this session.
+  Frontend `apiFetch` wrapper exposes a clean `ApiError.message`, so
+  the A6 toast could lift it directly. Hostaway-first reorder didn't
+  trip any hidden DB-then-HTTP dependency in the frontend (the inbox
+  pill's optimistic clear of `aiSuggestion` plus restore-on-throw
+  was already compatible with the new 502 shape).
+
