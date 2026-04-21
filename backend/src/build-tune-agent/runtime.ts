@@ -44,6 +44,11 @@ import {
   resolveTuningAgentModel,
 } from './config';
 import { runWithAiTrace, startAiSpan } from '../services/observability.service';
+import {
+  logCacheBlockStructure,
+  buildCacheStatsPayload,
+  type CacheStatsPayload,
+} from './prompt-cache-blocks';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
 
@@ -125,6 +130,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       // Sprint 046 Session B — card-shaped I/O wrappers (also in TUNE).
       TUNING_AGENT_TOOL_NAMES.ask_manager,
       TUNING_AGENT_TOOL_NAMES.emit_audit,
+      // Sprint 056-A F2 — "Ask-the-past" edit-history query (also in TUNE).
+      TUNING_AGENT_TOOL_NAMES.get_edit_history,
     ];
   }
   // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
@@ -148,6 +155,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     // Sprint 046 Session B — card-shaped I/O wrappers (shared with BUILD).
     TUNING_AGENT_TOOL_NAMES.ask_manager,
     TUNING_AGENT_TOOL_NAMES.emit_audit,
+    // Sprint 056-A F2 — "Ask-the-past" edit-history query (shared with BUILD).
+    TUNING_AGENT_TOOL_NAMES.get_edit_history,
   ];
 }
 
@@ -292,6 +301,11 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
     interviewProgress: input.interviewProgress ?? null,
   };
   const systemPrompt = assembleSystemPrompt(promptCtx);
+  // F3 — log the three-block split for observability. In a future sprint
+  // where the Agent SDK exposes structured system-prompt content, replace
+  // the flat `systemPrompt` string with `blocks` from this call and attach
+  // `cache_control: { type: 'ephemeral' }` to region-a and region-b only.
+  logCacheBlockStructure(input.tenantId, systemPrompt);
   const allowedTools = resolveAllowedTools(mode);
 
   // ─── Wire the hook + tool contexts ─────────────────────────────────────
@@ -365,6 +379,8 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
 
   // ─── Query execution ───────────────────────────────────────────────────
   const state = makeBridgeState(input.assistantMessageId);
+  // F3 — accumulate last usage object for cache-stats SSE part at turn end.
+  let lastUsage: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | null = null;
   input.writer.write({ type: 'start', messageId: input.assistantMessageId });
   input.writer.write({ type: 'start-step' });
 
@@ -465,6 +481,8 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
             console.log(
               `[TuningAgent] usage tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
             );
+            // F3: keep the last usage object for the data-cache-stats part.
+            lastUsage = u;
           }
         }
         bridgeSDKMessage(message, state, (chunk) => {
@@ -546,6 +564,25 @@ export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnRe
         data: { sdkSessionId },
       })
       .catch((err) => console.warn('[tuning-agent] sdkSessionId persist failed:', err));
+  }
+
+  // ─── Sprint 056-A F3 — data-cache-stats SSE part (LangFuse tagging) ───
+  // Emit cache telemetry as a transient SSE part. The UI does NOT render
+  // this; it is consumed by LangFuse via the onFinish event for tagging.
+  // explicitCacheControlWired is always false until the Agent SDK exposes
+  // structured system-prompt content blocks (sdk.d.ts:1475 limitation).
+  if (lastUsage) {
+    try {
+      const cacheStats: CacheStatsPayload = buildCacheStatsPayload(lastUsage);
+      emitDataPart({
+        type: 'data-cache-stats',
+        id: `cache-stats:${input.assistantMessageId}`,
+        data: cacheStats,
+        transient: true,
+      });
+    } catch {
+      /* swallow — telemetry must never break the main flow */
+    }
   }
 
   // ─── Sprint 046 Sessions A + D — output-linter pass ────────────────────

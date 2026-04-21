@@ -29,9 +29,18 @@
  * specs/045-build-mode/PROGRESS.md "Cache breakpoints" for why we don't
  * use explicit cache_control blocks in sprint 045.
  *
+ * Sprint 056-A F3 update: explicit cache_control block splitting is
+ * implemented in `prompt-cache-blocks.ts`. The block structure is logged
+ * every turn and emitted as a `data-cache-stats` transient SSE part for
+ * LangFuse tagging. Actual wiring of `cache_control` to the API call is
+ * blocked by the Agent SDK limitation (sdk.d.ts:1475 — systemPrompt only
+ * accepts string | { type: 'preset' }). When the SDK is bypassed in a
+ * future sprint, use `splitSystemPromptIntoBlocks()` and attach
+ * `cache_control: { type: 'ephemeral' }` to the blocks with shouldCache=true.
+ *
  * The boundary markers are literal strings we embed into the prompt. They
  * cost ~30 tokens each and serve as (1) visual debugging aids and (2)
- * future-switch points: if we bypass the Agent SDK in a later sprint and
+ * switch points: if we bypass the Agent SDK in a later sprint and
  * call @anthropic-ai/sdk directly, splitting at these markers and
  * attaching `cache_control: { type: 'ephemeral' }` is trivial.
  */
@@ -397,6 +406,13 @@ Grounding + card-emit tools (both modes, always-loaded):
     half of an audit triage; follow with one suggested_fix for the
     topFindingId.
 
+18. get_edit_history(artifactType, artifactId, limit?) — edit timeline
+    for a single artifact. Returns rows ordered newest-first: appliedAt,
+    operation (CREATE/UPDATE/DELETE/REVERT), rationale, operatorRationale,
+    rationalePrefix, appliedByUserId. Call this — not scrollback — when
+    the manager asks why / when / by whom an artifact was changed. Returns
+    { rows: [] } (not an error) when no history exists.
+
 When in doubt, prefer get_current_state → get_context →
 fetch_evidence_bundle → search_corrections before proposing anything.
 Evidence before inference.
@@ -529,6 +545,13 @@ workaround.
 TUNE-mode critical rule: proposedText/newText must never be a fragment —
 if using full_replacement, include the COMPLETE artifact text; if using
 search_replace, include enough context for a unique match.
+
+## Edit history
+
+When the manager asks about the *history* of a specific artifact — why
+it was changed, when, or by whom — call \`get_edit_history\` BEFORE
+responding. Do not rely on conversation scrollback; scrollback is
+incomplete. If the tool returns zero rows, say so honestly.
 
 ## Triage
 
@@ -697,6 +720,13 @@ ask the manager one more clarifying question first.
   pet_policy, smoking_policy, max_occupancy, id_verification,
   long_stay_discount, cancellation_policy, channel_coverage, timezone,
   ai_autonomy for non-load-bearing).
+
+## Edit history
+
+When the manager asks about the *history* of a specific artifact — why
+it was changed, when, or by whom — call \`get_edit_history\` BEFORE
+responding. Do not rely on conversation scrollback; scrollback is
+incomplete. If the tool returns zero rows, say so honestly.
 
 ## Triage
 

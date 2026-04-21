@@ -30,7 +30,11 @@ import {
   type AgentMode,
   type SystemPromptContext,
 } from '../system-prompt';
-import { SHARED_MODE_BOUNDARY_MARKER } from '../config';
+import { SHARED_MODE_BOUNDARY_MARKER, DYNAMIC_BOUNDARY_MARKER } from '../config';
+import {
+  splitSystemPromptIntoBlocks,
+  buildCacheStatsPayload,
+} from '../prompt-cache-blocks';
 
 // Anthropic's prompt-caching minimum is model-dependent. Sonnet/Opus
 // 4.5 and 4.6 (the tuning-agent's generator) require ≥2048 tokens for
@@ -183,6 +187,95 @@ function estimateToolsOnly(): { chars: number; toolCount: number } {
   }
   return { chars: totalChars, toolCount: count };
 }
+
+// ─── F3: explicit cache-block structure assertions (sprint 056-A) ──────────
+
+test('F3: splitSystemPromptIntoBlocks returns exactly 3 blocks when markers present', () => {
+  for (const mode of ['TUNE', 'BUILD'] as const) {
+    const assembled = assembleSystemPrompt(fixtureCtx(mode));
+    const blocks = splitSystemPromptIntoBlocks(assembled);
+    assert.equal(blocks.length, 3, `${mode}: must produce exactly 3 blocks`);
+  }
+});
+
+test('F3: Region A block (index 0) has shouldCache=true and region="region-a"', () => {
+  const assembled = assembleSystemPrompt(fixtureCtx('BUILD'));
+  const blocks = splitSystemPromptIntoBlocks(assembled);
+  assert.equal(blocks[0]!.shouldCache, true, 'Region A must be cached');
+  assert.equal(blocks[0]!.region, 'region-a');
+});
+
+test('F3: Region B block (index 1) has shouldCache=true and region="region-b"', () => {
+  const assembled = assembleSystemPrompt(fixtureCtx('BUILD'));
+  const blocks = splitSystemPromptIntoBlocks(assembled);
+  assert.equal(blocks[1]!.shouldCache, true, 'Region B must be cached');
+  assert.equal(blocks[1]!.region, 'region-b');
+});
+
+test('F3: Region C block (index 2) has shouldCache=false and region="region-c"', () => {
+  const assembled = assembleSystemPrompt(fixtureCtx('BUILD'));
+  const blocks = splitSystemPromptIntoBlocks(assembled);
+  assert.equal(blocks[2]!.shouldCache, false, 'Region C (dynamic suffix) must NOT be cached');
+  assert.equal(blocks[2]!.region, 'region-c');
+});
+
+test('F3: Region A block text is byte-identical across two BUILD turns with same inputs', () => {
+  const ctx = fixtureCtx('BUILD');
+  const blocks1 = splitSystemPromptIntoBlocks(assembleSystemPrompt(ctx));
+  const blocks2 = splitSystemPromptIntoBlocks(assembleSystemPrompt(ctx));
+  assert.equal(
+    blocks1[0]!.text,
+    blocks2[0]!.text,
+    'Region A must be byte-identical across turns (golden file / stability guard)',
+  );
+});
+
+test('F3: Region A block is shared between BUILD and TUNE modes (same cached bytes)', () => {
+  const buildBlocks = splitSystemPromptIntoBlocks(assembleSystemPrompt(fixtureCtx('BUILD')));
+  const tuneBlocks = splitSystemPromptIntoBlocks(assembleSystemPrompt(fixtureCtx('TUNE')));
+  assert.equal(
+    buildBlocks[0]!.text,
+    tuneBlocks[0]!.text,
+    'Region A must be byte-identical across BUILD and TUNE for automatic prefix caching to work',
+  );
+});
+
+test('F3: block texts round-trip (concatenation = original minus boundary markers)', () => {
+  const assembled = assembleSystemPrompt(fixtureCtx('TUNE'));
+  const blocks = splitSystemPromptIntoBlocks(assembled);
+  // Each block's text appears in the assembled prompt — do a loose check
+  // that all three non-empty blocks' first 40 chars are present in assembled.
+  for (const b of blocks) {
+    const sample = b.text.trim().slice(0, 40);
+    if (sample.length > 0) {
+      assert.ok(
+        assembled.includes(sample),
+        `block text sample "${sample}" must appear in assembled prompt`,
+      );
+    }
+  }
+});
+
+test('F3: buildCacheStatsPayload computes cachedFraction correctly', () => {
+  const stats = buildCacheStatsPayload({
+    input_tokens: 100,
+    cache_read_input_tokens: 300,
+    cache_creation_input_tokens: 0,
+  });
+  assert.equal(stats.inputTokens, 100);
+  assert.equal(stats.cacheReadTokens, 300);
+  assert.equal(stats.cachedFraction, 0.75, 'cachedFraction = cached / (input + cached)');
+  assert.equal(stats.explicitCacheControlWired, false, 'SDK limitation flag must be false');
+});
+
+test('F3: buildCacheStatsPayload handles zero denominator without NaN', () => {
+  const stats = buildCacheStatsPayload({});
+  assert.equal(stats.cachedFraction, 0);
+  assert.equal(stats.inputTokens, 0);
+  assert.equal(stats.cacheReadTokens, 0);
+});
+
+// ─── Baseline token counts ────────────────────────────────────────────────
 
 // Emit the baseline numbers to stdout so PROGRESS.md can record them.
 // Not an assertion — informational only, won't fail the run.

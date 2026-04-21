@@ -27,4 +27,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   // Sprint 046, Session B — card-shaped I/O wrappers (callable in both modes).
   ask_manager: `mcp__${TUNING_AGENT_SERVER_NAME}__ask_manager`,
   emit_audit: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_audit`,
+  // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
+  get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_edit_history`,
 } as const;
