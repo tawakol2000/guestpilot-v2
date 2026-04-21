@@ -7,6 +7,15 @@ import { cancelPendingAiReply, getPendingReplyForConversation, markFired } from 
 import { generateAndSendAiReply } from '../services/ai.service';
 import { broadcastToTenant, broadcastCritical } from '../services/socket.service';
 import { syncConversationMessages } from '../services/message-sync.service';
+// Sprint-049 A2: Path B tuning diagnostic fire. Before this session the
+// legacy-copilot approve-as-edit path accepted editedText but never ran
+// the diagnostic, so tenants on copilot mode (shadowModeEnabled=false)
+// lost every EDIT/REJECT signal. Sprint-048 Session A wired Path A via
+// messages.controller#send; this closes the Path B half.
+import { runDiagnostic } from '../services/tuning/diagnostic.service';
+import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
+import { semanticSimilarity } from '../services/tuning/diff.service';
+import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 
 const aiToggleSchema = z.object({
   aiEnabled: z.boolean(),
@@ -580,6 +589,20 @@ export function makeConversationsController(prisma: PrismaClient) {
         const sentAt = new Date();
         const editorUserId = (req as any).userId ?? null;
 
+        // Link the most-recent AiApiLog so the diagnostic's evidence bundle
+        // can pull RAG context. Mirrors messages.controller.ts:124-131 —
+        // only bother looking when there was a pending AI draft that the
+        // operator might have edited (no draft = no diagnostic to run).
+        const recentAiApiLog = pendingReply?.suggestion
+          ? await prisma.aiApiLog
+              .findFirst({
+                where: { tenantId, conversationId: id },
+                orderBy: { createdAt: 'desc' },
+                select: { id: true },
+              })
+              .catch(() => null)
+          : null;
+
         // Audit trail parity with Path A (messages.controller.ts:156-158):
         // when editedText is provided (operator routed through the approve
         // flow with a deliberate payload), stamp originalAiText +
@@ -596,6 +619,7 @@ export function makeConversationsController(prisma: PrismaClient) {
             hostawayMessageId: hostawayMsgId,
             originalAiText: editedText ? pendingReply?.suggestion ?? null : null,
             editedByUserId: editedText ? editorUserId : null,
+            aiApiLogId: editedText ? recentAiApiLog?.id ?? null : null,
           },
         });
 
@@ -616,6 +640,53 @@ export function makeConversationsController(prisma: PrismaClient) {
         // second AI reply on top of this just-sent manual one. Matches Path A
         // (messages.controller.ts:168).
         await cancelPendingAiReply(id, prisma);
+
+        // Sprint-049 A2: Path B tuning diagnostic fire. Only when the
+        // operator actually changed the AI draft. EDIT vs REJECT split via
+        // semanticSimilarity < 0.3 (wholesale replacement = REJECT). Fire-
+        // and-forget, deduped 60s per-message by shouldProcessTrigger, errors
+        // swallowed per CLAUDE.md rule #2. Mirrors messages.controller.ts:
+        // 170-205 and shadow-preview.controller.ts:148-186.
+        const originalSuggestion = pendingReply?.suggestion?.trim() ?? null;
+        const trimmedEdit = editedText?.trim();
+        if (originalSuggestion && trimmedEdit && trimmedEdit !== originalSuggestion) {
+          const similarity = semanticSimilarity(originalSuggestion, trimmedEdit);
+          const triggerType: 'EDIT_TRIGGERED' | 'REJECT_TRIGGERED' =
+            similarity < 0.3 ? 'REJECT_TRIGGERED' : 'EDIT_TRIGGERED';
+
+          if (shouldProcessTrigger(triggerType, msg.id)) {
+            void (async () => {
+              try {
+                const result = await runDiagnostic(
+                  {
+                    triggerType,
+                    tenantId,
+                    messageId: msg.id,
+                    note: triggerType === 'REJECT_TRIGGERED'
+                      ? 'Manager replaced the AI copilot draft wholesale via approve-suggestion (similarity < 0.3).'
+                      : 'Manager edited the AI copilot draft via approve-suggestion before sending.',
+                  },
+                  prisma,
+                );
+                if (result) {
+                  await writeSuggestionFromDiagnostic(result, {}, prisma);
+                }
+              } catch (diagErr) {
+                console.error('[TUNING_DIAGNOSTIC_FAILURE]', {
+                  phase: 'diagnostic',
+                  path: 'conversations',
+                  tenantId,
+                  messageId: msg.id,
+                  triggerType,
+                  reason: diagErr instanceof Error ? diagErr.message : String(diagErr),
+                  stack: diagErr instanceof Error ? diagErr.stack : undefined,
+                });
+              }
+            })();
+          } else {
+            console.log(`[Conversations] [${msg.id}] copilot diagnostic deduped (60s window).`);
+          }
+        }
 
         res.json({ ok: true });
       } catch (err) {
