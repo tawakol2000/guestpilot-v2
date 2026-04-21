@@ -23,9 +23,18 @@ export interface RationaleCardProps {
   rationale: string | null | undefined
   /** 'rail' = ledger rail row expansion; 'drawer' = drawer header slot. */
   variant?: 'rail' | 'drawer'
+  /** Sprint 055-A F4 — set when metadata.rationalePrefix === 'edited-by-operator'. */
+  editedByOperator?: boolean
+  /** Sprint 055-A F4 — operator's own free-text reason for the edit. */
+  operatorRationale?: string | null
 }
 
-export function RationaleCard({ rationale, variant = 'drawer' }: RationaleCardProps) {
+export function RationaleCard({
+  rationale,
+  variant = 'drawer',
+  editedByOperator = false,
+  operatorRationale,
+}: RationaleCardProps) {
   const hasRationale =
     typeof rationale === 'string' && rationale.trim().length > 0
   const isRail = variant === 'rail'
@@ -34,6 +43,7 @@ export function RationaleCard({ rationale, variant = 'drawer' }: RationaleCardPr
       data-testid="rationale-card"
       data-variant={variant}
       data-has-rationale={hasRationale ? 'true' : 'false'}
+      data-edited-by-operator={editedByOperator ? 'true' : 'false'}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -47,6 +57,7 @@ export function RationaleCard({ rationale, variant = 'drawer' }: RationaleCardPr
       }}
     >
       <span
+        data-testid="rationale-card-headline"
         style={{
           fontSize: 10.5,
           fontStyle: 'italic',
@@ -55,7 +66,7 @@ export function RationaleCard({ rationale, variant = 'drawer' }: RationaleCardPr
           letterSpacing: 0.2,
         }}
       >
-        Rationale
+        Rationale{editedByOperator ? ' (edited by operator)' : ''}
       </span>
       {hasRationale ? (
         // Literal text — never parsed as markdown. Pre-wrap preserves the
@@ -83,6 +94,22 @@ export function RationaleCard({ rationale, variant = 'drawer' }: RationaleCardPr
           No rationale recorded
         </span>
       )}
+      {editedByOperator && operatorRationale ? (
+        <span
+          data-testid="rationale-card-operator-rationale"
+          style={{
+            fontSize: 11,
+            color: STUDIO_COLORS.inkMuted,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            borderTop: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+            paddingTop: 4,
+            marginTop: 2,
+          }}
+        >
+          Operator note: {operatorRationale}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -94,4 +121,18 @@ export function extractRationale(
   if (!metadata || typeof metadata !== 'object') return null
   const r = (metadata as { rationale?: unknown }).rationale
   return typeof r === 'string' && r.trim().length > 0 ? r : null
+}
+
+/** Sprint 055-A F4 — extracts operator-edit provenance fields from metadata. */
+export function extractEditProvenance(
+  metadata: Record<string, unknown> | null | undefined,
+): { editedByOperator: boolean; operatorRationale: string | null } {
+  if (!metadata || typeof metadata !== 'object') {
+    return { editedByOperator: false, operatorRationale: null }
+  }
+  const editedByOperator =
+    (metadata as { rationalePrefix?: unknown }).rationalePrefix === 'edited-by-operator'
+  const or = (metadata as { operatorRationale?: unknown }).operatorRationale
+  const operatorRationale = typeof or === 'string' && or.trim().length > 0 ? or : null
+  return { editedByOperator, operatorRationale }
 }

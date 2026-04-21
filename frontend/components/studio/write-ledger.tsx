@@ -238,6 +238,7 @@ function LedgerRow({
           >
             — {row.artifactId}
           </span>
+          <EditedChip metadata={row.metadata} />
         </button>
         <button
           type="button"
@@ -393,5 +394,33 @@ function VerdictChip({
     >
       {label}
     </button>
+  )
+}
+
+// ─── Sprint 055-A F4 — edited-by-operator provenance chip ────────────────
+
+function EditedChip({
+  metadata,
+}: {
+  metadata: Record<string, unknown> | null | undefined
+}) {
+  if (!metadata || typeof metadata !== 'object') return null
+  if ((metadata as { rationalePrefix?: unknown }).rationalePrefix !== 'edited-by-operator') return null
+  return (
+    <span
+      data-testid="write-ledger-edited-chip"
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        background: '#EEF2FF',
+        color: '#4338CA',
+        borderRadius: 999,
+        padding: '1px 7px',
+        letterSpacing: 0.2,
+        flexShrink: 0,
+      }}
+    >
+      ✏️ Edited
+    </span>
   )
 }

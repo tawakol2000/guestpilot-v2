@@ -308,6 +308,29 @@ describe('WriteLedgerCard', () => {
     expect(onOpen.mock.calls[0][0].id).toBe('h-chip')
   })
 
+  it('055-A F4: renders ✏️ Edited chip when metadata.rationalePrefix is edited-by-operator', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [
+        row({
+          id: 'h-edited',
+          metadata: { rationalePrefix: 'edited-by-operator', rationale: 'Agent text', operatorRationale: 'Fixed typo' },
+        }),
+      ],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-edited-chip'))
+    expect(screen.getByTestId('write-ledger-edited-chip').textContent).toContain('Edited')
+  })
+
+  it('055-A F4: does NOT render edited chip when metadata absent', async () => {
+    mockList.mockResolvedValueOnce({
+      rows: [row({ id: 'h-plain', metadata: null })],
+    })
+    render(<WriteLedgerCard visible conversationId="c1" />)
+    await waitFor(() => screen.getByTestId('write-ledger-row'))
+    expect(screen.queryByTestId('write-ledger-edited-chip')).toBeNull()
+  })
+
   it('054-A F2: markdown-looking rationale renders as literal text (no <strong>, no <h1>)', async () => {
     mockList.mockResolvedValueOnce({
       rows: [

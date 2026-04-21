@@ -50,6 +50,7 @@ import { PropertyOverrideView } from './artifact-views/property-override-view'
 import {
   RationaleCard,
   extractRationale,
+  extractEditProvenance,
 } from './artifact-views/rationale-card'
 // Sprint 055-A F2 — inline editor components
 import { SopEditor } from './artifact-views/sop-editor'
@@ -592,6 +593,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
               <RationaleCard
                 variant="drawer"
                 rationale={extractRationale(target.historyRow.metadata)}
+                {...extractEditProvenance(target.historyRow.metadata)}
               />
             </div>
           ) : null}

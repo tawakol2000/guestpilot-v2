@@ -1,5 +1,6 @@
 /**
  * Sprint 054-A F2 — shared RationaleCard component tests.
+ * Sprint 055-A F4 — edited-by-operator provenance rendering.
  */
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -7,6 +8,7 @@ import { render, screen } from '@testing-library/react'
 import {
   RationaleCard,
   extractRationale,
+  extractEditProvenance,
 } from '../artifact-views/rationale-card'
 
 describe('RationaleCard', () => {
@@ -63,6 +65,62 @@ describe('RationaleCard', () => {
     )
     const card = container.querySelector('[data-testid="rationale-card"]')
     expect(card?.getAttribute('data-variant')).toBe('drawer')
+  })
+})
+
+describe('RationaleCard — F4 edited-by-operator provenance', () => {
+  it('headline includes "(edited by operator)" when editedByOperator=true', () => {
+    render(<RationaleCard rationale="Agent wrote this." editedByOperator />)
+    const headline = screen.getByTestId('rationale-card-headline')
+    expect(headline.textContent).toContain('(edited by operator)')
+  })
+
+  it('headline has no edit suffix when editedByOperator is absent', () => {
+    render(<RationaleCard rationale="Agent wrote this." />)
+    const headline = screen.getByTestId('rationale-card-headline')
+    expect(headline.textContent).not.toContain('edited by operator')
+  })
+
+  it('renders operator rationale block when provided', () => {
+    render(
+      <RationaleCard
+        rationale="Agent wrote this."
+        editedByOperator
+        operatorRationale="Fixed a typo in the SOP."
+      />,
+    )
+    const or = screen.getByTestId('rationale-card-operator-rationale')
+    expect(or.textContent).toContain('Fixed a typo in the SOP.')
+  })
+
+  it('does NOT render operator rationale block when editedByOperator but no operatorRationale', () => {
+    render(<RationaleCard rationale="Agent wrote this." editedByOperator />)
+    expect(screen.queryByTestId('rationale-card-operator-rationale')).toBeNull()
+  })
+
+  it('neither surface regresses when metadata is absent', () => {
+    render(<RationaleCard rationale="Normal rationale." />)
+    expect(screen.getByTestId('rationale-card-body').textContent).toBe('Normal rationale.')
+    expect(screen.queryByTestId('rationale-card-operator-rationale')).toBeNull()
+  })
+})
+
+describe('extractEditProvenance', () => {
+  it('returns editedByOperator=true when rationalePrefix matches', () => {
+    const result = extractEditProvenance({ rationalePrefix: 'edited-by-operator', operatorRationale: 'Fixed typo' })
+    expect(result.editedByOperator).toBe(true)
+    expect(result.operatorRationale).toBe('Fixed typo')
+  })
+
+  it('returns editedByOperator=false when rationalePrefix is absent', () => {
+    expect(extractEditProvenance(null).editedByOperator).toBe(false)
+    expect(extractEditProvenance({}).editedByOperator).toBe(false)
+    expect(extractEditProvenance({ rationalePrefix: 'agent' }).editedByOperator).toBe(false)
+  })
+
+  it('returns operatorRationale=null when field is absent or whitespace', () => {
+    expect(extractEditProvenance({ rationalePrefix: 'edited-by-operator' }).operatorRationale).toBeNull()
+    expect(extractEditProvenance({ rationalePrefix: 'edited-by-operator', operatorRationale: '  ' }).operatorRationale).toBeNull()
   })
 })
 
