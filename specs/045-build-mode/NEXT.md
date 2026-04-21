@@ -1,13 +1,20 @@
-# Sprint 047 close + sprint 048 kickoff
+# Sprint 048 — Session A kickoff (two-bug jump)
 
-> Sprint 047 is code-complete at Session C close. Five of the six
-> gate items on the sprint-047 scope sheet landed across Sessions A,
-> B, and C; the only remaining non-code action is the end-of-stack
-> merge to production + its staging wet-test.
+> Sprint 047 is code-complete at Session C close. Two operator-facing
+> bugs surfaced immediately after close:
 >
-> This file is both the sprint-047 exit handoff and the sprint-048
-> kickoff. Read section 1 to confirm what's still pending on 047,
-> then section 2 for where sprint 048 begins.
+> 1. Copilot-mode edits don't fire the tuning diagnostic (no "something
+>    needs to be changed" suggestion lands in `/tuning`).
+> 2. "Discuss in tuning" button fails silently on error, with no
+>    user feedback.
+>
+> These jump the sprint-048 candidate scope previously queued in §2.1
+> — those candidates defer to Session B or sprint 049. Session A's
+> focused spec is at [`sprint-048-session-a.md`](./sprint-048-session-a.md).
+>
+> Read sections below in order: §1 is sprint-047 close-out (still
+> owed), §2 is Session A pointer, §3 is deferred candidates, §4 is
+> the full context bundle.
 
 ---
 
@@ -90,9 +97,29 @@ if any are shared.
 
 ---
 
-## 2. Sprint 048 — kickoff
+## 2. Sprint 048 — Session A pointer
 
-### 2.1 Candidate scope
+The two-bug scope sheet is [`sprint-048-session-a.md`](./sprint-048-session-a.md).
+Session A takes priority over the §3 candidates below. Run Session
+A first, then decide whether to do a Session B in this sprint or
+close and let sprint 049 pick up the raw-prompt editor edit path.
+
+Gates at a glance (details in the scope sheet):
+
+- **A1-A4** — Copilot edit signal fix: edit affordance on the
+  suggestion pill + `seededFromDraft` state + `fromDraft: true`
+  wire-through on the send call + frontend vitest + backend
+  integration test.
+- **A5-A7** — "Discuss in tuning" UX polish: toast on failure,
+  busy/disabled state, visible click target, vitest, staging smoke
+  one-liner.
+- **A8-A9** — Suites green + handoff.
+
+No schema changes. No `prisma db push`.
+
+---
+
+## 3. Deferred candidates (post-Session A)
 
 Three lines of work are ripe, all carried forward from sprint-047
 deferrals. Pick the one with the most operator pressure; the others
@@ -124,7 +151,7 @@ can defer to sprint 049.
   is the extra click worth the agent-behaviour upside? Estimate:
   0.5 day.
 
-### 2.2 Still-deferred from sprint 047
+### 3.1 Still-deferred from sprint 047
 
 Unchanged from sprint-047 Session C close:
 
@@ -140,7 +167,7 @@ Unchanged from sprint-047 Session C close:
   tenant-owner and platform-admin. Migrate to a User model only if
   product surfaces a need for per-operator gating.
 
-### 2.3 Non-negotiables carried forward
+### 3.2 Non-negotiables carried forward
 
 - `ai.service.ts` untouched. Guest messaging flow is out of scope
   for any /build / /tuning work.
@@ -152,7 +179,7 @@ Unchanged from sprint-047 Session C close:
 
 ---
 
-## 3. Context pointers
+## 4. Context pointers
 
 - [sprint-046-plan.md](./sprint-046-plan.md) — the unified plan
   Sessions 045 / 046 / 047 all implement against. §6.5 (raw-prompt
