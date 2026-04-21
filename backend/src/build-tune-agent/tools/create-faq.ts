@@ -32,7 +32,8 @@ PARAMETERS:
   propertyId (string, optional) — null for global, set for property-scoped
   triggers (array of strings, optional)
   transactionId (string, optional)
-RETURNS: { faqEntryId, version, previewUrl }`;
+  dryRun (boolean, optional) — when true, validate + return preview, no DB write
+RETURNS: { faqEntryId, version, previewUrl } or { dryRun: true, preview, diff }`;
 
 export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
@@ -45,6 +46,7 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
       propertyId: z.string().optional(),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
       transactionId: z.string().optional(),
+      dryRun: z.boolean().optional(),
     },
     async (args) => {
       const c = ctx();
@@ -79,6 +81,36 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         }
 
         const scope = args.propertyId ? 'PROPERTY' : 'GLOBAL';
+
+        // D1 dry-run seam — return the would-be payload without writing.
+        if (args.dryRun) {
+          const previewPayload = {
+            tenantId: c.tenantId,
+            propertyId: args.propertyId ?? null,
+            question: args.question.trim(),
+            answer: args.answer.trim(),
+            category: args.category,
+            scope,
+            status: 'ACTIVE',
+            source: 'MANUAL',
+            buildTransactionId: args.transactionId ?? null,
+          };
+          const out = {
+            ok: true,
+            dryRun: true,
+            artifactType: 'faq' as const,
+            preview: previewPayload,
+            diff: {
+              kind: 'create' as const,
+              category: args.category,
+              scope,
+              questionPreview: args.question.trim().slice(0, 80),
+            },
+          };
+          span.end({ dryRun: true, ok: true });
+          return asCallToolResult(out);
+        }
+
         const created = await c.prisma.faqEntry.create({
           data: {
             tenantId: c.tenantId,

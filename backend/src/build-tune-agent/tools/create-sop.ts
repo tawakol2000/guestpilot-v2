@@ -55,7 +55,8 @@ PARAMETERS:
   body (string, ≤800 tokens, use the canonical hospitality template structure)
   triggers (array of strings, guest-message patterns that invoke this SOP at classification time)
   transactionId (string, optional) — if part of a plan_build_changes plan, pass the plan's id.
-RETURNS: { sopId, variantId, version, previewUrl }`;
+  dryRun (boolean, optional) — when true, validate + return preview, no DB write
+RETURNS: { sopId, variantId, version, previewUrl } or { dryRun: true, preview, diff }`;
 
 export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
@@ -73,6 +74,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
       body: z.string().min(20).max(8000),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
       transactionId: z.string().optional(),
+      dryRun: z.boolean().optional(),
     },
     async (args) => {
       const c = ctx();
@@ -109,6 +111,73 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         const status = args.status as SopStatus;
         const titleLine = args.title.trim();
         const toolDescription = `${titleLine}. ${summariseFirstLine(args.body)}`.slice(0, 500);
+
+        // D1 dry-run seam — read-only existence checks then return preview.
+        // Read existing definition so we can include the would-be sopId
+        // in the preview when the category already exists. We deliberately
+        // do not upsert in dry-run; an absent definition surfaces as null.
+        if (args.dryRun) {
+          const existingDef = await c.prisma.sopDefinition.findUnique({
+            where: { tenantId_category: { tenantId: c.tenantId, category: args.sopCategory } },
+            select: { id: true },
+          });
+          if (args.propertyId && existingDef) {
+            const existingOverride = await c.prisma.sopPropertyOverride.findUnique({
+              where: {
+                sopDefinitionId_propertyId_status: {
+                  sopDefinitionId: existingDef.id,
+                  propertyId: args.propertyId,
+                  status,
+                },
+              },
+              select: { id: true },
+            });
+            if (existingOverride) {
+              span.end({ error: 'OVERRIDE_EXISTS', dryRun: true });
+              return asError(
+                `create_sop: a property override for category "${args.sopCategory}" status ${status} on this property already exists (${existingOverride.id}). Use search_replace or propose_suggestion to modify it.`
+              );
+            }
+          } else if (!args.propertyId && existingDef) {
+            const existingVariant = await c.prisma.sopVariant.findUnique({
+              where: { sopDefinitionId_status: { sopDefinitionId: existingDef.id, status } },
+              select: { id: true },
+            });
+            if (existingVariant) {
+              span.end({ error: 'VARIANT_EXISTS', dryRun: true });
+              return asError(
+                `create_sop: a global variant for category "${args.sopCategory}" status ${status} already exists (${existingVariant.id}). Use search_replace or propose_suggestion to modify it, or pass a different status.`
+              );
+            }
+          }
+          const previewPayload = {
+            tenantId: c.tenantId,
+            sopCategory: args.sopCategory,
+            status,
+            propertyId: args.propertyId ?? null,
+            title: titleLine,
+            body: args.body,
+            triggers: args.triggers ?? [],
+            toolDescription,
+            kind: args.propertyId ? ('override' as const) : ('variant' as const),
+            buildTransactionId: args.transactionId ?? null,
+          };
+          const out = {
+            ok: true,
+            dryRun: true,
+            artifactType: 'sop' as const,
+            preview: previewPayload,
+            diff: {
+              kind: 'create' as const,
+              sopCategory: args.sopCategory,
+              status,
+              scope: args.propertyId ? 'override' : 'variant',
+              titlePreview: titleLine.slice(0, 80),
+            },
+          };
+          span.end({ dryRun: true, ok: true });
+          return asCallToolResult(out);
+        }
 
         // Reuse-or-create SopDefinition under @@unique(tenantId, category).
         const definition = await c.prisma.sopDefinition.upsert({

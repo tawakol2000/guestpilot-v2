@@ -27,6 +27,7 @@ import {
   validateBuildTransaction,
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
+import { sanitiseArtifactPayload } from '../lib/sanitise-artifact-payload';
 
 // snake_case — same convention the main AI's system tools use
 // (get_sop, get_faq, search_available_properties, …). Prevents drift
@@ -52,7 +53,8 @@ PARAMETERS:
   webhookAuth (object, { type: 'bearer'|'basic'|'none', secretName })
   availableStatuses (array of reservation statuses)
   transactionId (string, optional)
-RETURNS: { toolDefinitionId, version, previewUrl }`;
+  dryRun (boolean, optional) — when true, validate + return SANITISED preview, no DB write
+RETURNS: { toolDefinitionId, version, previewUrl } or { dryRun: true, preview, diff }`;
 
 const webhookAuthSchema = z.object({
   type: z.enum(['bearer', 'basic', 'none']),
@@ -84,6 +86,7 @@ export function buildCreateToolDefinitionTool(
       agentScope: z.enum(['screening', 'coordinator', 'both']).optional(),
       webhookTimeoutMs: z.number().int().min(1000).max(60000).optional(),
       transactionId: z.string().optional(),
+      dryRun: z.boolean().optional(),
     },
     async (args) => {
       const c = ctx();
@@ -115,6 +118,44 @@ export function buildCreateToolDefinitionTool(
         }
 
         const displayName = args.displayName ?? titleCase(args.name);
+
+        // D1 dry-run seam — return SANITISED preview without writing.
+        // Sanitiser parity: same function backs D2 history storage so a
+        // secret hidden in the preview is hidden in the persisted row too.
+        if (args.dryRun) {
+          const rawPreview = {
+            tenantId: c.tenantId,
+            name: args.name,
+            displayName,
+            description: args.description,
+            defaultDescription: args.description,
+            parameters: args.parameters,
+            agentScope: args.agentScope ?? 'coordinator',
+            type: 'custom' as const,
+            enabled: true,
+            webhookUrl: args.webhookUrl,
+            webhookTimeout: args.webhookTimeoutMs ?? 10000,
+            webhookAuth: { type: args.webhookAuth.type, secretName: args.webhookAuth.secretName ?? null },
+            availableStatuses: args.availableStatuses,
+            buildTransactionId: args.transactionId ?? null,
+          };
+          const sanitisedPreview = sanitiseArtifactPayload(rawPreview);
+          const out = {
+            ok: true,
+            dryRun: true,
+            artifactType: 'tool_definition' as const,
+            preview: sanitisedPreview,
+            diff: {
+              kind: 'create' as const,
+              name: args.name,
+              displayName,
+              agentScope: args.agentScope ?? 'coordinator',
+            },
+          };
+          span.end({ dryRun: true, ok: true });
+          return asCallToolResult(out);
+        }
+
         const created = await c.prisma.toolDefinition.create({
           data: {
             tenantId: c.tenantId,

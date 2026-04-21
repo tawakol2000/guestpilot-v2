@@ -85,7 +85,8 @@ PARAMETERS:
   sourceTemplateVersion (string, hash of the GENERIC_HOSPITALITY_SEED.md used at render time)
   slotValues (object, key→value map of the slots that produced this prompt; used for re-render and audit)
   transactionId (string, optional)
-RETURNS: { configVersionId, previewUrl }`;
+  dryRun (boolean, optional) — when true, validate + return preview, no DB write
+RETURNS: { configVersionId, previewUrl } or { dryRun: true, preview, diff }`;
 
 export function buildWriteSystemPromptTool(
   tool: typeof ToolFactory,
@@ -105,6 +106,7 @@ export function buildWriteSystemPromptTool(
       managerSanctioned: z
         .literal(true, "managerSanctioned must be true — manager must sanction the write in their last turn"),
       transactionId: z.string().optional(),
+      dryRun: z.boolean().optional(),
     },
     async (args) => {
       const c = ctx();
@@ -156,6 +158,41 @@ export function buildWriteSystemPromptTool(
         const current = await c.prisma.tenantAiConfig.findUnique({
           where: { tenantId: c.tenantId },
         });
+
+        // D1 dry-run seam — return the would-be payload without persisting.
+        // Validation (coverage + load-bearing + tx) has already run above.
+        if (args.dryRun) {
+          const previewPayload = {
+            tenantId: c.tenantId,
+            variant: args.variant,
+            field:
+              args.variant === 'coordinator'
+                ? 'systemPromptCoordinator'
+                : 'systemPromptScreening',
+            text: args.text,
+            sourceTemplateVersion: args.sourceTemplateVersion,
+            slotValues: args.slotValues,
+            buildTransactionId: args.transactionId ?? null,
+            characterLength: args.text.length,
+            estimatedTokens: Math.ceil(args.text.length / 4),
+          };
+          const out = {
+            ok: true,
+            dryRun: true,
+            artifactType: 'system_prompt' as const,
+            preview: previewPayload,
+            diff: {
+              kind: 'update' as const,
+              variant: args.variant,
+              coverage: coverage.coverageRatio,
+              defaultedSlots: coverage.defaultedSlots,
+            },
+          };
+          span.end({ dryRun: true, ok: true });
+          return asCallToolResult(out);
+        }
+
+
 
         const field =
           args.variant === 'coordinator'
