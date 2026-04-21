@@ -38,6 +38,11 @@ import { BuildDisabled } from '@/components/build/build-disabled'
 import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
+import { WriteLedgerCard, ledgerArtifactType } from './write-ledger'
+import {
+  apiRevertArtifactFromHistory,
+  type BuildArtifactHistoryRow,
+} from '@/lib/build-api'
 import { TraceDrawer } from './trace-drawer'
 import { RawPromptDrawer } from './raw-prompt-drawer'
 import {
@@ -89,6 +94,9 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     open: boolean
     target: ArtifactDrawerTarget | null
   }>({ open: false, target: null })
+  // Sprint 053-A D4 — bumps to force the WriteLedgerCard to re-fetch
+  // (after a successful Apply or Revert).
+  const [ledgerRefreshKey, setLedgerRefreshKey] = useState(0)
   // Timestamp used by the drawer's "View changes" lookup — stable per
   // session, refreshed on conversationId change via the same bootstrap
   // reset that clears sessionArtifacts.
@@ -377,6 +385,53 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           Boolean(capabilities.rawPromptEditorEnabled) && capabilities.isAdmin
         }
         onOpenRawPrompt={() => setRawPromptOpen(true)}
+        ledgerVisible={
+          Boolean(capabilities.rawPromptEditorEnabled) && capabilities.isAdmin
+        }
+        ledgerConversationId={load.conversationId}
+        ledgerRefreshKey={ledgerRefreshKey}
+        onOpenLedgerRow={(row: BuildArtifactHistoryRow) => {
+          // History view: open the artifact drawer at the artifact's
+          // current state. (Faithful "viewing this past write" UI lands
+          // in 054-A — for now click-to-open just navigates to the
+          // artifact.)
+          setArtifactDrawer({
+            open: true,
+            target: {
+              artifact: ledgerArtifactType(row.artifactType),
+              artifactId: row.artifactId,
+            },
+          })
+        }}
+        onRevertLedgerRow={async (row: BuildArtifactHistoryRow) => {
+          // Two-step: dry-run preview, then native confirm before commit.
+          // 054-A polish: in-drawer "Preview Revert + Confirm Revert" UI.
+          try {
+            const preview = await apiRevertArtifactFromHistory(row.id, {
+              dryRun: true,
+            })
+            if (!preview.ok) {
+              alert(`Revert preview failed: ${preview.error ?? 'unknown'}`)
+              return
+            }
+            const proceed = window.confirm(
+              `Revert ${row.artifactType} "${row.artifactId}" to its pre-write state? This writes a REVERT row to the ledger.`,
+            )
+            if (!proceed) return
+            const result = await apiRevertArtifactFromHistory(row.id, {
+              dryRun: false,
+            })
+            if (!result.ok) {
+              alert(`Revert failed: ${result.error ?? 'unknown'}`)
+              return
+            }
+            setLedgerRefreshKey((k) => k + 1)
+          } catch (err) {
+            alert(
+              `Revert error: ${err instanceof Error ? err.message : String(err)}`,
+            )
+          }
+        }}
       />
 
       <TraceDrawer
@@ -553,6 +608,11 @@ function RightRail({
   onOpenTrace,
   rawPromptButtonVisible,
   onOpenRawPrompt,
+  ledgerVisible,
+  ledgerConversationId,
+  ledgerRefreshKey,
+  onOpenLedgerRow,
+  onRevertLedgerRow,
 }: {
   snapshot: StateSnapshotData
   testResults: TestPipelineResultData[]
@@ -562,6 +622,11 @@ function RightRail({
   onOpenTrace: () => void
   rawPromptButtonVisible: boolean
   onOpenRawPrompt: () => void
+  ledgerVisible: boolean
+  ledgerConversationId: string | null
+  ledgerRefreshKey: number
+  onOpenLedgerRow: (row: BuildArtifactHistoryRow) => void
+  onRevertLedgerRow: (row: BuildArtifactHistoryRow) => void
 }) {
   return (
     <aside
@@ -606,6 +671,13 @@ function RightRail({
           </div>
         </div>
       )}
+      <WriteLedgerCard
+        visible={ledgerVisible}
+        conversationId={ledgerConversationId}
+        refreshKey={ledgerRefreshKey}
+        onOpenRow={onOpenLedgerRow}
+        onRevertRow={onRevertLedgerRow}
+      />
       {traceButtonVisible || rawPromptButtonVisible ? (
         <div
           style={{

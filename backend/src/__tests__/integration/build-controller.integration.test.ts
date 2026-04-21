@@ -573,3 +573,253 @@ test('case 5: POST /plan/:id/rollback invokes rollback tool and returns success'
     delete process.env.ENABLE_BUILD_MODE;
   }
 });
+
+// ─── Sprint 053-A D4 — write-ledger list + revert endpoints ────────────────
+
+test('case 053-D4-list: GET /artifacts/history is admin-only + tenant-scoped', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  // Make this fixture tenant admin so the endpoint returns rows.
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  // Seed two history rows scoped to fx.conversationId, plus one row for a
+  // different (synthetic) conversationId — proves session scoping.
+  const otherConv = `OTHER_conv_${Date.now()}`;
+  const seeded = await Promise.all([
+    prisma.buildArtifactHistory.create({
+      data: {
+        tenantId: fx.tenantId,
+        artifactType: 'sop',
+        artifactId: 'fixture-sop-1',
+        operation: 'CREATE',
+        prevBody: undefined as any,
+        newBody: { content: 'first sop body' },
+        actorEmail: 'TEST@local',
+        conversationId: fx.conversationId,
+      },
+    }),
+    prisma.buildArtifactHistory.create({
+      data: {
+        tenantId: fx.tenantId,
+        artifactType: 'faq',
+        artifactId: 'fixture-faq-1',
+        operation: 'UPDATE',
+        prevBody: { question: 'q', answer: 'old' },
+        newBody: { question: 'q', answer: 'new' },
+        actorEmail: 'TEST@local',
+        conversationId: fx.conversationId,
+      },
+    }),
+    prisma.buildArtifactHistory.create({
+      data: {
+        tenantId: fx.tenantId,
+        artifactType: 'sop',
+        artifactId: 'fixture-sop-2',
+        operation: 'CREATE',
+        newBody: { content: 'sop body in OTHER conv' },
+        actorEmail: 'TEST@local',
+        conversationId: otherConv,
+      },
+    }),
+  ]);
+
+  const srv = await startServer();
+  try {
+    // Without ENABLE_RAW_PROMPT_EDITOR → 404. Toggle off temporarily.
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+    const r404 = await fetch(`${srv.baseUrl}/api/build/artifacts/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(r404.status, 404);
+    process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+
+    // Scoped to fx.conversationId — should return 2 rows (not 3).
+    const rScoped = await fetch(
+      `${srv.baseUrl}/api/build/artifacts/history?conversationId=${encodeURIComponent(fx.conversationId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(rScoped.status, 200);
+    const bodyScoped = (await rScoped.json()) as any;
+    assert.equal(bodyScoped.rows.length, 2, 'scoped to fx conversation');
+
+    // Tenant isolation — pass an unrelated conversationId; expect 0 rows.
+    const rOther = await fetch(
+      `${srv.baseUrl}/api/build/artifacts/history?conversationId=non-existent-conv-xyz`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    assert.equal(rOther.status, 200);
+    const bodyOther = (await rOther.json()) as any;
+    assert.equal(bodyOther.rows.length, 0);
+  } finally {
+    await prisma.buildArtifactHistory
+      .deleteMany({ where: { id: { in: seeded.map((s) => s.id) } } })
+      .catch(() => undefined);
+    await prisma.tenant
+      .update({ where: { id: fx.tenantId }, data: { isAdmin: false } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
+test('case 053-D4-revert: POST /artifacts/history/:id/revert with dryRun returns preview, no writes', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  // Seed an SOP variant + an UPDATE history row pointing at it.
+  const def = await prisma.sopDefinition.create({
+    data: {
+      tenantId: fx.tenantId,
+      category: 'd4-revert-test',
+      toolDescription: 'test',
+      enabled: true,
+    },
+  });
+  const variant = await prisma.sopVariant.create({
+    data: {
+      sopDefinitionId: def.id,
+      status: 'DEFAULT',
+      content: 'CURRENT body that should NOT change in dry-run.',
+      enabled: true,
+    },
+  });
+  const histRow = await prisma.buildArtifactHistory.create({
+    data: {
+      tenantId: fx.tenantId,
+      artifactType: 'sop',
+      artifactId: variant.id,
+      operation: 'UPDATE',
+      prevBody: { content: 'PRIOR body that revert should restore.' },
+      newBody: { content: 'CURRENT body' },
+      conversationId: fx.conversationId,
+      actorEmail: 'TEST@local',
+    },
+  });
+
+  const srv = await startServer();
+  try {
+    const r = await fetch(
+      `${srv.baseUrl}/api/build/artifacts/history/${histRow.id}/revert`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ dryRun: true }),
+      },
+    );
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as any;
+    assert.equal(body.ok, true);
+    assert.equal(body.dryRun, true);
+    assert.ok(body.preview, 'preview present');
+    // Variant content unchanged.
+    const fresh = await prisma.sopVariant.findUnique({ where: { id: variant.id } });
+    assert.equal(fresh?.content, 'CURRENT body that should NOT change in dry-run.');
+  } finally {
+    await prisma.buildArtifactHistory
+      .deleteMany({ where: { id: histRow.id } })
+      .catch(() => undefined);
+    await prisma.sopVariant.delete({ where: { id: variant.id } }).catch(() => undefined);
+    await prisma.sopDefinition.delete({ where: { id: def.id } }).catch(() => undefined);
+    await prisma.tenant
+      .update({ where: { id: fx.tenantId }, data: { isAdmin: false } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
+test('case 053-D4-revert-real: revert applies prevBody + writes a REVERT history row', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  const def = await prisma.sopDefinition.create({
+    data: {
+      tenantId: fx.tenantId,
+      category: 'd4-revert-real',
+      toolDescription: 'test',
+      enabled: true,
+    },
+  });
+  const variant = await prisma.sopVariant.create({
+    data: {
+      sopDefinitionId: def.id,
+      status: 'DEFAULT',
+      content: 'CURRENT body to be reverted away.',
+      enabled: true,
+    },
+  });
+  const histRow = await prisma.buildArtifactHistory.create({
+    data: {
+      tenantId: fx.tenantId,
+      artifactType: 'sop',
+      artifactId: variant.id,
+      operation: 'UPDATE',
+      prevBody: { content: 'EARLIER body to restore via revert.' },
+      newBody: { content: 'CURRENT body to be reverted away.' },
+      conversationId: fx.conversationId,
+      actorEmail: 'TEST@local',
+    },
+  });
+
+  const srv = await startServer();
+  try {
+    const r = await fetch(
+      `${srv.baseUrl}/api/build/artifacts/history/${histRow.id}/revert`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ dryRun: false }),
+      },
+    );
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as any;
+    assert.equal(body.ok, true);
+    assert.equal(body.dryRun, false);
+
+    const fresh = await prisma.sopVariant.findUnique({ where: { id: variant.id } });
+    assert.equal(fresh?.content, 'EARLIER body to restore via revert.');
+
+    // A new history row with operation REVERT should exist for this artifact.
+    const recent = await prisma.buildArtifactHistory.findFirst({
+      where: {
+        tenantId: fx.tenantId,
+        artifactType: 'sop',
+        artifactId: variant.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    assert.equal(recent?.operation, 'REVERT');
+    const meta = recent?.metadata as any;
+    assert.equal(meta?.revertsHistoryId, histRow.id);
+  } finally {
+    await prisma.buildArtifactHistory
+      .deleteMany({
+        where: { tenantId: fx.tenantId, artifactType: 'sop', artifactId: variant.id },
+      })
+      .catch(() => undefined);
+    await prisma.sopVariant.delete({ where: { id: variant.id } }).catch(() => undefined);
+    await prisma.sopDefinition.delete({ where: { id: def.id } }).catch(() => undefined);
+    await prisma.tenant
+      .update({ where: { id: fx.tenantId }, data: { isAdmin: false } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});

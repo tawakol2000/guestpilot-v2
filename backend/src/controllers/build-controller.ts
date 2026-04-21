@@ -64,6 +64,41 @@ import {
   applyArtifactUpdate,
   type ApplyArtifactType,
 } from '../build-tune-agent/lib/artifact-apply';
+
+/**
+ * Sprint 053-A D4 — convert a stored prev-body JSON shape back into the
+ * per-type apply body. CREATE rows have null prevBody so are rejected
+ * upstream; this function handles only non-null bodies.
+ */
+function buildRevertBody(
+  artifactType: string,
+  prevBody: unknown,
+): Record<string, unknown> | null {
+  if (!prevBody || typeof prevBody !== 'object') return null;
+  const p = prevBody as Record<string, unknown>;
+  switch (artifactType) {
+    case 'sop':
+    case 'property_override':
+      return typeof p.content === 'string' ? { content: p.content } : null;
+    case 'faq':
+      return {
+        ...(typeof p.question === 'string' ? { question: p.question } : {}),
+        ...(typeof p.answer === 'string' ? { answer: p.answer } : {}),
+      };
+    case 'system_prompt':
+      return typeof p.text === 'string' ? { text: p.text } : null;
+    case 'tool_definition':
+      return {
+        ...(typeof p.description === 'string' ? { description: p.description } : {}),
+        ...(p.parameters !== undefined ? { parameters: p.parameters } : {}),
+        ...(typeof p.webhookUrl === 'string' ? { webhookUrl: p.webhookUrl } : {}),
+        ...(typeof p.webhookTimeout === 'number' ? { webhookTimeout: p.webhookTimeout } : {}),
+        ...(typeof p.enabled === 'boolean' ? { enabled: p.enabled } : {}),
+      };
+    default:
+      return null;
+  }
+}
 import {
   assembleSystemPromptRegions,
   type AgentMode,
@@ -1027,6 +1062,190 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[build-controller] getArtifact failed:', err);
         res.status(500).json({ error: 'ARTIFACT_READ_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 053-A D4 — GET /api/build/artifacts/history
+     *
+     * Admin-only. Returns recent BuildArtifactHistory rows, session-scoped
+     * when `?conversationId=` is passed. Tenant isolation is enforced via
+     * `req.tenantId`: a tenant-A user passing a tenant-B conversationId
+     * receives an empty `rows` array, not an error.
+     *
+     * Query params:
+     *   conversationId (optional) — scope rows to one BUILD session.
+     *   limit          (optional, 1-50, default 10) — row cap.
+     */
+    async listArtifactHistory(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      if (!isRawPromptEditorEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+        const q = req.query ?? {};
+        const conversationId =
+          typeof q.conversationId === 'string' ? q.conversationId : null;
+        const rawLimit =
+          typeof q.limit === 'string' ? parseInt(q.limit, 10) : 10;
+        const limit = Number.isFinite(rawLimit)
+          ? Math.max(1, Math.min(50, rawLimit))
+          : 10;
+        const rows = await prisma.buildArtifactHistory.findMany({
+          where: {
+            tenantId: req.tenantId,
+            ...(conversationId ? { conversationId } : {}),
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          select: {
+            id: true,
+            artifactType: true,
+            artifactId: true,
+            operation: true,
+            actorEmail: true,
+            conversationId: true,
+            createdAt: true,
+            prevBody: true,
+            newBody: true,
+            metadata: true,
+          },
+        });
+        res.json({
+          rows: rows.map((r) => ({
+            ...r,
+            createdAt: r.createdAt.toISOString(),
+          })),
+        });
+      } catch (err) {
+        console.error('[build-controller] listArtifactHistory failed:', err);
+        res.status(500).json({ error: 'HISTORY_READ_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 053-A D4 — POST /api/build/artifacts/history/:historyId/revert
+     *
+     * Admin-only. Reads the named history row's prevBody and applies it
+     * as the artifact's new content. dryRun:true returns a preview
+     * without writing. dryRun:false performs the revert AND writes a new
+     * BuildArtifactHistory row with operation:"REVERT" and
+     * metadata.revertsHistoryId.
+     *
+     * CREATE rows cannot be reverted via this endpoint (that would be a
+     * DELETE, explicitly parked for 054-A).
+     */
+    async revertArtifactFromHistory(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      if (!isRawPromptEditorEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true, email: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+        const historyId = String(req.params.historyId ?? '');
+        const row = await prisma.buildArtifactHistory.findFirst({
+          where: { id: historyId, tenantId: req.tenantId },
+        });
+        if (!row) {
+          res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
+          return;
+        }
+        if (row.operation === 'CREATE') {
+          res.status(422).json({
+            ok: false,
+            error: 'CANNOT_REVERT_CREATE',
+          });
+          return;
+        }
+        if (row.prevBody == null) {
+          res.status(422).json({
+            ok: false,
+            error: 'NO_PREV_BODY',
+          });
+          return;
+        }
+        const b = req.body ?? {};
+        const dryRun = Boolean(b.dryRun);
+        const body = buildRevertBody(row.artifactType, row.prevBody);
+        if (!body) {
+          res.status(422).json({
+            ok: false,
+            error: 'UNREVERTABLE_TYPE',
+            artifactType: row.artifactType,
+          });
+          return;
+        }
+        // Map stored artifactType to applyArtifact's ApplyArtifactType
+        // (tool_definition → tool for the apply executor).
+        const applyType: ApplyArtifactType =
+          row.artifactType === 'tool_definition'
+            ? 'tool'
+            : (row.artifactType as ApplyArtifactType);
+        const result = await applyArtifactUpdate(prisma, {
+          tenantId: req.tenantId,
+          type: applyType,
+          id: row.artifactId,
+          dryRun,
+          body,
+          actorUserId: (req as any).userId ?? null,
+          actorEmail: tenant.email ?? null,
+          conversationId: row.conversationId,
+        });
+        if (!result.ok) {
+          res.status(422).json(result);
+          return;
+        }
+        // On non-dry-run success, stamp the most recent history row for
+        // this artifact with REVERT operation + metadata.revertsHistoryId.
+        // applyArtifactUpdate already wrote a row (UPDATE op); we update
+        // it in-place to REVERT so consumers see a revert-of-N as a
+        // single row rather than a stray UPDATE.
+        if (!dryRun) {
+          const mostRecent = await prisma.buildArtifactHistory.findFirst({
+            where: {
+              tenantId: req.tenantId,
+              artifactType: row.artifactType,
+              artifactId: row.artifactId,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (mostRecent && mostRecent.id !== row.id) {
+            await prisma.buildArtifactHistory.update({
+              where: { id: mostRecent.id },
+              data: {
+                operation: 'REVERT',
+                metadata: { revertsHistoryId: row.id },
+              },
+            }).catch((err) => {
+              console.error('[build] revert stamp failed (logged):', err);
+            });
+          }
+        }
+        res.json(result);
+      } catch (err) {
+        console.error('[build-controller] revertArtifact failed:', err);
+        res.status(500).json({ error: 'REVERT_FAILED' });
       }
     },
 

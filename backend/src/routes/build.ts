@@ -63,6 +63,16 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.post('/artifacts/:type/:id/apply', (req: any, res) =>
     ctl.applyArtifact(req, res)
   );
+  // Sprint 053-A D4 — write-ledger list + revert endpoints.
+  // Note: `/artifacts/history` must be declared BEFORE `/artifacts/:type/:id/apply`
+  //        to avoid the latter matching `history` as a type. Express matches in
+  //        order, so keeping list path above apply is sufficient.
+  router.get('/artifacts/history', (req: any, res) =>
+    ctl.listArtifactHistory(req, res)
+  );
+  router.post('/artifacts/history/:historyId/revert', (req: any, res) =>
+    ctl.revertArtifactFromHistory(req, res)
+  );
 
   return router;
 }

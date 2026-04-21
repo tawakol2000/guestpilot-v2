@@ -506,3 +506,18 @@ export async function apiListBuildArtifactHistory(
     `/api/build/artifacts/history${suffix}`,
   )
 }
+
+/**
+ * Sprint 053-A D4 — revert an artifact to its pre-row state. The backend
+ * restores the artifact from the named history row's prevBody and writes
+ * a new history row with operation: 'REVERT' + metadata.revertsHistoryId.
+ */
+export async function apiRevertArtifactFromHistory(
+  historyId: string,
+  opts: { dryRun: boolean } = { dryRun: false },
+): Promise<ApplyArtifactResult> {
+  return buildFetch<ApplyArtifactResult>(
+    `/api/build/artifacts/history/${encodeURIComponent(historyId)}/revert`,
+    { method: 'POST', body: JSON.stringify({ dryRun: opts.dryRun }) },
+  )
+}
