@@ -540,11 +540,6 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         const messageText = editedText || pendingReply!.suggestion!;
 
-        // Mark fired and clear suggestion
-        if (pendingReply) {
-          await prisma.pendingAiReply.update({ where: { id: pendingReply.id }, data: { fired: true, suggestion: null } });
-        }
-
         const { hostawayAccountId, hostawayApiKey } = conversation.tenant;
         const hostawayConvId = conversation.hostawayConversationId;
 
@@ -556,10 +551,39 @@ export function makeConversationsController(prisma: PrismaClient) {
         const lastMsgChannel = lastGuestMsg?.channel ?? conversation.channel;
         const communicationType = lastMsgChannel === 'WHATSAPP' ? 'whatsapp' : 'channel';
 
-        const hostawayService = await import('../services/hostaway.service');
-        await hostawayService.sendMessageToConversation(hostawayAccountId, hostawayApiKey, hostawayConvId, messageText, communicationType);
+        // Sprint-049 A1: Hostaway-first, rollback-safe ordering. Before the
+        // reorder, a Hostaway throw left PendingAiReply.suggestion=null +
+        // fired=true while returning 500 — the operator's retry 404'd because
+        // the draft had been swallowed. Mirror shadow-preview.controller.ts:96-128:
+        // call Hostaway first, commit DB state only on success, return 502 on
+        // delivery failure so the UI keeps the pill and can retry.
+        const hostawayServiceLazy = await import('../services/hostaway.service');
+        let hostawayResult: any;
+        try {
+          hostawayResult = await hostawayServiceLazy.sendMessageToConversation(
+            hostawayAccountId,
+            hostawayApiKey,
+            hostawayConvId,
+            messageText,
+            communicationType,
+          );
+        } catch (err: any) {
+          console.warn(`[Conversations] approveSuggestion Hostaway send failed (no DB state changed): ${err?.message || err}`);
+          res.status(502).json({
+            error: 'HOSTAWAY_DELIVERY_FAILED',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          return;
+        }
+        const hostawayMsgId = String((hostawayResult as any)?.result?.id || '');
 
         const sentAt = new Date();
+        const editorUserId = (req as any).userId ?? null;
+
+        // Audit trail parity with Path A (messages.controller.ts:156-158):
+        // when editedText is provided (operator routed through the approve
+        // flow with a deliberate payload), stamp originalAiText +
+        // editedByUserId so evidence-bundle replay can see the edit.
         const msg = await prisma.message.create({
           data: {
             conversationId: id,
@@ -569,6 +593,9 @@ export function makeConversationsController(prisma: PrismaClient) {
             sentAt,
             channel: lastMsgChannel,
             communicationType,
+            hostawayMessageId: hostawayMsgId,
+            originalAiText: editedText ? pendingReply?.suggestion ?? null : null,
+            editedByUserId: editedText ? editorUserId : null,
           },
         });
 
@@ -583,6 +610,12 @@ export function makeConversationsController(prisma: PrismaClient) {
           lastMessageRole: 'AI',
           lastMessageAt: sentAt.toISOString(),
         });
+
+        // Clear the PendingAiReply row(s) for this conversation — including
+        // any sibling debounce row without `suggestion` that could fire a
+        // second AI reply on top of this just-sent manual one. Matches Path A
+        // (messages.controller.ts:168).
+        await cancelPendingAiReply(id, prisma);
 
         res.json({ ok: true });
       } catch (err) {
