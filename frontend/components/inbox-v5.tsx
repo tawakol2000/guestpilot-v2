@@ -5118,7 +5118,21 @@ export default function InboxV5() {
                                     const s = aiSuggestion
                                     setAiSuggestion(null)
                                     setSeededFromDraft(null)
-                                    try { await apiApproveSuggestion(selectedConv.id, s) } catch { setAiSuggestion(s) }
+                                    try {
+                                      await apiApproveSuggestion(selectedConv.id, s)
+                                    } catch (err) {
+                                      // Sprint-049 A6 (discovery F2): previously the pill silently
+                                      // re-appeared with no signal of why the send failed. After
+                                      // the A1 Hostaway-first reorder the backend now returns a
+                                      // 502 { error, detail } on delivery failure — surface the
+                                      // failure via a sonner toast so the operator knows to retry
+                                      // manually rather than assuming the send went through.
+                                      setAiSuggestion(s)
+                                      toast.error("Couldn't send — tap Edit to retry manually", {
+                                        description: err instanceof Error ? err.message : String(err),
+                                      })
+                                      console.error(err)
+                                    }
                                   }}
                                   title="Send this response"
                                   aria-label="Approve and send AI suggestion"
