@@ -693,6 +693,11 @@ model BuildTransaction {
   rationale        String?
   approvedByUserId String? // sprint 045 Gate 5 — set by POST /api/build/plan/:id/approve
   approvedAt       DateTime? // ditto — null until the manager confirms in the UI
+  // Sprint 058-A F2 — advisory cancel flags. Each entry is a 0-based index
+  // into plannedItems[] that the operator marked ×. The agent's tool-pre-flight
+  // checks this array on its next create_* call and returns a plan_item_cancelled
+  // no-op for a matching index. Empty array = no cancellations.
+  cancelledItemIndexes Int[]  @default([])
   createdAt        DateTime  @default(now())
   completedAt      DateTime?
 
@@ -731,12 +736,17 @@ model BuildArtifactHistory {
   actorEmail     String?
   conversationId String? // BUILD session context, if available
   metadata       Json? // { revertsHistoryId?, ... }
+  // Sprint 058-A F6 — optional short label (<=40 chars, alphanum + dashes)
+  // the operator can pin to any row as a named version ("stable",
+  // "pre-checkin-rework"). Null = unlabeled (default).
+  versionLabel   String?
   createdAt      DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, artifactType, artifactId, createdAt])
   @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, versionLabel])
 }
 
 // ─── Sprint 046 Session A: BUILD/TUNE tool-call observability ───────────────
