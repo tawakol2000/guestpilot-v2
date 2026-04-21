@@ -165,10 +165,14 @@ export function buildLinterAdvisories(
   for (const f of findings) {
     if (f.rule === 'R1') {
       const words = (f.detail as any)?.words ?? '?';
+      // Sprint 047 Session A — Path A: drop the inaccurate "card omitted"
+      // phrasing. The linter does not truncate the prose, so claiming a
+      // card was omitted was misleading. Describe what actually happened
+      // and prompt the agent to rephrase next turn.
       advisories.push({
         kind: 'linter-drop',
         message:
-          '(card omitted — agent prose too long without a structured card; please rephrase)',
+          'Agent reply was long-form prose without a structured card. Asking for a card-shaped summary usually helps.',
         context: { rule: 'R1', words },
       });
     } else if (f.rule === 'R2') {

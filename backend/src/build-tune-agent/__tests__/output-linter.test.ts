@@ -94,7 +94,9 @@ test('buildLinterAdvisories returns a linter-drop for R1', () => {
   const r1 = advisories.find((a) => (a.context as any)?.rule === 'R1');
   assert.ok(r1, 'expected a linter-drop advisory for R1');
   assert.equal(r1!.kind, 'linter-drop');
-  assert.match(r1!.message, /prose too long/i);
+  // Sprint 047 Session A — Path A message, no "omitted" phrasing.
+  assert.match(r1!.message, /long-form prose without a structured card/i);
+  assert.doesNotMatch(r1!.message, /omitted/i);
 });
 
 test('buildLinterAdvisories returns a drop-count advisory for R2', () => {
