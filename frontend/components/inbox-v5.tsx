@@ -3027,10 +3027,24 @@ export default function InboxV5() {
                         const current = selectedConv.documentChecklist!.passportsReceived
                         const needed = selectedConv.documentChecklist!.passportsNeeded
                         const next = current >= needed ? 0 : current + 1
-                        apiUpdateConversationChecklist(selectedConv.id, { passportsReceived: next }).catch(console.error)
+                        // Sprint-049 A5: optimistic write + toast-on-failure.
+                        // Previously `.catch(console.error)` left the UI
+                        // showing the new value while the DB stayed at
+                        // `current`, silently desyncing the checklist.
                         setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
                           ...c, documentChecklist: { ...c.documentChecklist!, passportsReceived: next }
                         } : c))
+                        apiUpdateConversationChecklist(selectedConv.id, { passportsReceived: next })
+                          .catch((err) => {
+                            toast.error('Failed to update document checklist', {
+                              description: err instanceof Error ? err.message : String(err),
+                            })
+                            console.error(err)
+                            // Revert optimistic state to the prior value.
+                            setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
+                              ...c, documentChecklist: { ...c.documentChecklist!, passportsReceived: current }
+                            } : c))
+                          })
                       }}
                       title="Toggle passport count"
                       style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', fontSize: 10, color: T.text.tertiary }}
@@ -3054,11 +3068,23 @@ export default function InboxV5() {
                       </span>
                       <button
                         onClick={() => {
-                          const next = !selectedConv.documentChecklist!.marriageCertReceived
-                          apiUpdateConversationChecklist(selectedConv.id, { marriageCertReceived: next }).catch(console.error)
+                          const prior = selectedConv.documentChecklist!.marriageCertReceived
+                          const next = !prior
+                          // Sprint-049 A5: optimistic write + toast-on-failure
+                          // with revert (same pattern as passports above).
                           setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
                             ...c, documentChecklist: { ...c.documentChecklist!, marriageCertReceived: next }
                           } : c))
+                          apiUpdateConversationChecklist(selectedConv.id, { marriageCertReceived: next })
+                            .catch((err) => {
+                              toast.error('Failed to update document checklist', {
+                                description: err instanceof Error ? err.message : String(err),
+                              })
+                              console.error(err)
+                              setConversations(prev => prev.map(c => c.id === selectedConv.id ? {
+                                ...c, documentChecklist: { ...c.documentChecklist!, marriageCertReceived: prior }
+                              } : c))
+                            })
                         }}
                         title="Toggle marriage certificate"
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', fontSize: 10, color: T.text.tertiary }}
