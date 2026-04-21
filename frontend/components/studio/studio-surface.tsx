@@ -27,8 +27,10 @@ import {
   type TuningConversationSummary,
 } from '@/lib/api'
 import {
+  apiGetBuildCapabilities,
   apiGetBuildTenantState,
   BuildModeDisabledError,
+  type BuildCapabilities,
   type BuildTenantState,
   type TestPipelineResultData,
 } from '@/lib/build-api'
@@ -36,6 +38,7 @@ import { BuildDisabled } from '@/components/build/build-disabled'
 import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
+import { TraceDrawer } from './trace-drawer'
 import { STUDIO_COLORS } from './tokens'
 
 export interface StudioSurfaceProps {
@@ -61,7 +64,28 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   const [snapshot, setSnapshot] = useState<StateSnapshotData | null>(null)
   const [showPropagationBanner, setShowPropagationBanner] = useState(false)
   const [testResults, setTestResults] = useState<TestPipelineResultData[]>([])
+  const [capabilities, setCapabilities] = useState<BuildCapabilities>({
+    traceViewEnabled: false,
+    isAdmin: false,
+  })
+  const [traceOpen, setTraceOpen] = useState(false)
   const bootstrapRef = useRef(false)
+
+  // Fetch capabilities once on mount. Both flags default to false so a
+  // failed fetch leaves the gear icon hidden — the safer direction.
+  useEffect(() => {
+    let cancelled = false
+    apiGetBuildCapabilities()
+      .then((caps) => {
+        if (!cancelled) setCapabilities(caps)
+      })
+      .catch(() => {
+        /* silent — stay on default (hidden) */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Reset the bootstrap when the URL-driven conversation id changes so we
   // can rehydrate from the new row.
@@ -233,7 +257,18 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         </div>
       </main>
 
-      <RightRail snapshot={effectiveSnapshot} testResults={testResults} />
+      <RightRail
+        snapshot={effectiveSnapshot}
+        testResults={testResults}
+        traceButtonVisible={capabilities.traceViewEnabled && capabilities.isAdmin}
+        onOpenTrace={() => setTraceOpen(true)}
+      />
+
+      <TraceDrawer
+        open={traceOpen}
+        onClose={() => setTraceOpen(false)}
+        conversationId={load.conversationId}
+      />
     </div>
   )
 }
@@ -383,9 +418,13 @@ function LeftRail({
 function RightRail({
   snapshot,
   testResults,
+  traceButtonVisible,
+  onOpenTrace,
 }: {
   snapshot: StateSnapshotData
   testResults: TestPipelineResultData[]
+  traceButtonVisible: boolean
+  onOpenTrace: () => void
 }) {
   return (
     <aside
@@ -426,7 +465,53 @@ function RightRail({
           </div>
         </div>
       )}
+      {traceButtonVisible ? (
+        <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+          <button
+            type="button"
+            onClick={onOpenTrace}
+            aria-label="Open agent trace (admin)"
+            title="Agent trace (admin)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              width: '100%',
+              padding: '6px 10px',
+              fontSize: 11,
+              fontWeight: 500,
+              border: `1px solid ${STUDIO_COLORS.hairline}`,
+              background: STUDIO_COLORS.surfaceRaised,
+              color: STUDIO_COLORS.inkMuted,
+              borderRadius: 5,
+              cursor: 'pointer',
+            }}
+          >
+            <GearIcon />
+            <span>Agent trace</span>
+          </button>
+        </div>
+      ) : null}
     </aside>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   )
 }
 

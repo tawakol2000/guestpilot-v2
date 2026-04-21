@@ -155,6 +155,55 @@ export function buildTurnEndpoint(): string {
   return `${BASE_URL}/api/build/turn`
 }
 
+// ─── Sprint 047 Session B — capabilities + trace view ──────────────────────
+
+export interface BuildCapabilities {
+  traceViewEnabled: boolean
+  isAdmin: boolean
+}
+
+export async function apiGetBuildCapabilities(): Promise<BuildCapabilities> {
+  return buildFetch<BuildCapabilities>('/api/build/capabilities')
+}
+
+export interface BuildTraceRow {
+  id: string
+  conversationId: string
+  turn: number
+  tool: string
+  paramsHash: string
+  durationMs: number
+  success: boolean
+  errorMessage: string | null
+  createdAt: string
+}
+
+export interface BuildTracePage {
+  rows: BuildTraceRow[]
+  nextCursor: string | null
+}
+
+export interface ListBuildTracesOptions {
+  conversationId?: string
+  tool?: string
+  turn?: number
+  cursor?: string | null
+  limit?: number
+}
+
+export async function apiListBuildTraces(
+  opts: ListBuildTracesOptions = {},
+): Promise<BuildTracePage> {
+  const qs = new URLSearchParams()
+  if (opts.conversationId) qs.set('conversationId', opts.conversationId)
+  if (opts.tool) qs.set('tool', opts.tool)
+  if (typeof opts.turn === 'number') qs.set('turn', String(opts.turn))
+  if (opts.cursor) qs.set('cursor', opts.cursor)
+  if (typeof opts.limit === 'number') qs.set('limit', String(opts.limit))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return buildFetch<BuildTracePage>(`/api/build/traces${suffix}`)
+}
+
 export interface SuggestedFixActionResponse {
   ok: boolean
   applied: boolean
