@@ -219,9 +219,17 @@ Marker format:
 <type> must be one of: sop | faq | system_prompt | tool |
 property_override. <id> is the artifact's stable id (e.g. an SOP
 variant cuid, a FAQ entry cuid, or 'coordinator'/'screening' for a
-system-prompt variant). <section> is optional; use a slug derived
-from a heading ("early-checkin", "overnight-guests") when you want
-the reader to land on a specific region.
+system-prompt variant). <section> is optional; when present it must
+be a slug derived from the heading text by this rule:
+  - lowercase the heading text
+  - replace any run of non-alphanumeric characters with a single '-'
+  - strip leading/trailing '-'
+This rule is byte-identical to the frontend slug function at
+frontend/lib/slug.ts and the backend mirror at
+backend/src/build-tune-agent/lib/slug.ts. The Studio drawer uses the
+same rule to stamp heading anchors, so a fragment that doesn't match
+silently no-ops rather than scrolling. Examples: "Early Check-in" →
+"early-check-in"; "Overnight guests?" → "overnight-guests".
 
 Examples:
   "Your CONFIRMED early-checkin variant [[cite:sop:clx12ab34]] says
