@@ -2099,3 +2099,40 @@ Negative smoke (asserts ritual isolation):
 ### Branch posture
 
 `feat/055-session-a` (commits: `38f547e`, `2b1aad8`, `72e64a4`) stacks on `feat/054-session-a` (`88ccc9c`) → `feat/053-session-a` → `feat/052-session-a` → `feat/051-session-a` → `feat/050-session-a` → `main`. Stays off `main` until combined staging walkthrough.
+
+---
+
+## Sprint 056-A — Gate status (2026-04-22)
+
+| Gate | Description | Status |
+|------|-------------|--------|
+| F1 | Compose-at-cursor in the drawer | ✅ `6f015d0` |
+| F2 | Ask-the-past (`get_edit_history` tool) | ✅ `3adb2bd` |
+| F3 | Prompt caching verification + explicit `cache_control` | ✅ `3adb2bd` (documentation stub — SDK limitation) |
+| F4 | Plan-row click opens the drawer | ✅ `d982dd4` |
+| F5 | Test-failure inline rollback CTA | ✅ `d982dd4` |
+
+### Close-out test counts
+
+| Suite | Before | After | Delta |
+|-------|--------|-------|-------|
+| Frontend (vitest) | 27 files / 211 tests | 27 files / 220 tests | +9 tests (F4+F5) |
+| Backend (node:test) | 257 tests | 402 tests | +145 tests (F1+F2+F3 suites) |
+| Backend failures | 2 pre-existing | 2 pre-existing | 0 new failures |
+
+### F3 cache telemetry
+
+Dev server not running at session time. Existing `[TuningAgent] usage` log in `runtime.ts`
+already captures `cache_read`/`cache_created`/`cached_fraction` every turn.
+
+Sprint 045 "Cache breakpoints" decision confirmed: explicit `cache_control` was NOT previously
+wired — blocked by `systemPrompt: string` SDK surface. F3 wired `prompt-cache-blocks.ts`
+infrastructure (3-region split at boundary markers, logs block structure, emits `data-cache-stats`
+SSE part with `explicitCacheControlWired: false`). Explicit API wiring deferred pending SDK
+`ContentBlock[]` system-prompt support.
+
+### Branch posture
+
+`feat/056-session-a` (commits: `6f015d0`, `3adb2bd`, `d982dd4`) stacks on
+`feat/055-session-a` (`ae863fc`) → `feat/054-session-a` (`88ccc9c`) → ... → `main`.
+Stays off `main` until combined staging walkthrough.
