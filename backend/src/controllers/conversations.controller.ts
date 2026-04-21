@@ -566,10 +566,9 @@ export function makeConversationsController(prisma: PrismaClient) {
         // the draft had been swallowed. Mirror shadow-preview.controller.ts:96-128:
         // call Hostaway first, commit DB state only on success, return 502 on
         // delivery failure so the UI keeps the pill and can retry.
-        const hostawayServiceLazy = await import('../services/hostaway.service');
         let hostawayResult: any;
         try {
-          hostawayResult = await hostawayServiceLazy.sendMessageToConversation(
+          hostawayResult = await hostawayService.sendMessageToConversation(
             hostawayAccountId,
             hostawayApiKey,
             hostawayConvId,
