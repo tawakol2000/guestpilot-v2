@@ -256,6 +256,8 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             onTestResult={handleTestResult}
             onPlanApproved={handlePlanApproved}
             onPlanRolledBack={handlePlanRolledBack}
+            isAdmin={capabilities.isAdmin}
+            traceViewEnabled={capabilities.traceViewEnabled}
           />
         </div>
       </main>

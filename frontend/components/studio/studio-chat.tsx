@@ -40,6 +40,7 @@ import type { StateSnapshotData } from './state-snapshot'
 import { ReasoningLine } from './reasoning-line'
 import { PlanChecklist } from '../build/plan-checklist'
 import { TestPipelineResult } from '../build/test-pipeline-result'
+import { ToolCallDrawer, type ToolCallDrawerPart } from './tool-call-drawer'
 
 export interface StudioChatProps {
   conversationId: string
@@ -49,6 +50,14 @@ export interface StudioChatProps {
   onTestResult?: (data: TestPipelineResultData) => void
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
+  /**
+   * Sprint 050 A2 — admin-only "Show full output" toggle inside the
+   * tool-call drawer. Both flags must be true to surface the toggle; the
+   * sanitiser defaults to operator-tier redaction+truncation when the
+   * toggle is off, matching the gate used by the existing Trace drawer.
+   */
+  isAdmin?: boolean
+  traceViewEnabled?: boolean
 }
 
 export function StudioChat({
@@ -59,6 +68,8 @@ export function StudioChat({
   onTestResult,
   onPlanApproved,
   onPlanRolledBack,
+  isAdmin = false,
+  traceViewEnabled = false,
 }: StudioChatProps) {
   const transport = useMemo(
     () =>
@@ -106,6 +117,25 @@ export function StudioChat({
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)
 
+  // Sprint 050 A2 — tool-call drill-in drawer. `lastChipRef` captures
+  // the element that opened the drawer so Esc/close restores focus.
+  const [activeToolPart, setActiveToolPart] = useState<ToolCallDrawerPart | null>(null)
+  const [showFullOutput, setShowFullOutput] = useState(false)
+  const lastChipRef = useRef<HTMLElement | null>(null)
+  const openToolDrawer = useCallback(
+    (part: ToolCallDrawerPart, origin: HTMLElement | null) => {
+      lastChipRef.current = origin
+      setActiveToolPart(part)
+    },
+    [],
+  )
+  const closeToolDrawer = useCallback(() => {
+    setActiveToolPart(null)
+    setShowFullOutput(false)
+    // Restore focus to the chip that opened the drawer.
+    lastChipRef.current?.focus()
+  }, [])
+
   useEffect(() => {
     if (!scrollerRef.current) return
     scrollerRef.current.scrollTo({
@@ -147,7 +177,10 @@ export function StudioChat({
   const empty = messages.length === 0
 
   return (
-    <div className="flex h-full min-h-0 flex-col" style={{ background: STUDIO_COLORS.canvas }}>
+    <div
+      className="flex h-full min-h-0 flex-col"
+      style={{ background: STUDIO_COLORS.canvas, position: 'relative' }}
+    >
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex max-w-3xl flex-col">
           {empty ? <StudioEmptyState greenfield={greenfield} onPick={(text) => sendMessage({ text })} /> : null}
@@ -161,6 +194,7 @@ export function StudioChat({
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onSendText={(text) => sendMessage({ text })}
+              onOpenToolDrawer={openToolDrawer}
             />
           ))}
 
@@ -230,6 +264,16 @@ export function StudioChat({
           </button>
         </div>
       </form>
+
+      <ToolCallDrawer
+        open={activeToolPart !== null}
+        onClose={closeToolDrawer}
+        part={activeToolPart}
+        isAdmin={isAdmin}
+        traceViewEnabled={traceViewEnabled}
+        showFull={showFullOutput}
+        onToggleShowFull={setShowFullOutput}
+      />
     </div>
   )
 }
@@ -288,6 +332,7 @@ function MessageRow({
   onPlanApproved,
   onPlanRolledBack,
   onSendText,
+  onOpenToolDrawer,
 }: {
   message: UIMessage
   isLast: boolean
@@ -295,6 +340,7 @@ function MessageRow({
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onSendText?: (text: string) => void
+  onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
   const isUser = message.role === 'user'
   const parts = ((message as any).parts as Array<Record<string, any>>) ?? []
@@ -359,6 +405,7 @@ function MessageRow({
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onSendText={onSendText}
+              onOpenToolDrawer={onOpenToolDrawer}
             />
           ))}
         </div>
@@ -377,12 +424,14 @@ function StandalonePart({
   onPlanApproved,
   onPlanRolledBack,
   onSendText,
+  onOpenToolDrawer,
 }: {
   part: Record<string, any>
   conversationId: string
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onSendText?: (text: string) => void
+  onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
   const rejectionConversationId = conversationId
   if (!part || typeof part !== 'object') return null
@@ -391,7 +440,26 @@ function StandalonePart({
   if (type.startsWith('tool-')) {
     const toolName = part.toolName ?? type.slice('tool-'.length)
     const state = part.state ?? 'input-available'
-    return <ToolCallChip toolName={toolName} state={state} />
+    return (
+      <ToolCallChip
+        toolName={toolName}
+        state={state}
+        onClick={(origin) =>
+          onOpenToolDrawer?.(
+            {
+              type,
+              toolName,
+              state,
+              input: part.input,
+              output: part.output,
+              providerMetadata: part.providerMetadata,
+              errorText: typeof part.errorText === 'string' ? part.errorText : undefined,
+            },
+            origin,
+          )
+        }
+      />
+    )
   }
 
   if (type === 'data-build-plan') {
@@ -640,17 +708,22 @@ function StandalonePart({
 function ToolCallChip({
   toolName,
   state,
+  onClick,
 }: {
   toolName: string
   state: string
+  onClick?: (origin: HTMLElement | null) => void
 }) {
   const short = toolName.replace(/^mcp__[^_]+__/, '').replace(/_/g, ' ')
   const running = state === 'input-available' || state === 'input-start'
   const err = state === 'output-error'
   const style = getStudioCategoryStyle(undefined)
   return (
-    <span
-      className="inline-flex items-center gap-1.5 self-start rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+    <button
+      type="button"
+      onClick={(e) => onClick?.(e.currentTarget)}
+      aria-label={`Tool call details: ${short}`}
+      className="inline-flex items-center gap-1.5 self-start rounded-full border-0 px-2.5 py-0.5 text-[11px] font-medium"
       style={{
         background: err
           ? STUDIO_COLORS.dangerBg
@@ -662,6 +735,7 @@ function ToolCallChip({
           : running
             ? STUDIO_COLORS.inkMuted
             : style.fg,
+        cursor: onClick ? 'pointer' : 'default',
       }}
     >
       <span
@@ -677,7 +751,7 @@ function ToolCallChip({
         }}
       />
       {short}
-    </span>
+    </button>
   )
 }
 
