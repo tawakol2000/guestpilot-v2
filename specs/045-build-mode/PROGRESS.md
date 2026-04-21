@@ -1972,3 +1972,83 @@ Unblocked-but-deferred (history table now exists, drawer preview path now exists
 - Inline-edit-from-drawer — needs an editor input only.
 - In-drawer "Preview Revert + Confirm Revert" — drawer extension only.
 - Audit-quote emit — orthogonal but benefits from the apply endpoint existing.
+
+---
+
+## Sprint 054-A — Self-Narrating Studio: Rationale + Test Ritual
+
+**Branch:** `feat/054-session-a` (tip `b158f6f`) stacks on `feat/053-session-a` (`e5d1051`, drifted from brief's `4883a18` — same commit messages, same order, only SHAs differ; flagged in pre-flight, not a content regression) → 052-A (`7d49103`) → 051-A (`41b339c`) → 050-A (`d103c14`) → main.
+
+**Sprint shape:** prompt-engineering + small backend + UI polish. No schema change. Mid-sprint amendment changed F3 + F4 from one-variant to three-variant ritual running in parallel via Promise.all; the spec file carries an "Amendment" note at the top.
+
+### Gate status
+
+| Gate | Item | Status | SHA | Notes |
+|------|------|--------|-----|-------|
+| F1   | Require rationale on every write tool | ✅ | `8fe902c` | `lib/rationale-validator.ts` (15–280 chars, blocklist, `RATIONALE_PROMPT_VERSION = "054-a.1"`). Each write tool (create_faq / create_sop / create_tool_definition / write_system_prompt) validates at handler entry, surfaces the error, and carries rationale through `metadata.rationale` + dry-run preview payload. Existing tests auto-inject a valid default via the invoke helper so pre-054-a calls stay green. New BUILD `<write_rationale version="054-a.1">` block. +20 backend tests. |
+| F2   | Rationale card in ledger + drawer | ✅ | `1041996` | Shared `artifact-views/rationale-card.tsx` renders literal text (markdown is never parsed — sanity rail against formatting injection). Write-ledger rows gain an expand chevron; drawer carries a header slot above the diff when opened from a ledger row; pre-F1 rows render "No rationale recorded". +15 frontend tests. |
+| F3   | Post-write three-variant verification ritual | ✅ | `7309061` | `lib/ritual-state.ts` tracks ritual state in `turnFlags` (`VERIFICATION_MAX_CALLS = 3`, `VERIFICATION_RITUAL_VERSION = "054-a.1"`). `emitArtifactHistory` returns the new row id. `test_pipeline` now accepts `testMessages: string[]` (1–3), runs triggers in parallel via `Promise.all` over (pipeline, judge) pairs, writes variants onto the triggering history row's `metadata.testResult = { variants, aggregateVerdict: "all_passed"/"partial"/"all_failed", ritualVersion }`. Executor guardrail: 4th variant in a window → `TEST_RITUAL_EXHAUSTED`. Malformed judge → variant still emitted with `verdict: "failed"` and judge-error text as reason. BUILD `<verification_ritual version="054-a.1">` block teaches the direct / implicit / framed axis and honest 1/1 vs padded 1/3. +16 backend tests. |
+| F4   | Verdict-forward result UX + ledger linkage | ✅ | `b158f6f` | `test-pipeline-result.tsx` headline is now the ratio (`3/3 passed` / `2/3 passed — 1 failed` / `0/3 passed`) with judge reasoning as the second-most-prominent element and per-variant rows collapsed (failed variants get amber edge accent). Source-write chip opens the artifact drawer. `write-ledger.tsx` renders a green/amber/red verdict chip inline next to the timestamp when `metadata.testResult` is present. New "Verification" section inside the drawer below the diff. Studio-chat + studio-surface thread `onOpenVerificationForHistoryId` so chat chips can open the drawer scrolled to the verification anchor. +14 frontend tests. |
+| F5   | Verification + PROGRESS.md + NEXT.md | ✅ | (this commit) | Suites + tsc clean both sides; `ai.service.ts` untouched; zero new schema/deps; manual smoke + NEXT archival below. |
+
+### Verification (F5)
+
+- **Backend `tsc --noEmit`:** clean (0 errors).
+- **Backend suite:** **376/376** with `JWT_SECRET=test OPENAI_API_KEY=test-fake npx tsx --test 'src/**/*.test.ts'`. Baseline 340 (matched the sprint-053-A close-out). Delta: **+36** (+20 F1 + +16 F3). Pre-flight observed: one pre-existing flaky test (`messages-copilot-fromdraft.integration.test.ts`) still intermittent — documented in 053-A, unchanged this sprint.
+- **Frontend `tsc --noEmit`:** clean.
+- **Frontend vitest:** **170/170 pass across 24 files** (baseline 141/22). Delta: **+29** (+15 F2 + +14 F4). Slightly above the +~26 target band because I wrote out the RationaleCard / rationale-validator boundary cases at the component + unit level rather than collapsing them into the higher-level tests — worth the redundancy; caught one JSX-attribute edge case (whitespace-string handling) during implementation.
+- **Dep budget:** **0 new dependencies.**
+- **Schema delta:** **0 new migrations.** Metadata lives inside `BuildArtifactHistory.metadata` (existing JSON column from 053-A). Both rationale (string) and testResult (variants + aggregateVerdict + ritualVersion) fit cleanly.
+- **`ai.service.ts` untouched:** confirmed via grep for `rationale`, `ritual`, `test_pipeline`, `BuildArtifact` in `src/services/ai.service.ts` → empty.
+- **Version stamps tested:** `RATIONALE_PROMPT_VERSION = "054-a.1"` and `VERIFICATION_RITUAL_VERSION = "054-a.1"` both asserted in system-prompt regression tests (`__tests__/system-prompt.test.ts`) AND in the lib-level unit tests. Either a drift in the constant OR in the prompt block surfaces as a test failure with a clear message.
+
+### Manual smoke (F5)
+
+Documented for the staging walkthrough. Five-step positive smoke:
+
+1. Open a Studio BUILD session. Ask the agent to tighten the late-checkout SOP.
+2. The write completes; a ledger row appears with a rationale expand-chevron. Expand the row — rationale reads specifically and cites the conversation signal.
+3. Agent proposes up to 3 triggers via a `data-question-choices` card. Click "Yes, test it."
+4. `data-test-pipeline-result` card renders with verdict-ratio headline (e.g. `3/3 passed`), judge reasoning as the second line, per-variant rows collapsed, and a `Testing: CREATE sop — late-checkout` chip at the top.
+5. Click the source-write chip → artifact drawer opens in history view, scrolled to the Verification section. The ledger row also shows a green "Passed" chip next to the timestamp.
+
+Negative smoke (asserts ritual isolation):
+
+- Manually run `test_pipeline` outside a ritual (user-initiated, no preceding write this turn). Result renders in the chat card, but no history row is mutated — confirmed by backing off to the ledger rail and opening the most recent row: `metadata.testResult` is absent.
+
+### Decisions made this sprint
+
+- **`test_pipeline` accepts an `testMessages: string[]` form in addition to the legacy `testMessage: string`.** This is the cleanest way to honor the "Promise.all over test + judge pairs" amendment while keeping the tool interface stable for user-initiated tests. The executor's ritual-window counter (up to 3 variants per window) applies to the *sum of variants across calls*, so the agent can still split its 3 triggers across two sequential tool calls if it chooses (e.g. one `testMessages: [t1, t2]` + one `testMessage: t3`) — 4th rejected regardless.
+- **Verdict cutoff: `score >= 0.7` → passed.** Matches the existing judge's grading guide comment ("0.7+ is 'good enough for BUILD verification'"). Single load-bearing constant in `tools/test-pipeline.ts`.
+- **Rationale rendered as literal text (pre-wrap), not markdown.** Agents sometimes reach for `**bold**` / `# heading` syntax in prose. Rendering that literally is a sanity rail against an agent stamping formatting into the ledger rail. Regression test asserts no `<strong>` / `<h1>` in the DOM for a markdown-looking rationale.
+- **Ledger verdict chip color scale: green (all_passed), amber (partial), red (all_failed).** Partial gets amber (not red) because partial means at least one variant passed — worth surfacing but not alarming.
+- **`1/1 passed` reads honestly, never `1/3 passed`.** If the ritual fired 1 variant, the ratio denominator is 1. Enforced in the renderer.
+- **`ritual-state` stores artifact context alongside history id.** Lets the test-result chat card render `Testing: CREATE sop — late-checkout` without a DB round-trip. Small turn-local memory addition; no schema.
+
+### Caveats / scope drift
+
+- **Baseline-SHA drift on `feat/053-session-a`.** Pre-flight found 4883a18 as expected; by the time F1 was committed, 053-A's tip was `e5d1051`. Commit messages + order + content identical — appears the repo's 053-A branch was rewritten externally between session start and the first new commit. Not caused by this sprint (I never rebased). Flagged for awareness; the 054-A work stacks on the *content* that 053-A was supposed to land.
+- **F4 commit swept two unrelated untracked files.** `backend/scripts/seed-demo.ts` (pre-existing untracked before session start) and `specs/045-build-mode/sprint-055-session-a.md` (appeared during F4; likely created by an external process) both ended up in the F4 commit via `git add -A` because I was moving quickly at the user's prompt. Neither is load-bearing for F4; each can be moved to its own commit later if needed.
+- **F3 test for "parallel execution" is indirect.** The tests assert correct result aggregation when `Promise.all` runs over N test+judge pairs; they don't time the calls against a sequential baseline. The amendment said "if parallelization isn't feasible, stop and surface" — it is feasible (Promise.all is a single line), so the parallelism is enforced by code structure, not by a timing test.
+- **Judge-error rendering.** When the judge fails mid-variant, the verdict is "failed" and the reasoning reads "Judge call failed: &lt;message&gt;". That's deliberately identical to a substantive failure at the UX level — callers can distinguish via `judgeFailureCategory: 'judge-error'` in the variant payload when they need to. Spec §5 locked this behavior in.
+
+### Carry-overs closed by this sprint
+
+- **The "self-narrating studio" arc from the Bundle C mid-stream pivot.** Rationale + verification now ride along with every write.
+- **Sprint-045 §7 test_pipeline first-class ritual.** Test is no longer an ad-hoc tool; it's an automatic post-write step with executor-enforced discipline.
+
+### Carry-overs still open
+
+- **050-A staging walkthrough** — still pending; the combined 050+051+052+053+054 walkthrough is the merge gate.
+- **Sprint-053-A caveat #3** — flaky `messages-copilot-fromdraft.integration.test.ts` (deferred; still pre-existing).
+- **053-A open questions #1 (tool-call-ID column), #2 (property_override sanitisation), #3 (session vs tenant ledger scope)** — all still deferred.
+
+### Open questions for 055-A
+
+1. **Agent-generated trigger message quality.** The F3 block instructs variation along direct / implicit / framed axes. Quality is prompt-dependent. After live use we may want to let the manager edit a proposed trigger before firing (`[Yes, test it with this tweak]`).
+2. **Historical rationale backfill.** Pre-F1 rows render "No rationale recorded". Do we backfill the most recent N rows by asking the agent to reconstruct? Probably not — a confabulated rationale is worse than no rationale. Leaving as-is.
+3. **Failed-test escalation.** A failed aggregate renders with amber accent and the agent moves on. Should a failed test auto-escalate to "want me to revise the edit and try again"? Feels like the loop we explicitly avoided. Revisit after live use.
+
+### Branch posture
+
+`feat/054-session-a` (commits: `8fe902c`, `1041996`, `7309061`, `b158f6f`) stacks on `feat/053-session-a` (`e5d1051`) → `feat/052-session-a` (`7d49103`) → `feat/051-session-a` (`41b339c`) → `feat/050-session-a` (`d103c14`) → `main`. Stays off `main` until the combined 050+051+052+053+054 staging walkthrough.
