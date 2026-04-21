@@ -499,6 +499,16 @@ function StandalonePart({
             el.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }
         }}
+        onViewRow={(row) => {
+          // Sprint 047 Session A — route non-top-finding View clicks into
+          // a natural-language turn the agent resolves via
+          // get_current_state. Consistent with how the rest of Studio
+          // talks to the agent.
+          const label = row.artifactId
+            ? `Show me the current ${row.artifact} (${row.artifactId}).`
+            : `Show me the current ${row.artifact}.`
+          onSendText?.(label)
+        }}
       />
     )
   }
