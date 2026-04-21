@@ -16,6 +16,7 @@ import { runDiagnostic } from '../services/tuning/diagnostic.service';
 import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
+import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
 
 const aiToggleSchema = z.object({
   aiEnabled: z.boolean(),
@@ -671,14 +672,13 @@ export function makeConversationsController(prisma: PrismaClient) {
                   await writeSuggestionFromDiagnostic(result, {}, prisma);
                 }
               } catch (diagErr) {
-                console.error('[TUNING_DIAGNOSTIC_FAILURE]', {
+                logTuningDiagnosticFailure({
                   phase: 'diagnostic',
                   path: 'conversations',
                   tenantId,
                   messageId: msg.id,
                   triggerType,
-                  reason: diagErr instanceof Error ? diagErr.message : String(diagErr),
-                  stack: diagErr instanceof Error ? diagErr.stack : undefined,
+                  error: diagErr,
                 });
               }
             })();

@@ -19,6 +19,7 @@ import { runDiagnostic } from '../services/tuning/diagnostic.service';
 import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
+import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
 
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
@@ -196,7 +197,14 @@ export function makeMessagesController(prisma: PrismaClient) {
                   await writeSuggestionFromDiagnostic(result, {}, prisma);
                 }
               } catch (diagErr) {
-                console.error(`[Messages] [${message.id}] copilot diagnostic fire-and-forget failed:`, diagErr);
+                logTuningDiagnosticFailure({
+                  phase: 'diagnostic',
+                  path: 'messages',
+                  tenantId,
+                  messageId: message.id,
+                  triggerType,
+                  error: diagErr,
+                });
               }
             })();
           } else {

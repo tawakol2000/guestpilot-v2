@@ -24,6 +24,7 @@ import { runDiagnostic } from '../services/tuning/diagnostic.service';
 import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
+import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
 import { compactMessageAsync } from '../services/message-compaction.service';
 import { MessageRole } from '@prisma/client';
 
@@ -118,8 +119,24 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
           // length threshold; safe to call for short messages. Fires only
           // when the manager edited — unedited sends still have the original
           // compactedContent (or none, if under the threshold).
+          // Sprint-049 A7: compaction was previously `void`'d with no catch
+          // at all; wrap so an AI-compaction crash is greppable in Railway
+          // logs instead of landing on an unhandledRejection handler.
           if (editedText !== undefined) {
-            compactMessageAsync(updated.id, MessageRole.AI, finalContent, prisma);
+            void (async () => {
+              try {
+                await compactMessageAsync(updated.id, MessageRole.AI, finalContent, prisma);
+              } catch (compactErr) {
+                logTuningDiagnosticFailure({
+                  phase: 'compaction',
+                  path: 'shadow-preview',
+                  tenantId,
+                  messageId,
+                  triggerType: null,
+                  error: compactErr,
+                });
+              }
+            })();
           }
 
           // Update conversation lastMessageAt so inbox list re-sorts
@@ -178,7 +195,14 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
                     await writeSuggestionFromDiagnostic(result, {}, prisma);
                   }
                 } catch (diagErr) {
-                  console.error(`[ShadowPreview] [${messageId}] diagnostic fire-and-forget failed:`, diagErr);
+                  logTuningDiagnosticFailure({
+                    phase: 'diagnostic',
+                    path: 'shadow-preview',
+                    tenantId,
+                    messageId,
+                    triggerType,
+                    error: diagErr,
+                  });
                 }
               })();
             } else {
