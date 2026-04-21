@@ -66,12 +66,22 @@ interface ChatMessage {
     durationMs?: number
     model?: string
     ragContext?: {
-      chunks: Array<{ category: string; similarity: number; sourceKey: string }>
-      tier: string
-      confidenceTier: string | null
-      topCandidates: Array<{ label: string; confidence: number }> | null
-      tier2Output: { topic: string; status: string; urgency: string; sops: string[] } | null
-      escalationSignals: string[]
+      // Sprint 047 Session C — widened to match what the backend
+      // actually returns (`routes/sandbox.ts:596–604`). The old
+      // chunks/tier/tier2Output shape pre-dated the SOP-tool
+      // replacement of the 3-tier classifier; keeping it optional
+      // means legacy rendering paths still compile.
+      chunks?: Array<{ category: string; similarity: number; sourceKey: string }>
+      tier?: string
+      confidenceTier?: string | null
+      topCandidates?: Array<{ label: string; confidence: number }> | null
+      tier2Output?: { topic: string; status: string; urgency: string; sops: string[] } | null
+      escalationSignals?: string[]
+      // Current shape — SOP tool + escalation signals.
+      sopToolUsed?: boolean
+      sopCategories?: string[]
+      sopConfidence?: string | null
+      sopReasoning?: string
     } | null
   }
 }
@@ -615,7 +625,7 @@ export default function SandboxChatV5() {
                               {msg.meta.ragContext.sopCategories.filter((c: string) => c !== 'none').map((cat: string, i: number) => (
                                 <span
                                   key={i}
-                                  title={msg.meta.ragContext?.sopReasoning || ''}
+                                  title={msg.meta?.ragContext?.sopReasoning || ''}
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -654,12 +664,12 @@ export default function SandboxChatV5() {
                       )}
 
                       {/* Legacy: old-style chunks (backward compat) */}
-                      {(!msg.meta.ragContext.sopCategories) && msg.meta.ragContext.chunks?.length > 0 && (
+                      {(!msg.meta.ragContext.sopCategories) && (msg.meta.ragContext.chunks?.length ?? 0) > 0 && (
                         <>
                           <span style={{ fontSize: 10, color: T.text.tertiary }}>
                             SOPs:
                           </span>
-                          {msg.meta.ragContext.chunks.map((chunk: any, i: number) => (
+                          {(msg.meta.ragContext.chunks ?? []).map((chunk: any, i: number) => (
                             <span
                               key={i}
                               title={`similarity: ${chunk.similarity?.toFixed?.(2) || '?'}`}

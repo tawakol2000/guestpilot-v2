@@ -1289,6 +1289,9 @@ export interface SandboxChatResponse {
   manager?: { needed: boolean; title: string; note: string } | null
   toolUsed?: boolean
   toolName?: string
+  // Sprint 047 Session C — backend `routes/sandbox.ts:588` returns
+  // `toolNames` (plural) alongside the singular for multi-tool turns.
+  toolNames?: string[]
   toolInput?: any
   toolResults?: any
   toolDurationMs?: number
@@ -1296,6 +1299,18 @@ export interface SandboxChatResponse {
   outputTokens: number
   durationMs: number
   model: string
+  // Sprint 047 Session C — ragContext is the whole classifier-side
+  // diagnostic payload the sandbox UI renders in the reply meta.
+  // Mirrors `backend/src/routes/sandbox.ts:596–604`.
+  ragContext?: {
+    sopToolUsed?: boolean
+    sopCategories?: string[]
+    sopConfidence?: string | null
+    sopReasoning?: string
+    sopClassificationTokens?: { input: number; output: number }
+    sopClassificationDurationMs?: number
+    escalationSignals?: string[]
+  } | null
 }
 
 export async function apiSandboxChat(req: SandboxChatRequest): Promise<SandboxChatResponse> {
