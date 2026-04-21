@@ -5,11 +5,14 @@ import { usePathname } from 'next/navigation'
 import { ChevronLeft, Menu } from 'lucide-react'
 import { TUNING_COLORS } from '../studio/tokens'
 
+// Sprint-049 A4: `/tuning` (no subpath) and `/tuning/agent` both 404 —
+// there's no page.tsx under `app/tuning/` root and no `agent/`
+// subdirectory. Dropped from the nav so a manager clicking either
+// entry lands on a real page. `/tuning/sessions` is the new default
+// landing (what quickstart.tsx now pushes to).
 const links: Array<{ href: string; label: string; group?: 'review' | 'configure' | 'analyze' }> = [
-  { href: '/tuning', label: 'Suggestions', group: 'review' },
-  { href: '/tuning/agent', label: 'Agent', group: 'configure' },
-  { href: '/tuning/playground', label: 'Playground', group: 'configure' },
   { href: '/tuning/sessions', label: 'Sessions', group: 'review' },
+  { href: '/tuning/playground', label: 'Playground', group: 'configure' },
   { href: '/tuning/history', label: 'History', group: 'analyze' },
   { href: '/tuning/pairs', label: 'Pairs', group: 'analyze' },
   { href: '/tuning/capability-requests', label: 'Capability requests', group: 'analyze' },

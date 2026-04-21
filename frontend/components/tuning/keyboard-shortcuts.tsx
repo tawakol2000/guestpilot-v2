@@ -59,13 +59,13 @@ export function KeyboardShortcuts() {
     }
   }, [open])
 
-  // Bug fix — j/k/Enter only work on the main /tuning (queue) page;
-  // advertising them on /tuning/agent, /tuning/playground, etc. misleads
-  // users into pressing keys that do nothing. Scope the list per route.
-  const shortcuts = useMemo<ShortcutGroup[]>(() => {
-    const onQueue = pathname === '/tuning'
-    return onQueue ? [QUEUE_GROUP, GLOBAL_GROUP] : [GLOBAL_GROUP]
-  }, [pathname])
+  // Sprint-049 A4: `/tuning` (the old queue page) 404s — no page.tsx
+  // under app/tuning/ root. The j/k/Enter suggestion-navigation shortcuts
+  // never have a home to activate on anymore, so always advertise only
+  // the global shortcuts. QUEUE_GROUP is retained for a future queue
+  // surface but is currently unreachable.
+  void QUEUE_GROUP;
+  const shortcuts = useMemo<ShortcutGroup[]>(() => [GLOBAL_GROUP], [pathname])
 
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {

@@ -359,10 +359,7 @@ function PlaygroundInner() {
             className="border-t px-5 py-3 text-xs leading-5 text-[#9CA3AF]"
             style={{ borderColor: TUNING_COLORS.hairlineSoft }}
           >
-            Replies come from the live published config, not a staged one.{' '}
-            <Link href="/tuning/agent" className="text-[#6C5CE7] hover:underline">
-              Edit agent →
-            </Link>
+            Replies come from the live published config, not a staged one.
           </footer>
         </aside>
 

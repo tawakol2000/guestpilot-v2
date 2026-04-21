@@ -90,7 +90,9 @@ export function Quickstart({
         : pendingCount > 0
           ? `${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} waiting — pick one and apply, edit, or dismiss.`
           : 'The queue is empty right now. Check back after the next batch of AI replies.',
-      onRun: () => router.push('/tuning'),
+      // Sprint-049 A4: `/tuning` root 404s (no page.tsx). Route the
+      // queue CTA to the new default landing instead.
+      onRun: () => router.push('/tuning/sessions'),
       // Disable only when we know the queue is truly empty (not while loading).
       disabled: !loading && pendingCount === 0,
     },
