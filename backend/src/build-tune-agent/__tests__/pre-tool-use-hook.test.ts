@@ -340,3 +340,103 @@ test('rollback sanction requires rollback-specific phrasing', async () => {
   assert.equal(detectRollbackSanction('yes, roll back'), true);
   assert.equal(detectRollbackSanction('undo the change'), true);
 });
+
+// ─── Sprint 047 Session A — BUILD-creator advisory extension ────────
+
+test('create_sop on a recently-edited artifact emits a recent-edit advisory without denying', async () => {
+  const recent = new Date();
+  const emits: any[] = [];
+  const c = ctx({
+    emitDataPart: (part: any) => emits.push(part),
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async (args: any) => {
+          if (
+            args.where.status === 'ACCEPTED' &&
+            args.where.appliedAt &&
+            args.where.sopCategory === 'sop-checkin'
+          ) {
+            return { id: 'prior', appliedAt: recent, confidence: null };
+          }
+          return null;
+        },
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_sop, {
+    sopCategory: 'sop-checkin',
+  });
+  assert.deepEqual(res, { continue: true });
+  const advisory = emits.find(
+    (p) => p.type === 'data-advisory' && p.data?.kind === 'recent-edit'
+  );
+  assert.ok(advisory, 'expected a recent-edit advisory for create_sop');
+  assert.match(String(advisory.id), /recent-edit:create_sop:/);
+});
+
+test('create_sop on an artifact never written emits no advisory and does not block', async () => {
+  const emits: any[] = [];
+  const c = ctx({
+    emitDataPart: (part: any) => emits.push(part),
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async () => null,
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_sop, {
+    sopCategory: 'sop-never-written',
+  });
+  assert.deepEqual(res, { continue: true });
+  assert.equal(emits.length, 0, 'no advisory should be emitted');
+});
+
+test('create_faq does not block the tool even without an advisory emitted', async () => {
+  const c = ctx({
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async () => null,
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_faq, {
+    question: 'Where can guests park?',
+    category: 'parking',
+  });
+  assert.deepEqual(res, { continue: true });
+});
+
+test('write_system_prompt on recently-edited variant emits recent-edit advisory', async () => {
+  const recent = new Date();
+  const emits: any[] = [];
+  const c = ctx({
+    emitDataPart: (part: any) => emits.push(part),
+    prisma: {
+      tuningSuggestion: {
+        findFirst: async (args: any) => {
+          if (
+            args.where.status === 'ACCEPTED' &&
+            args.where.appliedAt &&
+            args.where.systemPromptVariant === 'coordinator'
+          ) {
+            return { id: 'prior-prompt', appliedAt: recent, confidence: null };
+          }
+          return null;
+        },
+      },
+    },
+  });
+  const hook = buildPreToolUseHook(() => c);
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.write_system_prompt, {
+    variant: 'coordinator',
+    text: 'ignored by the hook',
+  });
+  assert.deepEqual(res, { continue: true });
+  const advisory = emits.find(
+    (p) => p.type === 'data-advisory' && p.data?.kind === 'recent-edit'
+  );
+  assert.ok(advisory, 'expected a recent-edit advisory for write_system_prompt');
+});

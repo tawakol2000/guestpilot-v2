@@ -14,6 +14,14 @@
  *      `data-advisory` (kind: 'recent-edit') so the manager can factor
  *      in the recent churn. Never blocks.
  *
+ * Sprint 047 Session A: BUILD-write advisory extension. The recent-edit
+ * and oscillation advisories now also fire on BUILD-mode create_*
+ * tools (create_sop, create_faq, create_tool_definition,
+ * write_system_prompt). No compliance check on BUILD creators —
+ * they're direct-write by design, not manager-sanctioned applies.
+ * Advisory only, never blocks — a broken hook is worse than a partial
+ * advisory (plan §5.2 / session-a §2.4).
+ *
  * The 48h deny-on-cooldown gate is gone. If abuse patterns appear in
  * production, handle them with rate-limiting on the controller per plan
  * §5.2 / NEXT.md §6 — do not re-add the hook block.
@@ -35,6 +43,103 @@ import {
 } from './shared';
 import { DATA_PART_TYPES, type AdvisoryData } from '../data-parts';
 
+/**
+ * Sprint 047 Session A — BUILD-mode creator tool names. These write
+ * artifacts directly without going through suggestion_action. The hook
+ * emits recent-edit / oscillation advisories for them but never blocks
+ * — they're direct-write by design, not manager-sanctioned applies.
+ */
+const BUILD_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TUNING_AGENT_TOOL_NAMES.create_sop,
+  TUNING_AGENT_TOOL_NAMES.create_faq,
+  TUNING_AGENT_TOOL_NAMES.create_tool_definition,
+  TUNING_AGENT_TOOL_NAMES.write_system_prompt,
+]);
+
+/**
+ * Derive a `targetWhere` Prisma fragment from a BUILD creator tool input.
+ * Mirrors the shape artifactTargetWhere produces for suggestion_action so
+ * the same recent-edit query works. Returns null when the input is too
+ * sparse to match a prior ACCEPTED TuningSuggestion target.
+ */
+function buildWriteTargetWhere(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (toolName === TUNING_AGENT_TOOL_NAMES.create_sop) {
+    const sopCategory = (toolInput.sopCategory as string | undefined) ?? null;
+    if (!sopCategory) return null;
+    return {
+      sopCategory,
+      sopStatus: null,
+      sopPropertyId: (toolInput.propertyId as string | undefined) ?? null,
+    };
+  }
+  if (toolName === TUNING_AGENT_TOOL_NAMES.create_faq) {
+    // FAQ creates don't have a stable faqEntryId pre-write (the row is
+    // generated inside create_faq). Match by the category+question+
+    // propertyId tuple stored alongside the TuningSuggestion.
+    const question = (toolInput.question as string | undefined) ?? null;
+    const faqCategory = (toolInput.category as string | undefined) ?? null;
+    if (!question && !faqCategory) return null;
+    const where: Record<string, unknown> = {};
+    if (faqCategory) where.faqCategory = faqCategory;
+    if (question) where.faqQuestion = question;
+    const propertyId = (toolInput.propertyId as string | undefined) ?? null;
+    if (propertyId !== null) where.faqPropertyId = propertyId;
+    return where;
+  }
+  if (toolName === TUNING_AGENT_TOOL_NAMES.create_tool_definition) {
+    // Mirrors suggestion_action's TOOL_CONFIG cooldown key: two
+    // suggestions targeting the same tool share `beforeText` = the
+    // current tool description. For a fresh create, we haven't seen the
+    // target yet, so match loosely by diagnosticCategory TOOL_CONFIG.
+    // Advisory will fire if ANY tool_config edit happened recently; a
+    // more precise match requires a tool-id column we don't have.
+    return { diagnosticCategory: 'TOOL_CONFIG' };
+  }
+  if (toolName === TUNING_AGENT_TOOL_NAMES.write_system_prompt) {
+    const variant = (toolInput.variant as string | undefined) ?? null;
+    if (!variant) return null;
+    return { systemPromptVariant: variant };
+  }
+  return null;
+}
+
+async function emitRecentEditAdvisoryFor(
+  c: HookContext,
+  targetWhere: Record<string, unknown>,
+  idHint: string
+): Promise<void> {
+  if (!c.emitDataPart) return;
+  const recentSince = new Date(Date.now() - RECENT_EDIT_WINDOW_MS);
+  const recent = await c.prisma.tuningSuggestion.findFirst({
+    where: {
+      tenantId: c.tenantId,
+      status: 'ACCEPTED',
+      appliedAt: { gte: recentSince },
+      ...targetWhere,
+    },
+    select: { id: true, appliedAt: true },
+    orderBy: { appliedAt: 'desc' },
+  });
+  if (!recent) return;
+  const lastEditedAt = recent.appliedAt?.toISOString() ?? null;
+  const advisory: AdvisoryData = {
+    kind: 'recent-edit',
+    message: lastEditedAt
+      ? `This artifact was last edited on ${lastEditedAt}.`
+      : 'This artifact was edited recently.',
+    context: { lastEditedAt, priorSuggestionId: recent.id, source: idHint },
+  };
+  c.emitDataPart({
+    type: DATA_PART_TYPES.advisory,
+    id: `advisory:recent-edit:${idHint}:${recent.id}`,
+    data: advisory,
+    transient: true,
+  });
+}
+
 export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
   return async (input: HookInput): Promise<HookJSONOutput> => {
     if (input.hook_event_name !== 'PreToolUse') {
@@ -42,6 +147,32 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
     }
     const pre = input as PreToolUseHookInput;
     const c = ctx();
+
+    // ─── Sprint 047 Session A: BUILD-creator advisory extension ──────────
+    // Non-blocking recent-edit on direct BUILD writes. Runs before the
+    // rollback / suggestion_action branches so a broken BUILD query never
+    // swallows those paths' existing behaviour. Failure here is swallowed.
+    if (BUILD_WRITE_TOOL_NAMES.has(pre.tool_name)) {
+      try {
+        const targetWhere = buildWriteTargetWhere(
+          pre.tool_name,
+          (pre.tool_input ?? {}) as Record<string, unknown>
+        );
+        if (targetWhere) {
+          await emitRecentEditAdvisoryFor(
+            c,
+            targetWhere,
+            pre.tool_name.replace(/^mcp__[^_]+__/, '')
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[pre-tool-use] build-creator advisory lookup failed:',
+          err
+        );
+      }
+      return { continue: true } as HookJSONOutput;
+    }
 
     // ─── Sprint 09 fix 5: rollback also writes to artifacts ───────────────
     // The rollback tool bypassed compliance entirely, which violated the
