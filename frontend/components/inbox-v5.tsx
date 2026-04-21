@@ -121,6 +121,7 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { StudioSurface } from '@/components/studio'
 import { getActionCardFor } from '@/components/actions/action-card-registry'
 import { shouldSendAsFromDraft, seedReplyFromDraft } from './inbox/copilot-edit'
+import { handleDiscussInTuning } from './inbox/discuss-in-tuning'
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 
@@ -4696,24 +4697,23 @@ export default function InboxV5() {
                                 {/* Feature 041 sprint 04 — anchor this message into a tuning conversation.
                                     Sprint 048 Session A — toast-on-error, busy state, visible click target. */}
                                 <button
-                                  onClick={async () => {
-                                    if (discussingMsgId) return
-                                    setDiscussingMsgId(msg.id)
-                                    try {
-                                      const { conversation } = await apiCreateTuningConversation({
-                                        anchorMessageId: msg.id,
-                                        triggerType: 'MANUAL',
-                                      })
-                                      // Sprint 046 Session C — in-place tab switch instead of route transition.
-                                      updateStudioConversationId(conversation.id)
-                                      setNavTab('studio')
-                                    } catch (err) {
-                                      toast.error('Could not open tuning discussion', {
-                                        description: err instanceof Error ? err.message : String(err),
-                                      })
-                                    } finally {
-                                      setDiscussingMsgId(null)
-                                    }
+                                  onClick={() => {
+                                    void handleDiscussInTuning(msg.id, {
+                                      createTuningConversation: apiCreateTuningConversation,
+                                      onSuccess: (conversation) => {
+                                        // Sprint 046 Session C — in-place tab switch instead of route transition.
+                                        updateStudioConversationId(conversation.id)
+                                        setNavTab('studio')
+                                      },
+                                      onError: (err) => {
+                                        toast.error('Could not open tuning discussion', {
+                                          description: err instanceof Error ? err.message : String(err),
+                                        })
+                                      },
+                                      beginBusy: () => setDiscussingMsgId(msg.id),
+                                      endBusy: () => setDiscussingMsgId(null),
+                                      isBusy: () => discussingMsgId !== null,
+                                    })
                                   }}
                                   disabled={discussingMsgId === msg.id}
                                   title="Open a Studio chat anchored to this message"
