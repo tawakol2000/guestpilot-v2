@@ -275,6 +275,32 @@ test('"preview_ai_response" is absent from the rendered prompt in both modes (sp
   assert.ok(build.includes('test_pipeline'), 'BUILD-mode prompt must name test_pipeline');
 });
 
+test('054-A F1: BUILD addendum carries <write_rationale> block stamped with RATIONALE_PROMPT_VERSION', async () => {
+  // If this test fails because the version string was bumped intentionally,
+  // update the assertion below AND the RATIONALE_PROMPT_VERSION constant in
+  // lib/rationale-validator.ts — they must stay in lockstep.
+  const { RATIONALE_PROMPT_VERSION } = await import('../lib/rationale-validator');
+  assert.equal(RATIONALE_PROMPT_VERSION, '054-a.1');
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(
+    build.includes('<write_rationale version="054-a.1">'),
+    'BUILD addendum must carry <write_rationale> block with the current version stamp'
+  );
+  assert.ok(
+    build.includes('required "rationale" string parameter'),
+    'write_rationale block must document the rationale parameter'
+  );
+  // Must include both a good example and a bad example (teaches by counter-example).
+  assert.ok(build.includes('Good examples'));
+  assert.ok(build.includes('Bad examples'));
+  // TUNE mode should NOT carry this block (it's BUILD-mode-specific).
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(
+    !tune.includes('<write_rationale'),
+    'TUNE addendum must not carry the write_rationale block'
+  );
+});
+
 test('BUILD dynamic suffix renders interview_progress instead of pending_suggestions', () => {
   const suffix = buildDynamicSuffix(
     ctx({

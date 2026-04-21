@@ -21,6 +21,9 @@ import { buildWriteSystemPromptTool } from '../write-system-prompt';
 import { sanitiseArtifactPayload } from '../../lib/sanitise-artifact-payload';
 import type { ToolContext } from '../types';
 
+const DEFAULT_RATIONALE =
+  'Test rationale — exercise the dry-run seam so previews carry the same validation as the write path.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_name: string, _desc: string, _schema: any, handler: any) => {
@@ -29,7 +32,8 @@ function captureTool() {
   }) as any;
   return {
     factory: fakeToolFactory,
-    invoke: (args: any) => captured(args),
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
   };
 }
 

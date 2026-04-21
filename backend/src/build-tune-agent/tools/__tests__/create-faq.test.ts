@@ -15,6 +15,9 @@ import type { ToolContext } from '../types';
 
 // Mock the SDK's tool() factory — captures the handler so tests can invoke
 // it directly without an MCP server round-trip.
+const DEFAULT_RATIONALE =
+  'Test rationale — add this FAQ so guests can self-serve instead of escalating.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_name: string, _desc: string, _schema: any, handler: any) => {
@@ -23,7 +26,10 @@ function captureTool() {
   }) as any;
   return {
     factory: fakeToolFactory,
-    invoke: (args: any) => captured(args),
+    // Auto-inject a valid rationale for pre-054-a tests; a caller that
+    // explicitly passes rationale (incl. invalid ones) overrides the default.
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
   };
 }
 

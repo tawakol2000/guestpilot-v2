@@ -12,13 +12,20 @@ import assert from 'node:assert/strict';
 import { buildCreateToolDefinitionTool } from '../create-tool-definition';
 import type { ToolContext } from '../types';
 
+const DEFAULT_RATIONALE =
+  'Test rationale — add this custom webhook so the AI can resolve scheduling questions without escalating.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_n: string, _d: string, _s: any, handler: any) => {
     captured = handler;
     return { name: _n };
   }) as any;
-  return { factory: fakeToolFactory, invoke: (args: any) => captured(args) };
+  return {
+    factory: fakeToolFactory,
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
+  };
 }
 
 type ToolRow = {

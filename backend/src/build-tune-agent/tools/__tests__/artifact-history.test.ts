@@ -19,6 +19,9 @@ import { emitArtifactHistory } from '../../lib/artifact-history';
 import { getToolArtifactPrevJson } from '../../../services/build-artifact.service';
 import type { ToolContext } from '../types';
 
+const DEFAULT_RATIONALE =
+  'Test rationale — emit a history row so the ledger shows why this artifact was written.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_name: string, _desc: string, _schema: any, handler: any) => {
@@ -27,7 +30,8 @@ function captureTool() {
   }) as any;
   return {
     factory: fakeToolFactory,
-    invoke: (args: any) => captured(args),
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
   };
 }
 

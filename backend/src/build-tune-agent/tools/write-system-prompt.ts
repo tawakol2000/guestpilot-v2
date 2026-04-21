@@ -38,6 +38,7 @@ import {
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
+import { validateRationale } from '../lib/rationale-validator';
 
 // Spec §6 graduation criteria — load-bearing slots must be covered with
 // non-default values before write_system_prompt is allowed.
@@ -85,6 +86,7 @@ PARAMETERS:
   text (string, ≤2,500 tokens, COMPLETE prompt — no fragments)
   sourceTemplateVersion (string, hash of the GENERIC_HOSPITALITY_SEED.md used at render time)
   slotValues (object, key→value map of the slots that produced this prompt; used for re-render and audit)
+  rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this system prompt is being written (e.g. "Graduated to system-prompt write after all 6 load-bearing slots were confirmed with non-default manager answers.")
   transactionId (string, optional)
   dryRun (boolean, optional) — when true, validate + return preview, no DB write
 RETURNS: { configVersionId, previewUrl } or { dryRun: true, preview, diff }`;
@@ -106,6 +108,7 @@ export function buildWriteSystemPromptTool(
       slotValues: z.record(z.string(), z.string()),
       managerSanctioned: z
         .literal(true, "managerSanctioned must be true — manager must sanction the write in their last turn"),
+      rationale: z.string(),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },
@@ -118,6 +121,13 @@ export function buildWriteSystemPromptTool(
         transactionId: args.transactionId ?? null,
       });
       try {
+        const rationaleCheck = validateRationale(args.rationale);
+        if (!rationaleCheck.ok) {
+          span.end({ error: 'RATIONALE_INVALID' });
+          return asError(`write_system_prompt: ${rationaleCheck.error}`);
+        }
+        const rationale = rationaleCheck.rationale;
+
         // Coverage + load-bearing checks.
         const coverage = computeCoverage(args.slotValues);
         if (coverage.coverageRatio < COVERAGE_FLOOR) {
@@ -182,6 +192,7 @@ export function buildWriteSystemPromptTool(
             dryRun: true,
             artifactType: 'system_prompt' as const,
             preview: previewPayload,
+            rationale,
             diff: {
               kind: 'update' as const,
               variant: args.variant,
@@ -297,6 +308,7 @@ export function buildWriteSystemPromptTool(
           actorEmail: c.actorEmail ?? null,
           conversationId: c.conversationId,
           metadata: {
+            rationale,
             version: versionRow.version,
             ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
           },

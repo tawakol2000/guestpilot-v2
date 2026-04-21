@@ -14,13 +14,20 @@ import assert from 'node:assert/strict';
 import { buildWriteSystemPromptTool } from '../write-system-prompt';
 import type { ToolContext } from '../types';
 
+const DEFAULT_RATIONALE =
+  'Test rationale — graduating to system-prompt write after all six load-bearing slots are filled with non-default manager answers.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_n: string, _d: string, _s: any, handler: any) => {
     captured = handler;
     return { name: _n };
   }) as any;
-  return { factory: fakeToolFactory, invoke: (args: any) => captured(args) };
+  return {
+    factory: fakeToolFactory,
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
+  };
 }
 
 const LOAD_BEARING = [

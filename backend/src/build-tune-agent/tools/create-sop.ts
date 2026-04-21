@@ -30,6 +30,7 @@ import {
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
+import { validateRationale } from '../lib/rationale-validator';
 
 const SOP_STATUSES = [
   'DEFAULT',
@@ -55,6 +56,7 @@ PARAMETERS:
   title (string, 3-8 words, human-readable)
   body (string, ≤800 tokens, use the canonical hospitality template structure)
   triggers (array of strings, guest-message patterns that invoke this SOP at classification time)
+  rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this SOP is being created (e.g. "Tightened the late-checkout SOP to cap approvals at 2pm per the policy clarification the manager gave this turn.")
   transactionId (string, optional) — if part of a plan_build_changes plan, pass the plan's id.
   dryRun (boolean, optional) — when true, validate + return preview, no DB write
 RETURNS: { sopId, variantId, version, previewUrl } or { dryRun: true, preview, diff }`;
@@ -74,6 +76,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
       title: z.string().min(3).max(80),
       body: z.string().min(20).max(8000),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
+      rationale: z.string(),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },
@@ -86,6 +89,13 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         transactionId: args.transactionId ?? null,
       });
       try {
+        const rationaleCheck = validateRationale(args.rationale);
+        if (!rationaleCheck.ok) {
+          span.end({ error: 'RATIONALE_INVALID' });
+          return asError(`create_sop: ${rationaleCheck.error}`);
+        }
+        const rationale = rationaleCheck.rationale;
+
         const txCheck = await validateBuildTransaction(
           c.prisma,
           c.tenantId,
@@ -168,6 +178,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             dryRun: true,
             artifactType: 'sop' as const,
             preview: previewPayload,
+            rationale,
             diff: {
               kind: 'create' as const,
               sopCategory: args.sopCategory,
@@ -244,9 +255,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             actorUserId: c.userId,
             actorEmail: c.actorEmail ?? null,
             conversationId: c.conversationId,
-            metadata: args.transactionId
-              ? { buildTransactionId: args.transactionId, sopDefinitionId: definition.id }
-              : { sopDefinitionId: definition.id },
+            metadata: {
+              rationale,
+              sopDefinitionId: definition.id,
+              ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
+            },
           });
           const previewUrl = `/sops/${definition.id}/override/${override.id}`;
           const payload = {
@@ -321,9 +334,11 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           actorUserId: c.userId,
           actorEmail: c.actorEmail ?? null,
           conversationId: c.conversationId,
-          metadata: args.transactionId
-            ? { buildTransactionId: args.transactionId, sopDefinitionId: definition.id }
-            : { sopDefinitionId: definition.id },
+          metadata: {
+            rationale,
+            sopDefinitionId: definition.id,
+            ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
+          },
         });
         const previewUrl = `/sops/${definition.id}/variant/${variant.id}`;
         const payload = {

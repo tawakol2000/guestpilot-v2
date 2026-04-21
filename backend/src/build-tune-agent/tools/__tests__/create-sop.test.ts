@@ -21,13 +21,20 @@ function jest_mockSopCache() {
   // needed: it will just miss against an empty cache.
 }
 
+const DEFAULT_RATIONALE =
+  'Test rationale — tighten this SOP based on the manager incident cited this turn.';
+
 function captureTool() {
   let captured: any = null;
   const fakeToolFactory = ((_n: string, _d: string, _s: any, handler: any) => {
     captured = handler;
     return { name: _n };
   }) as any;
-  return { factory: fakeToolFactory, invoke: (args: any) => captured(args) };
+  return {
+    factory: fakeToolFactory,
+    invoke: (args: any) =>
+      captured({ rationale: DEFAULT_RATIONALE, ...args }),
+  };
 }
 
 type DefRow = { id: string; tenantId: string; category: string; toolDescription: string };

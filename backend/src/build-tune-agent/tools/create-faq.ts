@@ -20,6 +20,7 @@ import {
 } from './build-transaction';
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
+import { validateRationale } from '../lib/rationale-validator';
 
 // The spec §11 tool description is load-bearing for dispatch. WHEN TO USE
 // / WHEN NOT TO USE text copied verbatim.
@@ -32,6 +33,7 @@ PARAMETERS:
   answer (string, ≤400 tokens)
   propertyId (string, optional) — null for global, set for property-scoped
   triggers (array of strings, optional)
+  rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this FAQ is being created (e.g. "Manager said guests keep asking about parking on arrival; adding a global FAQ so the AI stops escalating this.")
   transactionId (string, optional)
   dryRun (boolean, optional) — when true, validate + return preview, no DB write
 RETURNS: { faqEntryId, version, previewUrl } or { dryRun: true, preview, diff }`;
@@ -46,6 +48,7 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
       answer: z.string().min(1).max(4000),
       propertyId: z.string().optional(),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
+      rationale: z.string(),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },
@@ -57,6 +60,13 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         transactionId: args.transactionId ?? null,
       });
       try {
+        const rationaleCheck = validateRationale(args.rationale);
+        if (!rationaleCheck.ok) {
+          span.end({ error: 'RATIONALE_INVALID' });
+          return asError(`create_faq: ${rationaleCheck.error}`);
+        }
+        const rationale = rationaleCheck.rationale;
+
         const txCheck = await validateBuildTransaction(
           c.prisma,
           c.tenantId,
@@ -101,6 +111,7 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
             dryRun: true,
             artifactType: 'faq' as const,
             preview: previewPayload,
+            rationale,
             diff: {
               kind: 'create' as const,
               category: args.category,
@@ -149,9 +160,10 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
           actorUserId: c.userId,
           actorEmail: c.actorEmail ?? null,
           conversationId: c.conversationId,
-          metadata: args.transactionId
-            ? { buildTransactionId: args.transactionId }
-            : null,
+          metadata: {
+            rationale,
+            ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
+          },
         });
 
         const previewUrl = `/faqs/${created.id}`;

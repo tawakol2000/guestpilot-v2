@@ -29,6 +29,7 @@ import {
 import { asCallToolResult, asError, type ToolContext } from './types';
 import { sanitiseArtifactPayload } from '../lib/sanitise-artifact-payload';
 import { emitArtifactHistory } from '../lib/artifact-history';
+import { validateRationale } from '../lib/rationale-validator';
 
 // snake_case — same convention the main AI's system tools use
 // (get_sop, get_faq, search_available_properties, …). Prevents drift
@@ -53,6 +54,7 @@ PARAMETERS:
   webhookUrl (string, https)
   webhookAuth (object, { type: 'bearer'|'basic'|'none', secretName })
   availableStatuses (array of reservation statuses)
+  rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this tool is being created (e.g. "Manager asked for a way to check the cleaning schedule mid-turn so the AI doesn't have to escalate every scheduling question.")
   transactionId (string, optional)
   dryRun (boolean, optional) — when true, validate + return SANITISED preview, no DB write
 RETURNS: { toolDefinitionId, version, previewUrl } or { dryRun: true, preview, diff }`;
@@ -86,6 +88,7 @@ export function buildCreateToolDefinitionTool(
         .min(1, 'availableStatuses cannot be empty'),
       agentScope: z.enum(['screening', 'coordinator', 'both']).optional(),
       webhookTimeoutMs: z.number().int().min(1000).max(60000).optional(),
+      rationale: z.string(),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },
@@ -97,6 +100,13 @@ export function buildCreateToolDefinitionTool(
         transactionId: args.transactionId ?? null,
       });
       try {
+        const rationaleCheck = validateRationale(args.rationale);
+        if (!rationaleCheck.ok) {
+          span.end({ error: 'RATIONALE_INVALID' });
+          return asError(`create_tool_definition: ${rationaleCheck.error}`);
+        }
+        const rationale = rationaleCheck.rationale;
+
         const txCheck = await validateBuildTransaction(
           c.prisma,
           c.tenantId,
@@ -146,6 +156,7 @@ export function buildCreateToolDefinitionTool(
             dryRun: true,
             artifactType: 'tool_definition' as const,
             preview: sanitisedPreview,
+            rationale,
             diff: {
               kind: 'create' as const,
               name: args.name,
@@ -211,9 +222,10 @@ export function buildCreateToolDefinitionTool(
           actorUserId: c.userId,
           actorEmail: c.actorEmail ?? null,
           conversationId: c.conversationId,
-          metadata: args.transactionId
-            ? { buildTransactionId: args.transactionId }
-            : null,
+          metadata: {
+            rationale,
+            ...(args.transactionId ? { buildTransactionId: args.transactionId } : {}),
+          },
         });
 
         const previewUrl = `/tools/${created.id}`;

@@ -617,6 +617,36 @@ BUILD-mode critical rules:
   the <!-- DEFAULT: change me --> marker. Do not silently fill.
 - Before any create_* tool call that writes more than one artifact,
   call plan_build_changes first.
+
+<write_rationale version="054-a.1">
+Every write-tool call (create_faq, create_sop, create_tool_definition,
+write_system_prompt) MUST carry a required "rationale" string parameter.
+The rationale is a one-sentence, human-readable explanation of *why*
+this edit — cite the conversation signal, incident, or policy clarification
+that motivated it whenever possible.
+
+Rules:
+- 15–280 characters, one sentence.
+- Plain text, not markdown. The ledger renders it literally — a rationale
+  of "# CRITICAL" stays as the four literal characters, not a heading.
+- Must not be a bare lazy placeholder ("updating", "edit", "change",
+  "fix", etc. — these are blocked at the tool layer).
+
+Good examples (use this shape):
+- "Manager said guests keep asking about parking on arrival; adding a
+  global FAQ so the AI stops escalating this."
+- "Tightened the late-checkout SOP to cap approvals at 2pm per the
+  policy clarification the manager gave in the previous turn."
+- "Added a screening-status override for Marina suite so VIPs get the
+  4pm courtesy the host mentioned in the last incident."
+
+Bad examples (do NOT use — blocklist):
+- "updating" — names the action, not the reason.
+- "fix" — no detail; the ledger cannot explain this to a future reader.
+
+If you cannot state *why* in a sentence, do not call the write tool —
+ask the manager one more clarifying question first.
+</write_rationale>
 - Persist every confirmed slot fill to memory under the key
   session/{conversationId}/slot/{slotKey} (e.g.
   session/abc123/slot/checkin_time). Use memory.create or memory.update
