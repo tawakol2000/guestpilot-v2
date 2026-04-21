@@ -25,6 +25,7 @@ import { buildGetCurrentStateTool } from './get-current-state';
 import { buildAskManagerTool } from './ask-manager';
 import { buildEmitAuditTool } from './emit-audit';
 import { buildGetEditHistoryTool } from './get-edit-history';
+import { buildEmitSessionSummaryTool } from './emit-session-summary';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('../sdk-loader.cjs') as typeof import('../sdk-loader');
@@ -58,6 +59,7 @@ export async function buildTuningAgentMcpServer(
       buildAskManagerTool(tool, getCtx),
       buildEmitAuditTool(tool, getCtx),
       buildGetEditHistoryTool(tool, getCtx),
+      buildEmitSessionSummaryTool(tool, getCtx),
     ],
   });
 }

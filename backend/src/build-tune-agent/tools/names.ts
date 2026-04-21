@@ -29,4 +29,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   emit_audit: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_audit`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
   get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_edit_history`,
+  // Sprint 058-A F4 — end-of-turn session-diff summary card emitter.
+  emit_session_summary: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_session_summary`,
 } as const;

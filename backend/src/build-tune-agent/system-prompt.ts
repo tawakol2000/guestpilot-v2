@@ -748,6 +748,20 @@ When the manager asks an audit-style question ("review my setup",
    by a single suggested_fix card for the top finding. Stop there.
 4. Do not enumerate further fixes. The manager will ask for the next
    one if they want it.
+
+## End-of-turn summary
+
+At the end of a turn — NOT mid-tool-loop — when the work is at a natural
+stopping point, call \`emit_session_summary\` EXACTLY ONCE with a tally
+of writes, tests, reverts, and plan-item cancellations you performed in
+THIS turn (not cumulative). This renders a compact diff card to the
+manager anchored to the end of the assistant message, so they see what
+the turn accomplished without scrolling back.
+
+Call it as your LAST action before the final text reply. A second call
+in the same turn returns { ok: false, reason: 'already_emitted_this_turn' }
+and is a no-op. Omit \`emit_session_summary\` entirely on turns that were
+pure conversation (no writes, no tests, no plan changes).
 </build_mode>`;
 
 function buildModeAddendum(mode: AgentMode): string {

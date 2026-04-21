@@ -132,6 +132,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.emit_audit,
       // Sprint 056-A F2 — "Ask-the-past" edit-history query (also in TUNE).
       TUNING_AGENT_TOOL_NAMES.get_edit_history,
+      // Sprint 058-A F4 — end-of-turn session-diff summary card.
+      TUNING_AGENT_TOOL_NAMES.emit_session_summary,
     ];
   }
   // TUNE mode per spec §2 — existing TUNE tools PLUS plan_build_changes
@@ -157,6 +159,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.emit_audit,
     // Sprint 056-A F2 — "Ask-the-past" edit-history query (shared with BUILD).
     TUNING_AGENT_TOOL_NAMES.get_edit_history,
+    // Sprint 058-A F4 — end-of-turn session-diff summary card.
+    TUNING_AGENT_TOOL_NAMES.emit_session_summary,
   ];
 }
 
