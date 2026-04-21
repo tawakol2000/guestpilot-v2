@@ -257,7 +257,10 @@ export async function getBuildArtifactPrevBody(
   id: string,
   sessionStartIso: string,
 ): Promise<BuildArtifactPrevBody> {
-  if (type !== 'sop' && type !== 'faq') {
+  if (type !== 'sop' && type !== 'faq' && type !== 'system_prompt') {
+    // Sprint 052 A C3 — tool artifacts still have no history table, so
+    // fall through as unsupported-type. The frontend seam is forward-
+    // compatible: once a ToolDefinitionHistory ships, extend here.
     return { prevBody: null, reason: 'unsupported-type' };
   }
   const since = new Date(sessionStartIso);
@@ -273,12 +276,28 @@ export async function getBuildArtifactPrevBody(
     if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
     return { prevBody: prev };
   }
-  // type === 'faq'
-  const row = await prisma.faqEntryHistory.findFirst({
-    where: { tenantId, targetId: id, editedAt: { gte: since } },
-    orderBy: { editedAt: 'asc' },
+  if (type === 'faq') {
+    const row = await prisma.faqEntryHistory.findFirst({
+      where: { tenantId, targetId: id, editedAt: { gte: since } },
+      orderBy: { editedAt: 'asc' },
+    });
+    const prev = extractFaqPrevAnswer(row?.previousContent);
+    if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
+    return { prevBody: prev };
+  }
+  // type === 'system_prompt' — read the most recent AiConfigVersion
+  // written before `since`. `config` is a JSON snapshot of the whole
+  // TenantAiConfig row (written by the save path); we pull the matching
+  // variant's body off it. If no version exists before the session
+  // start the rail has nothing to diff against (fresh tenant).
+  if (id !== 'coordinator' && id !== 'screening') {
+    return { prevBody: null, reason: 'artifact-missing' };
+  }
+  const row = await prisma.aiConfigVersion.findFirst({
+    where: { tenantId, createdAt: { lt: since } },
+    orderBy: { createdAt: 'desc' },
   });
-  const prev = extractFaqPrevAnswer(row?.previousContent);
+  const prev = extractSystemPromptFromConfig(row?.config, id);
   if (prev == null) return { prevBody: null, reason: 'no-history-in-window' };
   return { prevBody: prev };
 }
@@ -295,4 +314,18 @@ function extractFaqPrevAnswer(raw: unknown): string | null {
   const obj = raw as Record<string, unknown>;
   const answer = obj.answer;
   return typeof answer === 'string' ? answer : null;
+}
+
+function extractSystemPromptFromConfig(
+  raw: unknown,
+  variant: 'coordinator' | 'screening',
+): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const key =
+    variant === 'coordinator'
+      ? 'systemPromptCoordinator'
+      : 'systemPromptScreening';
+  const value = obj[key];
+  return typeof value === 'string' ? value : null;
 }

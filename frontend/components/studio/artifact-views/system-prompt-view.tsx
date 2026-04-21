@@ -7,21 +7,32 @@
  * meta) but the body collapses behind a "Full prompt body is admin-
  * only" notice. Admins with `rawPromptEditorEnabled` see the body.
  *
- * B2 deliberately doesn't ship diff for this artifact type (brief §0
- * non-goals): system_prompt + tool_definition current-only until
- * operator pressure surfaces.
+ * Sprint 052 A:
+ *  - C1 — rendered body flows through `MarkdownBody` (headings →
+ *    slug anchors so B3 citations scroll). Diff mode renders raw text
+ *    through `DiffBody`.
+ *  - C2 — `showDiff` + `prevBody` wired. Line-level diff (paragraph-
+ *    grained reads better than token-grained for prompts). Toggle only
+ *    appears for admins who can see the body; the footer toggle in
+ *    `artifact-drawer.tsx` is gated on the same condition.
  */
 import type { BuildArtifactDetail } from '@/lib/build-api'
 import { STUDIO_COLORS } from '../tokens'
+import { DiffBody } from './diff-body'
+import { MarkdownBody } from './markdown-body'
 import { ArtifactMetaGrid } from './meta-grid'
-import { PreBody, SectionHeading } from './sop-view'
 import { PendingBadge } from './pending-badge'
+import { SectionHeading } from './sop-view'
 
 export interface SystemPromptViewProps {
   artifact: BuildArtifactDetail
   isAdmin: boolean
   rawPromptEditorEnabled: boolean
   isPending: boolean
+  /** 052-C2: when true, render line-level diff against `prevBody`. */
+  showDiff: boolean
+  /** 052-C1: heading slug to scroll to once the body is rendered. */
+  scrollToSectionSlug?: string | null
 }
 
 export function SystemPromptView({
@@ -29,6 +40,8 @@ export function SystemPromptView({
   isAdmin,
   rawPromptEditorEnabled,
   isPending,
+  showDiff,
+  scrollToSectionSlug,
 }: SystemPromptViewProps) {
   const meta = artifact.meta as {
     variant?: string
@@ -36,6 +49,7 @@ export function SystemPromptView({
     updatedAt?: string
   }
   const canSeeBody = isAdmin && rawPromptEditorEnabled
+  const prev = typeof artifact.prevBody === 'string' ? artifact.prevBody : null
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {isPending && <PendingBadge />}
@@ -52,7 +66,15 @@ export function SystemPromptView({
       <div>
         <SectionHeading>Body</SectionHeading>
         {canSeeBody ? (
-          <PreBody body={artifact.body} isPending={isPending} />
+          showDiff && prev != null ? (
+            <DiffBody prev={prev} next={artifact.body} mode="line" />
+          ) : (
+            <MarkdownBody
+              body={artifact.body}
+              isPending={isPending}
+              scrollToSectionSlug={scrollToSectionSlug}
+            />
+          )
         ) : (
           <div
             role="note"

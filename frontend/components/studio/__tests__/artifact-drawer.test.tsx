@@ -345,4 +345,58 @@ describe('ArtifactDrawer', () => {
       screen.queryByRole('checkbox', { name: /show changes this session/i }),
     ).not.toBeInTheDocument()
   })
+
+  // 052-C2 — SystemPromptView diff toggle.
+  it('shows "View changes" on system_prompt only when admin + raw-editor flag + prevBody differs', async () => {
+    mockFetch.mockResolvedValueOnce({
+      type: 'system_prompt',
+      id: 'coordinator',
+      title: 'System prompt · coordinator',
+      body: 'You are Omar v2',
+      meta: { variant: 'coordinator', version: 13 },
+      prevBody: 'You are Omar v1',
+      prevReason: null,
+    } as BuildArtifactDetail)
+    const { rerender } = render(
+      <ArtifactDrawer
+        open
+        target={{ artifact: 'system_prompt', artifactId: 'coordinator' }}
+        onClose={() => {}}
+        isAdmin={false}
+        traceViewEnabled={false}
+        rawPromptEditorEnabled={false}
+        sessionStartIso={new Date().toISOString()}
+      />,
+    )
+    // Operator tier: body hidden, so toggle MUST be hidden too.
+    await screen.findByText(/Full system-prompt body is admin-only/)
+    expect(
+      screen.queryByRole('checkbox', { name: /show changes this session/i }),
+    ).not.toBeInTheDocument()
+
+    mockFetch.mockResolvedValueOnce({
+      type: 'system_prompt',
+      id: 'coordinator',
+      title: 'System prompt · coordinator',
+      body: 'You are Omar v2',
+      meta: { variant: 'coordinator', version: 13 },
+      prevBody: 'You are Omar v1',
+      prevReason: null,
+    } as BuildArtifactDetail)
+    rerender(
+      <ArtifactDrawer
+        open
+        target={{ artifact: 'system_prompt', artifactId: 'coordinator' }}
+        onClose={() => {}}
+        isAdmin
+        traceViewEnabled={false}
+        rawPromptEditorEnabled
+        sessionStartIso={new Date().toISOString()}
+      />,
+    )
+    const toggle = (await screen.findByRole('checkbox', {
+      name: /show changes this session/i,
+    })) as HTMLInputElement
+    expect(toggle).toBeInTheDocument()
+  })
 })

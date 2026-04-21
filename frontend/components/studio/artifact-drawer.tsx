@@ -183,6 +183,12 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
       detail.prevBody !== detail.body,
     [detail],
   )
+  const showDiffToggleVisible = showDiffToggle(
+    target?.artifact ?? 'sop',
+    hasPrev,
+    isAdmin,
+    rawPromptEditorEnabled,
+  )
 
   if (!open || !target) return null
 
@@ -335,7 +341,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
             background: STUDIO_COLORS.surfaceRaised,
           }}
         >
-          {hasPrev && (target.artifact === 'sop' || target.artifact === 'faq') ? (
+          {showDiffToggleVisible ? (
             <label
               style={{
                 display: 'inline-flex',
@@ -397,6 +403,26 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   )
 }
 
+/**
+ * 052-C2: centralise the footer-toggle visibility rule. Shows when:
+ *  - sop/faq: prevBody string differs from current (existing B2 rule).
+ *  - system_prompt: prevBody differs AND the viewer can see the body
+ *    (admin + rawPromptEditorEnabled); otherwise the diff is moot.
+ * tool JSON diff lands in C3 as a separate branch.
+ */
+function showDiffToggle(
+  type: BuildArtifactType,
+  hasPrev: boolean,
+  isAdmin: boolean,
+  rawPromptEditorEnabled: boolean,
+): boolean {
+  if (type === 'sop' || type === 'faq') return hasPrev
+  if (type === 'system_prompt') {
+    return hasPrev && isAdmin && rawPromptEditorEnabled
+  }
+  return false
+}
+
 function ViewSwitch(props: {
   artifact: BuildArtifactDetail
   type: BuildArtifactType
@@ -445,6 +471,8 @@ function ViewSwitch(props: {
           isAdmin={isAdmin}
           rawPromptEditorEnabled={rawPromptEditorEnabled}
           isPending={isPending}
+          showDiff={showDiff}
+          scrollToSectionSlug={scrollToSectionSlug}
         />
       )
     case 'tool':

@@ -21,6 +21,7 @@ function makePrisma(data: {
   aiConfigs?: any[];
   sopHistory?: any[];
   faqHistory?: any[];
+  aiConfigVersions?: any[];
 }) {
   return {
     sopVariant: {
@@ -91,6 +92,18 @@ function makePrisma(data: {
               r.editedAt >= where.editedAt.gte,
           )
           .sort((a, b) => (a.editedAt < b.editedAt ? -1 : 1));
+        return rows[0] ?? null;
+      },
+    },
+    aiConfigVersion: {
+      findFirst: async ({ where, orderBy: _orderBy }: any) => {
+        const rows = (data.aiConfigVersions ?? [])
+          .filter(
+            (r) =>
+              r.tenantId === where.tenantId &&
+              r.createdAt < where.createdAt.lt,
+          )
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
         return rows[0] ?? null;
       },
     },
@@ -281,4 +294,96 @@ test('getBuildArtifactPrevBody returns null + reason when no history row exists'
   );
   assert.equal(out.prevBody, null);
   assert.equal(out.reason, 'no-history-in-window');
+});
+
+// Sprint 052 A C2 — system_prompt prev-body via AiConfigVersion.
+
+test('getBuildArtifactPrevBody returns the most recent pre-session AiConfigVersion body for coordinator', async () => {
+  const t0 = new Date('2026-04-20T12:00:00Z');
+  const olderPre = new Date('2026-04-19T09:00:00Z');
+  const newerPre = new Date('2026-04-20T09:00:00Z'); // still pre-session
+  const postSession = new Date('2026-04-20T13:00:00Z');
+  const prisma = makePrisma({
+    aiConfigVersions: [
+      {
+        tenantId: 't1',
+        createdAt: olderPre,
+        config: {
+          systemPromptCoordinator: 'stale v1',
+          systemPromptScreening: 'stale screen',
+        },
+      },
+      {
+        tenantId: 't1',
+        createdAt: newerPre,
+        config: {
+          systemPromptCoordinator: 'pre-session v2',
+          systemPromptScreening: 'pre-session screen v2',
+        },
+      },
+      {
+        tenantId: 't1',
+        createdAt: postSession,
+        config: {
+          systemPromptCoordinator: 'written this session — must be ignored',
+          systemPromptScreening: 'also post-session',
+        },
+      },
+    ],
+  });
+  const coord = await getBuildArtifactPrevBody(
+    prisma,
+    't1',
+    'system_prompt',
+    'coordinator',
+    t0.toISOString(),
+  );
+  assert.equal(coord.prevBody, 'pre-session v2');
+  const screen = await getBuildArtifactPrevBody(
+    prisma,
+    't1',
+    'system_prompt',
+    'screening',
+    t0.toISOString(),
+  );
+  assert.equal(screen.prevBody, 'pre-session screen v2');
+});
+
+test('getBuildArtifactPrevBody on system_prompt returns null + no-history when no pre-session version exists', async () => {
+  const prisma = makePrisma({ aiConfigVersions: [] });
+  const out = await getBuildArtifactPrevBody(
+    prisma,
+    't1',
+    'system_prompt',
+    'coordinator',
+    new Date().toISOString(),
+  );
+  assert.equal(out.prevBody, null);
+  assert.equal(out.reason, 'no-history-in-window');
+});
+
+test('getBuildArtifactPrevBody on system_prompt rejects unknown variant ids', async () => {
+  const prisma = makePrisma({});
+  const out = await getBuildArtifactPrevBody(
+    prisma,
+    't1',
+    'system_prompt',
+    'not-a-variant',
+    new Date().toISOString(),
+  );
+  assert.equal(out.prevBody, null);
+  assert.equal(out.reason, 'artifact-missing');
+});
+
+test('getBuildArtifactPrevBody on tool still returns unsupported-type (no history table yet)', async () => {
+  const prisma = makePrisma({});
+  const out = await getBuildArtifactPrevBody(
+    prisma,
+    't1',
+    'tool',
+    'tool-1',
+    new Date().toISOString(),
+  );
+  assert.equal(out.prevBody, null);
+  assert.equal(out.reason, 'unsupported-type');
 });
