@@ -2052,3 +2052,50 @@ Negative smoke (asserts ritual isolation):
 ### Branch posture
 
 `feat/054-session-a` (commits: `8fe902c`, `1041996`, `7309061`, `b158f6f`) stacks on `feat/053-session-a` (`e5d1051`) → `feat/052-session-a` (`7d49103`) → `feat/051-session-a` (`41b339c`) → `feat/050-session-a` (`d103c14`) → `main`. Stays off `main` until the combined 050+051+052+053+054 staging walkthrough.
+
+---
+
+## Sprint 055 Session A — Plan-as-Progress + Inline Edit
+
+### Pre-flight (2026-04-21)
+
+**Branch tip SHAs:**
+
+| Branch | SHA |
+|--------|-----|
+| feat/050-session-a | `d103c1495e233ca2488fe3437d47bf7dc0ae6d61` |
+| feat/051-session-a | `41b339c25cec0c958dba08ab7206648eed119512` |
+| feat/052-session-a | `7d49103735a929163b6fd57ccc8fd394cf08c886` |
+| feat/053-session-a | `e5d1051c568838db5d1071f54d8c906fe6b94c48` |
+| feat/054-session-a | `88ccc9c5e53fa124e8b0471db84159e52e759b49` |
+| feat/055-session-a (new) | stacks on 054-session-a |
+
+**Baseline test counts:**
+- Frontend (vitest): **24 test files, 170 tests** — all passing
+- Backend integration: not runnable without live DB (skipped at session start)
+
+**Capability probes — all 4 present:**
+1. `approvePlan` exists + idempotent — `build-controller.ts:560`, idempotency at `:582`
+2. `PlanChecklist` renders `data-build-plan` — `studio-chat.tsx:587–590`
+3. `artifact-drawer.tsx` accepts `pendingBody` and renders Preview/Apply — `:79, :251, :255–288`
+4. `build-transaction.ts` flips `PLANNED → EXECUTING` on first create_* — `:58–60`
+
+### Gate status
+
+| Gate | Description | Status |
+|------|-------------|--------|
+| F1 | Plan card → progress checklist + auto-approve | ✅ `38f547e` |
+| F2 | Inline edit in drawer preview | ✅ `2b1aad8` |
+| F3 | Edit rationale prompt | ✅ `2b1aad8` |
+| F4 | Ledger + drawer provenance chips | ✅ `72e64a4` |
+
+### Close-out test counts
+
+| Suite | Before | After | Delta |
+|-------|--------|-------|-------|
+| Frontend (vitest) | 24 files / 170 tests | 26 files / 195 tests | +2 files, +25 tests |
+| Backend integration | not runnable without live DB | not runnable without live DB | — |
+
+### Branch posture
+
+`feat/055-session-a` (commits: `38f547e`, `2b1aad8`, `72e64a4`) stacks on `feat/054-session-a` (`88ccc9c`) → `feat/053-session-a` → `feat/052-session-a` → `feat/051-session-a` → `feat/050-session-a` → `main`. Stays off `main` until combined staging walkthrough.
