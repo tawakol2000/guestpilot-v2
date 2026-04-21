@@ -408,7 +408,7 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
                       <span>{stats?.occPct || 0}%</span>
                       <span style={{ opacity: 0.3 }}>·</span>
                       <span>{stats?.confirmed || 0} res.</span>
-                      {(stats?.inquiries || 0) > 0 && <><span style={{ opacity: 0.3 }}>·</span><span>{stats.inquiries} inq.</span></>}
+                      {(stats?.inquiries || 0) > 0 && <><span style={{ opacity: 0.3 }}>·</span><span>{stats?.inquiries} inq.</span></>}
                     </div>
                   </div>
                 )
