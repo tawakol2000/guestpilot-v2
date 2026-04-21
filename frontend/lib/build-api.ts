@@ -600,3 +600,34 @@ export async function apiRevertArtifactFromHistory(
     { method: 'POST', body: JSON.stringify({ dryRun: opts.dryRun }) },
   )
 }
+
+// ─── Sprint 058-A F2 — cancel pending plan item ───────────────────────────
+
+export interface CancelPlanItemResponse {
+  ok: boolean
+  index: number
+  /** True if the index had already been cancelled by a prior call. */
+  alreadyCancelled?: boolean
+  /** True if the transaction has already reached a terminal state. */
+  alreadyExecuting?: boolean
+  /** Full list after the write (not present on the already-executing path). */
+  cancelledItemIndexes?: number[]
+}
+
+/**
+ * POST /api/build/plan-items/:transactionId/cancel — advisory cancel.
+ * Flips a server-side flag the agent reads on its next tool call and
+ * skips the matching item. Never kills an in-flight write.
+ */
+export async function apiCancelPlanItem(
+  transactionId: string,
+  index: number,
+): Promise<CancelPlanItemResponse> {
+  return buildFetch<CancelPlanItemResponse>(
+    `/api/build/plan-items/${encodeURIComponent(transactionId)}/cancel`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ index }),
+    },
+  )
+}

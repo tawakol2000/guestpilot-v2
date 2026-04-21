@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { STUDIO_COLORS, attributedStyle } from '../studio/tokens'
 import {
   apiApproveBuildPlan,
+  apiCancelPlanItem,
   apiListBuildArtifactHistory,
   apiRollbackBuildPlan,
   withBuildToast,
@@ -87,12 +88,17 @@ function deriveRowState(
   idx: number,
   appliedItems: Array<{ type: BuildPlanItem['type']; name: string }>,
   isCancelled: boolean,
+  cancelledIndexes: ReadonlySet<number>,
 ): RowState {
   if (isCancelled) return 'cancelled'
   const isDone = appliedItems.some((a) => a.type === item.type && a.name === item.name)
   if (isDone) return 'done'
-  // Current = first item not yet done
+  // Sprint 058-A F2 — per-row cancel flag. A done row cannot be cancelled
+  // (we check isDone first), a current row cannot be cancelled (it's
+  // already in-flight), only a pending row can flip to ×.
   const firstPending = appliedItems.length
+  if (idx < firstPending) return 'done'
+  if (cancelledIndexes.has(idx)) return 'cancelled'
   if (idx === firstPending) return 'current'
   return 'pending'
 }
@@ -149,6 +155,11 @@ export function PlanChecklist({
   const [retryError, setRetryError] = useState(false)
   const [rollbackOpen, setRollbackOpen] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  // Sprint 058-A F2 — optimistic set of pending-item indexes marked ×.
+  // Flows into `deriveRowState` to flip the glyph to `× cancelled`.
+  const [cancelledIndexes, setCancelledIndexes] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  )
   const approveCalledRef = useRef(false)
   const overflowRef = useRef<HTMLDivElement>(null)
 
@@ -211,6 +222,40 @@ export function PlanChecklist({
 
   // Headline: "Plan proposed" for legacy (no transactionId), otherwise "Build plan"
   const headlineText = isLegacy ? 'Plan proposed' : 'Build plan'
+
+  // Sprint 058-A F2 — cancel a pending plan item. Optimistic update:
+  // the row flips to `× cancelled` immediately. If the server returns
+  // `alreadyExecuting: true` we revert the optimistic flip and toast.
+  async function handleCancelItem(idx: number) {
+    if (!data.transactionId) return
+    if (cancelledIndexes.has(idx)) return
+    // Optimistic
+    setCancelledIndexes((prev) => {
+      const next = new Set(prev)
+      next.add(idx)
+      return next
+    })
+    try {
+      const res = await apiCancelPlanItem(data.transactionId, idx)
+      if (res.alreadyExecuting) {
+        // Roll back optimistic flip — agent was past this item.
+        setCancelledIndexes((prev) => {
+          const next = new Set(prev)
+          next.delete(idx)
+          return next
+        })
+        toast('Agent was already past this item — use Revert instead')
+      }
+    } catch {
+      // Roll back on any failure and surface a toast.
+      setCancelledIndexes((prev) => {
+        const next = new Set(prev)
+        next.delete(idx)
+        return next
+      })
+      toast.error("Couldn't cancel item — try again")
+    }
+  }
 
   async function handleRowClick(item: BuildPlanItem, rowState: RowState) {
     if (!onOpenArtifact) return
@@ -350,7 +395,13 @@ export function PlanChecklist({
         </p>
         <ul className="flex flex-col gap-1.5">
           {data.items.map((item, idx) => {
-            const rowState = deriveRowState(item, idx, appliedItems, isCancelled)
+            const rowState = deriveRowState(
+              item,
+              idx,
+              appliedItems,
+              isCancelled,
+              cancelledIndexes,
+            )
             return (
               <PlanRow
                 key={idx}
@@ -358,6 +409,11 @@ export function PlanChecklist({
                 rowState={rowState}
                 onSeedComposer={onSeedComposer}
                 onRowClick={onOpenArtifact ? () => handleRowClick(item, rowState) : undefined}
+                onCancelItem={
+                  data.transactionId && rowState === 'pending'
+                    ? () => handleCancelItem(idx)
+                    : undefined
+                }
               />
             )
           })}
@@ -441,11 +497,14 @@ function PlanRow({
   rowState,
   onSeedComposer,
   onRowClick,
+  onCancelItem,
 }: {
   item: BuildPlanItem
   rowState: RowState
   onSeedComposer?: (text: string) => void
   onRowClick?: () => void
+  /** Sprint 058-A F2 — only defined for `pending` rows with a transactionId. */
+  onCancelItem?: () => void
 }) {
   const style = TYPE_STYLE[item.type] ?? {
     bg: STUDIO_COLORS.surfaceSunken,
@@ -528,10 +587,10 @@ function PlanRow({
           </div>
         </div>
 
-        {/* Seed composer + button — stopPropagation prevents row-click */}
+        {/* Seed composer + / cancel × buttons — stopPropagation prevents row-click */}
         <div
-          className="shrink-0"
-          style={{ width: 24, minHeight: 20 }}
+          className="shrink-0 flex items-center gap-0.5"
+          style={{ minHeight: 20 }}
           onClick={(e) => e.stopPropagation()}
         >
           {showSeed && (
@@ -548,6 +607,20 @@ function PlanRow({
               }}
             >
               <Plus size={12} strokeWidth={2.25} />
+            </button>
+          )}
+          {/* Sprint 058-A F2 — cancel pending plan row */}
+          {hovered && onCancelItem && rowState === 'pending' && (
+            <button
+              type="button"
+              data-testid={`plan-row-cancel-${item.type}-${item.name}`}
+              aria-label={`Skip this item — ${item.name}`}
+              title="Skip this item"
+              className="inline-flex h-6 w-6 items-center justify-center rounded"
+              style={{ color: STUDIO_COLORS.inkSubtle }}
+              onClick={onCancelItem}
+            >
+              <X size={12} strokeWidth={2.25} />
             </button>
           )}
         </div>

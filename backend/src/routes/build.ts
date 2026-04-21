@@ -75,6 +75,10 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.post('/artifacts/history/:historyId/revert', (req: any, res) =>
     ctl.revertArtifactFromHistory(req, res)
   );
+  // Sprint 058-A F2 — advisory cancel for pending plan items.
+  router.post('/plan-items/:transactionId/cancel', (req: any, res) =>
+    ctl.cancelPlanItem(req, res)
+  );
 
   // Sprint 058-A F8 — Nano-backed composer draft rewrite.
   router.post('/enhance-prompt', (req: any, res) =>

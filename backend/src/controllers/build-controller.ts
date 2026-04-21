@@ -1393,9 +1393,6 @@ export function makeBuildController(prisma: PrismaClient) {
             ? body.conversationId
             : null;
 
-        // Rate-limit key: prefer conversation-scoped bucket; fall back to
-        // tenant-scoped so unauthenticated / cross-conversation floods
-        // still get caught.
         const rateKey = conversationId
           ? `conv:${req.tenantId}:${conversationId}`
           : `tenant:${req.tenantId}`;
@@ -1411,9 +1408,6 @@ export function makeBuildController(prisma: PrismaClient) {
           return;
         }
 
-        // If a conversationId was supplied, require that it belong to
-        // this tenant — prevents a tenant-A user from warming / probing
-        // a tenant-B conversation's rate bucket.
         if (conversationId) {
           const owned = await prisma.tuningConversation.findFirst({
             where: { id: conversationId, tenantId: req.tenantId },
@@ -1426,7 +1420,6 @@ export function makeBuildController(prisma: PrismaClient) {
         }
 
         const result = await enhancePromptDraft(draft);
-        // Always 200 — the Studio handles `{ ok: false }` with a toast.
         res.json(result);
       } catch (err) {
         console.error('[build-controller] enhancePrompt failed:', err);
@@ -1439,17 +1432,7 @@ export function makeBuildController(prisma: PrismaClient) {
      *
      * Session-artifacts hydration endpoint. Returns every
      * BuildArtifactHistory row attached to the given conversation so the
-     * Studio's session-artifacts rail can seed itself on page reload
-     * (rather than starting empty and relying entirely on live
-     * data-build-history SSE parts for its state, which is what the
-     * "No artifacts touched in this session yet" lie-on-reload bug was).
-     *
-     * Admin-gating mirrors listArtifactHistory — this is an observational
-     * surface that exposes BuildArtifactHistory metadata, so only tenants
-     * with isAdmin=true can read it. Tenant isolation is enforced via
-     * `req.tenantId`: a tenant-A user passing a tenant-B conversationId
-     * receives an empty list, not an error (consistent with the existing
-     * history endpoint).
+     * Studio's session-artifacts rail can seed itself on page reload.
      */
     async sessionArtifacts(
       req: AuthenticatedRequest,
@@ -1500,6 +1483,79 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[build-controller] sessionArtifacts failed:', err);
         res.status(500).json({ error: 'SESSION_ARTIFACTS_FAILED' });
+      }
+    },
+
+    // ─── Sprint 058-A F2 — cancel a pending plan item ───────────────────────
+    /**
+     * POST /api/build/plan-items/:transactionId/cancel
+     * Body: { index: number }
+     *
+     * Advisory: writes `index` into `BuildTransaction.cancelledItemIndexes`.
+     * The agent's next `create_*` tool-call pre-flight reads this array and
+     * returns `{ ok: false, reason: 'plan_item_cancelled' }` for a matching
+     * index (tool-layer hook lands separately). Does NOT kill an in-flight
+     * write. Tenant-scoped. Idempotent.
+     */
+    async cancelPlanItem(req: AuthenticatedRequest, res: Response): Promise<void> {
+      const { tenantId } = req;
+      const transactionId = req.params.transactionId;
+      if (!transactionId) {
+        res.status(400).json({ error: 'MISSING_TRANSACTION_ID' });
+        return;
+      }
+      const rawIndex = (req.body ?? {}).index;
+      const index =
+        typeof rawIndex === 'number' && Number.isInteger(rawIndex) && rawIndex >= 0
+          ? rawIndex
+          : null;
+      if (index === null) {
+        res.status(400).json({ error: 'MISSING_OR_INVALID_INDEX' });
+        return;
+      }
+      try {
+        const tx = await prisma.buildTransaction.findFirst({
+          where: { id: transactionId, tenantId },
+          select: {
+            id: true,
+            status: true,
+            plannedItems: true,
+            cancelledItemIndexes: true,
+          },
+        });
+        if (!tx) {
+          res.status(404).json({ error: 'TRANSACTION_NOT_FOUND' });
+          return;
+        }
+        const items = Array.isArray(tx.plannedItems) ? (tx.plannedItems as unknown[]) : [];
+        if (index >= items.length) {
+          res.status(400).json({ error: 'INDEX_OUT_OF_RANGE' });
+          return;
+        }
+        if (
+          tx.status === 'COMPLETED' ||
+          tx.status === 'PARTIAL' ||
+          tx.status === 'ROLLED_BACK'
+        ) {
+          res.status(200).json({ ok: true, alreadyExecuting: true, index });
+          return;
+        }
+        const existing: number[] = Array.isArray(tx.cancelledItemIndexes)
+          ? (tx.cancelledItemIndexes as number[])
+          : [];
+        if (existing.includes(index)) {
+          res.status(200).json({ ok: true, index, alreadyCancelled: true });
+          return;
+        }
+        const nextList = [...existing, index];
+        await prisma.buildTransaction.update({
+          where: { id: tx.id },
+          data: { cancelledItemIndexes: nextList },
+        });
+        res.status(200).json({ ok: true, index, cancelledItemIndexes: nextList });
+      } catch (err) {
+        console.error('[build-controller] cancelPlanItem failed:', err);
+        res.status(500).json({ error: 'CANCEL_PLAN_ITEM_FAILED' });
       }
     },
   };
