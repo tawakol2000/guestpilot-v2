@@ -824,6 +824,99 @@ test('case 053-D4-revert-real: revert applies prevBody + writes a REVERT history
   }
 });
 
+// ─── Sprint 055-A F2+F3 — operator-edited-body metadata passthrough ─────────
+//
+// Calls the apply endpoint with metadata.rationalePrefix and
+// metadata.operatorRationale; asserts the created BuildArtifactHistory row
+// carries both values verbatim.
+
+test('case 055-F2-F3: applyArtifact stores operator-edit metadata on history row', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  process.env.ENABLE_RAW_PROMPT_EDITOR = 'true';
+  await prisma.tenant.update({
+    where: { id: fx.tenantId },
+    data: { isAdmin: true },
+  });
+  const def = await prisma.sopDefinition.create({
+    data: {
+      tenantId: fx.tenantId,
+      category: '055-f2f3-metadata',
+      toolDescription: 'operator-edit metadata test',
+      enabled: true,
+    },
+  });
+  const variant = await prisma.sopVariant.create({
+    data: {
+      sopDefinitionId: def.id,
+      status: 'DEFAULT',
+      content: 'Original SOP content that is at least twenty chars.',
+      enabled: true,
+    },
+  });
+  const srv = await startServer();
+  try {
+    const r = await fetch(
+      `${srv.baseUrl}/api/build/artifacts/sop/${variant.id}/apply`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dryRun: false,
+          body: { content: 'Operator-edited SOP content — this is definitely twenty plus characters.' },
+          metadata: {
+            rationalePrefix: 'edited-by-operator',
+            operatorRationale: 'Fixed a typo',
+          },
+        }),
+      },
+    );
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as any;
+    assert.equal(body.ok, true);
+    assert.equal(body.dryRun, false);
+
+    // Verify the history row was created with the operator metadata.
+    const histRow = await prisma.buildArtifactHistory.findFirst({
+      where: {
+        tenantId: fx.tenantId,
+        artifactType: 'sop',
+        artifactId: variant.id,
+        operation: 'UPDATE',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    assert.ok(histRow, 'history row must exist');
+    const meta = histRow!.metadata as Record<string, unknown>;
+    assert.equal(
+      meta?.rationalePrefix,
+      'edited-by-operator',
+      'rationalePrefix must be stored',
+    );
+    assert.equal(
+      meta?.operatorRationale,
+      'Fixed a typo',
+      'operatorRationale must be stored',
+    );
+  } finally {
+    await prisma.buildArtifactHistory
+      .deleteMany({
+        where: { tenantId: fx.tenantId, artifactType: 'sop', artifactId: variant.id },
+      })
+      .catch(() => undefined);
+    await prisma.sopVariant.delete({ where: { id: variant.id } }).catch(() => undefined);
+    await prisma.sopDefinition.delete({ where: { id: def.id } }).catch(() => undefined);
+    await prisma.tenant
+      .update({ where: { id: fx.tenantId }, data: { isAdmin: false } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+    delete process.env.ENABLE_RAW_PROMPT_EDITOR;
+  }
+});
+
 // ─── Sprint 055-A F1 — concurrent-approve idempotency ──────────────────────
 
 test('case 055-F1: concurrent approvePlan × 5 → exactly one alreadyApproved:false, rest are true, DB has one approvedAt', async () => {

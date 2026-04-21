@@ -491,6 +491,8 @@ export async function apiApplyArtifact(
     dryRun: boolean
     body: Record<string, unknown>
     conversationId?: string | null
+    /** Sprint 055-A F3 — operator-edit metadata passthrough. */
+    metadata?: Record<string, unknown> | null
   },
 ): Promise<ApplyArtifactResult> {
   const path =
@@ -502,6 +504,7 @@ export async function apiApplyArtifact(
       dryRun: input.dryRun,
       body: input.body,
       ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     }),
   })
 }

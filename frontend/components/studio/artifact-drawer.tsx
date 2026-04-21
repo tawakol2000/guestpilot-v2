@@ -17,9 +17,19 @@
  * Graceful degradation: a 404 renders a "missing artifact" banner, not
  * a crash. The session-artifacts rail can still show a row for an
  * artifact that got rolled back between approval and drawer-open.
+ *
+ * Sprint 055-A F2 — inline edit mode for the preview pane. When
+ * pendingBody is present and a preview has been fetched, a pencil-icon
+ * toggle switches the preview pane to an editable form. Edits debounce
+ * re-preview at 400ms. Apply submits the edited body.
+ *
+ * Sprint 055-A F3 — operator rationale prompt. When the edit is
+ * material (>10 char diff) and Apply is clicked, an inline textarea
+ * appears for an optional "why did you change this?" note. The
+ * rationale is forwarded to the history row via metadata.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Pencil } from 'lucide-react'
 import {
   apiApplyArtifact,
   apiGetBuildArtifact,
@@ -41,6 +51,12 @@ import {
   RationaleCard,
   extractRationale,
 } from './artifact-views/rationale-card'
+// Sprint 055-A F2 — inline editor components
+import { SopEditor } from './artifact-views/sop-editor'
+import { FaqEditor } from './artifact-views/faq-editor'
+import { SystemPromptEditor } from './artifact-views/system-prompt-editor'
+import { ToolEditor } from './artifact-views/tool-editor'
+import { PropertyOverrideEditor } from './artifact-views/property-override-editor'
 import type { BuildArtifactHistoryRow } from '@/lib/build-api'
 
 export interface ArtifactDrawerTarget {
@@ -91,6 +107,31 @@ const TYPE_LABEL: Record<BuildArtifactType, string> = {
   property_override: 'Property override',
 }
 
+/**
+ * Sprint 055-A F3 — edit-distance helper. Returns true when the operator
+ * edit is "material" (more than 10 character diff). Uses a fast length
+ * check first; only walks individual chars when the strings are similar
+ * in length. Capped at 50 characters of difference for performance.
+ */
+function isMaterialEdit(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  const sa = JSON.stringify(a)
+  const sb = JSON.stringify(b)
+  if (Math.abs(sa.length - sb.length) > 10) return true
+  if (sa.includes('\n') !== sb.includes('\n')) return true
+  // Simple char-distance approximation
+  let diff = 0
+  const maxLen = Math.max(sa.length, sb.length)
+  void maxLen // used implicitly via min loop
+  for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
+    if (sa[i] !== sb[i]) diff++
+    if (diff > 10) return true
+  }
+  return diff + Math.abs(sa.length - sb.length) > 10
+}
+
 export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const {
     open,
@@ -120,6 +161,13 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
+  // Sprint 055-A F2 — inline edit state.
+  const [editMode, setEditMode] = useState(false)
+  const [editedBody, setEditedBody] = useState<Record<string, unknown> | null>(null)
+  // Sprint 055-A F3 — operator rationale state.
+  const [operatorRationale, setOperatorRationale] = useState('')
+  // Debounce timer for re-preview on edit.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load the artifact whenever the target changes. Guarded by `open` to
   // avoid eager fetches when the drawer isn't mounted visibly.
@@ -136,6 +184,10 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     setPreviewError(null)
     setPreviewLoading(false)
     setApplying(false)
+    // 055-A F2/F3 — reset inline edit state on target change.
+    setEditMode(false)
+    setEditedBody(null)
+    setOperatorRationale('')
     setLoading(true)
     apiGetBuildArtifact(target.artifact, target.artifactId, {
       prevSince: sessionStartIso ?? undefined,
@@ -217,6 +269,42 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     return () => cancelAnimationFrame(frame)
   }, [detail, target?.scrollToSection])
 
+  // Sprint 055-A F2 — the "active" body: edited version when present, else
+  // the agent-proposed pendingBody. This is what Preview and Apply submit.
+  const activeBody = editedBody ?? pendingBody ?? null
+
+  // Sprint 055-A F2 — debounced re-preview on edit. Fires 400ms after the
+  // last edit when preview is already loaded (editMode active + previewOK).
+  useEffect(() => {
+    if (!editMode || !editedBody || !target || !pendingBody) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setPreviewLoading(true)
+      setPreviewError(null)
+      try {
+        const res = await apiApplyArtifact(target.artifact, target.artifactId, {
+          dryRun: true,
+          body: editedBody,
+          conversationId: conversationId ?? null,
+        })
+        if (res.ok) {
+          setPreviewResult(res)
+        } else {
+          setPreviewError(res.error ?? 'Validation failed')
+          setPreviewResult(null)
+        }
+      } catch {
+        // Silently drop debounce errors — user can still manually Preview.
+      } finally {
+        setPreviewLoading(false)
+      }
+    }, 400)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editedBody])
+
   const hasPrev = useMemo(
     () =>
       typeof detail?.prevBody === 'string' &&
@@ -250,15 +338,21 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   const isPending = Boolean(target.isPending)
   const hasPendingBody = !!pendingBody && Object.keys(pendingBody).length > 0
   const previewActive = hasPendingBody && previewResult != null && previewResult.ok
+  // Sprint 055-A F3 — rationale prompt shown when edit is material.
+  const showRationalePrompt =
+    editedBody !== null &&
+    pendingBody !== null &&
+    pendingBody !== undefined &&
+    isMaterialEdit(pendingBody, editedBody)
 
   async function handlePreviewClick() {
-    if (!target || !pendingBody) return
+    if (!target || !activeBody) return
     setPreviewLoading(true)
     setPreviewError(null)
     try {
       const res = await apiApplyArtifact(target.artifact, target.artifactId, {
         dryRun: true,
-        body: pendingBody,
+        body: activeBody,
         conversationId: conversationId ?? null,
       })
       if (res.ok) {
@@ -280,15 +374,31 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   }
 
   async function handleApplyClick() {
-    if (!target || !pendingBody) return
+    if (!target || !activeBody) return
     setApplying(true)
     try {
+      // Sprint 055-A F3 — include operator metadata when an edit was made.
+      const applyMetadata: Record<string, unknown> | null =
+        editedBody !== null
+          ? {
+              rationalePrefix: 'edited-by-operator',
+              ...(operatorRationale ? { operatorRationale } : {}),
+            }
+          : null
       const res = await apiApplyArtifact(target.artifact, target.artifactId, {
         dryRun: false,
-        body: pendingBody,
+        body: activeBody,
         conversationId: conversationId ?? null,
+        ...(applyMetadata ? { metadata: applyMetadata } : {}),
       })
       if (res.ok) {
+        // Dev-time parity assertion (055-A F2 spec).
+        if (process.env.NODE_ENV === 'development' && editedBody !== null) {
+          console.assert(
+            (previewResult as any)?.sanitizedBody !== undefined,
+            '[055-parity] sanitizedBody absent in previewResult — drift check skipped',
+          )
+        }
         if (onApplied) onApplied(target.artifact, target.artifactId)
         onClose()
       } else {
@@ -396,24 +506,60 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
               {headerTitle}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close drawer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              border: `1px solid ${STUDIO_COLORS.hairline}`,
-              borderRadius: 5,
-              padding: 4,
-              color: STUDIO_COLORS.inkMuted,
-              cursor: 'pointer',
-            }}
-          >
-            <X size={14} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Sprint 055-A F2 — pencil toggle: only shown when pendingBody + previewActive */}
+            {hasPendingBody && previewActive ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (editMode) {
+                    // Leaving edit mode — keep editedBody (do NOT reset)
+                    setEditMode(false)
+                  } else {
+                    setEditMode(true)
+                    // Seed editedBody from current activeBody on first edit
+                    if (editedBody === null) {
+                      setEditedBody({ ...(pendingBody ?? {}) })
+                    }
+                  }
+                }}
+                aria-label="Toggle inline edit"
+                aria-pressed={editMode}
+                title={editMode ? 'Exit edit mode' : 'Edit draft inline'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  border: `1px solid ${editMode ? STUDIO_COLORS.accent : STUDIO_COLORS.hairline}`,
+                  borderRadius: 5,
+                  padding: 4,
+                  color: editMode ? STUDIO_COLORS.accent : STUDIO_COLORS.inkMuted,
+                  cursor: 'pointer',
+                }}
+              >
+                <Pencil size={14} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close drawer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                border: `1px solid ${STUDIO_COLORS.hairline}`,
+                borderRadius: 5,
+                padding: 4,
+                color: STUDIO_COLORS.inkMuted,
+                cursor: 'pointer',
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </header>
 
         <div
@@ -450,21 +596,54 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
             </div>
           ) : null}
           {renderDetail ? (
-            <ViewSwitch
-              artifact={renderDetail}
-              type={target.artifact}
-              isAdmin={isAdmin}
-              traceViewEnabled={traceViewEnabled}
-              rawPromptEditorEnabled={rawPromptEditorEnabled}
-              showDiff={renderShowDiff}
-              showFullSensitive={showFullSensitive}
-              isPending={isPending}
-              scrollToSectionSlug={
-                target.scrollToSection
-                  ? slugify(target.scrollToSection)
-                  : null
-              }
-            />
+            editMode && activeBody ? (
+              <>
+                <EditorSwitch
+                  type={target.artifact}
+                  value={activeBody}
+                  onChange={(v) => setEditedBody(v)}
+                />
+                {/* Sprint 055-A F2 — Reset to agent draft */}
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    aria-label="Reset to agent draft"
+                    onClick={() => {
+                      setEditedBody(null)
+                      setEditMode(false)
+                      setOperatorRationale('')
+                    }}
+                    style={{
+                      fontSize: 11.5,
+                      color: STUDIO_COLORS.inkMuted,
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Reset to agent draft
+                  </button>
+                </div>
+              </>
+            ) : (
+              <ViewSwitch
+                artifact={renderDetail}
+                type={target.artifact}
+                isAdmin={isAdmin}
+                traceViewEnabled={traceViewEnabled}
+                rawPromptEditorEnabled={rawPromptEditorEnabled}
+                showDiff={renderShowDiff}
+                showFullSensitive={showFullSensitive}
+                isPending={isPending}
+                scrollToSectionSlug={
+                  target.scrollToSection
+                    ? slugify(target.scrollToSection)
+                    : null
+                }
+              />
+            )
           ) : null}
           {/* 054-A F4 — in history view, surface the stored verification
               result below the diff so the user can see the verdict + judge
@@ -526,26 +705,60 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
           ) : null}
           <div style={{ flex: 1 }} />
           {hasPendingBody ? (
-            <>
-              <button
-                type="button"
-                onClick={handlePreviewClick}
-                disabled={previewLoading || applying}
-                aria-label="Preview change"
-                style={footerButtonStyle(previewActive ? 'ghost' : 'primary', previewLoading)}
-              >
-                {previewLoading ? 'Previewing…' : previewActive ? 'Re-preview' : 'Preview'}
-              </button>
-              <button
-                type="button"
-                onClick={handleApplyClick}
-                disabled={!previewActive || applying}
-                aria-label="Apply change"
-                style={footerButtonStyle('apply', applying)}
-              >
-                {applying ? 'Applying…' : 'Apply'}
-              </button>
-            </>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', width: '100%' }}>
+              {/* Sprint 055-A F3 — rationale prompt for material edits */}
+              {showRationalePrompt ? (
+                <div style={{ width: '100%' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: 11,
+                      color: STUDIO_COLORS.inkMuted,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Why did you change this? (optional, helps the agent learn)
+                  </label>
+                  <textarea
+                    data-testid="operator-rationale-input"
+                    rows={2}
+                    maxLength={200}
+                    value={operatorRationale}
+                    onChange={(e) => setOperatorRationale(e.target.value)}
+                    placeholder="e.g. Fixed a typo, adjusted tone…"
+                    style={{
+                      width: '100%',
+                      fontSize: 11.5,
+                      borderRadius: 4,
+                      border: `1px solid ${STUDIO_COLORS.hairline}`,
+                      padding: '4px 8px',
+                      resize: 'none',
+                      color: STUDIO_COLORS.ink,
+                    }}
+                  />
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={handlePreviewClick}
+                  disabled={previewLoading || applying}
+                  aria-label="Preview change"
+                  style={footerButtonStyle(previewActive ? 'ghost' : 'primary', previewLoading)}
+                >
+                  {previewLoading ? 'Previewing…' : previewActive ? 'Re-preview' : 'Preview'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyClick}
+                  disabled={!previewActive || applying}
+                  aria-label="Apply change"
+                  style={footerButtonStyle('apply', applying)}
+                >
+                  {applying ? 'Applying…' : 'Apply'}
+                </button>
+              </div>
+            </div>
           ) : null}
           {deepLink ? (
             <a
@@ -655,6 +868,32 @@ function ViewSwitch(props: {
       )
     case 'property_override':
       return <PropertyOverrideView artifact={artifact} isPending={isPending} />
+  }
+}
+
+/**
+ * Sprint 055-A F2 — editor routing. Maps artifact type to its editor.
+ */
+function EditorSwitch({
+  type,
+  value,
+  onChange,
+}: {
+  type: BuildArtifactType
+  value: Record<string, unknown>
+  onChange: (v: Record<string, unknown>) => void
+}) {
+  switch (type) {
+    case 'sop':
+      return <SopEditor value={value} onChange={onChange} />
+    case 'faq':
+      return <FaqEditor value={value} onChange={onChange} />
+    case 'system_prompt':
+      return <SystemPromptEditor value={value} onChange={onChange} />
+    case 'tool':
+      return <ToolEditor value={value} onChange={onChange} />
+    case 'property_override':
+      return <PropertyOverrideEditor value={value} onChange={onChange} />
   }
 }
 

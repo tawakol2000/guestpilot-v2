@@ -37,6 +37,8 @@ export interface ApplyInput {
   actorUserId?: string | null;
   actorEmail?: string | null;
   conversationId?: string | null;
+  /** Sprint 055-A F3 — operator-edit metadata (rationalePrefix, operatorRationale). */
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface ApplyResult {
@@ -118,6 +120,7 @@ async function applySop(prisma: PrismaClient, input: ApplyInput): Promise<ApplyR
     actorUserId: input.actorUserId,
     actorEmail: input.actorEmail,
     conversationId: input.conversationId,
+    metadata: input.metadata ?? null,
   });
   return { ok: true, dryRun: false, artifactType: 'sop', artifactId: input.id };
 }
@@ -168,6 +171,7 @@ async function applyFaq(prisma: PrismaClient, input: ApplyInput): Promise<ApplyR
     actorUserId: input.actorUserId,
     actorEmail: input.actorEmail,
     conversationId: input.conversationId,
+    metadata: input.metadata ?? null,
   });
   return { ok: true, dryRun: false, artifactType: 'faq', artifactId: input.id };
 }
@@ -215,6 +219,7 @@ async function applySystemPrompt(
     actorUserId: input.actorUserId,
     actorEmail: input.actorEmail,
     conversationId: input.conversationId,
+    metadata: input.metadata ?? null,
   });
   return { ok: true, dryRun: false, artifactType: 'system_prompt', artifactId: input.id };
 }
@@ -275,6 +280,7 @@ async function applyTool(prisma: PrismaClient, input: ApplyInput): Promise<Apply
     actorUserId: input.actorUserId,
     actorEmail: input.actorEmail,
     conversationId: input.conversationId,
+    metadata: input.metadata ?? null,
   });
   return { ok: true, dryRun: false, artifactType: 'tool', artifactId: input.id };
 }
@@ -324,6 +330,7 @@ async function applyPropertyOverride(
     actorUserId: input.actorUserId,
     actorEmail: input.actorEmail,
     conversationId: input.conversationId,
+    metadata: input.metadata ?? null,
   });
   return { ok: true, dryRun: false, artifactType: 'property_override', artifactId: input.id };
 }

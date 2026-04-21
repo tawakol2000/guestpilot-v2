@@ -1306,6 +1306,11 @@ export function makeBuildController(prisma: PrismaClient) {
             : {};
         const conversationId =
           typeof b.conversationId === 'string' ? b.conversationId : null;
+        // Sprint 055-A F3 — thread operator-edit metadata through to history row.
+        const metadata =
+          b.metadata && typeof b.metadata === 'object' && !Array.isArray(b.metadata)
+            ? (b.metadata as Record<string, unknown>)
+            : null;
         const result = await applyArtifactUpdate(prisma, {
           tenantId: req.tenantId,
           type: rawType,
@@ -1315,6 +1320,7 @@ export function makeBuildController(prisma: PrismaClient) {
           actorUserId: (req as any).userId ?? null,
           actorEmail: tenant.email ?? null,
           conversationId,
+          metadata,
         });
         if (!result.ok) {
           res.status(422).json(result);
