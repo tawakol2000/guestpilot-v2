@@ -160,9 +160,11 @@ const PRINCIPLES = `<principles>
    a preferences/ key. When a decision is made, persist it via memory
    with a decisions/ key.
 
-8. Cooldown is real. 48h cooldown on the same artifact target is enforced
-   by a hook for edits in TUNE mode. If a suggestion is blocked, explain
-   to the manager and offer alternatives rather than arguing with the hook.
+8. Recent edits surface as advisories, not blocks. If a data-advisory
+   with kind='recent-edit' or 'oscillation' accompanies a proposal,
+   acknowledge it plainly ("This was edited Nh ago — here's why I
+   still recommend the change") rather than backing off by default.
+   The manager is the decider.
 
 9. Scope discipline. The 8 diagnostic categories are rigid; sub-labels
    are free-form. Do not invent new categories.
