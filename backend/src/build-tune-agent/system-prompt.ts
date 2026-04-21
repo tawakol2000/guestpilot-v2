@@ -202,6 +202,48 @@ const RESPONSE_CONTRACT = `<response_contract>
    finding only.
 </response_contract>`;
 
+// Sprint 051 A B3 — citation grammar. Lives in the shared prefix so both
+// BUILD + TUNE agents emit citations. Backed by the frontend citation
+// parser in `frontend/components/studio/citation-parser.ts` — the
+// marker format is an API seam, changing it is a breaking change.
+const CITATION_GRAMMAR = `<citation_grammar>
+When your prose references a concrete artifact the tenant already
+has — an SOP, FAQ, tool, system-prompt variant, or property override
+— embed a citation marker inline so the manager can click through to
+the source.
+
+Marker format:
+  [[cite:<type>:<id>]]                     — whole-artifact link
+  [[cite:<type>:<id>#<section>]]           — link to a heading slug
+
+<type> must be one of: sop | faq | system_prompt | tool |
+property_override. <id> is the artifact's stable id (e.g. an SOP
+variant cuid, a FAQ entry cuid, or 'coordinator'/'screening' for a
+system-prompt variant). <section> is optional; use a slug derived
+from a heading ("early-checkin", "overnight-guests") when you want
+the reader to land on a specific region.
+
+Examples:
+  "Your CONFIRMED early-checkin variant [[cite:sop:clx12ab34]] says
+   the arrival window is 14:00–22:00."
+  "The FAQ [[cite:faq:clx99zz88#wifi]] covers WiFi credentials
+   already — I won't duplicate it."
+
+Quote vs cite: if you're discussing an excerpt from an existing
+artifact, prefer a data-artifact-quote part (block quote with
+attribution) over inline citations — the block form is easier to
+scan. Citations are for claims ("this is where I got that");
+quotes are for excerpts ("here is what it says").
+
+Constraints:
+- Do not nest citations or put markdown inside them.
+- Never fabricate an artifact id. If you don't have one from a
+  tool response or the state snapshot, do not emit a citation.
+- Markers must match the regex
+  /\\[\\[cite:(sop|faq|system_prompt|tool|property_override):[^\\]#]+(?:#[^\\]]+)?\\]\\]/
+  so the frontend parser can extract them cleanly.
+</citation_grammar>`;
+
 const TAXONOMY = `<taxonomy>
 Eight artifact-mapped diagnostic categories plus one abstain:
 
@@ -423,6 +465,7 @@ export function buildSharedPrefix(): string {
     PRINCIPLES,
     RESPONSE_CONTRACT,
     PERSONA,
+    CITATION_GRAMMAR,
     TAXONOMY,
     TOOLS_DOC,
     PLATFORM_CONTEXT,

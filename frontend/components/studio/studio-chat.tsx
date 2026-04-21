@@ -45,6 +45,11 @@ import type {
   SessionArtifact,
   SessionArtifactType,
 } from './session-artifacts'
+import {
+  parseCitations,
+  type CitationArtifactType,
+} from './citation-parser'
+import { CitationChip } from './citation-chip'
 
 export interface StudioChatProps {
   conversationId: string
@@ -60,6 +65,17 @@ export interface StudioChatProps {
    * session-artifacts panel.
    */
   onArtifactTouched?: (artifact: SessionArtifact) => void
+  /**
+   * Sprint 051 A B3 — open the unified artifact drawer from an inline
+   * citation chip or (B4) a `data-artifact-quote` attribution chip.
+   * Wired through `StudioSurface`. `section` is the optional
+   * `#section` fragment from the citation marker.
+   */
+  onOpenArtifact?: (
+    artifact: SessionArtifactType,
+    artifactId: string,
+    section?: string | null,
+  ) => void
   /**
    * Sprint 050 A2 — admin-only "Show full output" toggle inside the
    * tool-call drawer. Both flags must be true to surface the toggle; the
@@ -145,6 +161,7 @@ export function StudioChat({
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
+  onOpenArtifact,
   isAdmin = false,
   traceViewEnabled = false,
 }: StudioChatProps) {
@@ -271,6 +288,7 @@ export function StudioChat({
               onPlanApproved={onPlanApproved}
               onPlanRolledBack={onPlanRolledBack}
               onArtifactTouched={onArtifactTouched}
+              onOpenArtifact={onOpenArtifact}
               onSendText={(text) => sendMessage({ text })}
               onOpenToolDrawer={openToolDrawer}
             />
@@ -410,6 +428,7 @@ function MessageRow({
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
+  onOpenArtifact,
   onSendText,
   onOpenToolDrawer,
 }: {
@@ -419,6 +438,11 @@ function MessageRow({
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   onArtifactTouched?: (artifact: SessionArtifact) => void
+  onOpenArtifact?: (
+    artifact: SessionArtifactType,
+    artifactId: string,
+    section?: string | null,
+  ) => void
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
@@ -452,17 +476,12 @@ function MessageRow({
       {textParts.length > 0 && (
         <div className="flex flex-col gap-2">
           {textParts.map((p, i) => (
-            <p
+            <AttributedText
               key={`t:${i}`}
-              data-origin={isUser ? 'user' : 'agent'}
-              className="whitespace-pre-wrap text-[14px] leading-[1.55]"
-              style={{
-                color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
-                margin: 0,
-              }}
-            >
-              {p.text ?? ''}
-            </p>
+              text={p.text ?? ''}
+              isUser={isUser}
+              onOpenArtifact={onOpenArtifact}
+            />
           ))}
         </div>
       )}
@@ -866,6 +885,76 @@ function ToolCallChip({
       />
       {short}
     </button>
+  )
+}
+
+/**
+ * Sprint 051 A B3 — renders a single agent/user text part, splitting on
+ * `[[cite:...]]` markers and replacing them with clickable citation
+ * chips. Plain text (no markers) renders exactly as the pre-B3 <p>
+ * did — preserves the A1 typographic grammar (data-origin + colour).
+ */
+function AttributedText({
+  text,
+  isUser,
+  onOpenArtifact,
+}: {
+  text: string
+  isUser: boolean
+  onOpenArtifact?: (
+    artifact: SessionArtifactType,
+    artifactId: string,
+    section?: string | null,
+  ) => void
+}) {
+  const tokens = useMemo(() => parseCitations(text), [text])
+  const hasCitations = tokens.some((t) => t.kind === 'citation')
+  if (!hasCitations) {
+    return (
+      <p
+        data-origin={isUser ? 'user' : 'agent'}
+        className="whitespace-pre-wrap text-[14px] leading-[1.55]"
+        style={{
+          color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+          margin: 0,
+        }}
+      >
+        {text}
+      </p>
+    )
+  }
+  return (
+    <p
+      data-origin={isUser ? 'user' : 'agent'}
+      className="whitespace-pre-wrap text-[14px] leading-[1.55]"
+      style={{
+        color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+        margin: 0,
+      }}
+    >
+      {tokens.map((t, i) =>
+        t.kind === 'text' ? (
+          <span key={`t:${i}`}>{t.text}</span>
+        ) : (
+          <CitationChip
+            key={`c:${i}:${t.raw}`}
+            artifact={t.artifact as CitationArtifactType}
+            artifactId={t.artifactId}
+            section={t.section}
+            onOpen={
+              onOpenArtifact
+                ? (artifact, id, section) =>
+                    onOpenArtifact(
+                      artifact as SessionArtifactType,
+                      id,
+                      section ?? null,
+                    )
+                : undefined
+            }
+          />
+        ),
+      )}
+    </p>
   )
 }
 

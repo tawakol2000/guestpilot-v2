@@ -255,6 +255,30 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
     },
     [openArtifactDrawer],
   )
+  // Sprint 051 A B3 — citation-chip click path. Same drawer target as
+  // a row click, plus the optional `#section` fragment from the marker.
+  const openArtifactFromCitation = useCallback(
+    (
+      artifact: SessionArtifact['artifact'],
+      artifactId: string,
+      section?: string | null,
+    ) => {
+      // If the session-artifacts rail already has this artifact, reuse
+      // its record (carries the human title) so the drawer header
+      // reads the same as a row click.
+      const match = sessionArtifacts.find(
+        (a) => a.artifact === artifact && a.artifactId === artifactId,
+      )
+      openArtifactDrawer({
+        artifact,
+        artifactId,
+        sessionArtifact: match ?? null,
+        isPending: false,
+        scrollToSection: section ?? null,
+      })
+    },
+    [openArtifactDrawer, sessionArtifacts],
+  )
 
   if (load.kind === 'loading') {
     return (
@@ -335,6 +359,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             onPlanApproved={handlePlanApproved}
             onPlanRolledBack={handlePlanRolledBack}
             onArtifactTouched={handleArtifactTouched}
+            onOpenArtifact={openArtifactFromCitation}
             isAdmin={capabilities.isAdmin}
             traceViewEnabled={capabilities.traceViewEnabled}
           />
