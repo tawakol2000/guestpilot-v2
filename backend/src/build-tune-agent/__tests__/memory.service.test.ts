@@ -15,11 +15,40 @@ import {
   writeRejectionMemory,
   listRejectionHashes,
   computeRejectionFixHash,
+  writeCrossSessionRejection,
+  lookupCrossSessionRejection,
 } from '../memory/service';
 
 function makeFakePrisma() {
   const rows = new Map<string, any>();
+  // Sprint 047 Session C — durable rejection rows. Separate map so
+  // session-scoped AgentMemory tests stay isolated from cross-session
+  // assertions.
+  const rejections = new Map<string, any>();
+  const rejectionKey = (tenantId: string, artifact: string, fixHash: string) =>
+    `${tenantId}|${artifact}|${fixHash}`;
   const prisma: any = {
+    rejectionMemory: {
+      findUnique: async ({ where }: any) => {
+        const { tenantId, artifact, fixHash } =
+          where.tenantId_artifact_fixHash;
+        return rejections.get(rejectionKey(tenantId, artifact, fixHash)) ?? null;
+      },
+      upsert: async ({ where, update, create }: any) => {
+        const { tenantId, artifact, fixHash } =
+          where.tenantId_artifact_fixHash;
+        const key = rejectionKey(tenantId, artifact, fixHash);
+        const existing = rejections.get(key);
+        if (existing) {
+          const row = { ...existing, ...update };
+          rejections.set(key, row);
+          return row;
+        }
+        const row = { ...create, id: `r_${rejections.size + 1}` };
+        rejections.set(key, row);
+        return row;
+      },
+    },
     agentMemory: {
       findUnique: async ({ where }: any) => {
         const key = `${where.tenantId_key.tenantId}:${where.tenantId_key.key}`;
@@ -70,7 +99,7 @@ function makeFakePrisma() {
       },
     },
   };
-  return { prisma, rows };
+  return { prisma, rows, rejections };
 }
 
 test('createMemory persists a new row', async () => {
@@ -169,4 +198,122 @@ test('writeRejectionMemory is idempotent (upsert)', async () => {
   await writeRejectionMemory(prisma, 't1', 'conv1', hash, intent);
   // Upsert must not duplicate the row.
   assert.equal(rows.size, 1);
+});
+
+// ─── Sprint 047 Session C — cross-session rejection memory ────────────
+
+test('writeCrossSessionRejection + lookupCrossSessionRejection round-trip', async () => {
+  const { prisma, rejections } = makeFakePrisma();
+  const intent = {
+    artifactId: 'faq-abc',
+    sectionOrSlotKey: '',
+    semanticIntent: 'FAQ:wifi-password',
+  };
+  const fixHash = computeRejectionFixHash(intent);
+
+  await writeCrossSessionRejection(prisma, 't1', {
+    artifact: 'faq',
+    fixHash,
+    intent,
+    category: 'FAQ',
+    subLabel: 'wifi-password',
+    rationale: 'Too vague — say WiFi by the router.',
+    sourceConversationId: 'conv-original',
+  });
+
+  assert.equal(rejections.size, 1);
+  const hit = await lookupCrossSessionRejection(prisma, 't1', 'faq', fixHash);
+  assert.ok(hit, 'rejection must be found');
+  assert.equal(hit?.rationale, 'Too vague — say WiFi by the router.');
+  assert.equal(hit?.sourceConversationId, 'conv-original');
+  assert.equal(hit?.category, 'FAQ');
+});
+
+test('lookupCrossSessionRejection returns null when nothing is stored', async () => {
+  const { prisma } = makeFakePrisma();
+  const hit = await lookupCrossSessionRejection(prisma, 't1', 'faq', 'nohash');
+  assert.equal(hit, null);
+});
+
+test('lookupCrossSessionRejection treats expired rows as null', async () => {
+  const { prisma } = makeFakePrisma();
+  const intent = {
+    artifactId: 'sop-checkin',
+    sectionOrSlotKey: 'checkout_time',
+    semanticIntent: 'SOP_CONTENT:checkout-rephrase',
+  };
+  const fixHash = computeRejectionFixHash(intent);
+  // Write with a "rejectedAt" 100 days in the past → expiresAt ~10 days past.
+  const past = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+  await writeCrossSessionRejection(prisma, 't1', {
+    artifact: 'sop',
+    fixHash,
+    intent,
+    now: past,
+  });
+  const hit = await lookupCrossSessionRejection(prisma, 't1', 'sop', fixHash);
+  assert.equal(hit, null, 'expired row must not be returned');
+});
+
+test('writeCrossSessionRejection is idempotent — re-reject refreshes TTL', async () => {
+  const { prisma, rejections } = makeFakePrisma();
+  const intent = {
+    artifactId: 'sop-checkin',
+    sectionOrSlotKey: '',
+    semanticIntent: 'SOP_CONTENT:checkout-time',
+  };
+  const fixHash = computeRejectionFixHash(intent);
+  const first = new Date('2026-01-01T00:00:00Z');
+  const second = new Date('2026-02-01T00:00:00Z');
+
+  await writeCrossSessionRejection(prisma, 't1', {
+    artifact: 'sop',
+    fixHash,
+    intent,
+    rationale: 'first rejection',
+    now: first,
+  });
+  await writeCrossSessionRejection(prisma, 't1', {
+    artifact: 'sop',
+    fixHash,
+    intent,
+    rationale: 'second rejection',
+    now: second,
+  });
+
+  // One row, refreshed to the second timestamp.
+  assert.equal(rejections.size, 1);
+  const hit = await lookupCrossSessionRejection(
+    prisma,
+    't1',
+    'sop',
+    fixHash,
+    new Date('2026-02-15T00:00:00Z')
+  );
+  assert.ok(hit);
+  assert.equal(hit?.rationale, 'second rejection');
+  // expiresAt should equal second + 90d
+  const expectedExpires = new Date(second.getTime() + 90 * 24 * 60 * 60 * 1000);
+  assert.equal(hit?.expiresAt, expectedExpires.toISOString());
+});
+
+test('cross-session lookup is keyed by artifact type — different artifacts do not collide', async () => {
+  const { prisma } = makeFakePrisma();
+  const intent = {
+    artifactId: 'shared-id',
+    sectionOrSlotKey: '',
+    semanticIntent: 'WORDING:concise',
+  };
+  const fixHash = computeRejectionFixHash(intent);
+
+  await writeCrossSessionRejection(prisma, 't1', {
+    artifact: 'faq',
+    fixHash,
+    intent,
+  });
+
+  const faqHit = await lookupCrossSessionRejection(prisma, 't1', 'faq', fixHash);
+  const sopHit = await lookupCrossSessionRejection(prisma, 't1', 'sop', fixHash);
+  assert.ok(faqHit, 'FAQ artifact lookup must hit');
+  assert.equal(sopHit, null, 'SOP artifact lookup must miss — different (artifact, fixHash) key');
 });

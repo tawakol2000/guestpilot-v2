@@ -357,7 +357,11 @@ test('case 6: POST /suggested-fix/:id/reject persists rejection memory (sprint 0
           conversationId: conv.id,
           category: 'FAQ',
           subLabel: 'wifi-password',
-          target: { artifactId: 'faq-abc' },
+          // Sprint 047 Session C — `target.artifact` drives the
+          // RejectionMemory composite key. Omitting it falls back to '',
+          // which is still a valid-but-untargeted durable row.
+          target: { artifact: 'faq', artifactId: 'faq-abc' },
+          rationale: 'Too vague — say WiFi by the router.',
         }),
       }
     );
@@ -373,6 +377,31 @@ test('case 6: POST /suggested-fix/:id/reject persists rejection memory (sprint 0
       },
     });
     assert.ok(row, 'rejection-memory row must be persisted');
+
+    // Sprint 047 Session C — same POST must also persist a durable row.
+    const durable = await prisma.rejectionMemory.findUnique({
+      where: {
+        tenantId_artifact_fixHash: {
+          tenantId: fx.tenantId,
+          artifact: 'faq',
+          fixHash: body.fixHash,
+        },
+      },
+    });
+    assert.ok(durable, 'cross-session RejectionMemory row must be persisted');
+    assert.equal(
+      durable?.rationale,
+      'Too vague — say WiFi by the router.',
+      'captured rationale must round-trip'
+    );
+    assert.equal(durable?.sourceConversationId, conv.id);
+    // TTL: rejectedAt stamp → expiresAt exactly 90d later.
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+    const drift = Math.abs(
+      durable!.expiresAt.getTime() -
+        (durable!.rejectedAt.getTime() + ninetyDaysMs)
+    );
+    assert.ok(drift < 1000, `expiresAt must be rejectedAt + 90d (±1s), drift=${drift}ms`);
   } finally {
     await prisma.agentMemory
       .deleteMany({
@@ -382,8 +411,108 @@ test('case 6: POST /suggested-fix/:id/reject persists rejection memory (sprint 0
         },
       })
       .catch(() => undefined);
+    await prisma.rejectionMemory
+      .deleteMany({ where: { tenantId: fx.tenantId } })
+      .catch(() => undefined);
     await prisma.tuningConversation
       .delete({ where: { id: conv.id } })
+      .catch(() => undefined);
+    await srv.close();
+    delete process.env.ENABLE_BUILD_MODE;
+  }
+});
+
+test('case 6b: cross-session rejection suppresses re-propose across conversations (sprint 047 Session C)', async () => {
+  process.env.ENABLE_BUILD_MODE = 'true';
+  const convA = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session C cross-session — convA',
+    },
+  });
+  const convB = await prisma.tuningConversation.create({
+    data: {
+      tenantId: fx.tenantId,
+      triggerType: 'MANUAL',
+      title: 'TEST Session C cross-session — convB',
+    },
+  });
+  const srv = await startServer();
+  let fixHash = '';
+  try {
+    // Step 1 — manager rejects in conversation A.
+    const rejectRes = await fetch(
+      `${srv.baseUrl}/api/build/suggested-fix/preview:crosssess/reject`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          conversationId: convA.id,
+          category: 'SOP_CONTENT',
+          subLabel: 'checkout-time-rephrase',
+          target: {
+            artifact: 'sop',
+            artifactId: 'sop-checkin',
+            sectionId: 'checkout_time',
+          },
+          rationale: 'Hated last week — leaves no window.',
+        }),
+      }
+    );
+    assert.equal(rejectRes.status, 200);
+    const rejectBody = (await rejectRes.json()) as any;
+    fixHash = rejectBody.fixHash;
+
+    // Step 2 — verify lookup from a *different* conversation still
+    // hits. The propose_suggestion tool's read path uses the same
+    // lookup, so this verifies the cross-session read end-to-end.
+    const {
+      lookupCrossSessionRejection,
+    } = await import('../../build-tune-agent/memory/service');
+    const hit = await lookupCrossSessionRejection(
+      prisma,
+      fx.tenantId,
+      'sop',
+      fixHash
+    );
+    assert.ok(
+      hit,
+      'cross-session lookup from conversation B must find the convA rejection'
+    );
+    assert.equal(hit?.sourceConversationId, convA.id);
+    assert.equal(hit?.rationale, 'Hated last week — leaves no window.');
+
+    // Session-scoped memory for convB must NOT contain this hash —
+    // that would contaminate the test of the durable layer.
+    const sessionRow = await prisma.agentMemory.findFirst({
+      where: {
+        tenantId: fx.tenantId,
+        key: `session/${convB.id}/rejected/${fixHash}`,
+      },
+    });
+    assert.equal(
+      sessionRow,
+      null,
+      'convB session memory must be clean — cross-session suppression proves the durable layer works'
+    );
+  } finally {
+    await prisma.agentMemory
+      .deleteMany({
+        where: {
+          tenantId: fx.tenantId,
+          key: { startsWith: `session/` },
+        },
+      })
+      .catch(() => undefined);
+    await prisma.rejectionMemory
+      .deleteMany({ where: { tenantId: fx.tenantId } })
+      .catch(() => undefined);
+    await prisma.tuningConversation
+      .deleteMany({ where: { id: { in: [convA.id, convB.id] } } })
       .catch(() => undefined);
     await srv.close();
     delete process.env.ENABLE_BUILD_MODE;
