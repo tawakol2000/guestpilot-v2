@@ -445,7 +445,10 @@ export function StudioChat({
               isBusy
                 ? queuedMessages.length > 0
                   ? `Queuing… (${queuedMessages.length}/3 queued)`
-                  : 'Agent is replying…'
+                  : // Sprint 058-A F9e — composer is typeable during streaming
+                    // (textarea is never disabled). The placeholder tells the
+                    // operator what pressing Enter will do.
+                    'Type to queue — will send when the agent finishes'
                 : greenfield
                   ? 'Tell me about your properties.'
                   : 'What do you want to build or change?'
