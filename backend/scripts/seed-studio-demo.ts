@@ -160,7 +160,7 @@ async function main() {
       category: 'wifi',
       question: 'What is the WiFi password?',
       answer: 'Your WiFi credentials are in the welcome packet delivered at check-in.',
-      enabled: true,
+      status: 'ACTIVE',
     },
     update: {},
   });
@@ -205,7 +205,7 @@ async function main() {
     data: {
       tenantId: tenant.id,
       title: DEMO_TITLE,
-      triggerType: 'BUILD',
+      triggerType: 'MANUAL',
       status: 'OPEN',
       createdAt: at(0),
       updatedAt: at(42),
