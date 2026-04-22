@@ -11,6 +11,7 @@
 | 1 — initial scans | Studio agent backend + frontend + adjacent services | 12 | 5 (2 HIGH, 3 MEDIUM) | 7 LOW (then all 7 fixed in round 1.5) | — |
 | 1.5 — LOW round | The 7 deferred LOWs | 7 | 6 + 1 investigated–not-a-bug | — | 1 |
 | 2 — broader scans | Studio depth + non-studio backend | 26 | 21 (6 HIGH + 13 MED + 2 LOW) | 4 (3 need user input, 1 in code as KNOWN-GAP) | — |
+| 3 — webhooks/workers/middleware/inbox | Below-the-fold backend + inbox | 9 | 8 (5 MED + 3 LOW) | 1 (WebhookLog retention — needs user input) | — |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -70,6 +71,19 @@
 | 31 | LOW | `62f24b2` | `services/translation.service.ts` — 3-attempt exponential backoff on 408/425/429/5xx/timeout |
 | 32 | LOW | `62f24b2` | `services/scheduled-time.service.ts` within() — defensive HHMM regex guard against silent lex-comparison auto-approve on malformed input |
 
+## Round 3 — MEDIUM + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 33 | MEDIUM | `cb848de` | `frontend/components/inbox-v5.tsx` — `property_ai_changed` handler now actually refreshes (was a no-op due to wrong response-shape check) |
+| 34 | MEDIUM | `cb848de` | `services/extend-stay.service.ts` — Hostaway price lookup wrapped in try/catch; Hostaway 5xx no longer crashes the AI tool turn |
+| 35 | MEDIUM | `cb848de` | `jobs/messageSync.job.ts` — module-scope overlap guard prevents pile-up when ticks exceed the 120s interval |
+| 36 | MEDIUM | `cb848de` | `services/document-checklist.service.ts` — both updateChecklist + manualUpdateChecklist wrap read-modify-write in `$transaction` (no race-drop of receivedDocs entries on concurrent uploads) |
+| 37 | MEDIUM | `cb848de` | `controllers/webhooks.controller.ts` — replaced `empty-${Date.now()}` fallback id with content-hash so Hostaway retry duplicates collide on the unique index |
+| 38 | LOW | `cb848de` | `backend/src/app.ts` — CORS_ORIGINS comma-split now trims + filters empty entries (parity with socket.service) |
+| 39 | LOW | `cb848de` | `backend/src/server.ts` — 10s hard-shutdown deadline so Railway redeploy doesn't leak prisma connections behind long-lived WebSocket clients |
+| 40 | LOW | `cb848de` | `frontend/lib/api.ts` — module-scope `_redirecting` guard against the concurrent-401 redirect storm (silences React Query / SWR error flash) |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -79,3 +93,4 @@
 | After Round 1.5 (LOW) | 530/530 0 fail | 352/352 |
 | Mid round 2 (post-HIGH) | 509/509 0 fail | 349/349 |
 | End round 2 (post-LOW + non-studio) | 538/538 0 fail | 352/352 |
+| End round 3 | 538/538 0 fail | 352/352 |
