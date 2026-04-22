@@ -13,6 +13,7 @@
 | 2 — broader scans | Studio depth + non-studio backend | 26 | 21 (6 HIGH + 13 MED + 2 LOW) | 4 (3 need user input, 1 in code as KNOWN-GAP) | — |
 | 3 — webhooks/workers/middleware/inbox | Below-the-fold backend + inbox | 9 | 8 (5 MED + 3 LOW) | 1 (WebhookLog retention — needs user input) | — |
 | 4 — frontend deep + backend gap-fill | inbox-v5 + listings + alterations + property-search + message-sync | 9 | 6 (3 HIGH + 2 MED + 1 LOW) | 0 | 1 false positive (MiniCalendar already has the prop sync) |
+| 5 — second-order: Prisma + middleware + utils | error.ts + reservationSync + lib/socket + sop singleton + encryption | 6 | 5 (1 HIGH + 3 MED + 1 LOW) | 1 (broadcastCritical multi-socket dedup architectural; JWT_SECRET rotation runbook) | — |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -96,6 +97,16 @@
 | 45 | MEDIUM | `17bb37d` | `services/message-sync.service.ts` edit broadcast — emit real sentAt + `edited:true`; OMIT lastMessageAt; inbox handler skips sidebar/unread/sort updates on edits |
 | 46 | LOW | `5acdf59` | `frontend/components/listings-v5.tsx` bulk save — snapshot dirty kbs before await chain (closes the React-batching dependency) |
 
+## Round 5 — HIGH + MEDIUM + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 47 | HIGH | `af5a67f` | `middleware/error.ts` — gate `err.message` on status<500 (no more Prisma/IP/JWT-internal info disclosure on 5xx) |
+| 48 | MEDIUM | `af5a67f` | `jobs/reservationSync.job.ts` — sync date/guest/price changes when status didn't change (Hostaway extension no longer leaves us with stale checkout) |
+| 49 | MEDIUM | `af5a67f` | `frontend/lib/socket.ts` + `lib/api.ts` — track lastConnectedToken; force disconnect+reconnect on token swap; teardown socket on 401 |
+| 50 | MEDIUM | `af5a67f` | `services/sop.service.ts` — module-scope fallback Prisma singleton (no more per-call pool construction if a future caller forgets prisma) |
+| 51 | LOW | `af5a67f` | `lib/encryption.ts` — memoize PBKDF2-derived key (saves ~20-50ms per encrypt/decrypt on dashboard JWT paths) |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -107,3 +118,4 @@
 | End round 2 (post-LOW + non-studio) | 538/538 0 fail | 352/352 |
 | End round 3 | 538/538 0 fail | 352/352 |
 | End round 4 | 538/538 0 fail | 352/352 |
+| End round 5 | 538/538 0 fail | 352/352 |
