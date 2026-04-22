@@ -19,6 +19,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources/messages';
+
 import {
   bridgeAnthropicStream,
   toolResultSDKMessage,
@@ -80,10 +82,10 @@ for (const fixtureName of ['text-only', 'one-tool-call', 'thinking-interleaved']
 }
 
 test('message_delta with stop_reason=tool_use still produces a result SDKMessage at message_stop', async () => {
-  const events = [
-    { type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
-    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 1 } },
-    { type: 'message_stop' },
+  const events: RawMessageStreamEvent[] = [
+    { type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } } as unknown as RawMessageStreamEvent,
+    { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { input_tokens: 0, output_tokens: 1 } } as unknown as RawMessageStreamEvent,
+    { type: 'message_stop' } as unknown as RawMessageStreamEvent,
   ];
   const msgs = await drain(bridgeAnthropicStream(fromArray(events)));
   const results = msgs.filter((m) => m.type === 'result');
@@ -93,10 +95,10 @@ test('message_delta with stop_reason=tool_use still produces a result SDKMessage
 });
 
 test('message_delta with stop_reason=end_turn produces a result SDKMessage with stop_reason=end_turn', async () => {
-  const events = [
-    { type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
-    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
-    { type: 'message_stop' },
+  const events: RawMessageStreamEvent[] = [
+    { type: 'message_start', message: { id: 'm', type: 'message', role: 'assistant', content: [], model: 'x', stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } } as unknown as RawMessageStreamEvent,
+    { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: 0, output_tokens: 1 } } as unknown as RawMessageStreamEvent,
+    { type: 'message_stop' } as unknown as RawMessageStreamEvent,
   ];
   const msgs = await drain(bridgeAnthropicStream(fromArray(events)));
   const result = msgs.find((m) => m.type === 'result')!;
