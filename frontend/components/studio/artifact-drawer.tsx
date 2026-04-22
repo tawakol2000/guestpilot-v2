@@ -28,7 +28,7 @@
  * appears for an optional "why did you change this?" note. The
  * rationale is forwarded to the history row via metadata.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Pencil } from 'lucide-react'
 import {
   apiApplyArtifact,
@@ -232,7 +232,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     return () => {
       cancelled = true
     }
-  }, [open, target, sessionStartIso])
+  }, [open, target, sessionStartIso, reloadKey])
 
   // Focus the panel on open; Esc + focus-trap. `panelRef` uses tabIndex
   // -1 so the initial programmatic focus lands somewhere reasonable
@@ -589,6 +589,72 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Sprint 058-A F3/F6/F7 — Preview / Versions tab switcher.
+                Hidden when the drawer is loading the first artifact fetch so
+                the tabs don't flash on mount; once we have a detail (or have
+                entered a stable error/notFound state) the tabs render. */}
+            {detail || notFound || error ? (
+              <div
+                role="tablist"
+                aria-label="Drawer view"
+                data-testid="artifact-drawer-tab-switcher"
+                style={{
+                  display: 'inline-flex',
+                  gap: 2,
+                  padding: 2,
+                  borderRadius: 5,
+                  background: STUDIO_COLORS.surfaceSunken,
+                  border: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+                }}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'preview'}
+                  data-testid="artifact-drawer-tab-preview"
+                  onClick={() => setActiveTab('preview')}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background:
+                      activeTab === 'preview' ? STUDIO_COLORS.canvas : 'transparent',
+                    color:
+                      activeTab === 'preview'
+                        ? STUDIO_COLORS.ink
+                        : STUDIO_COLORS.inkMuted,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'versions'}
+                  data-testid="artifact-drawer-tab-versions"
+                  onClick={() => setActiveTab('versions')}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '3px 8px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background:
+                      activeTab === 'versions' ? STUDIO_COLORS.canvas : 'transparent',
+                    color:
+                      activeTab === 'versions'
+                        ? STUDIO_COLORS.ink
+                        : STUDIO_COLORS.inkMuted,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Versions
+                </button>
+              </div>
+            ) : null}
             {/* Sprint 055-A F2 — pencil toggle: only shown when pendingBody + previewActive */}
             {hasPendingBody && previewActive ? (
               <button
@@ -646,28 +712,50 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
 
         <div
           ref={contentBodyRef}
-          onMouseUp={handleContentMouseUp}
+          onMouseUp={activeTab === 'preview' ? handleContentMouseUp : undefined}
           style={{
             flex: 1,
             overflow: 'auto',
             padding: '14px 16px',
           }}
         >
-          {loading ? <Skeleton /> : null}
-          {notFound ? (
+          {activeTab === 'versions' ? (
+            <VersionsTabErrorBoundary>
+              <VersionsTab
+                artifact={target.artifact}
+                artifactId={target.artifactId}
+                conversationId={conversationId ?? null}
+                onReverted={() => {
+                  // Re-fetch the artifact so the Preview tab shows the
+                  // reverted state the next time the operator flips back.
+                  setReloadKey((k) => k + 1)
+                  // Also refresh the ledger / session-artifacts rails by
+                  // invoking the apply callback — callers treat this the
+                  // same as any other write for this artifact.
+                  if (onApplied) onApplied(target.artifact, target.artifactId)
+                }}
+              />
+            </VersionsTabErrorBoundary>
+          ) : null}
+          {activeTab === 'preview' && loading ? <Skeleton /> : null}
+          {activeTab === 'preview' && notFound ? (
             <MissingBanner
               artifactId={target.artifactId}
               typeLabel={typeLabel}
             />
           ) : null}
-          {error ? <ErrorBanner message={error} /> : null}
-          {previewActive ? <PreviewBanner onClear={clearPreview} /> : null}
-          {previewError ? <PreviewErrorBanner message={previewError} /> : null}
+          {activeTab === 'preview' && error ? <ErrorBanner message={error} /> : null}
+          {activeTab === 'preview' && previewActive ? (
+            <PreviewBanner onClear={clearPreview} />
+          ) : null}
+          {activeTab === 'preview' && previewError ? (
+            <PreviewErrorBanner message={previewError} />
+          ) : null}
           {/* 054-A F2 — history view: surface the rationale above the diff.
               The card renders even when rationale is missing, so pre-F1
               rows get a consistent "No rationale recorded" instead of a
               layout shift. Non-history drawer opens omit the card entirely. */}
-          {target?.historyRow ? (
+          {activeTab === 'preview' && target?.historyRow ? (
             <div
               data-testid="artifact-drawer-rationale-slot"
               style={{ marginBottom: 12 }}
@@ -679,7 +767,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
               />
             </div>
           ) : null}
-          {renderDetail ? (
+          {activeTab === 'preview' && renderDetail ? (
             editMode && activeBody ? (
               <>
                 <EditorSwitch
@@ -732,7 +820,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
           {/* 054-A F4 — in history view, surface the stored verification
               result below the diff so the user can see the verdict + judge
               reasoning without having to scroll the chat back. */}
-          {target?.historyRow ? (
+          {activeTab === 'preview' && target?.historyRow ? (
             <VerificationSection row={target.historyRow} />
           ) : null}
         </div>
@@ -1335,5 +1423,80 @@ function VerificationSection({
       ) : null}
     </section>
   )
+}
+
+// ─── Sprint 058-A F3/F6/F7 — inline error boundary for Versions tab ─────
+//
+// Scoped error boundary that isolates a crash inside <VersionsTab> so the
+// Preview tab remains usable. Graceful-degradation spec §1: a rendering
+// bug inside the versions list must never blank out the drawer. The
+// boundary renders a small inline card with a retry button that resets
+// the internal error state.
+
+interface VersionsTabErrorBoundaryState {
+  error: Error | null
+}
+
+class VersionsTabErrorBoundary extends Component<
+  { children: ReactNode },
+  VersionsTabErrorBoundaryState
+> {
+  state: VersionsTabErrorBoundaryState = { error: null }
+
+  static getDerivedStateFromError(error: Error): VersionsTabErrorBoundaryState {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Best-effort log — avoid throwing from the handler itself.
+    // eslint-disable-next-line no-console
+    console.error('[artifact-drawer] VersionsTab crashed', error, info)
+  }
+
+  handleRetry = (): void => {
+    this.setState({ error: null })
+  }
+
+  render(): ReactNode {
+    if (this.state.error) {
+      return (
+        <div
+          role="alert"
+          data-testid="artifact-drawer-versions-error"
+          style={{
+            padding: 12,
+            background: STUDIO_COLORS.dangerBg,
+            color: STUDIO_COLORS.dangerFg,
+            borderLeft: `2px solid ${STUDIO_COLORS.dangerFg}`,
+            borderRadius: 5,
+            fontSize: 12,
+            lineHeight: 1.5,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+          }}
+        >
+          <span>Versions tab failed to render. Preview still works.</span>
+          <button
+            type="button"
+            onClick={this.handleRetry}
+            style={{
+              alignSelf: 'flex-start',
+              fontSize: 11.5,
+              padding: '3px 10px',
+              borderRadius: 4,
+              border: `1px solid ${STUDIO_COLORS.dangerFg}`,
+              background: 'transparent',
+              color: STUDIO_COLORS.dangerFg,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
