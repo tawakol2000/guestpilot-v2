@@ -384,6 +384,18 @@ export function StudioChat({
   const isFlushingRef = useRef(false)
 
   // Flush the first queued message when the agent returns to ready.
+  //
+  // Bugfix (2026-04-22): this effect used to leave the `isFlushingRef`
+  // guard stuck if `sendMessage` failed silently (e.g. network blip the
+  // transport ate without transitioning status to 'error'). The guard is
+  // meant to prevent a same-render double-fire, not a cross-turn wedge.
+  // Two safety nets now protect against silent failure:
+  //   1. `sendMessage` is wrapped in a promise-catch so a rejected
+  //      send clears the ref immediately.
+  //   2. A 5-second safety timeout clears the ref if the transport
+  //      hasn't transitioned status by then — indicating a silent
+  //      no-op we can't directly observe. Any real transition through
+  //      effect B below clears the timeout first.
   useEffect(() => {
     if (status !== 'ready' || queuedMessages.length === 0 || isFlushingRef.current) return
     isFlushingRef.current = true
@@ -393,11 +405,47 @@ export function StudioChat({
     // is visible when it lands.
     setIsAtBottom(true)
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: 'smooth' })
-    sendMessage({ text: first })
+
+    let silenceTimeoutId: ReturnType<typeof setTimeout> | undefined
+    try {
+      // sendMessage may return void or a Promise. Promise.resolve() smooths
+      // over both so we can attach a catch handler without breaking the
+      // void-return case.
+      Promise.resolve(sendMessage({ text: first })).catch((err) => {
+        console.warn('[StudioChat] queued-message flush failed, releasing guard', err)
+        isFlushingRef.current = false
+        toast('Send failed — try again from the composer.')
+      })
+    } catch (err) {
+      // Synchronous throw from sendMessage (rare but possible if the
+      // transport is misconfigured). Release the guard immediately.
+      console.warn('[StudioChat] queued-message flush threw synchronously', err)
+      isFlushingRef.current = false
+      toast('Send failed — try again from the composer.')
+    }
+
+    // Safety timeout: if the transport never transitions away from 'ready'
+    // we'd otherwise wedge the rest of the queue. 5s is long enough to not
+    // race normal submissions (submitted → streaming typically lands in
+    // <200ms) and short enough to avoid visibly blocking the operator.
+    silenceTimeoutId = setTimeout(() => {
+      if (isFlushingRef.current) {
+        console.warn(
+          '[StudioChat] queued-message flush did not transition status within 5s, releasing guard',
+        )
+        isFlushingRef.current = false
+      }
+    }, 5_000)
+
+    return () => {
+      if (silenceTimeoutId) clearTimeout(silenceTimeoutId)
+    }
   }, [status, queuedMessages, sendMessage])
 
   // Reset the flushing guard whenever the agent leaves ready (i.e. it just
-  // picked up the flushed message and started processing).
+  // picked up the flushed message and started processing). 'error' also
+  // counts — the useChat transport enters 'error' on a failed POST, at
+  // which point the queue can re-fire once the user retries.
   useEffect(() => {
     if (status !== 'ready') {
       isFlushingRef.current = false
