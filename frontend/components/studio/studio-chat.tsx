@@ -233,20 +233,36 @@ export function StudioChat({
   // Hoist data-state-snapshot + data-test-pipeline-result to the parent
   // (right rail). Track forwarded ids so rerenders don't re-fire the
   // callback.
+  //
+  // Bugfix (2026-04-22): the previous key was `p.id ?? ${m.id}:${t}`.
+  // During streaming a part can first arrive without `p.id` (fallback
+  // key used), then gain a real id later (real key used) — so BOTH
+  // keys land in the Set and the callback fires twice. The duplicate
+  // showed up as a momentary extra row in the right-rail testResults
+  // panel before the slice(0, 3) window rolled it out. Fix: key by
+  // the stable `${m.id}:${t}:${partIndex}` triple, which doesn't
+  // depend on whether p.id has arrived yet. Parts within a message
+  // stream in-order and don't get reordered in Vercel AI SDK v5, so
+  // the index is stable.
   const forwardedIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     for (const m of messages) {
       const parts = (m as any).parts as Array<Record<string, any>> | undefined
       if (!Array.isArray(parts)) continue
-      for (const p of parts) {
+      for (let partIdx = 0; partIdx < parts.length; partIdx++) {
+        const p = parts[partIdx]
         const t = typeof p?.type === 'string' ? p.type : ''
         if (t !== 'data-state-snapshot' && t !== 'data-test-pipeline-result') continue
-        const id = typeof p.id === 'string' ? p.id : `${m.id}:${t}`
-        if (forwardedIds.current.has(id)) continue
-        forwardedIds.current.add(id)
+        const stableKey = `${m.id}:${t}:${partIdx}`
+        if (forwardedIds.current.has(stableKey)) continue
+        // Only forward once the payload has arrived. Before the data
+        // lands we leave the Set alone so this effect can re-evaluate
+        // when the next streaming render populates `p.data`.
         if (t === 'data-state-snapshot' && p.data) {
+          forwardedIds.current.add(stableKey)
           onStateSnapshot?.(p.data as StateSnapshotData)
         } else if (t === 'data-test-pipeline-result' && p.data) {
+          forwardedIds.current.add(stableKey)
           onTestResult?.(p.data as TestPipelineResultData)
         }
       }
