@@ -12,6 +12,7 @@
 | 1.5 — LOW round | The 7 deferred LOWs | 7 | 6 + 1 investigated–not-a-bug | — | 1 |
 | 2 — broader scans | Studio depth + non-studio backend | 26 | 21 (6 HIGH + 13 MED + 2 LOW) | 4 (3 need user input, 1 in code as KNOWN-GAP) | — |
 | 3 — webhooks/workers/middleware/inbox | Below-the-fold backend + inbox | 9 | 8 (5 MED + 3 LOW) | 1 (WebhookLog retention — needs user input) | — |
+| 4 — frontend deep + backend gap-fill | inbox-v5 + listings + alterations + property-search + message-sync | 9 | 6 (3 HIGH + 2 MED + 1 LOW) | 0 | 1 false positive (MiniCalendar already has the prop sync) |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -84,6 +85,17 @@
 | 39 | LOW | `cb848de` | `backend/src/server.ts` — 10s hard-shutdown deadline so Railway redeploy doesn't leak prisma connections behind long-lived WebSocket clients |
 | 40 | LOW | `cb848de` | `frontend/lib/api.ts` — module-scope `_redirecting` guard against the concurrent-401 redirect storm (silences React Query / SWR error flash) |
 
+## Round 4 — HIGH + MEDIUM + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 41 | HIGH | `17bb37d` | `frontend/components/inbox-v5.tsx` `ai_toggled` handler — write to `aiOn` (not phantom `aiEnabled`); cross-device AI toggle now syncs |
+| 42 | HIGH | `17bb37d` | `services/property-search.service.ts` getBookingLink — Booking.com channel no longer hands out a VRBO URL; uses bookingListingUrl OR direct booking engine |
+| 43 | HIGH | `17bb37d` | `routes/alterations.ts` accept + reject — atomic claim via updateMany w/ updatedAt sentinel (no more duplicate alterationActionLog rows on double-tap) |
+| 44 | MEDIUM | `17bb37d` | `frontend/components/inbox-v5.tsx` 30s refresh — propagate status/starred/checkInStatus/channel/reservationStatus on merge (multi-device sync gap) |
+| 45 | MEDIUM | `17bb37d` | `services/message-sync.service.ts` edit broadcast — emit real sentAt + `edited:true`; OMIT lastMessageAt; inbox handler skips sidebar/unread/sort updates on edits |
+| 46 | LOW | `5acdf59` | `frontend/components/listings-v5.tsx` bulk save — snapshot dirty kbs before await chain (closes the React-batching dependency) |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -94,3 +106,4 @@
 | Mid round 2 (post-HIGH) | 509/509 0 fail | 349/349 |
 | End round 2 (post-LOW + non-studio) | 538/538 0 fail | 352/352 |
 | End round 3 | 538/538 0 fail | 352/352 |
+| End round 4 | 538/538 0 fail | 352/352 |
