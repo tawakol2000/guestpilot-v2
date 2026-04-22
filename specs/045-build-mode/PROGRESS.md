@@ -2351,3 +2351,87 @@ Nothing outside the allow-list was modified. `reasoning-line.tsx` was not modifi
 - Auto-name suite needed one mock-export addition (`apiGetSessionArtifacts`) because the surface's new bootstrap path calls it. Mechanical — no auto-name logic touched.
 
 **Branch posture:** `feat/058-session-a` at `e65078e`. Stream B3 commits `fc8bbb6 · 58556f7 · 9b6b517 · e65078e` stack on Stream A/B/B2 (`00d2f5e`).
+
+---
+
+## Sprint 058 — consolidated close-out
+
+**Final branch tip:** `48d022b` on `feat/058-session-a` (branched from `feat/057-session-a` @ `a1fdf87`).
+
+### All nine gates landed
+
+| Gate | Description | Status | Key commits |
+|------|-------------|--------|-------------|
+| F1 | Cache fix | ✅ contract-tested skeleton per spec §6 MCP-risk. Runtime switch default OFF. Staging verification of `cached_fraction ≥ 0.70` deferred to follow-up sprint that lands MCP tool-call loop in direct path. | `95789de` |
+| F2 | Cancel pending plan row | ✅ | `4a0aec7`, `a7d900d` |
+| F3 | Versions tab + `/revert-to` | ✅ | `0a704a1`, `00d2f5e`, `fc8bbb6` |
+| F4 | Session-diff summary tool + card | ✅ | `cacecac`, `ae66754`, `e65078e` |
+| F5 | Sticky tenant-state banner | ✅ | `ae66754`, `e65078e` |
+| F6 | Named version tags | ✅ (write-ledger chip deferred) | `4a0aec7`, `0a704a1`, `00d2f5e`, `fc8bbb6` |
+| F7 | Arbitrary-version diff | ✅ | `00d2f5e`, `fc8bbb6` |
+| F8 | Enhance-prompt ✨ button | ✅ | `d00b126`, `9b6b517` |
+| F9a | React #310 error boundary | ✅ boundary + hook-stability test. Root-cause verdict: pending (no staging repro). | `5a6149a` |
+| F9b | Reasoning-line dedup | ✅ | `e8950c0` |
+| F9c | SDK step-* silent drop | ✅ | `e8950c0` |
+| F9d | Session-artifacts rail hydration | ✅ | `a53d320`, `58556f7` |
+| F9e | Composer typeable during streaming | ✅ verified + regression test | `2434cb7` |
+| F9f | Session auto-naming + empty filter | ✅ | `3b953fa` |
+
+### Test deltas
+
+| Suite | 057-A close | 058-A close | Delta |
+|-------|-------------|-------------|-------|
+| Frontend (vitest --run) | 30 files / 260 tests | 45 files / 347 tests | +15 files / +87 tests |
+| Backend (node:test via tsx) | ~408 tests + 1 pre-existing env failure | 423 tests + same 1 pre-existing failure | +15 tests |
+
+Pre-existing failure: `backend/src/build-tune-agent/preview/__tests__/tenant-config-bypass.test.ts` fails on missing `JWT_SECRET` env var — not caused by 058 work.
+
+Backend typecheck `npx tsc --noEmit` clean.
+
+### F1 — deferred staging verification (operator-owned)
+
+The numerical deliverable (`cached_fraction ≥ 0.70`) requires a live staging conversation with `BUILD_AGENT_DIRECT_TRANSPORT=true`. Contract-tested skeleton ships with 13 tests pinning block structure, cache_control placement, mutation-safety, env-flag parsing. Operator verification:
+
+```
+BUILD_AGENT_DIRECT_TRANSPORT=true npm run dev
+# run a 2-turn BUILD conversation
+grep "\[TuningAgent\] usage" backend/logs/*.log | tail -5
+```
+
+**Acknowledged scope reduction:** Stream A determined that reproducing the BUILD agent's MCP integration (~18 tools, four hook families, SDK-managed session persistence, SDKMessage-shaped stream bridge) in a direct-transport path is a multi-sprint project. Ship strategy: contract-test the params builder now; land the runtime swap in a follow-up sprint. `runtime-direct.ts` header documents exactly what remains.
+
+### Screenshot-bug verdict
+
+| # | Bug | Outcome |
+|---|-----|---------|
+| 1 | React #310 crash | Error boundary ships. Root-cause pending. |
+| 2 | Duplicate "Agent reasoning · view" | Fixed — classifier merge + flex-gap |
+| 3 | "(unsupported card: step-start)" | Fixed — silent-drop allow-list |
+| 4 | Session-artifacts rail empty after reload | Fixed — backend endpoint + bootstrap hydration |
+| 5 | Composer disabled while streaming | Already fixed in source; regression test locks it |
+| 6 | Session list clutter + generic names | Fixed — auto-name + empty filter + toggle |
+
+**5 of 6 fully fixed.** Bug 1 shipped a safety net; deep root-cause pass deferred.
+
+### Deferrals / follow-up items (sprint-059 triage)
+
+1. **F1 runtime transport swap** — runtime switch to direct `@anthropic-ai/sdk` + MCP tool-call loop + hooks + session persistence + stream-event mapping. Tracked in `runtime-direct.ts` header.
+2. **F9a React #310 root cause** — needs staging-repro session.
+3. **F6 write-ledger tag chip** — trivial add when ledger is next touched.
+
+### No-stream-failure reports
+
+None of `058-stream-{A,B,B2,B3,C}-failure.md` were written. Stream B stopped cleanly at 3/8 (recovered via B2 + B3); Stream B2 hit an infra API connection error mid-dispatch (WIP committed by orchestrator as `00d2f5e`; B3 finished).
+
+### Smoke checklist (user to verify on staging when reachable)
+
+- [ ] 3-artifact plan, cancel row 2 mid-flight → row 2 flips to × cancelled, agent skips to row 3
+- [ ] Artifact drawer → Versions tab → revert to third-from-latest → Preview shows reverted body
+- [ ] Tag a version as "stable", write 3 more versions, jump-to-tag "stable", revert
+- [ ] Pick two Versions-tab rows, click "Diff A → B", revert to A
+- [ ] Sloppy prompt + ✨ → rewritten; ⌘Z within 15s restores original
+- [ ] Multi-artifact turn ends with session-diff card tally
+- [ ] TenantStateBanner always visible at top of chat
+- [ ] Reload page → session-artifacts rail populated, session list no empty rows, current session has auto-name
+- [ ] Long reasoning turn → no duplicate reasoning, no step-start card, composer typeable while streaming, no #310 crash
+- [ ] F1 cache verification per §F1 block above (pending runtime transport swap)
