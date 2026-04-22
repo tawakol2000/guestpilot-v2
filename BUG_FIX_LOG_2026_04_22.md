@@ -15,6 +15,7 @@
 | 4 — frontend deep + backend gap-fill | inbox-v5 + listings + alterations + property-search + message-sync | 9 | 6 (3 HIGH + 2 MED + 1 LOW) | 0 | 1 false positive (MiniCalendar already has the prop sync) |
 | 5 — second-order: Prisma + middleware + utils | error.ts + reservationSync + lib/socket + sop singleton + encryption | 6 | 5 (1 HIGH + 3 MED + 1 LOW) | 1 (broadcastCritical multi-socket dedup architectural; JWT_SECRET rotation runbook) | — |
 | 6 — third-order: races + leaks + sync edge | msg-sync sentinel + tenant-conn drift + calendar fetch race + inbox dedup | 5 | 4 (1 MED + 3 LOW) | 1 MED (ai.service copilot-suggestion landing; sacred file) | — |
+| 7 — areas not yet visited | hostaway-callback auth + handoff partial-image + calendar cache + reservationSync overlap | 4 | 4 (2 MED + 2 LOW) | 0 | — |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -117,6 +118,15 @@
 | 54 | LOW | `4354aa2` | `frontend/components/calendar-v5.tsx` — request-id ref pattern (rapid page-clicks no longer let a stale earlier fetch overwrite a later one) |
 | 55 | LOW | `4354aa2` | `frontend/components/inbox-v5.tsx` — client-side seenMessageIds Map dedup (5-min TTL); belt-and-suspenders for broadcastCritical's timeout-then-retry duplicate delivery |
 
+## Round 7 — MEDIUM + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 56 | MEDIUM | `af4d26d` | `routes/hostaway-connect.ts` — gate /callback behind authMiddleware; resolve tenant from authenticated req.tenantId not untrusted payload.accountId; add defence-in-depth account-mismatch check (no more forged-JWT DoS overwriting victim's stored token) |
+| 57 | MEDIUM | `af4d26d` | `services/doc-handoff.service.ts` doSendHandoff — track deliveredUrls inline; mark SENT with shortfall on partial-image failure (no more duplicate WhatsApp passport delivery on retry) |
+| 58 | LOW | `af4d26d` | `services/calendar.service.ts` — 15-min cache eviction sweep (bounded memory on long-uptime pods) |
+| 59 | LOW | `be30fa9` | `jobs/reservationSync.job.ts` — module-scope overlap guard (parity with messageSync.job's 2026-04-23 fix) |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -130,3 +140,4 @@
 | End round 4 | 538/538 0 fail | 352/352 |
 | End round 5 | 538/538 0 fail | 352/352 |
 | End round 6 | 538/538 0 fail | 352/352 |
+| End round 7 | 538/538 0 fail | 352/352 |
