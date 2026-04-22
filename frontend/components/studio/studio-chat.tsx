@@ -22,11 +22,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
-import { ArrowUp, AlertTriangle } from 'lucide-react'
+import { ArrowUp, AlertTriangle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken } from '@/lib/api'
 import {
   apiAcceptSuggestedFix,
+  apiEnhancePrompt,
   apiRejectSuggestedFix,
   buildTurnEndpoint,
   type BuildPlanData,
@@ -241,6 +242,58 @@ export function StudioChat({
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)
 
+  // Sprint 058-A F8 — composer ✨ enhance-prompt button. Nano rewrites
+  // the operator's draft into a tighter, clearer instruction. The
+  // pre-enhance text is kept for up to 15 seconds so ⌘Z can restore it.
+  // Clearing on next submit prevents the undo-slot from resurrecting
+  // stale text in a later turn.
+  const [enhancing, setEnhancing] = useState(false)
+  const preEnhanceDraftRef = useRef<{ text: string; until: number } | null>(null)
+  const enhanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearEnhanceUndoSlot = useCallback(() => {
+    preEnhanceDraftRef.current = null
+    if (enhanceTimeoutRef.current) {
+      clearTimeout(enhanceTimeoutRef.current)
+      enhanceTimeoutRef.current = null
+    }
+  }, [])
+
+  const handleEnhanceClick = useCallback(async () => {
+    const current = draft
+    if (current.trim().length < 10 || enhancing) return
+    setEnhancing(true)
+    try {
+      const res = await apiEnhancePrompt(current, conversationId)
+      if (res.ok && typeof res.rewrite === 'string' && res.rewrite.trim()) {
+        // Stash pre-enhance so ⌘Z can restore within 15s.
+        if (enhanceTimeoutRef.current) clearTimeout(enhanceTimeoutRef.current)
+        preEnhanceDraftRef.current = {
+          text: current,
+          until: Date.now() + 15_000,
+        }
+        enhanceTimeoutRef.current = setTimeout(() => {
+          preEnhanceDraftRef.current = null
+          enhanceTimeoutRef.current = null
+        }, 15_000)
+        setDraft(res.rewrite)
+      } else {
+        // Graceful degradation — don't clobber the draft, just explain.
+        toast("Couldn't enhance — try again")
+      }
+    } catch {
+      toast("Couldn't enhance — try again")
+    } finally {
+      setEnhancing(false)
+    }
+  }, [draft, enhancing, conversationId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps — setDraft is stable
+  useEffect(() => {
+    return () => {
+      if (enhanceTimeoutRef.current) clearTimeout(enhanceTimeoutRef.current)
+    }
+  }, [])
+
   // Sprint 050 A2 — tool-call drill-in drawer. `lastChipRef` captures
   // the element that opened the drawer so Esc/close restores focus.
   const [activeToolPart, setActiveToolPart] = useState<ToolCallDrawerPart | null>(null)
@@ -343,6 +396,9 @@ export function StudioChat({
         // F9f — still count as a user message for auto-naming purposes;
         // the parent decides whether it's actually the session's first.
         onUserMessageSent?.(text)
+        // F8 — any stashed pre-enhance undo slot becomes stale once the
+        // enhanced text has been committed to the queue.
+        clearEnhanceUndoSlot()
         return
       }
 
@@ -350,9 +406,12 @@ export function StudioChat({
       // F9f — notify the parent so it can auto-name the session on the
       // first substantive user message.
       onUserMessageSent?.(text)
+      // F8 — clear the undo slot so a later ⌘Z doesn't resurrect a
+      // draft that has already been sent.
+      clearEnhanceUndoSlot()
       sendMessage({ text })
     },
-    [draft, isBusy, queuedMessages.length, sendMessage, onUserMessageSent],
+    [draft, isBusy, queuedMessages.length, sendMessage, onUserMessageSent, clearEnhanceUndoSlot],
   )
 
   // Surface stream errors as toasts (once per distinct message).
@@ -452,6 +511,23 @@ export function StudioChat({
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 onSubmit(e as unknown as React.FormEvent)
+                return
+              }
+              // Sprint 058-A F8 — ⌘Z (mac) / Ctrl+Z (others) within 15s of an
+              // ✨ enhance restores the pre-enhance draft. No-op once the
+              // window expires or no undo slot is stashed.
+              if (
+                (e.metaKey || e.ctrlKey) &&
+                !e.shiftKey &&
+                e.key.toLowerCase() === 'z'
+              ) {
+                const slot = preEnhanceDraftRef.current
+                if (slot && Date.now() < slot.until) {
+                  e.preventDefault()
+                  setDraft(slot.text)
+                  clearEnhanceUndoSlot()
+                  toast('Restored your original')
+                }
               }
             }}
             rows={2}
@@ -527,6 +603,31 @@ export function StudioChat({
               )}
             </div>
           )}
+          {/* Sprint 058-A F8 — enhance-prompt ✨ button. Shown once the
+              operator's draft crosses 10 chars. Clicking replaces the
+              draft with a Nano rewrite; the pre-enhance text is stashed
+              for 15s so ⌘Z in the textarea can restore it. A failed
+              call toasts "Couldn't enhance — try again" and leaves the
+              draft untouched. */}
+          {draft.trim().length >= 10 ? (
+            <button
+              type="button"
+              data-testid="composer-enhance-button"
+              disabled={enhancing}
+              onClick={handleEnhanceClick}
+              aria-label="Enhance draft with AI"
+              title="Enhance draft (AI)"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md disabled:opacity-60"
+              style={{
+                background: STUDIO_COLORS.surfaceSunken,
+                color: enhancing ? STUDIO_COLORS.inkSubtle : STUDIO_COLORS.accent,
+                border: `1px solid ${STUDIO_COLORS.hairline}`,
+                cursor: enhancing ? 'progress' : 'pointer',
+              }}
+            >
+              <Sparkles size={15} strokeWidth={2.25} aria-hidden />
+            </button>
+          ) : null}
           <button
             type="submit"
             disabled={!canSend}
