@@ -218,29 +218,45 @@ export function resolveVariables(
     const usedVars = new Set<string>();
 
     for (const template of blockTemplates) {
-      // Replace all {VARIABLE} references in this block with actual data
+      // Replace all {VARIABLE} references in this block with actual data.
+      //
+      // Bugfix (2026-04-22): the previous implementation walked each regex
+      // match against `template` and ran one `blockText.replace(literal,
+      // value)` per match. String-form replace hits only the first
+      // occurrence, so if a block referenced `{FOO}` twice and any
+      // iteration skipped (unknown var, out-of-scope), the accounting
+      // would leak a raw `{FOO}` into the rendered prompt. Rewritten to
+      // walk DISTINCT matched names once and substitute via split/join —
+      // all occurrences collapse regardless of order.
       let blockText = template;
       const blockRegex = new RegExp(VARIABLE_PATTERN.source, 'g');
-      let blockMatch: RegExpExecArray | null;
+      const referencedVars = new Set<string>();
+      for (const match of template.matchAll(blockRegex)) {
+        referencedVars.add(match[1]);
+      }
+
       let hasContent = false;
+      for (const varName of referencedVars) {
+        if (!VARIABLE_NAMES.has(varName) || !scopedVars.has(varName)) {
+          // Unknown / out-of-scope — leave the literal `{VAR}` in place
+          // so the output linter flags the typo downstream. Don't silently
+          // strip.
+          continue;
+        }
+        const value = dataMap[varName] || '';
+        const varDef = TEMPLATE_VARIABLES.find((v) => v.name === varName);
+        usedVars.add(varName);
 
-      while ((blockMatch = blockRegex.exec(template)) !== null) {
-        const varName = blockMatch[1];
-        if (VARIABLE_NAMES.has(varName) && scopedVars.has(varName)) {
-          const value = dataMap[varName] || '';
-          const varDef = TEMPLATE_VARIABLES.find(v => v.name === varName);
-          usedVars.add(varName);
-
-          if (value.trim()) {
-            blockText = blockText.replace(`{${varName}}`, value);
-            hasContent = true;
-          } else if (varDef?.emptyDefault !== null) {
-            blockText = blockText.replace(`{${varName}}`, varDef?.emptyDefault || '');
-            hasContent = true;
-          } else {
-            // emptyDefault is null — omit this variable's value
-            blockText = blockText.replace(`{${varName}}`, '');
-          }
+        const token = `{${varName}}`;
+        if (value.trim()) {
+          blockText = blockText.split(token).join(value);
+          hasContent = true;
+        } else if (varDef?.emptyDefault !== null) {
+          blockText = blockText.split(token).join(varDef?.emptyDefault || '');
+          hasContent = true;
+        } else {
+          // emptyDefault is null — omit every reference.
+          blockText = blockText.split(token).join('');
         }
       }
 
