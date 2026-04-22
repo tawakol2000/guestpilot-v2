@@ -2477,5 +2477,54 @@ Spec expected tip `48d022b`; actual tip `86ab8ec` = `48d022b` + commit `86ab8ec 
 | F1.3 | TuningMessage-replay history (Stream B, worktree `feat/059-session-a-stream-b`) | `8ba7285` | 347/347 (primary wt; Stream B's own wt saw a flake — did not reproduce) | 432+1env / 423 | `loadConversationHistory` / `persistAssistantTurn`. Tool_use + tool_result blocks preserved verbatim. Last-50-turn window w/ WARN on truncation; token-budget log for future compaction. 9 tests. |
 | F1.4 | Anthropic raw-stream → SDKMessage bridge + 3 golden fixtures (Stream B) | `8ce7957` | 347/347 | 463+1env / 423 | Option (a) — adapt raw events to SDKMessage, feed existing `bridgeSDKMessage()` unchanged. Three fixtures: text-only / one-tool-call / thinking-interleaved. Cross-gate parity test `bridgeSDKMessage(bridgeAnthropicStream(raw)) === fixture.expectedUIChunks` is the F1 regression gate. 12 tests. `anthropic-stream-bridge.ts` declares a local structural `BridgedSDKMessage`/`ToolResultShape` (not importing from `./mcp-router`) since Stream A hadn't landed at the time; Stream A's `McpToolResult` is structurally compatible — F1.5 can import the real type. |
 | merge-A+B | Merge streams A and B | `7c08ba2` | 347/347 | 463+1env / 423 | Clean merge, zero file overlap. 40 new tests total (Stream A: 19, Stream B: 21). Baseline env-var fail unchanged. |
+| F1.5 | Direct-runner + SDK-extraction + dispatcher (Stream C) | `00bdff3` | 346/347 (see below) | 472+1env / 463 | `runTuningAgentTurn` split into `sdk-runner.ts` (pure rename) + `direct/runner.ts` (wires F1.1–F1.4) + `direct/wire-direct.ts` (glue) + thin `runtime.ts` dispatcher. Flag default OFF. 9 tests (6 direct-runner + 3 dispatcher). `wire-direct.ts` currently returns `{status:'fallback', reason:'api_error'}` because the tools-array export out of `tools/index.ts` is untouchable this sprint (DO NOT TOUCH §4); dispatcher test pins the fallback-to-SDK behaviour. Runner + all fallback reasons are unit-tested end-to-end so 060 just needs to plumb the tools array and flip the flag. Frontend 346/347: `studio-error-boundary.test.tsx` fails consistently in this worktree (Stream B saw the same; did NOT reproduce on orchestrator primary per kickoff). No frontend file touched in this commit; failure pre-existing. |
 
+## F1.6 pending-user-canary
+
+**This sprint cannot deploy to Railway staging.** Per kickoff protocol: orchestrator records the canary plan here; user executes.
+
+### Deploy instructions
+
+1. **Branch tip to deploy.** After this commit lands, the deploy SHA is the F1.6-doc commit immediately following the F1.5 commit (`00bdff3`) — i.e. whatever is the tip of `feat/059-session-a-stream-c` when F9a is merged back to `feat/059-session-a`. See §close-out below for the final SHA.
+2. **Railway env flag.** Set `BUILD_AGENT_DIRECT_TRANSPORT=true` on the staging service only. Production stays OFF.
+3. **Known-behaviour caveat.** Today `wire-direct.ts` short-circuits to `fallback → SDK path`. The canary effectively exercises the SDK path on this SHA. The flag wiring + dispatcher are nonetheless observable:
+   - **Expected on turn 1:** `[TuningAgent] direct fell back: api_error — running SDK path` WARN once per turn.
+   - **Expected on turn 2 usage line:** `cached_fraction ≥ 0.70` (SDK path auto-prefix caching — the baseline we track for F1 completion in 060).
+   - The canary lives to (a) prove the dispatcher + fallback wiring doesn't break the main chat flow and (b) capture a pre-wire baseline of cached_fraction on the SDK path for 060's apples-to-apples comparison once direct is live.
+
+### Canary protocol
+
+Run three independent BUILD-mode conversations on staging. For each:
+
+1. **Turn 1.** Ask: `create a FAQ about parking`. Expect a coherent reply with an FAQ-creation artifact card.
+2. **Turn 2.** Ask: `make the same FAQ more detailed`. Expect a follow-up artifact row; the agent should read prior turn's artifact and edit it.
+
+Capture the three `[TuningAgent] usage ...` log lines from turn 2 verbatim:
+
+```
+grep '\[TuningAgent\] usage' staging-logs.txt
+```
+
+And the fallback counter (zero is the goal — on wire-direct stub SHA, three fallbacks per conversation are expected and documented):
+
+```
+grep '\[TuningAgent\] direct fell back' staging-logs.txt | wc -l
+```
+
+### Acceptance (F1.6 gate)
+
+- `cached_fraction ≥ 0.70` on turn 2 across ALL 3 conversations, AND
+- `build_direct_fallback_total == 0` once `wire-direct.ts` is live-wired in 060 (today we expect 1 WARN per turn, documenting the pre-wire gap).
+
+### User-filled results
+
+| conv | turn-2 usage line (verbatim) | cached_fraction | fallback WARNs |
+|---|---|---|---|
+| 1 | _(paste here)_ |  |  |
+| 2 | _(paste here)_ |  |  |
+| 3 | _(paste here)_ |  |  |
+
+### Staging soak (F9a)
+
+F9a staging soak: 10 mixed turns (chat + artifact edits), screenshot browser console at 0 errors. **Deferred to user.**
 
