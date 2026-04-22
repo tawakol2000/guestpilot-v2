@@ -62,6 +62,8 @@ export interface DirectToolDefinition {
    * the array — caches the full tools prefix on subsequent turns.
    */
   cache_control?: { type: 'ephemeral' };
+  /** Index signature so the interface satisfies `Record<string, unknown>`. */
+  [key: string]: unknown;
 }
 
 export interface DirectMessagesCreateParams {

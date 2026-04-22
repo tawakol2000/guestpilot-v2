@@ -32,6 +32,7 @@ export const TOOL_VERB_MAP: Record<string, string | ((args: Record<string, unkno
   get_version_history:    'Checked versions',
   rollback:               'Rolled back',
   search_replace:         'Replaced text',
+  emit_session_summary:   'Session recap',
 }
 
 const SERVER_PREFIX = 'mcp__tuning-agent__'
