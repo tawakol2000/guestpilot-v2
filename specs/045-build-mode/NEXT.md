@@ -77,3 +77,43 @@ Default is **A**. The user should say otherwise if they want B/C/D/E/F.
 - Run baseline tests: `cd frontend && npm test -- --run` (expect 349 — was 347; +2 from 059 F9a repro test) + `cd backend && find src -name "*.test.ts" -not -path "*/integration/*" | xargs npx tsx --test` (expect 472 passing + 1 env-var failure — was 463; +9 from 059 F1.5).
 - If the frontend's `studio-error-boundary.test.tsx` still fails consistently, that's a pre-existing worktree-specific flake Stream C observed (Stream B also saw it; did NOT reproduce on orchestrator's primary worktree per 059 kickoff). Treat as a known-unreliable test; fix independently.
 - Write the spec into `specs/045-build-mode/sprint-060-session-a.md` before dispatching anything. Overnight discipline holds.
+
+---
+
+## Deferred bugs from 2026-04-22 studio-agent bug-hunt pass
+
+Two scan agents swept the Studio backend + frontend + adjacent services after the `get_context` chat-history-truncation fix. Five bugs were fixed this pass (2× HIGH, 3× MEDIUM). The items below were triaged **defer** — all LOW severity, cosmetic or edge-case, and safe to sit until they intersect other work.
+
+### LOW — studio-chat: test-pipeline / state-snapshot parts forward twice during streaming
+- **File:** `frontend/components/studio/studio-chat.tsx:237-254`.
+- **Symptom:** `forwardedIds` set keys on `p.id ?? ${m.id}:${t}`. During SSE streaming a part may first arrive without `p.id` (fallback key used) then gain an id later (real key used). Both land in the Set → the upstream `onStateSnapshot` / `onTestResult` callbacks fire twice for the same payload. `handleTestResult` prepends every call, but `.slice(0, 3)` caps the right-rail rows so the duplicate is cosmetic and self-healing as the window rolls.
+- **Fix sketch:** dedupe by `${m.id}:${t}:${p.index ?? ''}` or gate forwarding until `p.id` is populated / the part is terminal.
+
+### LOW — studio-surface: auto-naming skipped when first queued message is flushed
+- **File:** `frontend/components/studio/studio-chat.tsx:387-397` vs `studio-surface.tsx:328-346`.
+- **Symptom:** When an operator queues their first-ever message and it's too short to auto-title, then queues a longer follow-up, the flush path sends via `sendMessage` but does NOT re-invoke `onUserMessageSent`. The surface's fallback-name logic never gets the longer text and the session keeps the generic title.
+- **Fix sketch:** call `onUserMessageSent?.(first)` inside the flush effect too.
+
+### LOW — template-variable: duplicate `{VAR}` in a content block can leak raw token
+- **File:** `backend/src/services/template-variable.service.ts:227-245`.
+- **Symptom:** `blockText.replace(`{${varName}}`, value)` replaces ONE occurrence. If a content block references `{OPEN_TASKS}` twice, the second stays literal. Edge case; almost never happens in practice.
+- **Fix sketch:** `blockText = blockText.split(`{${varName}}`).join(value)` — replaces all.
+
+### LOW — tenant-state: JSON-encoded slot value with `<!-- DEFAULT: change me -->` inside is treated as defaulted
+- **File:** `backend/src/services/tenant-state.service.ts:207-213`.
+- **Symptom:** Non-string slot values go through `JSON.stringify()` before the `includes(DEFAULT_MARKER)` check. A manager who stores escaped docs containing the sentinel string gets their slot silently marked defaulted and interview-graduation blocked.
+- **Fix sketch:** only test for `DEFAULT_MARKER` when `typeof raw === 'string'`; treat any other non-empty JSON as filled.
+
+### LOW — emit_session_summary: verify turnFlags parity on direct-transport path
+- **File:** `backend/src/build-tune-agent/tools/emit-session-summary.ts:82-123`.
+- **Symptom:** The "once per turn" invariant depends on `c.turnFlags` being freshly allocated per turn. SDK path does this; the direct transport path (today inactive via wire-direct.ts fallback) needs a verifier test before it goes live so the invariant doesn't become "once per process."
+- **Fix sketch:** add a direct-runner test that asserts a second `emit_session_summary` in the same process but different turn succeeds.
+
+### LOW — studio-chat queue-flush: add deterministic test of the silent-error wedge fix
+- **File:** `frontend/components/studio/__tests__/` (new test).
+- **Symptom:** The 2026-04-22 fix adds a 5s safety timeout + Promise.catch on `sendMessage`. Verified manually but no unit test. A Vercel AI SDK transport mock would pin the behaviour.
+- **Fix sketch:** vitest harness that mocks `useChat.sendMessage` to throw synchronously, and one that returns an unresolving promise — assert the ref releases within 5.1s.
+
+### LOW — all fixes this pass would benefit from `tsc --noEmit` in the after-gate routine
+- **Context:** 059-A's `anthropic-stream-bridge.test.ts` shipped with two TS type errors that passed `tsx --test` (transpile-only) but failed Railway's `tsc` step. The 2026-04-22 fixes ran `tsc --noEmit` as part of the checklist. The sprint-060 kickoff should codify `tsc --noEmit` as a required after-gate step, not just a local habit.
+
