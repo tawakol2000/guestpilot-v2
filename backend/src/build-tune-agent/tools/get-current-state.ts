@@ -39,10 +39,35 @@ export interface SystemPromptSection {
   range: [number, number];
 }
 
-export interface CurrentSystemPromptPayload {
+export interface CurrentSystemPromptVariant {
   text: string;
   sections: SystemPromptSection[];
+}
+
+export interface CurrentSystemPromptPayload {
+  /**
+   * Coordinator-variant text. Preserved as top-level `text` for backward
+   * compatibility with existing consumers (frontend state-snapshot card,
+   * forced-first-turn summary panel) that read `systemPrompt.text`.
+   */
+  text: string;
+  /** Coordinator-variant section anchors — see `text` above. */
+  sections: SystemPromptSection[];
   version: number;
+  /**
+   * Bugfix (2026-04-22): `write_system_prompt` takes `variant: 'coordinator'
+   * | 'screening'`. Previously, `get_current_state(scope:'system_prompt')`
+   * exposed ONLY the coordinator variant, so if the manager asked to
+   * review/edit the screening prompt the agent saw `text: ''` and either
+   * hallucinated changes or claimed "no prompt configured" — same class of
+   * silent-data-drop bug as the `get_context.recentMessages` fix. Both
+   * variants are now surfaced under `variants.*` and the agent can also
+   * read either by name.
+   */
+  variants: {
+    coordinator: CurrentSystemPromptVariant;
+    screening: CurrentSystemPromptVariant;
+  };
 }
 
 export interface CurrentSopPayload {
@@ -104,7 +129,7 @@ export type CurrentStatePayload =
 const DESCRIPTION = `Return the actual text of the tenant's configured artifacts. Pick the narrowest scope that answers the question at hand — calling wider than you need burns context tokens the rest of the turn could use.
 SCOPES:
   'summary' — counts + ids only (cheap). Called automatically on the first turn of every conversation; follow-up calls only when counts alone answer the question.
-  'system_prompt' — full coordinator text + sections[]. Call before proposing any SYSTEM_PROMPT edit so the suggested-fix target can reference a real sectionId.
+  'system_prompt' — full text + sections[] for BOTH variants (coordinator AND screening) under the 'variants' field; top-level 'text'/'sections' are the coordinator for back-compat. Call before proposing any SYSTEM_PROMPT edit so the suggested-fix target can reference the correct variant and a real sectionId.
   'sops' — all SopDefinitions with variants + property overrides. Call before SOP_CONTENT / SOP_ROUTING edits.
   'faqs' — all FaqEntries (global + property-scoped). Call before FAQ edits or when evaluating coverage gaps.
   'tools' — all ToolDefinitions (system + custom). Call before TOOL_CONFIG edits.
@@ -183,14 +208,29 @@ export async function fetchSystemPromptPayload(
     where: { tenantId },
     select: {
       systemPromptCoordinator: true,
+      systemPromptScreening: true,
       systemPromptVersion: true,
     },
   });
-  const text = cfg?.systemPromptCoordinator ?? '';
+  const coordinatorText = cfg?.systemPromptCoordinator ?? '';
+  const screeningText = cfg?.systemPromptScreening ?? '';
+  const coordinator: CurrentSystemPromptVariant = {
+    text: coordinatorText,
+    sections: deriveSystemPromptSections(coordinatorText),
+  };
+  const screening: CurrentSystemPromptVariant = {
+    text: screeningText,
+    sections: deriveSystemPromptSections(screeningText),
+  };
   return {
-    text,
-    sections: deriveSystemPromptSections(text),
+    // Top-level fields preserved for back-compat with existing consumers.
+    text: coordinator.text,
+    sections: coordinator.sections,
     version: cfg?.systemPromptVersion ?? 0,
+    // New: both variants addressable by name so the agent can reason about
+    // whichever one the manager is asking to edit (`write_system_prompt`
+    // takes the same variant enum).
+    variants: { coordinator, screening },
   };
 }
 

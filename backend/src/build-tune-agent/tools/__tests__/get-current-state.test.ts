@@ -27,7 +27,7 @@ type Row = Record<string, any>;
 
 function makeFakePrisma(opts?: {
   tenantId?: string;
-  systemPrompt?: { text: string; version: number };
+  systemPrompt?: { text: string; version: number; screening?: string };
   sops?: Array<{
     id: string;
     category: string;
@@ -66,6 +66,7 @@ function makeFakePrisma(opts?: {
         if (!opts?.systemPrompt) return null;
         return {
           systemPromptCoordinator: opts.systemPrompt.text,
+          systemPromptScreening: opts.systemPrompt.screening ?? null,
           systemPromptVersion: opts.systemPrompt.version,
         };
       },
@@ -175,6 +176,55 @@ test('get_current_state system_prompt: missing TenantAiConfig yields empty text 
   assert.equal(payload.systemPrompt.text, '');
   // Empty text -> zero sections (not an invented "body" span).
   assert.equal(payload.systemPrompt.sections.length, 0);
+  // Bugfix 2026-04-22: both variants ALWAYS present even when empty, so
+  // the agent can deterministically destructure `variants.screening` without
+  // optional-chaining. Empty variant = '' text + [] sections.
+  assert.ok(payload.systemPrompt.variants, 'variants always present');
+  assert.equal(payload.systemPrompt.variants.coordinator.text, '');
+  assert.equal(payload.systemPrompt.variants.coordinator.sections.length, 0);
+  assert.equal(payload.systemPrompt.variants.screening.text, '');
+  assert.equal(payload.systemPrompt.variants.screening.sections.length, 0);
+});
+
+test('get_current_state system_prompt: returns BOTH coordinator and screening variants', async () => {
+  // Regression test for 2026-04-22 silent-drop bug: fetchSystemPromptPayload
+  // previously selected only `systemPromptCoordinator`, so an agent asked
+  // to review the screening prompt received `text: ''` and either
+  // hallucinated changes or claimed no screening prompt was configured.
+  const coordinatorText = '<section id="coord">You are the coordinator.</section>';
+  const screeningText = '<section id="intake">You screen inquiry-stage guests.</section>';
+  const prisma = makeFakePrisma({
+    systemPrompt: { text: coordinatorText, screening: screeningText, version: 9 },
+  });
+  const payload = await buildCurrentStatePayload(prisma, 't1', 'system_prompt');
+  if (payload.scope !== 'system_prompt') throw new Error('narrowing');
+
+  // Back-compat: top-level `text`/`sections` still expose the coordinator.
+  assert.equal(payload.systemPrompt.text, coordinatorText);
+  assert.equal(payload.systemPrompt.sections.length, 1);
+  assert.equal(payload.systemPrompt.sections[0].id, 'coord');
+  assert.equal(payload.systemPrompt.version, 9);
+
+  // New: both variants surfaced under `variants.*` with their own sections.
+  assert.equal(payload.systemPrompt.variants.coordinator.text, coordinatorText);
+  assert.equal(payload.systemPrompt.variants.coordinator.sections[0].id, 'coord');
+  assert.equal(payload.systemPrompt.variants.screening.text, screeningText);
+  assert.equal(payload.systemPrompt.variants.screening.sections.length, 1);
+  assert.equal(payload.systemPrompt.variants.screening.sections[0].id, 'intake');
+});
+
+test('get_current_state system_prompt: screening null in DB surfaces as empty variant, coordinator unaffected', async () => {
+  const coordinatorText = 'plain coordinator body';
+  const prisma = makeFakePrisma({
+    // No `screening` key — fake returns null for that column, same as a
+    // tenant who has never configured a screening prompt.
+    systemPrompt: { text: coordinatorText, version: 2 },
+  });
+  const payload = await buildCurrentStatePayload(prisma, 't1', 'system_prompt');
+  if (payload.scope !== 'system_prompt') throw new Error('narrowing');
+  assert.equal(payload.systemPrompt.variants.coordinator.text, coordinatorText);
+  assert.equal(payload.systemPrompt.variants.screening.text, '');
+  assert.equal(payload.systemPrompt.variants.screening.sections.length, 0);
 });
 
 test('deriveSystemPromptSections: XML tags win over Markdown headings', () => {
