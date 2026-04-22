@@ -16,6 +16,7 @@
 | 5 — second-order: Prisma + middleware + utils | error.ts + reservationSync + lib/socket + sop singleton + encryption | 6 | 5 (1 HIGH + 3 MED + 1 LOW) | 1 (broadcastCritical multi-socket dedup architectural; JWT_SECRET rotation runbook) | — |
 | 6 — third-order: races + leaks + sync edge | msg-sync sentinel + tenant-conn drift + calendar fetch race + inbox dedup | 5 | 4 (1 MED + 3 LOW) | 1 MED (ai.service copilot-suggestion landing; sacred file) | — |
 | 7 — areas not yet visited | hostaway-callback auth + handoff partial-image + calendar cache + reservationSync overlap | 4 | 4 (2 MED + 2 LOW) | 0 | — |
+| 8 — last-mile validation | template IDOR + doc-handoff midnight tz + system-prompt doc-drift | 3 | 3 (1 HIGH + 2 LOW) | 0 | scanner verdict: well is dry; round 9 not useful |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -127,6 +128,14 @@
 | 58 | LOW | `af4d26d` | `services/calendar.service.ts` — 15-min cache eviction sweep (bounded memory on long-uptime pods) |
 | 59 | LOW | `be30fa9` | `jobs/reservationSync.job.ts` — module-scope overlap guard (parity with messageSync.job's 2026-04-23 fix) |
 
+## Round 8 — HIGH + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 60 | HIGH | `2b89eb1` | `services/template.service.ts` updateTemplate — IDOR closed via composite-where updateMany + 404; cross-tenant write of MessageTemplate body no longer possible |
+| 61 | LOW | `2b89eb1` | `services/doc-handoff.service.ts` atLocalTime — switched to en-GB + hourCycle:'h23' (no more midnight-as-24 day-skew on `00:00` reminder/handoff times) |
+| 62 | LOW | `2b89eb1` | `build-tune-agent/system-prompt.ts` — doc-drift sync (top-level docblock + buildSharedPrefix comment now correctly include RESPONSE_CONTRACT + CITATION_GRAMMAR) |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -141,3 +150,20 @@
 | End round 5 | 538/538 0 fail | 352/352 |
 | End round 6 | 538/538 0 fail | 352/352 |
 | End round 7 | 538/538 0 fail | 352/352 |
+| End round 8 — final | 538/538 0 fail | 352/352 |
+
+## Run summary
+
+**62 bugs fixed across 8 rounds.** Severity breakdown:
+- **CRITICAL:** 0
+- **HIGH:** 11 (4× silent-data-drop in tools, 2× rollback/transaction integrity, 2× tenant-scope IDOR/defence-in-depth, 1× concurrent action-log/TOCTOU, 1× error-message info-disclosure, 1× cross-tenant template IDOR)
+- **MEDIUM:** 27 (race conditions, scope filters, transaction wraps, retry semantics, sync correctness, atomic claims, cache invalidation, multi-device sync gaps, etc.)
+- **LOW:** 24 (small surface-area improvements, defensive guards, doc drift, performance hardening)
+
+**Deferred (12 items)** — `DEFERRED_BUGS_2026_04_22.md` carries the items needing user input or sacred-file edits (ai.service.ts, schema changes via prisma db push, JWT_SECRET rotation policy, broadcastCritical multi-socket dedup architecture, etc.).
+
+**Investigated–not-a-bug (2 items)** — auto-naming on queue flush (round 1.5 LOW #2), MiniCalendar prop sync (round 4 LOW). Both turned out to already be handled correctly.
+
+**Scanner verdict (round 8):** the well is essentially dry. Remaining surface to scrutinise is the test suite (`__tests__/` invariants — out of scope for bug-fixing) and `ai.service.ts` (sacred — surfaces in DEFERRED with clear fix sketches). Closing the autonomous bug-fix run here.
+
+All commits pushed to `chore/studio-demo-fix-loop`. Branch passes 538/538 backend + 352/352 frontend tests + clean Railway-parity build (`npm run build`).
