@@ -25,7 +25,7 @@ async function runTick(prisma: PrismaClient): Promise<void> {
     const result = await evaluateDueRows(prisma);
     if (result.scanned > 0) {
       console.log(
-        `[DocHandoff] tick — scanned=${result.scanned} sent=${result.sent} deferred=${result.deferred} failed=${result.failed} skipped=${result.skipped}`
+        `[DocHandoff] tick — scanned=${result.scanned} sent=${result.sent} deferred=${result.deferred} failed=${result.failed} skipped=${result.skipped} claimRaces=${result.claimRaces}`
       );
     }
   } catch (err: any) {

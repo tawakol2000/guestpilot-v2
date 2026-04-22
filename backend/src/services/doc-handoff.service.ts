@@ -273,6 +273,7 @@ export async function evaluateDueRows(prisma: PrismaClient): Promise<{
   deferred: number;
   failed: number;
   skipped: number;
+  claimRaces: number;
 }> {
   const now = new Date();
   const rows = await prisma.documentHandoffState.findMany({
@@ -287,14 +288,41 @@ export async function evaluateDueRows(prisma: PrismaClient): Promise<{
   let deferred = 0;
   let failed = 0;
   let skipped = 0;
+  let claimRaces = 0;
   for (const row of rows) {
+    // Bugfix (2026-04-22): atomic claim before evaluation. Multi-instance
+    // Railway deploys (or a crash + restart overlap) previously had two
+    // pollers reading the same SCHEDULED row and both calling WAsender —
+    // managers + security recipients received duplicate WhatsApp
+    // handoffs and duplicate passport images on every check-in.
+    //
+    // Use `updatedAt` as the optimistic-lock sentinel (Prisma's
+    // `@updatedAt` auto-touches on any successful update). The
+    // updateMany returns count=1 only for the worker whose observed
+    // updatedAt matches — every other concurrent worker sees count=0
+    // and skips. The data write is a no-op self-set on `lastError` so
+    // we don't accidentally clear other state, but it still triggers
+    // the @updatedAt bump that locks subsequent claims out.
+    const claim = await prisma.documentHandoffState.updateMany({
+      where: {
+        id: row.id,
+        updatedAt: row.updatedAt,
+        status: { in: [STATUS_SCHEDULED, STATUS_DEFERRED] },
+      },
+      data: { lastError: row.lastError ?? null },
+    });
+    if (claim.count === 0) {
+      claimRaces += 1;
+      continue;
+    }
+
     const result = await evaluateSingleRow(row.id, prisma);
     if (result === 'sent') sent++;
     else if (result === 'deferred') deferred++;
     else if (result === 'failed') failed++;
     else if (result === 'skipped') skipped++;
   }
-  return { scanned: rows.length, sent, deferred, failed, skipped };
+  return { scanned: rows.length, sent, deferred, failed, skipped, claimRaces };
 }
 
 async function evaluateSingleRow(
