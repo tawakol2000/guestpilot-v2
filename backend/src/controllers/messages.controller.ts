@@ -111,7 +111,13 @@ export function makeMessagesController(prisma: PrismaClient) {
         const pendingDraft = fromDraft
           ? await prisma.pendingAiReply
               .findFirst({
-                where: { conversationId: id, suggestion: { not: null } },
+                // 2026-04-22 bugfix: defence-in-depth tenant scope. The
+                // outer conversation.findFirst gates `id` to the right
+                // tenant, but this lookup previously trusted that gate
+                // alone. Adding tenantId here is consistent with the
+                // sibling aiApiLog query below (line ~128) and keeps
+                // the query safe under future ID-scheme changes.
+                where: { tenantId, conversationId: id, suggestion: { not: null } },
                 orderBy: { scheduledAt: 'desc' },
                 select: { suggestion: true },
               })
