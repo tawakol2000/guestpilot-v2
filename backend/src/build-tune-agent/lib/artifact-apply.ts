@@ -15,11 +15,29 @@
  * tools' validation (kebab-case categories, unique-name collisions,
  * transaction linkage) — those stay in the agent write tools.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { invalidateSopCache } from '../../services/sop.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
+import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 import { emitArtifactHistory } from './artifact-history';
 import { sanitiseArtifactPayload } from './sanitise-artifact-payload';
+
+/**
+ * Upper-bound char cap on system-prompt writes at the admin-apply seam.
+ * Mirrors `suggestion_action` / `EDIT_SYSTEM_PROMPT` (which enforces ≤50k
+ * chars). The agent write tool (`write_system_prompt`) uses a tighter
+ * 10k cap because it generates from a template; the admin drawer lets
+ * managers paste longer hand-authored text, but 50k is still a hard
+ * sanity ceiling — it prevents a rogue paste of the whole tenant docs
+ * library from blowing up cache size and token budgets.
+ */
+const SYSTEM_PROMPT_MAX_CHARS = 50_000;
+
+/**
+ * Cap on the `systemPromptHistory` JSON array. Same ring buffer as
+ * `write_system_prompt` (last 10 snapshots retained).
+ */
+const SYSTEM_PROMPT_HISTORY_CAP = 10;
 
 export type ApplyArtifactType =
   | 'sop'
@@ -187,6 +205,15 @@ async function applySystemPrompt(
   if (!text || text.length < 100) {
     return error(input, 'body.text must be a non-empty string (≥100 chars)');
   }
+  // Bugfix (2026-04-22): previously no upper-bound check, so a pathological
+  // paste (e.g. the whole tenant handbook) could slip through and blow up
+  // cache size + token budgets. Mirror the suggestion-action ceiling.
+  if (text.length > SYSTEM_PROMPT_MAX_CHARS) {
+    return error(
+      input,
+      `body.text exceeds ${SYSTEM_PROMPT_MAX_CHARS} chars (${text.length})`,
+    );
+  }
   const config = await prisma.tenantAiConfig.findUnique({
     where: { tenantId: input.tenantId },
   });
@@ -204,11 +231,43 @@ async function applySystemPrompt(
       diff: { kind: 'update', field, length: text.length },
     };
   }
+
+  // Bugfix (2026-04-22): snapshot the outgoing prompt into
+  // `systemPromptHistory` so the rollback tool
+  // (`rollback(artifactType:'SYSTEM_PROMPT')`) can see admin-drawer writes.
+  // Previously, admin applies through this path left no breadcrumb and were
+  // invisible to the rollback surface — only `write_system_prompt` and
+  // `suggestion_action` updated the history JSON. Same ring-buffer cap
+  // (10) as those paths.
+  const history: any[] = Array.isArray(config?.systemPromptHistory)
+    ? [...(config!.systemPromptHistory as any[])]
+    : [];
+  if (config && prev) {
+    history.push({
+      version: config.systemPromptVersion,
+      timestamp: new Date().toISOString(),
+      [input.id]: prev,
+      note: 'Superseded by admin artifact-apply',
+    });
+    while (history.length > SYSTEM_PROMPT_HISTORY_CAP) history.shift();
+  }
+
   await prisma.tenantAiConfig.upsert({
     where: { tenantId: input.tenantId },
-    update: { [field]: text, systemPromptVersion: { increment: 1 } },
+    update: {
+      [field]: text,
+      systemPromptVersion: { increment: 1 },
+      systemPromptHistory: history as Prisma.InputJsonValue,
+    },
     create: { tenantId: input.tenantId, [field]: text } as any,
   });
+
+  // Bugfix (2026-04-22): invalidate the tenant-config cache so the main AI
+  // picks up the new prompt on the next turn rather than serving a stale
+  // cached version for up to 60s. Sibling applyTool / applySop already
+  // invalidate their respective caches; this path silently skipped parity.
+  invalidateTenantConfigCache(input.tenantId);
+
   await emitArtifactHistory(prisma, {
     tenantId: input.tenantId,
     artifactType: 'system_prompt',

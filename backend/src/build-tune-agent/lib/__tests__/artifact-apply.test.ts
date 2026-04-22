@@ -13,10 +13,13 @@ function makeFakePrisma(opts: {
   sopVariant?: { id: string; content: string; status: string; category: string };
   faqEntry?: { id: string; tenantId: string; question: string; answer: string; category: string };
   aiConfigCoordinator?: string | null;
+  aiConfigScreening?: string | null;
+  aiConfigVersion?: number;
+  aiConfigHistory?: any[];
   tool?: { id: string; tenantId: string; description: string; parameters: any; webhookUrl: string | null; webhookTimeout: number; enabled: boolean };
 }) {
   const historyWrites: any[] = [];
-  const updates: Array<{ table: string; where: any; data: any }> = [];
+  const updates: Array<{ table: string; where: any; data: any; create?: any }> = [];
   const prisma: any = {
     sopVariant: {
       findFirst: async ({ where }: any) => {
@@ -47,11 +50,22 @@ function makeFakePrisma(opts: {
     },
     tenantAiConfig: {
       findUnique: async () => {
-        if (opts.aiConfigCoordinator === undefined) return null;
-        return { systemPromptCoordinator: opts.aiConfigCoordinator, systemPromptScreening: null };
+        if (opts.aiConfigCoordinator === undefined && opts.aiConfigScreening === undefined) {
+          return null;
+        }
+        return {
+          systemPromptCoordinator: opts.aiConfigCoordinator ?? null,
+          systemPromptScreening: opts.aiConfigScreening ?? null,
+          systemPromptVersion: opts.aiConfigVersion ?? 1,
+          systemPromptHistory: opts.aiConfigHistory ?? [],
+        };
       },
-      upsert: async ({ where, data }: any) => {
-        updates.push({ table: 'tenantAiConfig', where, data });
+      upsert: async ({ where, update, create }: any) => {
+        // Flatten to the `data` shape existing tests already read.
+        // The real Prisma upsert signature is {where, update, create};
+        // for our purposes `data` is the update branch (tenantAiConfig is
+        // only upserted with prior state, never fresh create from this path).
+        updates.push({ table: 'tenantAiConfig', where, data: update, create });
         return {};
       },
     },
@@ -224,4 +238,103 @@ test('applyArtifactUpdate(system_prompt) UPDATE when prior coordinator exists', 
   assert.ok(r.ok);
   assert.equal(historyWrites.length, 1);
   assert.equal(historyWrites[0].operation, 'UPDATE');
+});
+
+// ─── Bugfix regression tests (2026-04-22) ────────────────────────────
+//   1. text > 50k chars rejected.
+//   2. previous prompt snapshotted into systemPromptHistory (ring buffer cap 10).
+//   3. tenantAiConfig upsert carries the updated history.
+
+test('applyArtifactUpdate(system_prompt) rejects text over 50k chars', async () => {
+  const { prisma, historyWrites, updates } = makeFakePrisma({
+    aiConfigCoordinator: 'OLD coordinator body text',
+  });
+  const r = await applyArtifactUpdate(prisma, {
+    tenantId: 't1',
+    type: 'system_prompt',
+    id: 'coordinator',
+    dryRun: false,
+    body: { text: 'x'.repeat(50_001) },
+  });
+  assert.equal(r.ok, false, 'over-length write must be rejected');
+  if (r.ok) throw new Error('narrowing');
+  assert.match(r.error ?? '', /exceeds 50000 chars/);
+  // No DB mutation on rejection.
+  assert.equal(updates.length, 0);
+  assert.equal(historyWrites.length, 0);
+});
+
+test('applyArtifactUpdate(system_prompt) snapshots previous text into systemPromptHistory', async () => {
+  const { prisma, updates } = makeFakePrisma({
+    aiConfigCoordinator: 'OLD coordinator body text',
+    aiConfigVersion: 3,
+    aiConfigHistory: [],
+  });
+  await applyArtifactUpdate(prisma, {
+    tenantId: 't1',
+    type: 'system_prompt',
+    id: 'coordinator',
+    dryRun: false,
+    body: { text: 'NEW text '.repeat(20) }, // > 100 chars
+  });
+  const upsert = updates.find((u) => u.table === 'tenantAiConfig');
+  assert.ok(upsert, 'upsert emitted');
+  const history = upsert!.data.systemPromptHistory as any[];
+  assert.ok(Array.isArray(history), 'history is an array');
+  assert.equal(history.length, 1, 'one snapshot added');
+  assert.equal(history[0].version, 3);
+  assert.equal(history[0].coordinator, 'OLD coordinator body text');
+  assert.match(history[0].note, /admin artifact-apply/);
+  // Version increment carried through.
+  assert.deepEqual(upsert!.data.systemPromptVersion, { increment: 1 });
+});
+
+test('applyArtifactUpdate(system_prompt) history ring buffer caps at 10 entries', async () => {
+  const priorHistory = Array.from({ length: 10 }, (_, i) => ({
+    version: i,
+    timestamp: '2026-04-22T00:00:00Z',
+    coordinator: `entry ${i}`,
+    note: 'seed',
+  }));
+  const { prisma, updates } = makeFakePrisma({
+    aiConfigCoordinator: 'OLD coordinator body text',
+    aiConfigVersion: 11,
+    aiConfigHistory: priorHistory,
+  });
+  await applyArtifactUpdate(prisma, {
+    tenantId: 't1',
+    type: 'system_prompt',
+    id: 'coordinator',
+    dryRun: false,
+    body: { text: 'NEW text '.repeat(20) },
+  });
+  const upsert = updates.find((u) => u.table === 'tenantAiConfig');
+  const history = upsert!.data.systemPromptHistory as any[];
+  assert.equal(history.length, 10, 'ring buffer holds at 10');
+  // Oldest evicted, newest appended.
+  assert.equal(history[0].version, 1);
+  assert.equal(history[9].version, 11);
+  assert.equal(history[9].coordinator, 'OLD coordinator body text');
+});
+
+test('applyArtifactUpdate(system_prompt) screening variant snapshots under its own key', async () => {
+  const { prisma, updates } = makeFakePrisma({
+    aiConfigCoordinator: 'coord stays unchanged',
+    aiConfigScreening: 'OLD screening body text',
+    aiConfigVersion: 5,
+    aiConfigHistory: [],
+  });
+  await applyArtifactUpdate(prisma, {
+    tenantId: 't1',
+    type: 'system_prompt',
+    id: 'screening',
+    dryRun: false,
+    body: { text: 'NEW screening body '.repeat(10) },
+  });
+  const upsert = updates.find((u) => u.table === 'tenantAiConfig');
+  const history = upsert!.data.systemPromptHistory as any[];
+  assert.equal(history.length, 1);
+  assert.equal(history[0].screening, 'OLD screening body text');
+  assert.equal(history[0].coordinator, undefined, 'coord not duplicated into screening snapshot');
+  assert.equal(upsert!.data.systemPromptScreening, 'NEW screening body '.repeat(10));
 });
