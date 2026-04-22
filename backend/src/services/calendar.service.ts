@@ -38,6 +38,35 @@ const _cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_CONCURRENCY = 5;
 
+/**
+ * Bugfix (2026-04-23): the cache had no eviction sweep. Each unique
+ * (tenant, property, startDate, endDate) tuple created a new entry
+ * that lived forever unless re-queried (TTL only checked on hit). On
+ * a long-uptime Railway pod with operators paging through the
+ * calendar across N properties × M date ranges, the Map grew without
+ * bound. Periodic sweep (every 15 min) deletes entries that are past
+ * TTL — bounded memory, same hit rate.
+ *
+ * Module-scope timer with `unref()` so it doesn't hold the process
+ * open during shutdown.
+ */
+const CACHE_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+function sweepCache(): void {
+  const now = Date.now();
+  let evicted = 0;
+  for (const [key, entry] of _cache) {
+    if (now - entry.cachedAt > CACHE_TTL_MS) {
+      _cache.delete(key);
+      evicted += 1;
+    }
+  }
+  if (evicted > 0) {
+    console.log(`[Calendar] cache sweep evicted ${evicted} stale entries (size now ${_cache.size})`);
+  }
+}
+const _sweepTimer = setInterval(sweepCache, CACHE_SWEEP_INTERVAL_MS);
+_sweepTimer.unref();
+
 function cacheKey(tenantId: string, propertyId: string, startDate: string, endDate: string): string {
   return `${tenantId}:${propertyId}:${startDate}:${endDate}`;
 }

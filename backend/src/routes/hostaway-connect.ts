@@ -24,8 +24,29 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
   const router = Router();
   const auth = authMiddleware as unknown as RequestHandler;
 
-  // ── GET /callback?token=<jwt> — bookmarklet redirect (no auth) ──────────
-  router.get('/callback', async (req: any, res) => {
+  // ── GET /callback?token=<jwt> — bookmarklet redirect ────────────────────
+  //
+  // Bugfix (2026-04-23): the bookmarklet redirect target REQUIRES the
+  // operator's GuestPilot session — they're the one clicking the
+  // bookmarklet from a browser that's logged into both Hostaway AND
+  // GuestPilot. Without this auth requirement, any unauthenticated
+  // attacker who knows (or guesses) a tenant's Hostaway accountId can
+  // craft a payload `{accountId, exp, userEmail}`, base64-encode it
+  // into a fake JWT, hit /callback?token=<fake>, and overwrite the
+  // victim tenant's stored dashboardJwt. The forged token would be
+  // rejected by Hostaway when used → DoS on inquiry accept/reject
+  // until the real admin re-pastes their real token. Also, the
+  // attacker-controlled `userEmail` becomes `dashboardConnectedBy`
+  // displayed in Settings.
+  //
+  // Auth-gating /callback is the right fix because:
+  //  (a) The bookmarklet is run from a browser where the operator is
+  //      logged into both products. The cookie / Bearer is naturally
+  //      present.
+  //  (b) Tenant resolution should come from req.tenantId (the JWT
+  //      claim) NOT from the untrusted payload.accountId.
+  //  (c) /manual already requires auth — /callback now matches.
+  router.get('/callback', auth, async (req: any, res) => {
     const frontendUrl = getFrontendUrl();
     try {
       const token = req.query.token as string | undefined;
@@ -42,16 +63,29 @@ export function hostawayConnectRouter(prisma: PrismaClient): Router {
       }
 
       const payload = result.payload;
-      const accountId = String(payload.accountId);
-
-      const tenant = await prisma.tenant.findFirst({
-        where: { hostawayAccountId: accountId },
-        select: { id: true },
+      // Use the AUTHENTICATED tenant id, not the untrusted payload claim.
+      // We still fetch the tenant row so we can verify the JWT's accountId
+      // matches what we have on file (defence in depth — catches an
+      // operator who connected a bookmarklet from the wrong Hostaway
+      // login).
+      const tenantId = req.tenantId as string;
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, hostawayAccountId: true },
       });
 
       if (!tenant) {
-        console.error(`[HostawayConnect] No tenant for accountId ${accountId}`);
+        console.error(`[HostawayConnect] No tenant row for authenticated tenantId ${tenantId}`);
         res.redirect(`${frontendUrl}/settings?hostaway=error&reason=no_account`);
+        return;
+      }
+
+      const claimedAccountId = String(payload.accountId);
+      if (tenant.hostawayAccountId && tenant.hostawayAccountId !== claimedAccountId) {
+        console.error(
+          `[HostawayConnect] Account mismatch — tenant has ${tenant.hostawayAccountId}, token claims ${claimedAccountId}`,
+        );
+        res.redirect(`${frontendUrl}/settings?hostaway=error&reason=account_mismatch`);
         return;
       }
 

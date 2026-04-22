@@ -445,10 +445,36 @@ async function doSendHandoff(
     }
 
     // Caption + first image in one call.
+    //
+    // Bugfix (2026-04-23): track which images were ALREADY DELIVERED
+    // before any failure. The previous version held DB writes until
+    // ALL images succeeded, so a mid-loop failure on (say) image 3
+    // of 5 fell into the outer catch → text-only fallback re-sent
+    // the caption → if that ALSO failed → handleSendFailure
+    // rescheduled the row → next tick re-sent images 1, 2, 3 to the
+    // security recipient. Duplicate passport-photo delivery is a
+    // privacy issue.
+    //
+    // New behaviour: if image 1 succeeds but a later image fails,
+    // mark the row SENT with the partial delivery recorded in
+    // lastError + imageUrlsUsed reflecting only what landed. The
+    // operator gets a warning surface; we do NOT re-send already-
+    // delivered images.
     const [firstUrl, ...restUrls] = imageUrls;
     const first = await sendImage({ to: recipient, text, imageUrl: firstUrl });
+    const deliveredUrls: string[] = [firstUrl];
+    let partialErr: Error | null = null;
     for (const url of restUrls) {
-      await sendImage({ to: recipient, imageUrl: url });
+      try {
+        await sendImage({ to: recipient, imageUrl: url });
+        deliveredUrls.push(url);
+      } catch (imgErr: any) {
+        partialErr = imgErr instanceof Error ? imgErr : new Error(String(imgErr));
+        console.warn(
+          `[DocHandoff] partial-image failure on row=${rowId}: delivered=${deliveredUrls.length}/${imageUrls.length} — marking SENT with shortfall recorded.`,
+        );
+        break;
+      }
     }
     await prisma.documentHandoffState.update({
       where: { id: rowId },
@@ -457,16 +483,19 @@ async function doSendHandoff(
         sentAt: new Date(),
         recipientUsed: recipient,
         messageBodyUsed: text,
-        imageUrlsUsed: imageUrls,
+        imageUrlsUsed: deliveredUrls,
         providerMessageId: first.providerMessageId,
-        lastError: null,
+        lastError: partialErr
+          ? `partial: ${deliveredUrls.length}/${imageUrls.length} images delivered. ${partialErr.message}`
+          : null,
       },
     });
     emitStateUpdate(rowId, prisma);
     return 'sent';
   } catch (err: any) {
-    // Media failures fall back to text-only (FR-007) on first image attempt;
-    // any later failure still counts as a provider failure with retry.
+    // Media failure on the FIRST image attempt → fall back to
+    // text-only (FR-007). The first image hasn't been delivered
+    // yet so retry is safe.
     if (err instanceof WasenderRequestError && imageUrls.length > 0) {
       try {
         const result = await sendText({ to: recipient, text });
