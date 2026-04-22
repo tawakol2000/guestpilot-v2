@@ -1038,6 +1038,13 @@ function StandalonePart({
     return null
   }
 
+  if (type === 'data-build-history') {
+    // Consumed by PlanChecklist (scanned from conversationMessages to
+    // populate appliedItems). Has no standalone visual — suppress so it
+    // doesn't leak through the unsupported-card fallback.
+    return null
+  }
+
   if (type === 'data-suggested-fix') {
     const data = part.data ?? {}
     return (

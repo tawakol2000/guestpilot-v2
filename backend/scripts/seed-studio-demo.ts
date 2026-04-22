@@ -249,9 +249,19 @@ async function main() {
         counts: { sops: 1, faqs: 1, properties: 1 },
       }),
       dataPart('data-state-snapshot', {
-        tenantState: 'BROWNFIELD',
-        interviewProgress: { completedSlots: 2, totalSlots: 9, missingSlots: ['brand-voice', 'payment-links', 'neighbourhood-tips'] },
-        counts: { sops: 1, faqs: 1, properties: 1, systemPromptVersion: 1 },
+        scope: 'summary',
+        summary: {
+          posture: 'BROWNFIELD',
+          systemPromptStatus: 'DEFAULT',
+          systemPromptEditCount: 1,
+          sopsDefined: 1,
+          sopsDefaulted: 1,
+          faqsGlobal: 1,
+          faqsPropertyScoped: 0,
+          customToolsDefined: 0,
+          propertiesImported: 1,
+          lastBuildSessionAt: at(-60 * 24 * 2).toISOString(),
+        },
       }),
       textPart(
         "Welcome aboard. I can see you already have one SOP and one FAQ on file, plus one listing — so we're in brownfield mode. Before we add anything new, let me ask: what's your biggest guest-reply headache right now?",
