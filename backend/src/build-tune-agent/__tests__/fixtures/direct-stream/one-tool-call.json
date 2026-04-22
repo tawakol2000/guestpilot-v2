@@ -1,0 +1,37 @@
+{
+  "name": "one-tool-call",
+  "description": "message_start -> short text_delta preface -> tool_use (content_block_start + 2 input_json_deltas + content_block_stop) -> message_delta with stop_reason=tool_use -> message_stop. Verifies that the tool_use block assembles its input JSON and yields a synthesised `assistant` SDKMessage carrying the complete tool_use so the existing bridge emits tool-input-start + tool-input-available.",
+  "rawEvents": [
+    { "type": "message_start", "message": { "id": "msg_2", "type": "message", "role": "assistant", "content": [], "model": "claude-sonnet-4-6-20250929", "stop_reason": null, "stop_sequence": null, "usage": { "input_tokens": 200, "output_tokens": 0 } } },
+    { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
+    { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Let me check." } },
+    { "type": "content_block_stop", "index": 0 },
+    { "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "toolu_abc", "name": "mcp__tuning-agent__get_context", "input": {} } },
+    { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"scope\":" } },
+    { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "\"summary\"}" } },
+    { "type": "content_block_stop", "index": 1 },
+    { "type": "message_delta", "delta": { "stop_reason": "tool_use", "stop_sequence": null }, "usage": { "output_tokens": 12 } },
+    { "type": "message_stop" }
+  ],
+  "expectedSDKMessageTypes": [
+    "stream_event",
+    "stream_event",
+    "stream_event",
+    "stream_event",
+    "stream_event",
+    "stream_event",
+    "assistant",
+    "stream_event",
+    "stream_event",
+    "result"
+  ],
+  "expectedUIChunks": [
+    { "type": "text-start", "id": "text:asst-fix:1" },
+    { "type": "text-delta", "id": "text:asst-fix:1", "delta": "Let me check." },
+    { "type": "text-end", "id": "text:asst-fix:1" },
+    { "type": "tool-input-start", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__get_context" },
+    { "type": "tool-input-available", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__get_context", "input": { "scope": "summary" } },
+    { "type": "finish-step" },
+    { "type": "finish", "finishReason": "stop" }
+  ]
+}
