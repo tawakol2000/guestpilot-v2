@@ -1283,11 +1283,27 @@ export function makeBuildController(prisma: PrismaClient) {
             orderBy: { createdAt: 'desc' },
           });
           if (mostRecent && mostRecent.id !== row.id) {
+            // Bugfix (2026-04-22): the previous version replaced the
+            // metadata object outright, destroying every prior key
+            // (rationale, buildTransactionId, testResult ritual variants,
+            // version, operator-edit provenance). Spread the existing
+            // metadata so revertsHistoryId is added without dropping
+            // anything else. The other revert-write paths (rollback
+            // tool, version-history endpoint) already preserve metadata
+            // — this controller path was the odd one out.
+            const existingMeta =
+              mostRecent.metadata && typeof mostRecent.metadata === 'object'
+                && !Array.isArray(mostRecent.metadata)
+                ? (mostRecent.metadata as Record<string, unknown>)
+                : {};
             await prisma.buildArtifactHistory.update({
               where: { id: mostRecent.id },
               data: {
                 operation: 'REVERT',
-                metadata: { revertsHistoryId: row.id },
+                metadata: {
+                  ...existingMeta,
+                  revertsHistoryId: row.id,
+                },
               },
             }).catch((err) => {
               console.error('[build] revert stamp failed (logged):', err);
