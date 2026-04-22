@@ -79,6 +79,19 @@ export async function runDirectTurnWithFullSetup(
   //   2. runDirectTurn(directInput, write)
   //   3. If result.status === 'success', synthesise RunTurnResult from
   //      aggregatedAssistant + persistedDataParts captured during the turn.
+  //
+  // CONTRACT — the direct-path implementation MUST allocate a fresh
+  // `turnFlags: Record<string, boolean> = {}` per call and attach it
+  // to the ToolContext that the MCP router resolves to (mirroring
+  // sdk-runner.ts:304). Several tools (e.g. `emit_session_summary`,
+  // `test_pipeline`) enforce a "once per turn" invariant via
+  // `c.turnFlags[<flag>]`. If the direct path reuses a single ctx
+  // across turns, the invariant silently degrades from "once per turn"
+  // to "once per process" and tools stop firing for the rest of the
+  // session. The unit test
+  // `tools/__tests__/emit-session-summary-turn-isolation.test.ts`
+  // pins the contract from the tool's perspective; this comment pins
+  // it from the runner's perspective.
   return {
     status: 'fallback',
     fallbackReason: 'api_error',
