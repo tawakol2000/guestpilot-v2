@@ -2435,3 +2435,42 @@ None of `058-stream-{A,B,B2,B3,C}-failure.md` were written. Stream B stopped cle
 - [ ] Reload page → session-artifacts rail populated, session list no empty rows, current session has auto-name
 - [ ] Long reasoning turn → no duplicate reasoning, no step-start card, composer typeable while streaming, no #310 crash
 - [ ] F1 cache verification per §F1 block above (pending runtime transport swap)
+
+---
+
+## Sprint 059-A
+
+**Branch:** `feat/059-session-a` (off `feat/058-session-a` tip `86ab8ec`).
+**Spec:** [sprint-059-session-a.md](sprint-059-session-a.md).
+**Run mode:** Opus 4.7 / 1M ctx / overnight unsupervised / auto-mode.
+
+### Branch-tip table (§2.1 verification)
+
+| Branch | SHA |
+|---|---|
+| feat/050-session-a | `d103c14` |
+| feat/051-session-a | `41b339c` |
+| feat/052-session-a | `7d49103` |
+| feat/053-session-a | `e5d1051` |
+| feat/054-session-a | `88ccc9c` |
+| feat/055-session-a | `ae863fc` |
+| feat/056-session-a | `812bc55` |
+| feat/057-session-a | `a1fdf87` |
+| feat/058-session-a | `86ab8ec` (current tip; spec expected `48d022b` + one close-out commit — benign ancestor check passed) |
+
+Spec expected tip `48d022b`; actual tip `86ab8ec` = `48d022b` + commit `86ab8ec chore(build): sprint-058-A close-out — 9 gates / 347+87 tests / archive + sprint-059 NEXT`. `git merge-base --is-ancestor 48d022b 86ab8ec` → true. The additional commit is exactly the close-out the spec §7 protocol describes (archive NEXT.md, write new NEXT.md, final PROGRESS.md paragraph). Proceeding.
+
+### Baseline (§2.2)
+
+| Suite | Result | Notes |
+|---|---|---|
+| `cd frontend && npm test -- --run` | **347 / 347 passing** (45 files, 7.27s) | Matches spec. |
+| `cd backend && find src -name "*.test.ts" -not -path "*/integration/*" | xargs npx tsx --test` | **423 passing + 1 env-var failure** (`src/build-tune-agent/preview/__tests__/tenant-config-bypass.test.ts`) | Matches spec numerically. Exact failing test differs from spec wording (spec cited ANTHROPIC_API_KEY; actual is JWT_SECRET) but is the same class — module-load-order infra: `middleware/auth.ts:7` `process.exit()` on missing JWT_SECRET before the test file's `process.env.JWT_SECRET ??= 'test-secret-bypass'` on line 14 runs. Pre-existing; NOT caused by this sprint. |
+
+### Gate log
+
+| Gate | Subject | SHA | Frontend | Backend | Notes |
+|---|---|---|---|---|---|
+| pre-flight | Baseline + branch | (this commit) | 347/347 | 423+1env / 423 | Baseline recorded above. |
+
+
