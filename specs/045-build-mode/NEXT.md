@@ -89,10 +89,11 @@ Two scan agents swept the Studio backend + frontend + adjacent services after th
 - **Symptom:** `forwardedIds` set keys on `p.id ?? ${m.id}:${t}`. During SSE streaming a part may first arrive without `p.id` (fallback key used) then gain an id later (real key used). Both land in the Set → the upstream `onStateSnapshot` / `onTestResult` callbacks fire twice for the same payload. `handleTestResult` prepends every call, but `.slice(0, 3)` caps the right-rail rows so the duplicate is cosmetic and self-healing as the window rolls.
 - **Fix sketch:** dedupe by `${m.id}:${t}:${p.index ?? ''}` or gate forwarding until `p.id` is populated / the part is terminal.
 
-### LOW — studio-surface: auto-naming skipped when first queued message is flushed
+### ~~LOW — studio-surface: auto-naming skipped when first queued message is flushed~~ [INVESTIGATED 2026-04-22 — NOT A BUG]
 - **File:** `frontend/components/studio/studio-chat.tsx:387-397` vs `studio-surface.tsx:328-346`.
-- **Symptom:** When an operator queues their first-ever message and it's too short to auto-title, then queues a longer follow-up, the flush path sends via `sendMessage` but does NOT re-invoke `onUserMessageSent`. The surface's fallback-name logic never gets the longer text and the session keeps the generic title.
-- **Fix sketch:** call `onUserMessageSent?.(first)` inside the flush effect too.
+- **Original symptom:** Claimed `onUserMessageSent` was not re-invoked on flush.
+- **Investigation result:** `onSubmit` at `studio-chat.tsx:492` ALREADY calls `onUserMessageSent?.(text)` at queue-time — before `setQueuedMessages` returns. Every queued text has been reported to the parent by the time it enters the queue, and `handleUserMessageSent` in the surface already guards re-entry via `autoTitleSetRef`. A flush-time re-call would be redundant. The "first queued too short, later queued longer" scenario works correctly: both messages hit the on-queue callback; the second call sets the title. No actual bug.
+- **Resolution:** No code change needed. Removed from deferred list.
 
 ### LOW — template-variable: duplicate `{VAR}` in a content block can leak raw token
 - **File:** `backend/src/services/template-variable.service.ts:227-245`.
@@ -116,4 +117,37 @@ Two scan agents swept the Studio backend + frontend + adjacent services after th
 
 ### LOW — all fixes this pass would benefit from `tsc --noEmit` in the after-gate routine
 - **Context:** 059-A's `anthropic-stream-bridge.test.ts` shipped with two TS type errors that passed `tsx --test` (transpile-only) but failed Railway's `tsc` step. The 2026-04-22 fixes ran `tsc --noEmit` as part of the checklist. The sprint-060 kickoff should codify `tsc --noEmit` as a required after-gate step, not just a local habit.
+
+---
+
+## After-gate routine — REQUIRED for every backend commit (codified 2026-04-22)
+
+Updated after the 2026-04-22 LOW #7 follow-up. Every backend commit (sprint-060 onward, retroactively recommended) MUST run all three of:
+
+```bash
+# 1. Type-check the entire compile graph — catches errors that tsx --test
+#    transpile-only mode silently passes (e.g. AsyncIterable<RawMessageStreamEvent>
+#    contract violations on inline event-array literals).
+cd backend && npx tsc --noEmit
+
+# 2. Backend unit suite (transpile-only run; faster than tsc but does not
+#    catch type errors).
+cd backend && find src -name "*.test.ts" -not -path "*/integration/*" \
+  | xargs npx tsx --test
+
+# 3. Full Railway-parity build (prisma generate + tsc + cp). The Railway
+#    image runs the same `npm run build` step before booting; if it fails
+#    here it will fail in CI.
+cd backend && NODE_OPTIONS=--max-old-space-size=2048 npm run build
+```
+
+For frontend commits:
+
+```bash
+cd frontend && npm test -- --run     # vitest run
+# Optional but recommended for non-trivial UI commits:
+cd frontend && npx tsc --noEmit
+```
+
+Sprint kickoff prompts dispatched to subagents MUST include this block verbatim. Sprint-059-A's dispatch prompts only required `tsx --test` and that's how the type errors slipped through — fixed in the post-mortem PR.
 
