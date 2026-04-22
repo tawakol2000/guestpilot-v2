@@ -14,6 +14,7 @@
 | 3 — webhooks/workers/middleware/inbox | Below-the-fold backend + inbox | 9 | 8 (5 MED + 3 LOW) | 1 (WebhookLog retention — needs user input) | — |
 | 4 — frontend deep + backend gap-fill | inbox-v5 + listings + alterations + property-search + message-sync | 9 | 6 (3 HIGH + 2 MED + 1 LOW) | 0 | 1 false positive (MiniCalendar already has the prop sync) |
 | 5 — second-order: Prisma + middleware + utils | error.ts + reservationSync + lib/socket + sop singleton + encryption | 6 | 5 (1 HIGH + 3 MED + 1 LOW) | 1 (broadcastCritical multi-socket dedup architectural; JWT_SECRET rotation runbook) | — |
+| 6 — third-order: races + leaks + sync edge | msg-sync sentinel + tenant-conn drift + calendar fetch race + inbox dedup | 5 | 4 (1 MED + 3 LOW) | 1 MED (ai.service copilot-suggestion landing; sacred file) | — |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -107,6 +108,15 @@
 | 50 | MEDIUM | `af5a67f` | `services/sop.service.ts` — module-scope fallback Prisma singleton (no more per-call pool construction if a future caller forgets prisma) |
 | 51 | LOW | `af5a67f` | `lib/encryption.ts` — memoize PBKDF2-derived key (saves ~20-50ms per encrypt/decrypt on dashboard JWT paths) |
 
+## Round 6 — MEDIUM + LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 52 | MEDIUM | `4354aa2` | `services/message-sync.service.ts` — separate handledThisPass Set (no more empty-id sentinel → P2025 → silent swallow of lastSyncedAt update on duplicate Hostaway returns) |
+| 53 | LOW | `4354aa2` | `services/socket.service.ts` — per-socket _counted flag + Math.max(0, ...) (no more drift-negative connection counts on double-disconnect) |
+| 54 | LOW | `4354aa2` | `frontend/components/calendar-v5.tsx` — request-id ref pattern (rapid page-clicks no longer let a stale earlier fetch overwrite a later one) |
+| 55 | LOW | `4354aa2` | `frontend/components/inbox-v5.tsx` — client-side seenMessageIds Map dedup (5-min TTL); belt-and-suspenders for broadcastCritical's timeout-then-retry duplicate delivery |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -119,3 +129,4 @@
 | End round 3 | 538/538 0 fail | 352/352 |
 | End round 4 | 538/538 0 fail | 352/352 |
 | End round 5 | 538/538 0 fail | 352/352 |
+| End round 6 | 538/538 0 fail | 352/352 |
