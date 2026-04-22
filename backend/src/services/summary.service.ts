@@ -62,20 +62,38 @@ Output the updated summary as plain text. Maximum ${MAX_SUMMARY_WORDS} words. No
 export async function generateOrExtendSummary(
   conversationId: string,
   prisma: PrismaClient,
+  /**
+   * Optional tenantId scope. If omitted, the function reads the
+   * conversation's `tenantId` first and scopes all subsequent queries
+   * to it. Bugfix (2026-04-22): previously every query trusted the
+   * conversationId alone, so a future caller passing a cross-tenant ID
+   * (e.g. an admin endpoint, or a worker that shares conversationIds
+   * across tenants) could silently overwrite tenant A's summary with
+   * messages from tenant B. Conversation summaries are subsequently
+   * injected into AI system prompts, making any leak a prompt-injection
+   * vector. Defence-in-depth tenant scope on every query closes this.
+   */
+  tenantId?: string,
 ): Promise<void> {
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Fetch conversation with existing summary state
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId },
-      select: { conversationSummary: true, summaryMessageCount: true },
+    // If the caller didn't supply a tenantId, derive it from the row
+    // and use it as the scope for subsequent queries. We use findFirst
+    // (not findUnique) to combine the conversationId + tenantId filter
+    // when the caller did supply a tenantId.
+    const conversation = await prisma.conversation.findFirst({
+      where: tenantId
+        ? { id: conversationId, tenantId }
+        : { id: conversationId },
+      select: { conversationSummary: true, summaryMessageCount: true, tenantId: true },
     });
     if (!conversation) return;
+    const scopedTenantId = tenantId ?? conversation.tenantId;
 
     // Fetch recent messages for summary (last 200 is more than enough for context)
     const allMessagesDesc = await prisma.message.findMany({
-      where: { conversationId },
+      where: { conversationId, tenantId: scopedTenantId },
       orderBy: { sentAt: 'desc' },
       take: 200,
       select: { role: true, content: true },
@@ -153,9 +171,13 @@ export async function generateOrExtendSummary(
       summaryText = lastPeriod > 0 ? truncated.substring(0, lastPeriod + 1) : truncated;
     }
 
-    // Store summary
-    await prisma.conversation.update({
-      where: { id: conversationId },
+    // Store summary. updateMany is required to add the tenantId guard
+    // (Prisma's `update` only accepts a unique where; updateMany lets us
+    // include the scope predicate). If the conversation no longer
+    // belongs to scopedTenantId (race with a delete), count=0 and we
+    // silently skip — better than a cross-tenant overwrite.
+    await prisma.conversation.updateMany({
+      where: { id: conversationId, tenantId: scopedTenantId },
       data: {
         conversationSummary: summaryText,
         summaryUpdatedAt: new Date(),
