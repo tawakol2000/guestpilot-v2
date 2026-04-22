@@ -62,6 +62,15 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (res.status === 401) {
     clearToken()
+    // Bugfix (2026-04-23, follow-up): also tear down the Socket.IO
+    // connection so it stops emitting under the now-invalid token.
+    // The dynamic import avoids a circular dep at module-load time
+    // (socket.ts can also import from api.ts in some configurations);
+    // we accept the small async overhead since we're navigating away
+    // anyway.
+    void import('./socket').then(({ disconnectSocket }) => {
+      try { disconnectSocket() } catch { /* ignore */ }
+    }).catch(() => { /* ignore */ })
     // Bugfix (2026-04-23): module-scope guard so concurrent 401s don't
     // each trigger window.location.href. Browsers collapse multiple
     // navigations to one, but each call still throws an error which

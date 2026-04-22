@@ -162,23 +162,45 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
               }
 
             } else {
-              // EXISTING reservation — check if status/dates changed
+              // EXISTING reservation — check if status OR dates/count changed.
+              //
+              // Bugfix (2026-04-23): the entire update block was previously
+              // gated behind `existing.status !== status`. If a host
+              // extended a reservation's checkout in Hostaway while the
+              // status stayed CONFIRMED, the date / guest-count update
+              // never landed locally — we'd send messages with the wrong
+              // checkOut, schedule doc-handoff for the wrong day, and
+              // miscompute extend_stay availability. Now: detect ANY
+              // material change and update unconditionally; trigger the
+              // status-change side effects (broadcast + doc-handoff
+              // reschedule + isCancelled aiEnabled flip) only when status
+              // actually changed.
               const existing = await prisma.reservation.findFirst({
                 where: { tenantId: tenant.id, hostawayReservationId: hwResId },
                 select: { id: true, status: true, checkIn: true, checkOut: true, guestCount: true },
               });
               if (!existing) continue;
 
-              if (existing.status !== status) {
+              const newCheckIn = res.arrivalDate ? new Date(res.arrivalDate) : null;
+              const newCheckOut = res.departureDate ? new Date(res.departureDate) : null;
+              const datesChanged =
+                (newCheckIn && newCheckIn.getTime() !== existing.checkIn.getTime()) ||
+                (newCheckOut && newCheckOut.getTime() !== existing.checkOut.getTime());
+              const guestCountChanged =
+                res.numberOfGuests != null && res.numberOfGuests !== existing.guestCount;
+              const statusChanged = existing.status !== status;
+              const hasMaterialChange = statusChanged || datesChanged || guestCountChanged;
+
+              if (hasMaterialChange) {
                 const isCancelled = status === 'CANCELLED' || status === 'CHECKED_OUT';
                 await prisma.reservation.update({
                   where: { id: existing.id },
                   data: {
-                    status,
-                    ...(res.arrivalDate && { checkIn: new Date(res.arrivalDate) }),
-                    ...(res.departureDate && { checkOut: new Date(res.departureDate) }),
+                    ...(statusChanged && { status }),
+                    ...(newCheckIn && { checkIn: newCheckIn }),
+                    ...(newCheckOut && { checkOut: newCheckOut }),
                     ...(res.numberOfGuests && { guestCount: res.numberOfGuests }),
-                    ...(isCancelled && { aiEnabled: false }),
+                    ...(statusChanged && isCancelled && { aiEnabled: false }),
                     ...(res.totalPrice != null && { totalPrice: Number(res.totalPrice) }),
                     ...(res.hostPayout != null && { hostPayout: Number(res.hostPayout) }),
                     ...(res.cleaningFee != null && { cleaningFee: Number(res.cleaningFee) }),
@@ -198,10 +220,13 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                   });
                 }
 
-                // Feature 044: reschedule or cancel doc-handoff rows on reservation change.
+                // Feature 044: reschedule or cancel doc-handoff rows on
+                // ANY material reservation change — date changes are
+                // exactly what triggers a reschedule, so don't gate on
+                // status alone.
                 try {
                   const { rescheduleOnReservationChange, markCancelled } = await import('../services/doc-handoff.service');
-                  if (status === 'CANCELLED') {
+                  if (statusChanged && status === 'CANCELLED') {
                     void markCancelled(existing.id, prisma).catch(() => {});
                   } else {
                     void rescheduleOnReservationChange(existing.id, prisma).catch(() => {});

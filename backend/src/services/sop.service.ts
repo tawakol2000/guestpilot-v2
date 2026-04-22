@@ -12,6 +12,37 @@
 
 import { PrismaClient } from '@prisma/client';
 
+/**
+ * Bugfix (2026-04-23): the `prisma ?? new PrismaClient()` fallback in
+ * getSopContent used to construct a brand-new PrismaClient on every
+ * call where the caller forgot to pass one — each new client opens its
+ * own connection pool (default ~10 connections), and the per-call
+ * `$disconnect()` in the finally block is async + slow. On hot paths
+ * this could exhaust Postgres max_connections under load.
+ *
+ * Today every production caller threads its own prisma (verified:
+ * test-pipeline-runner, knowledge route, sandbox route, ai.service.ts).
+ * The `?? new PrismaClient()` was effectively dead code — but a footgun
+ * for any future caller that forgets to pass one. Replace with a
+ * module-scope lazily-created singleton so the worst case is one
+ * extra pool for the entire process lifetime, not one per call.
+ *
+ * This fallback is still NOT the recommended path: the function should
+ * always be called with the caller's prisma so transactions and
+ * lifecycle stay in the caller's hands.
+ */
+let _fallbackPrisma: PrismaClient | null = null;
+function getFallbackPrisma(): PrismaClient {
+  if (!_fallbackPrisma) {
+    console.warn(
+      '[sop.service] FALLBACK PrismaClient created — caller forgot to pass prisma. ' +
+      'Pass the request-scoped prisma to getSopContent() for proper lifecycle management.',
+    );
+    _fallbackPrisma = new PrismaClient();
+  }
+  return _fallbackPrisma;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // §1  CATEGORIES CONSTANT
 // ════════════════════════════════════════════════════════════════════════════
@@ -129,8 +160,10 @@ export async function getSopContent(
     }
   }
 
-  // We need Prisma for DB lookups
-  const db = prisma ?? new PrismaClient();
+  // We need Prisma for DB lookups. Use the caller's prisma when
+  // present; else borrow the module-scope fallback singleton (see
+  // getFallbackPrisma above for rationale).
+  const db = prisma ?? getFallbackPrisma();
   try {
     // Auto-seed if no definitions exist for this tenant
     const defCount = await db.sopDefinition.count({ where: { tenantId } });
@@ -214,8 +247,11 @@ export async function getSopContent(
     cacheSet(cacheKey, content);
     return applyTemplates(content, category, propertyAmenities, variableDataMap);
   } finally {
-    // Only disconnect if we created the client
-    if (!prisma) await db.$disconnect();
+    // Bugfix (2026-04-23): NEVER disconnect — the fallback is a
+    // module-scope singleton; disconnecting it would tear down the
+    // pool that subsequent fallback calls reuse. The caller-supplied
+    // prisma is owned by the caller's process (server.ts main()) and
+    // must not be touched here.
   }
 }
 

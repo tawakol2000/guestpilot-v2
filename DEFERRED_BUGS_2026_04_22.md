@@ -16,6 +16,20 @@
 
 ## Items
 
+### [LOW] broadcastCritical timeout-then-retry produces duplicates under multi-tab
+- **File:** `backend/src/services/socket.service.ts:154-165` + every `socket.on('message', ...)` handler in `frontend/components/inbox-v5.tsx`
+- **Symptom:** `io.to(room).timeout(5000).emit(...)` waits for ACK from EVERY socket in the tenant room. One slow tab's timeout makes the helper retry-emit to the entire room — fast tabs receive the same event twice. Frontends that don't dedupe by message id render double toasts / inbox entries.
+- **Why deferred:** The proper fix is multi-step and architectural: switch to per-socket targeting (`io.in(room).fetchSockets()` + per-socket emit+timeout) AND add a server-side message-id stamp + client-side seen-id Set so the frontend dedupes regardless of broadcast retry. The retry behaviour is currently load-bearing for slow networks — pulling it without per-socket targeting would regress reliability. Needs user input on whether to take the architectural change or accept the duplicate-event class.
+- **Fix sketch:**
+  - Server: replace `io.to(room).timeout().emit()` with iteration over fetchSockets, individual timeout-emit per socket.
+  - Client: every `socket.on('message', ...)` handler maintains a `seenMessageIds: Set<string>` and short-circuits if `data.message.id` is already seen (with a TTL eviction so the set doesn't grow forever).
+
+### [LOW] JWT_SECRET rotation breaks at-rest encrypted tokens
+- **File:** `backend/src/lib/encryption.ts` + `backend/src/services/hostaway-dashboard.service.ts` (consumer)
+- **Symptom:** The encryption key is derived from JWT_SECRET via PBKDF2. If JWT_SECRET is ever rotated, every existing encrypted dashboard JWT in the DB becomes undecryptable. The alteration-accept / login-assist code paths would fail silently (decrypt throws, caught and surfaced as 403/500).
+- **Why deferred:** The fix is a rotation runbook + a migration helper script that decrypts with the OLD secret and re-encrypts with the NEW. Both require user input on the rotation cadence and the operational policy.
+- **Fix sketch:** New script `backend/scripts/rotate-encryption-secret.ts` accepting OLD_JWT_SECRET + NEW_JWT_SECRET env vars, iterates `Tenant` rows with non-null `hostawayDashboardJwtEncrypted`, decrypts with OLD, encrypts with NEW. Document in CLAUDE.md.
+
 ### [LOW] WebhookLog table has no retention sweep
 - **File:** `backend/src/controllers/webhooks.controller.ts:203-226` + a new job under `backend/src/jobs/webhookLogRetention.job.ts`
 - **Symptom:** Every Hostaway webhook persists a row with the full payload to `WebhookLog`. No retention job, no size cap. High-volume tenants (hundreds of webhooks/day from reservation polling + message updates) accumulate indefinitely.
