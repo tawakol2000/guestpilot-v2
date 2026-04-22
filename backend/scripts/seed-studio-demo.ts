@@ -402,18 +402,28 @@ async function main() {
         },
       ),
       dataPart('data-test-pipeline-result', {
-        guestMessage: 'Hey, any chance we can come by at 11am?',
-        reply:
-          "Hi Jamie! Early check-in at 11am is possible for a fee of $100 (4 hours × $25/hr). I'll confirm once the previous guest has checked out — usually by 10:30am. Sound good?",
-        sopFired: 'sop-early-check-in',
-        faqFired: null,
-        toolsFired: ['get_sop'],
-        judgeScore: 0.87,
-        judgeRationale:
-          'Reply applies the $25/hr policy correctly, offers written confirmation, and handles the occupied-unit branch. Could be warmer on the opening.',
-        judgePromptVersion: '058-a1',
-        sourceWriteHistoryId: 'hist:placeholder',
-        sourceWriteLabel: 'create_sop · sop-early-check-in · DEFAULT',
+        ok: true,
+        aggregateVerdict: 'all_passed',
+        ritualVersion: '058-a1',
+        sourceWriteHistoryId: null,
+        sourceWriteLabel: null,
+        ritualCallsRemaining: 4,
+        variants: [
+          {
+            triggerMessage: 'Hey, any chance we can come by at 11am?',
+            pipelineOutput:
+              "Hi Jamie! Early check-in at 11am is possible for a fee of $100 (4 hours × $25/hr). I'll confirm once the previous guest has checked out — usually by 10:30am. Sound good?",
+            verdict: 'passed',
+            judgeReasoning:
+              'Reply applies the $25/hr policy correctly, offers written confirmation, and handles the occupied-unit branch. Could be warmer on the opening.',
+            judgeScore: 0.87,
+            judgePromptVersion: '058-a1',
+            judgeModel: 'claude-sonnet-4-6',
+            replyModel: 'gpt-5.4-mini',
+            latencyMs: 2_340,
+            ranAt: at(16).toISOString(),
+          },
+        ],
       }),
       textPart('Judge scored 0.87 — solid. One nit: the opening line could be warmer. Want me to tune the tone?', { origin: 'ai' }),
     ],

@@ -157,8 +157,11 @@ export function PlanChecklist({
   const [overflowOpen, setOverflowOpen] = useState(false)
   // Sprint 058-A F2 — optimistic set of pending-item indexes marked ×.
   // Flows into `deriveRowState` to flip the glyph to `× cancelled`.
+  // Seed from any `cancelledItemIndexes` already on the plan data (the
+  // backend may ship a plan with items pre-flagged as cancelled, e.g.
+  // when the operator declined an item during the planning turn).
   const [cancelledIndexes, setCancelledIndexes] = useState<ReadonlySet<number>>(
-    () => new Set<number>(),
+    () => new Set<number>(data.cancelledItemIndexes ?? []),
   )
   const approveCalledRef = useRef(false)
   const overflowRef = useRef<HTMLDivElement>(null)
