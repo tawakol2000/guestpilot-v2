@@ -187,19 +187,42 @@ async function collectSopContext(
   return sections.join('\n\n');
 }
 
-async function collectFaqContext(
+export async function collectFaqContext(
   tenantId: string,
   prisma: PrismaClient
 ): Promise<string> {
+  // Bugfix (2026-04-22): previously `scope: 'GLOBAL'` was hard-filtered,
+  // so PROPERTY-scoped FAQs were invisible to the dry pipeline. That
+  // contradicted this module's own header doc ("ALL active FAQ entries
+  // are pre-injected") and produced a false-negative from the Sonnet
+  // judge whenever the change under test was a per-property FAQ —
+  // managers saw test_pipeline fail even though the FAQ was correct,
+  // because the runner wasn't loading it. test_pipeline has no
+  // propertyId parameter, so we include both scopes and annotate each
+  // entry so the judge can reason about applicability. GLOBAL entries
+  // come first in sort order so if the 2,000-char truncate downstream
+  // clips tail, the fleet-wide FAQs survive preferentially.
   const entries = await prisma.faqEntry.findMany({
-    where: { tenantId, status: 'ACTIVE', scope: 'GLOBAL' },
-    select: { category: true, question: true, answer: true },
-    orderBy: { createdAt: 'asc' },
+    where: { tenantId, status: 'ACTIVE' },
+    select: {
+      category: true,
+      question: true,
+      answer: true,
+      scope: true,
+      propertyId: true,
+    },
+    orderBy: [{ scope: 'asc' }, { createdAt: 'asc' }],
     take: 100,
   });
   if (entries.length === 0) return '';
   return entries
-    .map((e) => `[${e.category}] Q: ${e.question}\nA: ${e.answer}`)
+    .map((e) => {
+      const scopeTag =
+        e.scope === 'GLOBAL'
+          ? 'GLOBAL'
+          : `PROPERTY:${e.propertyId ?? 'unknown'}`;
+      return `[${scopeTag} ${e.category}] Q: ${e.question}\nA: ${e.answer}`;
+    })
     .join('\n\n');
 }
 
