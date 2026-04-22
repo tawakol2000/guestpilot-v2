@@ -36,9 +36,11 @@ import {
 import {
   apiGetBuildCapabilities,
   apiGetBuildTenantState,
+  apiGetSessionArtifacts,
   BuildModeDisabledError,
   type BuildCapabilities,
   type BuildTenantState,
+  type SessionArtifactRow,
   type TestPipelineResultData,
 } from '@/lib/build-api'
 import { BuildDisabled } from '@/components/build/build-disabled'
@@ -212,6 +214,34 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           conversationId: selectedId,
           initialMessages,
         })
+
+        // Sprint 058-A F9d — hydrate the session-artifacts rail from the
+        // server so a page reload doesn't blank the card. Fire-and-forget:
+        // a failure here falls back to the empty-state render path that
+        // the rail was already using pre-058. Never blocks Studio boot.
+        apiGetSessionArtifacts(selectedId)
+          .then((page) => {
+            if (cancelled) return
+            const seeded = sessionArtifactsFromApi(page.rows)
+            if (seeded.length === 0) return
+            // Merge in a way that doesn't stomp rows already upserted
+            // between kind:'ready' and this fetch returning. Start from
+            // the fresh list and let the existing upsert helper layer
+            // any live-stream rows on top.
+            setSessionArtifacts((prev) => {
+              if (prev.length === 0) return seeded
+              const next = [...seeded]
+              for (const row of prev) {
+                const idx = next.findIndex((r) => r.id === row.id)
+                if (idx === -1) next.unshift(row)
+                else next[idx] = row
+              }
+              return next
+            })
+          })
+          .catch(() => {
+            /* silent — rail stays on empty / current state */
+          })
       } catch (err) {
         if (cancelled) return
         if (err instanceof BuildModeDisabledError) {
@@ -959,6 +989,75 @@ function rehydrate(rows: TuningConversationMessage[]): UIMessage[] {
         parts,
       } as unknown as UIMessage
     })
+}
+
+/**
+ * Sprint 058-A F9d — map the server's BuildArtifactHistory-backed rows
+ * into the client-side SessionArtifact shape the rail renders. The
+ * server emits one row per write; we collapse duplicates (same
+ * artifactType+artifactId) by keeping the newest.
+ *
+ * Graceful degradation: unknown artifact types map to null and are
+ * dropped. An empty array produces an empty rail (no-op).
+ */
+function sessionArtifactsFromApi(rows: SessionArtifactRow[]): SessionArtifact[] {
+  const out: SessionArtifact[] = []
+  const seen = new Set<string>()
+  // Rows arrive newest-first from the server — keep that order.
+  for (const row of rows) {
+    const artifact = mapApiArtifactType(row.artifactType)
+    if (!artifact) continue
+    const id = `hydrate:${artifact}:${row.artifactId}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push({
+      id,
+      artifact,
+      artifactId: row.artifactId,
+      title: mapApiArtifactTitle(artifact, row.artifactId),
+      action: mapApiArtifactAction(row.operation),
+      at: row.touchedAt,
+    })
+  }
+  return out
+}
+
+function mapApiArtifactType(
+  raw: SessionArtifactRow['artifactType'],
+): SessionArtifact['artifact'] | null {
+  if (raw === 'sop') return 'sop'
+  if (raw === 'faq') return 'faq'
+  if (raw === 'system_prompt') return 'system_prompt'
+  if (raw === 'tool' || raw === 'tool_definition') return 'tool'
+  if (raw === 'property_override') return 'property_override'
+  return null
+}
+
+function mapApiArtifactAction(
+  op: SessionArtifactRow['operation'],
+): SessionArtifact['action'] {
+  if (op === 'CREATE') return 'created'
+  if (op === 'REVERT') return 'reverted'
+  return 'modified'
+}
+
+function mapApiArtifactTitle(
+  artifact: SessionArtifact['artifact'],
+  artifactId: string,
+): string {
+  const short = artifactId.length > 24 ? `${artifactId.slice(0, 21)}…` : artifactId
+  switch (artifact) {
+    case 'sop':
+      return `SOP · ${short}`
+    case 'faq':
+      return `FAQ · ${short}`
+    case 'system_prompt':
+      return `Prompt · ${short}`
+    case 'tool':
+      return `Tool · ${short}`
+    case 'property_override':
+      return `Property · ${short}`
+  }
 }
 
 /** Fallback StateSnapshotData derived from /api/build/tenant-state when

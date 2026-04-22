@@ -46,6 +46,10 @@ vi.mock('@/lib/build-api', () => ({
     mockApiGetBuildCapabilities(...args),
   apiGetBuildTenantState: (...args: unknown[]) =>
     mockApiGetBuildTenantState(...args),
+  // Sprint 058-A F9d — surface now hydrates the session-artifacts rail
+  // from the server during bootstrap. Mock with an empty rows list so
+  // this suite (orthogonal to F9d) still reaches the ready branch.
+  apiGetSessionArtifacts: vi.fn().mockResolvedValue({ rows: [] }),
   BuildModeDisabledError: class BuildModeDisabledError extends Error {},
   apiListBuildArtifactHistory: vi.fn().mockResolvedValue({ rows: [] }),
   apiRevertArtifactFromHistory: vi.fn(),
