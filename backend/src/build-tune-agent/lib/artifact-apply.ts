@@ -19,6 +19,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { invalidateSopCache } from '../../services/sop.service';
 import { invalidateToolCache } from '../../services/tool-definition.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
+import { invalidateFaqCache } from '../../services/faq.service';
 import { emitArtifactHistory } from './artifact-history';
 import { sanitiseArtifactPayload } from './sanitise-artifact-payload';
 import { isPublicHttpsUrl } from '../../lib/url-safety';
@@ -180,6 +181,9 @@ async function applyFaq(prisma: PrismaClient, input: ApplyInput): Promise<ApplyR
       ...(answer != null ? { answer: nextAnswer } : {}),
     },
   });
+  // 2026-04-23: symmetric with sibling apply paths. No-op today (FAQ
+  // service has no cache); load-bearing the moment FAQ caching lands.
+  invalidateFaqCache(input.tenantId);
   await emitArtifactHistory(prisma, {
     tenantId: input.tenantId,
     artifactType: 'faq',

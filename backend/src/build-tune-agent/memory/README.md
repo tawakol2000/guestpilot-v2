@@ -13,7 +13,7 @@ Keys are free-form strings, but by convention we namespace them with a
 | `preferences/` | Durable manager-stated rules (e.g. `preferences/tone`, `preferences/concise-sops`). Survives forever. Injected into the dynamic portion of the system prompt at session start. |
 | `facts/` | Tenant-specific facts the agent has learned (e.g. `facts/luxury-properties`, `facts/arabic-guests-common`). Drives suggestion heuristics. |
 | `decisions/` | One row per accepted decision (e.g. `decisions/2026-04-15-parking-override`). Used for oscillation checks and to surface "we decided X on Y" history. |
-| `rejections/` | Explicit manager rejections the agent should NOT re-propose (e.g. `rejections/tone-changes-on-confirmed`). |
+| `session/{conversationId}/rejected/{fixHash}` | Explicit manager rejections the agent should NOT re-propose. **Note (2026-04-23 doc fix):** earlier docs advertised a `rejections/` top-level namespace; no writer ever used it. Per-session rejection tracking lives under `session/*/rejected/*` (see `service.ts:133, 180`). |
 
 Operations (the `memory` tool exposes these four):
 

@@ -8,6 +8,26 @@
 import { PrismaClient, FaqEntry } from '@prisma/client';
 import { FAQ_CATEGORIES, FAQ_CATEGORY_LABELS, FaqCategory } from '../config/faq-categories';
 
+/**
+ * Stub for cache invalidation. Today FAQ has NO cache (every read is a
+ * fresh Prisma query), so this is a no-op. Exported anyway so that
+ * `lib/artifact-apply.ts#applyFaq` and `tools/suggestion-action.ts`
+ * FAQ branches can call it symmetrically with their `invalidateSopCache`
+ * / `invalidateToolCache` / `invalidateTenantConfigCache` siblings —
+ * the moment FAQ caching is introduced, all writers already call the
+ * right invalidator.
+ *
+ * Bugfix (2026-04-23, foot-gun prevention): a reader of artifact-apply.ts
+ * sees the SOP/tool/system-prompt invalidation pattern and would
+ * naturally believe the FAQ branch is buggy for omitting it; or worse,
+ * a future commit adds FAQ caching and forgets to wire all six writers.
+ * Symmetric callers means there's no "FAQ is special" carve-out to
+ * remember.
+ */
+export function invalidateFaqCache(_tenantId: string): void {
+  // No-op today. See doc comment above.
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // §1  getFaqEntries() — list with optional filters
 // ════════════════════════════════════════════════════════════════════════════

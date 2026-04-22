@@ -90,7 +90,16 @@ export function buildSuggestionActionTool(
           newText: z.string().optional(),
           beforeText: z.string().optional(),
           sopCategory: z.string().optional(),
-          sopStatus: z.enum(['DEFAULT', 'INQUIRY', 'CONFIRMED', 'CHECKED_IN']).optional(),
+          // 2026-04-23: full 6-status set must match create_sop.ts +
+          // sop.service.ts. Previously this dropped PENDING and
+          // CHECKED_OUT, so any tuning-agent edit targeting an SOP at
+          // those statuses would ZodError — even though create_sop.ts
+          // happily creates rows at those statuses. Contract drift
+          // bug: same (category, status) tuple writes via one surface,
+          // rejects via another.
+          sopStatus: z
+            .enum(['DEFAULT', 'INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'])
+            .optional(),
           sopPropertyId: z.string().optional(),
           systemPromptVariant: z.enum(['coordinator', 'screening']).optional(),
           faqEntryId: z.string().optional(),
@@ -996,7 +1005,10 @@ export interface ApplyFromUiInput {
   after: string;
   target: {
     sopCategory?: string;
-    sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN';
+    // 2026-04-23: parity with the Zod enum at line 100 above and with
+    // create_sop.ts. Was missing PENDING + CHECKED_OUT, blocking the
+    // Studio quick-accept path for SOPs at those statuses.
+    sopStatus?: 'DEFAULT' | 'INQUIRY' | 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT';
     sopPropertyId?: string;
     faqEntryId?: string;
     systemPromptVariant?: 'coordinator' | 'screening';

@@ -3,6 +3,26 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { SOP_CATEGORIES, buildToolDefinition, getSopContent, invalidateSopCache } from '../services/sop.service';
 
+/**
+ * Bugfix (2026-04-23): canonical SOP-status set the readers
+ * (sop.service.ts#getSopContent) match against. The admin SOP-variant
+ * + property-override POST handlers used to accept arbitrary `status`
+ * strings, so a typo like `"CONFIRMED "` (trailing space) or
+ * `"checked_in"` (lowercase) would create a row that never matched
+ * any reader query — invisible to the AI but counted in admin UI
+ * totals (orphan write). The sister write paths in create-sop.ts +
+ * suggestion-action.ts both validate; this admin surface was the odd
+ * one out.
+ */
+const SOP_STATUSES_SET = new Set([
+  'DEFAULT',
+  'INQUIRY',
+  'PENDING',
+  'CONFIRMED',
+  'CHECKED_IN',
+  'CHECKED_OUT',
+]);
+
 export function knowledgeRouter(prisma: PrismaClient): Router {
   const router = Router();
   router.use(authMiddleware as unknown as RequestHandler);
@@ -213,6 +233,13 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
       if (!sopDefinitionId || !status || !content) {
         return res.status(400).json({ error: 'sopDefinitionId, status, and content are required' });
       }
+      // 2026-04-23: validate status against the canonical set so an
+      // admin typo can't create an orphan variant invisible to the AI.
+      if (!SOP_STATUSES_SET.has(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${[...SOP_STATUSES_SET].join(', ')}`,
+        });
+      }
 
       // Verify the definition belongs to this tenant
       const def = await prisma.sopDefinition.findFirst({
@@ -315,6 +342,13 @@ export function knowledgeRouter(prisma: PrismaClient): Router {
 
       if (!sopDefinitionId || !propertyId || !status || !content) {
         return res.status(400).json({ error: 'sopDefinitionId, propertyId, status, and content are required' });
+      }
+      // 2026-04-23: validate status — same orphan-write protection as
+      // the sop-variants POST handler above.
+      if (!SOP_STATUSES_SET.has(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${[...SOP_STATUSES_SET].join(', ')}`,
+        });
       }
 
       // Verify the definition belongs to this tenant

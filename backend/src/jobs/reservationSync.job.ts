@@ -189,7 +189,7 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
               // actually changed.
               const existing = await prisma.reservation.findFirst({
                 where: { tenantId: tenant.id, hostawayReservationId: hwResId },
-                select: { id: true, status: true, checkIn: true, checkOut: true, guestCount: true },
+                select: { id: true, status: true, checkIn: true, checkOut: true, guestCount: true, aiEnabled: true },
               });
               if (!existing) continue;
 
@@ -205,6 +205,17 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
 
               if (hasMaterialChange) {
                 const isCancelled = status === 'CANCELLED' || status === 'CHECKED_OUT';
+                // Bugfix (2026-04-23): asymmetry — webhook path
+                // re-enables aiEnabled on CANCELLED→CONFIRMED
+                // reactivation, but the poller fallback only ever
+                // turned aiEnabled OFF on CANCELLED, never back ON.
+                // A tenant on the polling fallback whose guest
+                // re-books after a cancellation got silent AI until
+                // a manual toggle. Now the poller re-enables when
+                // status flips back to a live state AND aiEnabled
+                // had been turned off.
+                const isReactivation =
+                  statusChanged && !isCancelled && existing.aiEnabled === false;
                 await prisma.reservation.update({
                   where: { id: existing.id },
                   data: {
@@ -213,6 +224,7 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
                     ...(newCheckOut && { checkOut: newCheckOut }),
                     ...(res.numberOfGuests && { guestCount: res.numberOfGuests }),
                     ...(statusChanged && isCancelled && { aiEnabled: false }),
+                    ...(isReactivation && { aiEnabled: true }),
                     ...(res.totalPrice != null && { totalPrice: Number(res.totalPrice) }),
                     ...(res.hostPayout != null && { hostPayout: Number(res.hostPayout) }),
                     ...(res.cleaningFee != null && { cleaningFee: Number(res.cleaningFee) }),
