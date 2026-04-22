@@ -2332,8 +2332,30 @@ export default function InboxV5() {
     })
 
     socket.on('property_ai_changed', () => {
+      // Bugfix (2026-04-23): apiGetConversations returns
+      // ApiConversationSummary[] (an array), not { conversations: [...] }.
+      // The previous `?.conversations` check was always falsy, so the
+      // list never refreshed. Toggling AI at the property level in
+      // configure-ai propagated only after a manual reload. Mirror the
+      // reservation_created pattern: map → preserve in-memory detail
+      // fields → re-set state.
       apiGetConversations()
-        .then(data => { if ((data as any)?.conversations) setConversations((data as any).conversations) })
+        .then(data => {
+          const mapped = data.map(summaryToConversation)
+          setConversations(prev =>
+            mapped.map(newConv => {
+              const existing = prev.find(p => p.id === newConv.id)
+              if (existing) {
+                return {
+                  ...existing,
+                  aiOn: newConv.aiOn,
+                  aiMode: newConv.aiMode,
+                }
+              }
+              return newConv
+            })
+          )
+        })
         .catch(err => console.error('[Socket] property_ai_changed refresh failed:', err))
     })
 

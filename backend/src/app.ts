@@ -56,8 +56,12 @@ export function createApp(prisma: PrismaClient) {
   }));
 
   // ── Middleware ────────────────────────────────────────────────────────────
+  // Bugfix (2026-04-23): trim + filter empty entries on the comma-split
+  // so an env var like "https://a.com, https://b.com" doesn't produce
+  // " https://b.com" (with the leading space) which fails CORS matching.
+  // socket.service.ts already trims; this aligns the two surfaces.
   const allowedOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',')
+    ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
     : ['http://localhost:3000'];
   if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
     console.warn('[CORS] WARNING: CORS_ORIGINS not set in production — falling back to localhost. This is unsafe for production.');

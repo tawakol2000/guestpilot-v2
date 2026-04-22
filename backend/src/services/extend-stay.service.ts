@@ -196,18 +196,33 @@ export async function checkExtendAvailability(
   let perNight: number | null = null;
   let currency: string | null = null;
 
-  const priceRes = await calculateReservationPrice(
-    ctx.hostawayAccountId, ctx.hostawayApiKey,
-    listingId, checkStart, checkEnd, numberOfGuests
-  );
-
-  if (priceRes?.result) {
-    const p = priceRes.result;
-    totalCost = p.totalPrice ?? p.price ?? p.basePrice ?? null;
-    currency = p.currency ?? 'USD';
-    if (totalCost && additionalNights > 0) {
-      perNight = Math.round(totalCost / additionalNights);
+  // Bugfix (2026-04-23): the calendar check above is wrapped in
+  // try/catch but `calculateReservationPrice` was not. If Hostaway's
+  // pricing endpoint 5xx'd or timed out after the calendar succeeded,
+  // the throw bubbled out to the AI tool-use loop and crashed the
+  // turn — guest got no reply or a generic error. Wrap and degrade
+  // to "available but price unknown" so the model can still respond
+  // ("we'll confirm price shortly").
+  try {
+    const priceRes = await calculateReservationPrice(
+      ctx.hostawayAccountId, ctx.hostawayApiKey,
+      listingId, checkStart, checkEnd, numberOfGuests
+    );
+    if (priceRes?.result) {
+      const p = priceRes.result;
+      totalCost = p.totalPrice ?? p.price ?? p.basePrice ?? null;
+      currency = p.currency ?? 'USD';
+      if (totalCost && additionalNights > 0) {
+        perNight = Math.round(totalCost / additionalNights);
+      }
     }
+  } catch (priceErr: any) {
+    console.warn(
+      `[ExtendStay] price lookup failed (non-fatal, falling back to null price):`,
+      priceErr?.message ?? priceErr,
+    );
+    // Leave totalCost / perNight / currency as null so the model says
+    // "available, will confirm exact price shortly."
   }
 
   const result: ExtendStayResult = {

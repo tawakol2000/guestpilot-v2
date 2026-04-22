@@ -421,8 +421,35 @@ async function handleNewMessage(
     }
   }
 
-  // Generate a unique hostawayMessageId even when Hostaway sends empty/missing id
-  const hostawayMsgId = data.id ? String(data.id) : `empty-${Date.now()}`;
+  // Generate a unique hostawayMessageId even when Hostaway sends empty/missing id.
+  // Bugfix (2026-04-23): the previous fallback `empty-${Date.now()}`
+  // produced a different id on every webhook delivery, so two duplicate
+  // Hostaway webhooks within retry windows (system notifications,
+  // alteration retries, even regular messages with a deliverer that
+  // dropped the `id` field) inserted twice → duplicate tasks, duplicate
+  // AI triggers, duplicate alteration records. Now we hash the
+  // (conversationId + sentAt + role + body) tuple so identical retries
+  // collide on the unique index instead.
+  let hostawayMsgId: string;
+  if (data.id) {
+    hostawayMsgId = String(data.id);
+  } else {
+    const dedupeBasis = JSON.stringify({
+      c: conversation.id,
+      t: data.date ?? data.createdAt ?? data.sentAt ?? '',
+      r: data.isIncoming ?? data.role ?? '',
+      b: (data.body ?? '').slice(0, 500),
+    });
+    // Cheap non-cryptographic hash; collisions across DIFFERENT messages
+    // are vanishingly unlikely with a 500-char body sample, and even a
+    // collision degrades safely (the unique-index conflict is caught
+    // and treated as a duplicate, which is the intended dedup behaviour).
+    let hash = 0;
+    for (let i = 0; i < dedupeBasis.length; i++) {
+      hash = ((hash << 5) - hash + dedupeBasis.charCodeAt(i)) | 0;
+    }
+    hostawayMsgId = `nopid-${(hash >>> 0).toString(36)}`;
+  }
 
   // Detect Airbnb system notifications (alteration requests, etc.) — not real guest messages
   const messageBody = (data.body || '').toLowerCase();

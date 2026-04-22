@@ -95,9 +95,26 @@ async function main() {
     await closeQueue();
     await flushObservability();
     await shutdownApns();
+
+    // Bugfix (2026-04-23): hard-deadline so the process always exits
+    // within Railway's grace window (~30s default). Without this,
+    // long-lived WebSocket connections (Socket.IO pingTimeout: 60s)
+    // could keep httpServer.close() pending past the grace window —
+    // the process gets SIGKILL'd, prisma.$disconnect() never runs, and
+    // we leak DB connections on every redeploy.
+    const HARD_SHUTDOWN_MS = 10_000;
+    const hardTimer = setTimeout(() => {
+      console.warn(
+        `[Server] Shutdown deadline (${HARD_SHUTDOWN_MS}ms) exceeded — forcing exit.`,
+      );
+      process.exit(0);
+    }, HARD_SHUTDOWN_MS);
+    hardTimer.unref();
+
     httpServer.close(async () => {
       await prisma.$disconnect();
       console.log('[Server] Shutdown complete');
+      clearTimeout(hardTimer);
       process.exit(0);
     });
   };

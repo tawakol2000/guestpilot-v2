@@ -2,6 +2,10 @@
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
 
+// 2026-04-23: module-scope guard against the "5 concurrent 401s →
+// 5 redirect calls" storm. See the 401 branch in apiFetch.
+let _redirecting = false
+
 // ─── Auth token helpers ────────────────────────────────────────────────────────
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
@@ -58,7 +62,17 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (res.status === 401) {
     clearToken()
-    window.location.href = '/login'
+    // Bugfix (2026-04-23): module-scope guard so concurrent 401s don't
+    // each trigger window.location.href. Browsers collapse multiple
+    // navigations to one, but each call still throws an error which
+    // React Query / SWR then renders as a flash of error UI before the
+    // navigation lands. The guard ensures only the first 401 fires the
+    // redirect; subsequent 401s on the same page still throw so callers
+    // can clean up local state.
+    if (!_redirecting) {
+      _redirecting = true
+      window.location.href = '/login'
+    }
     throw new ApiError('Unauthorized', 401)
   }
 

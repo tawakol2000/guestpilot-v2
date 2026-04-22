@@ -9,7 +9,21 @@ import { syncConversationMessages } from '../services/message-sync.service';
 export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log('[MessageSync] Background sync job started (interval: 120s)');
 
+  // Bugfix (2026-04-23): module-scope overlap guard. The 2-minute timer
+  // can fire while the previous tick is still draining if Hostaway is
+  // slow (rate-limit, OAuth retry, or 10 conversations × ~12s each
+  // exceeds the 120s interval). Overlapping ticks compete for the same
+  // rows + the same OAuth token refresh and compound CPU/memory pressure
+  // over long uptimes. Skip a tick if the previous one is still
+  // running.
+  let running = false;
+
   return setInterval(async () => {
+    if (running) {
+      console.log('[MessageSync] Previous tick still running — skipping this cycle.');
+      return;
+    }
+    running = true;
     try {
       const now = new Date();
       const twoMinAgo = new Date(now.getTime() - 120_000);
@@ -84,6 +98,8 @@ export function startMessageSyncJob(prisma: PrismaClient): NodeJS.Timeout {
       }
     } catch (err: any) {
       console.error('[MessageSync] Job cycle failed:', err.message);
+    } finally {
+      running = false;
     }
   }, 120_000);
 }

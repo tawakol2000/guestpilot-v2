@@ -16,6 +16,12 @@
 
 ## Items
 
+### [LOW] WebhookLog table has no retention sweep
+- **File:** `backend/src/controllers/webhooks.controller.ts:203-226` + a new job under `backend/src/jobs/webhookLogRetention.job.ts`
+- **Symptom:** Every Hostaway webhook persists a row with the full payload to `WebhookLog`. No retention job, no size cap. High-volume tenants (hundreds of webhooks/day from reservation polling + message updates) accumulate indefinitely.
+- **Why deferred:** Picking the right retention window requires user input. Defaults vary across the existing retention jobs: `BuildToolCallLog` is 30 days, `TuningSuggestion` is configurable, `AiApiLog` has its own policy. Need user to confirm: keep 30 days? 7 days? Smaller for high-volume tenants?
+- **Fix sketch:** Create `backend/src/jobs/webhookLogRetention.job.ts` mirroring `buildToolCallLogRetention.job.ts`. Run daily. `prisma.webhookLog.deleteMany({ where: { createdAt: { lt: thirtyDaysAgo } } })`.
+
 ### [LOW] translateAndSend bypasses copilot edit-diagnostic capture
 - **File:** `backend/src/controllers/messages.controller.ts:355-394` (translate-and-send branch) vs `:100-220` (regular send branch)
 - **Symptom:** Managers who use the in-app translator to translate-and-send a reply skip the entire diagnostic-capture pipeline (pendingDraft lookup → recentAiApiLog → REJECT_TRIGGERED diagnostic emit). Their corrected outputs never feed the tuning corpus, so we lose tuning signal for multilingual managers.
