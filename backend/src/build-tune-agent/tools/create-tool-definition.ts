@@ -84,6 +84,17 @@ export function buildCreateToolDefinitionTool(
         .url()
         .refine((u) => u.startsWith('https://'), 'webhookUrl must be https://'),
       webhookAuth: webhookAuthSchema,
+      // KNOWN-GAP (2026-04-22): `availableStatuses` is accepted, surfaced
+      // in the dry-run preview, and stamped into BuildArtifactHistory
+      // metadata — but it is NOT persisted to the ToolDefinition row
+      // (no column on the model) and NOT honoured by main-AI status
+      // gating (`ai.service.ts` is out of scope for the BUILD layer per
+      // the constitution). The manager believes the new tool is
+      // restricted to e.g. [CONFIRMED]; main AI sees no restriction
+      // and may call it in any status.
+      // Tracked in DEFERRED_BUGS_2026_04_22.md — fix requires a
+      // schema column + an ai.service update; both decisions sit with
+      // the user.
       availableStatuses: z
         .array(z.enum(RESERVATION_STATUSES as unknown as [string, ...string[]]))
         .min(1, 'availableStatuses cannot be empty'),

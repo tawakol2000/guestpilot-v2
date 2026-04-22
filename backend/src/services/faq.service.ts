@@ -175,13 +175,21 @@ export async function getFaqForProperty(
 ): Promise<string> {
   const categoryLabel = FAQ_CATEGORY_LABELS[category as FaqCategory] || category;
 
-  // Fetch property-specific ACTIVE entries for this category
+  // Fetch property-specific ACTIVE entries for this category.
+  // Bugfix (2026-04-22): include scope='PROPERTY' filter so we don't
+  // accidentally pick up GLOBAL rows that have a propertyId stamped
+  // (possible if a row was inserted via a path that bypassed
+  // createFaqEntry's auto-scope, e.g. legacy import or out-of-sync
+  // auto-suggest path). Without this filter the same row would appear
+  // both as a "property entry" and as a "global entry" → duplicate
+  // rendering in the AI's get_faq result.
   const propertyEntries = await prisma.faqEntry.findMany({
     where: {
       tenantId,
       propertyId,
       category,
       status: 'ACTIVE',
+      scope: 'PROPERTY',
     },
   });
 

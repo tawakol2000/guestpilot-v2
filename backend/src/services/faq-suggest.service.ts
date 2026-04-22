@@ -100,13 +100,33 @@ export async function processFaqSuggestion(
       return null;
     }
 
-    // 4. Validate category — default to 'property-neighborhood' if invalid
+    // 4. Validate category — default to 'property-neighborhood' if invalid.
+    // Bugfix (2026-04-22): assert the fallback category is valid at runtime
+    // so a future drift in FAQ_CATEGORIES doesn't silently persist garbage.
+    // Also asserts at module load (see top-of-file invariant) — but a
+    // defensive check here is cheap.
+    const FALLBACK_CATEGORY: FaqCategory = 'property-neighborhood' as FaqCategory;
+    if (!FAQ_CATEGORIES.includes(FALLBACK_CATEGORY)) {
+      console.error(
+        '[FAQ-Suggest] FALLBACK_CATEGORY is no longer in FAQ_CATEGORIES — fix this constant.',
+      );
+    }
     const category: string = FAQ_CATEGORIES.includes(result.category as FaqCategory)
       ? result.category
-      : 'property-neighborhood';
+      : FALLBACK_CATEGORY;
 
-    // 5. Dedup check: existing ACTIVE entries with matching first 100 chars
-    const questionFingerprint = result.question.toLowerCase().trim().substring(0, 100);
+    // 5. Dedup check.
+    // Bugfix (2026-04-22): unified fingerprint length to 50 chars to
+    // match `faq.service.ts#getFaqForProperty` (which uses 50 for its
+    // global-vs-property dedup). Previously this used 100 chars; an
+    // auto-suggested FAQ that was unique-at-100 but collision-at-50
+    // would survive dedup here, then get filtered out at AI call time
+    // — the manager-approved entry never surfaced in get_faq results.
+    const FAQ_DEDUP_FINGERPRINT_CHARS = 50;
+    const questionFingerprint = result.question
+      .toLowerCase()
+      .trim()
+      .substring(0, FAQ_DEDUP_FINGERPRINT_CHARS);
     const existingEntries = await prisma.faqEntry.findMany({
       where: {
         tenantId,
@@ -120,7 +140,11 @@ export async function processFaqSuggestion(
     });
 
     const isDuplicate = existingEntries.some(
-      (e) => e.question.toLowerCase().trim().substring(0, 100) === questionFingerprint,
+      (e) =>
+        e.question
+          .toLowerCase()
+          .trim()
+          .substring(0, FAQ_DEDUP_FINGERPRINT_CHARS) === questionFingerprint,
     );
 
     if (isDuplicate) {

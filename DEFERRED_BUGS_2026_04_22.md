@@ -16,6 +16,14 @@
 
 ## Items
 
+### [MEDIUM] create_tool_definition.availableStatuses silently dropped
+- **File:** `backend/src/build-tune-agent/tools/create-tool-definition.ts:87` + `prisma/schema.prisma` ToolDefinition + `backend/src/services/ai.service.ts` (sacred)
+- **Symptom:** Agent declares a custom tool restricted to e.g. `[CONFIRMED]` only. The Zod schema accepts it; the dryRun preview surfaces it; BuildArtifactHistory metadata captures it; but it is never persisted to the ToolDefinition row (no column) and never honoured by main-AI status gating. Manager believes the tool is restricted; main AI calls it in every status.
+- **Why deferred:** The proper fix needs (a) a schema column on `ToolDefinition` (`availableStatuses Json?` — nullable to avoid backfill lock; `prisma db push` per constitution); AND (b) `ai.service.ts` updated to filter custom tools by reservation status — but `ai.service.ts` is sacred (untouchable). Need user sign-off on whether to schedule an `ai.service` edit just for this gate, or alternatively to drop the Zod param entirely (and update the agent system prompt so it stops claiming the gate exists).
+- **Fix sketch:**
+  - Option A: add `availableStatuses Json?` to `ToolDefinition`, persist in `create_tool_definition` and the admin apply path, run `prisma db push`. Then add a status filter in `ai.service.ts` when assembling the per-turn tool list.
+  - Option B: remove `availableStatuses` from the Zod schema + tool description; drop the field from dryRun preview + history metadata; agent stops claiming the capability.
+
 ### [HIGH] Schema follow-up: partial unique index on TuningSuggestion previewId
 - **File:** `backend/prisma/schema.prisma` (TuningSuggestion model) + `backend/src/build-tune-agent/tools/suggestion-action.ts:1027`
 - **Symptom:** `applyArtifactChangeFromUi` race window cannot be fully closed cross-instance via app code alone. The 2026-04-22 fix added a process-level single-flight Map + create-time previewId stamp, narrowing the window dramatically — but two concurrent calls landing on different backend instances within the round-trip of one Prisma `create` can still both succeed.

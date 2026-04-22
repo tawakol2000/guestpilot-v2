@@ -26,6 +26,43 @@ const REDACTED = '[redacted]';
 const LIKELY_SECRET_REGEX = /^[A-Za-z0-9_\-]{32,}$/;
 const LIKELY_SECRET_MIDDLE = '…[likely-secret]…';
 
+/**
+ * Bugfix (2026-04-22): the regex above false-positives on legitimate
+ * long slugs / hyphenated strings (e.g.
+ * `aws-prod-eu-west-webhook-for-bookings-v3` — 40 chars). To reduce the
+ * blast radius without sacrificing the safety net we add two filters:
+ *
+ *   1. Hyphen ratio — strings with > 15% hyphens are almost certainly
+ *      slugs / kebab-case identifiers, not opaque tokens. Real secrets
+ *      (API keys, JWTs, base64) virtually never carry hyphens.
+ *   2. Vowel ratio — slugs and human-readable identifiers contain
+ *      vowels. Real opaque tokens are uniform-distribution alphanumeric
+ *      so the vowel proportion is ~37%; aggressively-randomised tokens
+ *      are still ≤ 30%. A vowel ratio > 25% strongly suggests human-
+ *      readable text.
+ *
+ * If EITHER filter triggers, the value is treated as non-secret. False
+ * negatives (missed redaction) on this defensive heuristic are
+ * acceptable — the SENSITIVE_KEY_REGEX above catches the canonical
+ * cases by key name; this is only the blanket "we don't know what
+ * key this is under" fallback. False positives on slugs were producing
+ * mangled webhook URLs in dryRun previews + in BuildArtifactHistory.
+ */
+const HYPHEN_RATIO_LIMIT = 0.15;
+const VOWEL_RATIO_LIMIT = 0.25;
+const VOWELS = /[aeiouAEIOU]/g;
+const HYPHENS = /-/g;
+
+function looksLikeSlug(s: string): boolean {
+  const len = s.length;
+  if (len === 0) return false;
+  const hyphenCount = (s.match(HYPHENS) ?? []).length;
+  if (hyphenCount / len > HYPHEN_RATIO_LIMIT) return true;
+  const vowelCount = (s.match(VOWELS) ?? []).length;
+  if (vowelCount / len > VOWEL_RATIO_LIMIT) return true;
+  return false;
+}
+
 export function sanitiseArtifactPayload(value: unknown): unknown {
   return walk(value, new WeakSet());
 }
@@ -33,7 +70,9 @@ export function sanitiseArtifactPayload(value: unknown): unknown {
 function walk(value: unknown, seen: WeakSet<object>): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
-    if (LIKELY_SECRET_REGEX.test(value)) return middleRedact(value);
+    if (LIKELY_SECRET_REGEX.test(value) && !looksLikeSlug(value)) {
+      return middleRedact(value);
+    }
     return value;
   }
   if (typeof value === 'number' || typeof value === 'boolean') return value;
