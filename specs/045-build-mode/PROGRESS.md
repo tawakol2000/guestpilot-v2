@@ -2308,3 +2308,46 @@ Three subagents dispatched in parallel per spec §4. Stream A (backend), Stream 
 Nothing outside the allow-list was modified. `reasoning-line.tsx` was not modified — the F9b fix lives fully in `studio-chat.tsx` (merge at classifier + flex gap at render site), which was the cleaner surgical landing spot.
 
 **Branch posture:** `feat/058-session-a` (Stream C commits: `5a6149a`, `e8950c0`, `2434cb7`, `3b953fa`) stacks on `feat/057-session-a` (`a1fdf87`). No rebase performed.
+
+---
+
+## Stream B3 close-out — 058-A frontend wiring finish
+
+**Scope:** the remaining frontend gates after Streams B + B2 had landed the backend + scaffold. Four discrete commits, one per gate, all on `feat/058-session-a`.
+
+**Commits (top of branch):**
+
+| Commit | Gate | Summary |
+|--------|------|---------|
+| `fc8bbb6` | F3/F6/F7 | Wire already-shipped `VersionsTab` into `artifact-drawer.tsx` via a Preview/Versions tab switcher. New inline `VersionsTabErrorBoundary` isolates crashes so Preview stays live. A successful revert bumps the drawer's `reloadKey` (new effect dep) so the artifact re-fetches on tab-flip-back, and fires `onApplied` so rails refresh. |
+| `58556f7` | F9d | `StudioSurface` hydrates the session-artifacts rail from `apiGetSessionArtifacts(conversationId)` during bootstrap. New `SessionArtifactRow → SessionArtifact` mapper drops unknown artifact types instead of crashing. Existing `studio-surface-autoname.test.tsx` was extended (added the `apiGetSessionArtifacts` mock only — no auto-name logic touched). |
+| `9b6b517` | F8 | `StudioChat` composer grows a `Sparkles` enhance-prompt button to the left of send. Visible at ≥10 chars. Click fires `apiEnhancePrompt`, replaces draft, and stashes the pre-enhance text for 15s. ⌘Z/Ctrl+Z inside the textarea restores it + toasts "Restored your original". Clears on next submit or timeout. Graceful degradation on all failure modes. Stream C's `disabled={false}` textarea attribute untouched. |
+| `e65078e` | F4+F5 | `<TenantStateBanner/>` mounts sticky at the top of the chat scroll container (greenfield ⇒ seed-prompt affordance, brownfield ⇒ prompt caption). `<SessionDiffCard/>` renders inline whenever an assistant turn carries a `data-session-diff-summary` SSE part — handled in the existing `StandalonePart` switch next to `data-advisory`. Both components ship null-safe fallbacks. |
+
+**Test delta:** 320 → 347 frontend tests (+27). Within the expected +25 to +45 band.
+
+| Suite | New tests |
+|-------|-----------|
+| `artifact-drawer-versions.test.tsx` (new) | 4 |
+| `versions-tab.test.tsx` (new) | 7 |
+| `session-artifacts-hydration.test.tsx` (new) | 4 |
+| `enhance-prompt-button.test.tsx` (new) | 6 |
+| `tenant-state-banner-mount.test.tsx` (new) | 3 |
+| `session-diff-card-mount.test.tsx` (new) | 3 |
+
+**Type-safety:** `npx tsc --noEmit` clean on both `frontend/` and `backend/`.
+
+**Files touched (Stream B3 allow-list — nothing outside it):**
+- `frontend/components/studio/artifact-drawer.tsx` (tab switcher + VersionsTab render + inline error boundary + `reloadKey` added to the fetch-effect deps)
+- `frontend/components/studio/studio-chat.tsx` (F8 button + ⌘Z handler + `data-session-diff-summary` branch + tenant-state-banner mount + two new props)
+- `frontend/components/studio/studio-surface.tsx` (F9d hydration call + mapper helpers + `tenantState`/`onOpenPrompt` forwarded to StudioChat)
+- `frontend/components/studio/__tests__/studio-surface-autoname.test.tsx` (one-line mock addition only)
+- Six new test files listed above.
+
+**Deferrals / notes:**
+- No deferrals. Every gate in the Stream B3 brief shipped.
+- The brief mentioned an optional F6 tag chip in `write-ledger.tsx`; grep shows no existing tag references there yet, and no B3 gate strictly requires it (the tag chip already lives on the Versions tab rows). Skipped to stay inside the allow-list — can be added in a follow-up sprint when the ledger rail is next touched.
+- The VersionsTab's `onReverted` prop is pre-existing; it's used by the drawer to bump `reloadKey` and forward to `onApplied` — no change to `versions-tab.tsx` itself.
+- Auto-name suite needed one mock-export addition (`apiGetSessionArtifacts`) because the surface's new bootstrap path calls it. Mechanical — no auto-name logic touched.
+
+**Branch posture:** `feat/058-session-a` at `e65078e`. Stream B3 commits `fc8bbb6 · 58556f7 · 9b6b517 · e65078e` stack on Stream A/B/B2 (`00d2f5e`).
