@@ -2528,3 +2528,69 @@ grep '\[TuningAgent\] direct fell back' staging-logs.txt | wc -l
 
 F9a staging soak: 10 mixed turns (chat + artifact edits), screenshot browser console at 0 errors. **Deferred to user.**
 
+## Sprint 059-A close-out
+
+**Branch:** `feat/059-session-a-stream-c` (merge back to `feat/059-session-a` after orchestrator review).
+**Runner:** Opus 4.7 / 1M ctx / overnight unsupervised / auto-mode.
+
+### Gate-by-gate status
+
+| Gate | Status | Stream | SHA | Tests delta |
+|---|---|---|---|---|
+| pre-flight | ✅ | orchestrator | `9b33f3f` | baseline frontend 347, backend 423+1env |
+| F1.1 | ✅ | A | `ecce21b` | backend +9 |
+| F1.2 | ✅ | A | `dfb2fe9` | backend +10 |
+| F1.3 | ✅ | B | `8ba7285` | backend +9 |
+| F1.4 | ✅ | B | `8ce7957` | backend +12 |
+| merge-A+B | ✅ | orchestrator | `7c08ba2` | 463 backend |
+| F1.5 | ✅ | C | `00bdff3` | backend +9 (472 total) |
+| F1.6 | pending-user-canary | C | `30d1b57` | n/a (doc-only) |
+| F9a | repro-could-not-trigger; deferred | C | `cef338f` | frontend +2 (349 total) |
+| close-out | ✅ | C | _(this commit)_ | n/a |
+
+### Final test counts
+
+- **Frontend:** 348 / 349 (1 pre-existing fail on `studio-error-boundary.test.tsx` — consistent in Stream B + Stream C worktrees, did NOT reproduce on orchestrator primary per kickoff. No frontend source file other than the F9a repro test was touched.)
+- **Backend:** 472 / 473 (1 pre-existing env-var fail on `tenant-config-bypass.test.ts` — unchanged from baseline).
+- **Delta vs baseline:** frontend +2, backend +49 total over the sprint.
+
+### Stream C commits (three gates + close-out)
+
+| SHA | Subject |
+|---|---|
+| `00bdff3` | feat(build): F1.5 direct-transport runner + SDK-extraction + dispatcher (059-A Stream C) |
+| `30d1b57` | docs(build): F1.6 pending-user-canary protocol (059-A Stream C) |
+| `cef338f` | test(build): F9a React #310 repro for StudioChat hooks order (059-A Stream C) |
+| _(this commit)_ | chore(build): sprint-059-A close-out |
+
+### F1 status summary
+
+The runtime split is complete:
+
+- `runtime.ts` — thin dispatcher. Branches on `isDirectTransportEnabled()`. Flag default OFF.
+- `sdk-runner.ts` — pure rename of the pre-059 `runTuningAgentTurn()` body. Zero behavioural delta when flag OFF.
+- `direct/runner.ts` — wires F1.1 (MCP router) + F1.2 (hook dispatcher) + F1.3 (history replay) + F1.4 (raw-stream bridge). Fully unit-tested (6 tests) for all fallback reasons.
+- `direct/wire-direct.ts` — glue layer. Today returns `{status:'fallback', reason:'api_error'}` because the tools-array export out of `tools/index.ts` is untouchable this sprint per §4 DO NOT TOUCH boundary. Dispatcher test pins the fallback-to-SDK behaviour.
+
+Sprint-060 (§NEXT.md candidate A) wires the missing tools-array export + the RunTurnResult reconstruction, runs the canary, and (if green) flips the flag in staging + production.
+
+### F1.6 canary — pending
+
+See §"F1.6 pending-user-canary" above for the full protocol. Three conversations, two turns each, paste `[TuningAgent] usage` lines into the user-fill-in table. Acceptance: `cached_fraction ≥ 0.70` on turn 2 across all 3.
+
+**User-executed, not orchestrator.** Orchestrator cannot deploy to Railway.
+
+### F9a — deferred to sprint-060
+
+Repro test `frontend/components/studio/__tests__/studio-chat.hooks-order.test.tsx` PASSES on current tip — offline environment could not trigger the crash. Audit of `studio-chat.tsx` own hooks (lines 213, 236, 237, 256, 264, 265, 266, 268, 276, 305, 313, 314, 315, 316, 323, 334, 335, 339, 341, 349, 366, 367, 368, 371, 385, 396, 432, 433) confirms all at top-level, unconditional. If #310 reproduces on staging during the F1.6 canary, the conditional hook lives in a nested component (SessionDiffCard portal, TenantStateBanner, bubble renderer, or ToolCallDrawer's mount effect) — needs a live repro.
+
+No fix commit landed. Budget per spec §6 R5 was 2h; I did ≤ 1h in repro + audit and moved on per "passes → defer" branch of the protocol.
+
+### Metrics wiring — deferred follow-up
+
+`build_direct_fallback_total{reason=<tag>}` today is a `console.warn` line only. No metrics module exists in `backend/src/services/`; a real sink (Langfuse tag or OpenTelemetry counter) is a sprint-060 follow-up. The Langfuse `[TuningAgent] usage` log line already captures per-turn cache telemetry, so the canary acceptance check does not depend on the metric.
+
+### No failure dumps
+
+Stream C completed all three gates without tripping the "stop on failure" guard. No `/tmp/059-stream-c-failure.md` was written.
+
