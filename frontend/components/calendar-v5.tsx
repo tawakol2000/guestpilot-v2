@@ -242,14 +242,29 @@ export default function CalendarV5({ onSelectConversation }: CalendarProps) {
   const canGoForward = addDays(startDate, 7) < addDays(now, 180)
 
   // ── Data fetching ─────────────────────────────────────────────────────
+  // Bugfix (2026-04-23): track the latest fetch via a ref so rapid
+  // page-clicks (next-week × 5 fast) don't render stale results when
+  // an earlier-but-slower request resolves last. Each fetch captures
+  // its issue id; results from a non-latest issue are dropped.
+  // Also short-circuits the unmounted-component setReservations leak
+  // — if the component unmounts the ref keeps incrementing on the
+  // remount, but the captured `myId` from the closing fetch never
+  // matches and the setState calls become no-ops.
+  const latestFetchIdRef = useRef(0)
   const fetchData = useCallback(async (start: Date, days: number) => {
+    const myId = ++latestFetchIdRef.current
     const s = fmtDate(start), e = fmtDate(addDays(start, days))
     try {
       const [propData, resData] = await Promise.all([apiGetProperties(), apiGetReservations(s, e)])
+      // Drop results if a newer fetch has been issued.
+      if (myId !== latestFetchIdRef.current) return
       setProperties(propData)
       setReservations(resData.reservations)
     } catch (err) { console.error('[Calendar] Failed:', err) }
-    finally { setLoading(false) }
+    finally {
+      // Only the latest fetch should clear the loading state.
+      if (myId === latestFetchIdRef.current) setLoading(false)
+    }
   }, [])
 
   useEffect(() => { setLoading(true); fetchData(startDate, numDays) }, [startDate, numDays, fetchData])

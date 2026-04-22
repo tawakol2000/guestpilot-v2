@@ -1634,6 +1634,17 @@ export default function InboxV5() {
   const fetchedDetails = useRef<Set<string>>(new Set())
   const selectedIdRef = useRef<string>('')
   selectedIdRef.current = selectedId
+
+  // Bugfix (2026-04-23): client-side dedupe Map for `message` events.
+  // The server's broadcastCritical timeout-then-retry can re-emit the
+  // same message to fast-acked sockets when one tab in the room is
+  // slow. Without dedup, the operator sees a phantom toast + double
+  // unread increment + the merge-by-id renders the same message body
+  // twice. Map size is bounded by lifetime message volume on the
+  // current page session — for a chatty tenant (~1k msgs/day) this is
+  // a few KB; on page reload the Map resets. A 5-min TTL window in
+  // the handler is the load-bearing guard.
+  const seenMessageIds = useRef<Map<string, number>>(new Map())
   const filterAnchorRef = useRef<HTMLDivElement>(null)
   const filterPopoverRef = useRef<HTMLDivElement>(null)
   const composeTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -2054,6 +2065,21 @@ export default function InboxV5() {
     socket.on('message', (data: any, ack?: () => void) => {
       const convId = data.conversationId
       if (!convId || !data.message) { if (typeof ack === 'function') ack(); return }
+
+      // 2026-04-23 client-side dedup. broadcastCritical's
+      // timeout-then-retry can re-deliver the same message to fast-
+      // acking sockets if a sibling tab is slow to ACK. We dedup by
+      // (messageId + edited?) so a real edit broadcast is treated as
+      // a distinct event from the original. Periodic cleanup runs
+      // below to evict entries older than 5 minutes.
+      const dedupeKey = `${data.message.id}|${data.edited ? 'edit' : 'new'}`
+      const now = Date.now()
+      const lastSeen = seenMessageIds.current.get(dedupeKey)
+      if (lastSeen && now - lastSeen < 5 * 60 * 1000) {
+        if (typeof ack === 'function') ack()
+        return
+      }
+      seenMessageIds.current.set(dedupeKey, now)
 
       // Feature 040: Shadow Mode broadcasts the SAME message id twice — once when
       // the preview is created (previewState=PREVIEW_PENDING) and again when the

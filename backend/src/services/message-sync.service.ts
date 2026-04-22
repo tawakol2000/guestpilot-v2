@@ -136,6 +136,21 @@ export async function syncConversationMessages(
         localIdMap.set(msg.hostawayMessageId, { id: msg.id, content: msg.content });
       }
     }
+    // Bugfix (2026-04-23): track hostawayMsgIds we've already handled
+    // in this sync pass via a separate Set, instead of writing a
+    // sentinel { id: '', content: '' } into localIdMap.
+    //
+    // Hostaway's listConversationMessages occasionally returns the same
+    // hwMsg.id twice in one batch (pagination edge or retryWithBackoff
+    // replay on 503). The previous sentinel made the existing-local
+    // branch fire on the duplicate with id='', then any non-empty
+    // newBody triggered prisma.message.update({ where: { id: '' } })
+    // which throws P2025 → caught by the outer try/catch → silently
+    // swallowed the rest of the loop including
+    // conversation.update({ lastSyncedAt }) at the bottom of this
+    // function. Cooldown never advanced → tight 30s sync retry loop
+    // for every subsequent invocation.
+    const handledThisPass = new Set<string>();
 
     // Local AI messages for fuzzy matching (outgoing messages without hostawayMessageId)
     const localAiMessages = localMessages.filter(
@@ -162,6 +177,10 @@ export async function syncConversationMessages(
 
       const hostawayMsgId = String(hwMsg.id);
       if (!hostawayMsgId || hostawayMsgId === '') continue;
+
+      // 2026-04-23: skip duplicates within the same sync pass — see
+      // handledThisPass declaration above for the bug history.
+      if (handledThisPass.has(hostawayMsgId)) continue;
 
       // Already have this message — check if content was edited
       const existingLocal = localIdMap.get(hostawayMsgId);
@@ -240,7 +259,7 @@ export async function syncConversationMessages(
           // Remove from fuzzy match pool so it's not matched again
           const idx = localAiMessages.indexOf(matchingAi);
           if (idx >= 0) localAiMessages.splice(idx, 1);
-          localIdMap.set(hostawayMsgId, { id: '', content: '' });
+          handledThisPass.add(hostawayMsgId);
           continue;
         }
 
@@ -269,7 +288,7 @@ export async function syncConversationMessages(
 
         newMessages++;
         if (role === MessageRole.GUEST) newGuestMessages++;
-        localIdMap.set(hostawayMsgId, { id: '', content: '' });
+        handledThisPass.add(hostawayMsgId);
 
         // Track latest synced message timestamp
         if (!latestSyncedSentAt || sentAt > latestSyncedSentAt) {
@@ -293,7 +312,7 @@ export async function syncConversationMessages(
       } catch (err: any) {
         // P2002 = unique constraint violation (race with webhook) — skip
         if (err?.code === 'P2002') {
-          localIdMap.set(hostawayMsgId, { id: '', content: '' });
+          handledThisPass.add(hostawayMsgId);
           continue;
         }
         throw err;

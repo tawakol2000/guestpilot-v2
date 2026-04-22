@@ -105,10 +105,18 @@ export function initSocketIO(httpServer: HttpServer): void {
     // Join tenant room for isolated broadcasting
     socket.join(`tenant:${tenantId}`);
 
-    // Update stats
+    // Update stats. Bugfix (2026-04-23): use a per-socket flag to
+    // guard against double-disconnect-counting. Socket.IO can emit
+    // 'disconnect' more than once for the same socket under Redis
+    // adapter reconnects + transport close races; the previous
+    // unconditional decrement would silently drift counts negative
+    // (with no surface warning) and the `(_tenantConnections.get
+    // || 1) - 1` defaulted missing keys to 1, masking accounting
+    // bugs entirely.
     _totalConnections++;
     _currentConnections++;
     _tenantConnections.set(tenantId, (_tenantConnections.get(tenantId) || 0) + 1);
+    (socket.data as any)._counted = true;
 
     if (socket.recovered) {
       console.log(`[Socket.IO] Client recovered tenantId=${tenantId} userId=${userId} connections=${_currentConnections}`);
@@ -117,12 +125,21 @@ export function initSocketIO(httpServer: HttpServer): void {
     }
 
     socket.on('disconnect', (reason: string) => {
-      _currentConnections--;
-      const tenantCount = (_tenantConnections.get(tenantId) || 1) - 1;
-      if (tenantCount <= 0) {
-        _tenantConnections.delete(tenantId);
-      } else {
-        _tenantConnections.set(tenantId, tenantCount);
+      if (!(socket.data as any)._counted) {
+        // Already accounted for — second disconnect for the same
+        // socket. Skip silently.
+        return;
+      }
+      (socket.data as any)._counted = false;
+      _currentConnections = Math.max(0, _currentConnections - 1);
+      const current = _tenantConnections.get(tenantId);
+      if (typeof current === 'number') {
+        const tenantCount = current - 1;
+        if (tenantCount <= 0) {
+          _tenantConnections.delete(tenantId);
+        } else {
+          _tenantConnections.set(tenantId, tenantCount);
+        }
       }
       console.log(`[Socket.IO] Client disconnected tenantId=${tenantId} reason=${reason} connections=${_currentConnections}`);
     });

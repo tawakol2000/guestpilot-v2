@@ -30,6 +30,13 @@
 - **Why deferred:** The fix is a rotation runbook + a migration helper script that decrypts with the OLD secret and re-encrypts with the NEW. Both require user input on the rotation cadence and the operational policy.
 - **Fix sketch:** New script `backend/scripts/rotate-encryption-secret.ts` accepting OLD_JWT_SECRET + NEW_JWT_SECRET env vars, iterates `Tenant` rows with non-null `hostawayDashboardJwtEncrypted`, decrypts with OLD, encrypts with NEW. Document in CLAUDE.md.
 
+### [MEDIUM] Copilot suggestion can land on a newer PendingAiReply row (ai.service.ts edit needed)
+- **File:** `backend/src/services/ai.service.ts:2469-2473` + interaction with `services/debounce.service.ts:188-204`
+- **Symptom:** In copilot mode, after generation finishes, ai.service does `prisma.pendingAiReply.update({ where: { conversationId }, data: { suggestion } })` — the where uses the conversation-unique key, not the specific pending.id the worker claimed. If a new guest message arrives mid-flight, `debounce.scheduleAiReply` deletes the claimed row and upserts a fresh PendingAiReply with `suggestion: null` (intentional). The worker then writes its STALE suggestion (drafted against the older message set) onto the NEW row scheduled for the newer message. Operator sees an AI suggestion that doesn't reflect the latest guest turn.
+- **Why deferred:** Fix requires `ai.service.ts` edit, which is sacred.
+- **Fix sketch:** Pass the claimed `pending.id` through the AI ctx; change the update to `where: { id: claimedId, fired: true }`. If the update's affected-count is 0, drop the suggestion silently (a fresher turn is in flight).
+- **Blast radius:** Copilot-mode tenants where guests rapid-fire during the 5-30s generation window. Affects approveSuggestion downstream because the operator may approve a suggestion that's stale w.r.t. the latest guest message.
+
 ### [LOW] WebhookLog table has no retention sweep
 - **File:** `backend/src/controllers/webhooks.controller.ts:203-226` + a new job under `backend/src/jobs/webhookLogRetention.job.ts`
 - **Symptom:** Every Hostaway webhook persists a row with the full payload to `WebhookLog`. No retention job, no size cap. High-volume tenants (hundreds of webhooks/day from reservation polling + message updates) accumulate indefinitely.
