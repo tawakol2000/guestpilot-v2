@@ -10,6 +10,7 @@
 |---|---|---|---|---|---|
 | 1 — initial scans | Studio agent backend + frontend + adjacent services | 12 | 5 (2 HIGH, 3 MEDIUM) | 7 LOW (then all 7 fixed in round 1.5) | — |
 | 1.5 — LOW round | The 7 deferred LOWs | 7 | 6 + 1 investigated–not-a-bug | — | 1 |
+| 2 — broader scans | Studio depth + non-studio backend | 26 | 21 (6 HIGH + 13 MED + 2 LOW) | 4 (3 need user input, 1 in code as KNOWN-GAP) | — |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -44,9 +45,30 @@
 | 16 | HIGH | `df4ab0b` | `controllers/messages.controller.ts` — tenant-scope PendingAiReply lookup (defence-in-depth) |
 | 17 | HIGH | `b896a96` | `services/summary.service.ts` — optional tenantId param + scope every query (defence-in-depth, prompt-injection vector closed) |
 
-## Round 2 — MEDIUM + LOW
+## Round 2 — MEDIUM (2026-04-23)
 
-(Appended as committed.)
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 18 | MEDIUM | `a8094b4` | `controllers/conversations.controller.ts` — aiToggleAll status filter (no AI on cancelled/checked-out); aiToggleProperty preserves aiMode (no silent autopilot promotion) |
+| 19 | MEDIUM | `476fcc0` (file-1) | `services/faq.service.ts` — getFaqForProperty added scope:'PROPERTY' filter (no global+property duplicate) |
+| 20 | MEDIUM | `476fcc0` (file-2) | `services/faq-suggest.service.ts` — fingerprint length unified to 50 (no false-pass through dedup → silent FAQ loss); FALLBACK_CATEGORY runtime check |
+| 21 | MEDIUM | `476fcc0` (file-3) | `tools/create-tool-definition.ts` — KNOWN-GAP comment for availableStatuses silent drop (deferred) |
+| 22 | MEDIUM | `476fcc0` (file-4+5) | `lib/sanitise-artifact-payload.ts` — slug-detection filters added (hyphen + vowel ratio) so legitimate webhook URLs / kebab-case identifiers aren't middle-redacted |
+| 23 | MEDIUM | `a11bbc4` (file-1) | `services/hostaway.service.ts` — getAccessToken in-flight Promise dedup (no thundering herd on token expiry) |
+| 24 | MEDIUM | `a11bbc4` (file-2) | `services/debounce.service.ts` — getTodayMidnightInTimezone uses Intl parts (was non-spec-compliant toLocaleString-as-Date; broken across DST) |
+| 25 | MEDIUM | `a11bbc4` (file-3) | `lib/artifact-history.ts` — appendVerificationResult wrapped in $transaction (no race-drop of variants on parallel test_pipeline calls) |
+| 26 | MEDIUM | `a11bbc4` (files 4-6) | `tools/create-{faq,sop,tool-definition}.ts` — handle benign P2002 BEFORE markBuildTransactionPartial (no plan-blocking on duplicate retry) |
+| 27 | MEDIUM | `da1c070` (file-1) | `controllers/build-controller.ts` listArtifactHistory — accept artifactType + artifactId server-side filters (drawer Versions tab no longer renders empty on busy tenants) |
+| 28 | MEDIUM | `da1c070` (file-2) | `controllers/conversations.controller.ts` inquiryAction — local-update retry-on-error with 207 fallback (Hostaway commit no longer desyncs from local DB on transient blip) |
+| 29 | MEDIUM | `da1c070` (file-3) | `controllers/tuning-history.controller.ts` pickPromptText — surfaces ambiguous flag; rollback rejects with 400 (no silent wrong-variant restore on legacy snapshots) |
+| 30 | MEDIUM | `da1c070` (file-4) | `jobs/aiDebounce.job.ts` — catch resets fired=false + bumps scheduledAt for retry (5min cap); no more permanently-lost AI replies on no-Redis path |
+
+## Round 2 — LOW (2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 31 | LOW | `62f24b2` | `services/translation.service.ts` — 3-attempt exponential backoff on 408/425/429/5xx/timeout |
+| 32 | LOW | `62f24b2` | `services/scheduled-time.service.ts` within() — defensive HHMM regex guard against silent lex-comparison auto-approve on malformed input |
 
 ## Test counts
 
@@ -55,4 +77,5 @@
 | Round 1 baseline (before fixes) | 472/472 + 1 env-var fail (or 485/485 0 fail intermittent) | 347/347 |
 | After Round 1 (HIGH+MEDIUM) | 509/509 0 fail | 349/349 |
 | After Round 1.5 (LOW) | 530/530 0 fail | 352/352 |
-| Round 2+ | _running_ | _running_ |
+| Mid round 2 (post-HIGH) | 509/509 0 fail | 349/349 |
+| End round 2 (post-LOW + non-studio) | 538/538 0 fail | 352/352 |
