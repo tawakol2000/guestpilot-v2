@@ -2471,6 +2471,11 @@ Spec expected tip `48d022b`; actual tip `86ab8ec` = `48d022b` + commit `86ab8ec 
 
 | Gate | Subject | SHA | Frontend | Backend | Notes |
 |---|---|---|---|---|---|
-| pre-flight | Baseline + branch | (this commit) | 347/347 | 423+1env / 423 | Baseline recorded above. |
+| pre-flight | Baseline + branch | `9b33f3f` | 347/347 | 423+1env / 423 | Baseline recorded above. |
+| F1.1 | MCP tool router (Stream A, worktree `claude/stream-a-abc66f3c`) | `ecce21b` | 347/347 | 432+1env / 423 | Spec cited `buildAllTuningTools()` but real export is `buildTuningAgentMcpServer()`; router consumes the underlying `ReadonlyArray<SdkMcpToolDefinition<any>>`. F1.5 pulls the array out of the MCP server config. 9 tests. |
+| F1.2 | Hook dispatcher (Stream A) | `dfb2fe9` | 347/347 | 442+1env / 423 | Flattens matcher-shaped hooks; preToolUse cancel surfaces `{cancel,reason}`; postToolUse awaited; stop idempotent; hook throws propagate. 10 tests. |
+| F1.3 | TuningMessage-replay history (Stream B, worktree `feat/059-session-a-stream-b`) | `8ba7285` | 347/347 (primary wt; Stream B's own wt saw a flake — did not reproduce) | 432+1env / 423 | `loadConversationHistory` / `persistAssistantTurn`. Tool_use + tool_result blocks preserved verbatim. Last-50-turn window w/ WARN on truncation; token-budget log for future compaction. 9 tests. |
+| F1.4 | Anthropic raw-stream → SDKMessage bridge + 3 golden fixtures (Stream B) | `8ce7957` | 347/347 | 463+1env / 423 | Option (a) — adapt raw events to SDKMessage, feed existing `bridgeSDKMessage()` unchanged. Three fixtures: text-only / one-tool-call / thinking-interleaved. Cross-gate parity test `bridgeSDKMessage(bridgeAnthropicStream(raw)) === fixture.expectedUIChunks` is the F1 regression gate. 12 tests. `anthropic-stream-bridge.ts` declares a local structural `BridgedSDKMessage`/`ToolResultShape` (not importing from `./mcp-router`) since Stream A hadn't landed at the time; Stream A's `McpToolResult` is structurally compatible — F1.5 can import the real type. |
+| merge-A+B | Merge streams A and B | `7c08ba2` | 347/347 | 463+1env / 423 | Clean merge, zero file overlap. 40 new tests total (Stream A: 19, Stream B: 21). Baseline env-var fail unchanged. |
 
 
