@@ -24,7 +24,7 @@ describe('TenantStateBanner', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders BROWNFIELD pill for non-greenfield tenant', () => {
+  it('renders LIVE pill for non-greenfield tenant (BROWNFIELD enum)', () => {
     render(
       <TenantStateBanner
         state={makeState({ isGreenfield: false })}
@@ -32,11 +32,13 @@ describe('TenantStateBanner', () => {
       />,
     )
     const pill = screen.getByTestId('tenant-state-pill')
+    // data-mode preserves the internal enum for styling + automation
+    // stability; the visible text is the operator-facing label.
     expect(pill).toHaveAttribute('data-mode', 'BROWNFIELD')
-    expect(pill.textContent).toBe('BROWNFIELD')
+    expect(pill.textContent).toBe('LIVE')
   })
 
-  it('renders GREENFIELD pill for greenfield tenant', () => {
+  it('renders SETUP pill for greenfield tenant (GREENFIELD enum)', () => {
     render(
       <TenantStateBanner
         state={makeState({ isGreenfield: true })}
@@ -45,6 +47,7 @@ describe('TenantStateBanner', () => {
     )
     const pill = screen.getByTestId('tenant-state-pill')
     expect(pill).toHaveAttribute('data-mode', 'GREENFIELD')
+    expect(pill.textContent).toBe('SETUP')
   })
 
   it('renders the prompt caption when present', () => {

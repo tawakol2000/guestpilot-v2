@@ -35,9 +35,12 @@ export function TenantStateBanner({
 }: TenantStateBannerProps) {
   if (!state) return null
 
-  // Operator-facing label. "GREENFIELD/BROWNFIELD" is internal engineering
-  // jargon; operators see "Setup" (no existing config) vs "Live" (running).
-  const mode = state.isGreenfield ? 'SETUP' : 'LIVE'
+  // `mode` is the internal enum — stable for `data-mode` hooks, tests,
+  // and styling selectors. `modeLabel` is the operator-facing text:
+  // "GREENFIELD/BROWNFIELD" is engineering jargon, so the visible pill
+  // reads "Setup" (no existing config) vs "Live" (running).
+  const mode = state.isGreenfield ? 'GREENFIELD' : 'BROWNFIELD'
+  const modeLabel = state.isGreenfield ? 'SETUP' : 'LIVE'
   const pillStyle = state.isGreenfield
     ? { bg: STUDIO_COLORS.warnBg, fg: STUDIO_COLORS.warnFg }
     : { bg: STUDIO_COLORS.accentSoft, fg: STUDIO_COLORS.accent }
@@ -90,7 +93,7 @@ export function TenantStateBanner({
           flexShrink: 0,
         }}
       >
-        {mode}
+        {modeLabel}
       </span>
 
       {canOpen ? (
