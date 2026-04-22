@@ -199,6 +199,38 @@ export function alterationsRouter(prisma: PrismaClient) {
         return;
       }
 
+      // Bugfix (2026-04-23): atomic claim before creating the action-log
+      // row + calling Hostaway. Without this, two concurrent accept/reject
+      // requests (double-tap, two tabs, accept-vs-reject race) both
+      // passed the PENDING status check above and both proceeded to call
+      // Hostaway + insert action-log rows. The 409 from Hostaway's
+      // second call was handled gracefully but the audit log ended up
+      // with two rows for what should be a single atomic action. Same
+      // pattern as inquiryAction's atomic-claim fix from round 2.
+      //
+      // We use `updatedAt` as the optimistic-lock sentinel (Prisma's
+      // @updatedAt auto-touches on every update). Only the worker
+      // whose observed updatedAt matches wins the claim; others hit
+      // count=0 and exit with 409.
+      const claim = await prisma.bookingAlteration.updateMany({
+        where: {
+          id: alteration.id,
+          status: AlterationStatus.PENDING,
+          updatedAt: alteration.updatedAt,
+        },
+        // No-op self-set on hostawayAlterationId to trigger @updatedAt
+        // bump without changing observable state.
+        data: { hostawayAlterationId: alteration.hostawayAlterationId },
+      });
+      if (claim.count === 0) {
+        res.status(409).json({
+          success: false,
+          error:
+            'Alteration is being processed by another request. Refresh and try again.',
+        });
+        return;
+      }
+
       const log = await prisma.alterationActionLog.create({
         data: {
           tenantId,
@@ -319,6 +351,25 @@ export function alterationsRouter(prisma: PrismaClient) {
       });
       if (!reservation) {
         res.status(404).json({ success: false, error: 'Reservation not found' });
+        return;
+      }
+
+      // Bugfix (2026-04-23): atomic claim — same fix as the accept
+      // handler above. See that comment for the rationale.
+      const claim = await prisma.bookingAlteration.updateMany({
+        where: {
+          id: alteration.id,
+          status: AlterationStatus.PENDING,
+          updatedAt: alteration.updatedAt,
+        },
+        data: { hostawayAlterationId: alteration.hostawayAlterationId },
+      });
+      if (claim.count === 0) {
+        res.status(409).json({
+          success: false,
+          error:
+            'Alteration is being processed by another request. Refresh and try again.',
+        });
         return;
       }
 

@@ -203,13 +203,23 @@ function getBookingLink(kb: Record<string, unknown>, channel: string): string | 
   const airbnb = (kb.airbnbListingUrl as string) || null;
   const vrbo = (kb.vrboListingUrl as string) || null;
   const engine = (kb.bookingEngineUrl as string) || null;
+  // Bugfix (2026-04-23): also pick up an explicit Booking.com listing
+  // URL if the operator has stored one. The previous BOOKING branch
+  // handed out a VRBO link, which is off-channel for Booking.com guests
+  // and at minimum looks confusing — at worst Booking.com's
+  // content-scanner rejects messages containing competitor URLs.
+  const bookingDotCom = (kb.bookingListingUrl as string) || null;
 
   switch (channel.toUpperCase()) {
     case 'AIRBNB':
       link = airbnb;
       break;
     case 'BOOKING':
-      link = vrbo;
+      // Prefer an explicit Booking.com URL if present; otherwise fall
+      // through to the direct booking engine (channel-safe). Do NOT
+      // fall through to VRBO inline — the cross-channel mismatch was
+      // the original bug.
+      link = bookingDotCom ?? engine;
       break;
     case 'DIRECT':
     case 'WHATSAPP':
@@ -218,7 +228,10 @@ function getBookingLink(kb: Record<string, unknown>, channel: string): string | 
       break;
   }
 
-  // Fallback chain: bookingEngineUrl → airbnbListingUrl → vrboListingUrl
+  // Fallback chain: bookingEngineUrl → airbnbListingUrl → vrboListingUrl.
+  // (For BOOKING this is reached only when both booking-engine and
+  // booking-com URLs are missing — at that point any URL beats nothing,
+  // and the original platform's terms-of-service review surfaces it.)
   if (!link) link = engine;
   if (!link) link = airbnb;
   if (!link) link = vrbo;

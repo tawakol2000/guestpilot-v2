@@ -1865,6 +1865,15 @@ export default function InboxV5() {
             if (existing) {
               // Always preserve messages/guest/booking/property from existing state —
               // a list refresh must never wipe messages that SSE or mergeDetail already loaded.
+              //
+              // Bugfix (2026-04-23): also propagate status / starred /
+              // checkInStatus / channel / reservationStatus from the
+              // server. Previously these were silently dropped so a
+              // resolve / star / status change made on another device
+              // never surfaced if the WS event was missed (reconnect,
+              // backgrounded tab) — the polled refresh re-fetched
+              // everything but copied only 6 fields. Same class as the
+              // property_ai_changed no-op fixed earlier this round.
               return {
                 ...existing,
                 aiOn: newConv.aiOn,
@@ -1873,6 +1882,11 @@ export default function InboxV5() {
                 lastMessageSender: newConv.lastMessageSender,
                 timestamp: newConv.timestamp,
                 unreadCount: newConv.unreadCount,
+                status: newConv.status,
+                starred: newConv.starred,
+                checkInStatus: newConv.checkInStatus,
+                channel: newConv.channel,
+                reservationStatus: newConv.reservationStatus,
               }
             }
             return newConv
@@ -2103,6 +2117,12 @@ export default function InboxV5() {
       }
       // Extract visible text for lastMessage preview
       const previewText = newSseMsgs[0]?.text || msg.content
+      // Bugfix (2026-04-23): the message-sync service stamps `edited: true`
+      // on edit broadcasts so the inbox can update the message body in
+      // place WITHOUT bumping the conversation's sidebar / unread count
+      // / sort timestamp. Without this, an edit of an old message would
+      // jump the conversation to the top and increment unread.
+      const isEdit = data.edited === true
 
       setConversations(prev =>
         prev.map(c => {
@@ -2110,7 +2130,7 @@ export default function InboxV5() {
           const isSelected = selectedIdRef.current === convId
 
           // Guest message on autopilot → show typing indicator
-          if (sender === 'guest' && isSelected && c.aiOn && c.aiMode === 'autopilot') {
+          if (sender === 'guest' && !isEdit && isSelected && c.aiOn && c.aiMode === 'autopilot') {
             setAiTyping(true)
           }
 
@@ -2135,6 +2155,11 @@ export default function InboxV5() {
           })
           const appendNew = msgsWithChannel.filter(m => !existingIds.has(m.id))
           const allMsgs = [...updatedMsgs, ...appendNew]
+          if (isEdit) {
+            // Edit-only: update messages array but leave sidebar /
+            // unread / sort untouched.
+            return { ...c, messages: allMsgs }
+          }
           return {
             ...c,
             messages: allMsgs,
@@ -2301,8 +2326,16 @@ export default function InboxV5() {
     // ── Mobile/Web sync events ──
     socket.on('ai_toggled', (data: any) => {
       try {
+        // Bugfix (2026-04-23): the previous handler wrote to `aiEnabled`,
+        // a field that doesn't exist on the local Conversation interface.
+        // The renderer reads `aiOn` everywhere (toggle button, glow,
+        // sidebar badges, right panel), and summaryToConversation maps
+        // server `aiEnabled` → local `aiOn`. Writing to `aiEnabled`
+        // created a phantom field nothing rendered → AI toggles on
+        // device A never propagated to device B's sidebar without a
+        // manual reload.
         setConversations(prev => prev.map(c =>
-          c.id === data.conversationId ? { ...c, aiEnabled: data.aiEnabled } : c
+          c.id === data.conversationId ? { ...c, aiOn: data.aiEnabled } : c
         ))
       } catch { /* ignore */ }
     })

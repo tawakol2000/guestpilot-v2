@@ -175,22 +175,38 @@ export async function syncConversationMessages(
           });
           updatedMessages++;
           console.log(`[Sync] Updated edited message ${existingLocal.id} (hostawayMsgId=${hostawayMsgId})`);
-          // Broadcast so open inboxes update in real-time
+          // Broadcast so open inboxes update in real-time.
+          //
+          // Bugfix (2026-04-23): the previous broadcast set
+          // `lastMessageAt: new Date().toISOString()` on edits — that
+          // was a synthetic "now" timestamp. The DB never bumped the
+          // Conversation.lastMessageAt for edits (correct), but
+          // clients lied: an old-message edit jumped the conversation
+          // to the top of the inbox sort. Use the REAL sentAt of the
+          // edited message for the message payload, and OMIT
+          // lastMessageAt so the inbox sort doesn't move. The
+          // existing `message` event handler treats missing
+          // lastMessageAt as no-change.
           const editedRole = hwMsg.isIncoming === 1 ? 'GUEST' : 'HOST';
           const editedChannel = ((hwMsg as Record<string, unknown>).communicationType as string | undefined)?.toLowerCase() === 'whatsapp'
             ? Channel.WHATSAPP : defaultChannel;
+          const realSentAt = parseHostawayDate(
+            hwMsg.insertedOn ?? hwMsg.createdAt ?? (hwMsg as Record<string, unknown>)['date'],
+          ).toISOString();
           broadcastCritical(tenantId, 'message', {
             conversationId,
             message: {
               id: existingLocal.id,
               role: editedRole,
               content: newBody,
-              sentAt: parseHostawayDate(hwMsg.insertedOn ?? hwMsg.createdAt ?? (hwMsg as Record<string, unknown>)['date']).toISOString(),
+              sentAt: realSentAt,
               channel: String(editedChannel),
               imageUrls: (hwMsg.imagesUrls as string[] | undefined) || [],
             },
+            edited: true,
             lastMessageRole: editedRole,
-            lastMessageAt: new Date().toISOString(),
+            // No lastMessageAt — edits never bump the conversation's
+            // last-activity timestamp. Sort order stays put.
           });
         }
         continue;
