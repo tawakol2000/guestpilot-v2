@@ -5,12 +5,17 @@
  *
  *   ── Region A (shared) ──────────────────────────────────────
  *   <principles>        9 mode-agnostic principles
+ *   <response_contract> shape contract for the model's output
  *   <persona>           mode-agnostic identity
+ *   <citation_grammar>  rules for sourcing claims
  *   <taxonomy>          8 categories + NO_FIX
  *   <tools>             descriptions (all 14, mode-gated by allowed_tools)
  *   <platform_context>  main-AI platform facts
  *   <critical_rules>    universal rules only
  *   __SHARED_MODE_BOUNDARY__
+ *   (2026-04-23: synced with the actual emit order in
+ *   buildSharedPrefix — RESPONSE_CONTRACT and CITATION_GRAMMAR
+ *   were missing from this docblock.)
  *
  *   ── Region B (mode addendum) ───────────────────────────────
  *   <tune_mode> … </tune_mode>   OR   <build_mode> … </build_mode>
@@ -482,9 +487,11 @@ Two rules that override everything above:
 </critical_rules>`;
 
 export function buildSharedPrefix(): string {
-  // Region A: principles → response_contract → persona → taxonomy → tools →
-  // platform_context → critical_rules. Newlines matter for byte-identical
-  // caching.
+  // Region A: principles → response_contract → persona → citation_grammar
+  // → taxonomy → tools → platform_context → critical_rules.
+  // Newlines matter for byte-identical caching.
+  // (2026-04-23: comment synced with the actual emit order below;
+  // citation_grammar was previously missing from the comment.)
   return [
     PRINCIPLES,
     RESPONSE_CONTRACT,

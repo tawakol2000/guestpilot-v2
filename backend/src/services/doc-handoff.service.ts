@@ -48,15 +48,22 @@ import { broadcastToTenant } from './socket.service';
  * then reconstruct the target UTC instant by subtracting the TZ's UTC offset at that date.
  */
 function atLocalTime(referenceDate: Date, hhmm: string): Date {
+  // Bugfix (2026-04-23): use `hourCycle: 'h23'` so midnight always
+  // formats as "00", not "24". The previous `en-US` + `hour12: false`
+  // configuration could yield "24" for midnight in some Node ICU
+  // builds, which made `diffMinutes` skew by 1440 minutes (1 day).
+  // A manager setting docHandoffReminderTime: "00:00" or
+  // docHandoffTime: "00:00" would have their handoff queued for the
+  // wrong calendar day. h23 (00-23) is unambiguous.
   const [h, m] = hhmm.split(':').map(Number);
-  const tzFormat = new Intl.DateTimeFormat('en-US', {
+  const tzFormat = new Intl.DateTimeFormat('en-GB', {
     timeZone: DOC_HANDOFF_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(referenceDate);
   const part = (t: string) => Number(tzFormat.find((p) => p.type === t)?.value);
   const year = part('year');
@@ -66,11 +73,11 @@ function atLocalTime(referenceDate: Date, hhmm: string): Date {
   // Build candidate UTC by naive construction then correct for tz offset.
   const naiveUtc = Date.UTC(year, month - 1, day, h, m, 0, 0);
   // Probe: what wall time does naiveUtc show when formatted in the target tz?
-  const probed = new Intl.DateTimeFormat('en-US', {
+  const probed = new Intl.DateTimeFormat('en-GB', {
     timeZone: DOC_HANDOFF_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
   }).formatToParts(new Date(naiveUtc));
   const probedH = Number(probed.find((p) => p.type === 'hour')?.value);
   const probedM = Number(probed.find((p) => p.type === 'minute')?.value);
