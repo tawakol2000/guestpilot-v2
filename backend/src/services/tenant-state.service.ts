@@ -62,6 +62,49 @@ export const TOTAL_SLOTS = ALL_SLOT_KEYS.size;
 
 const DEFAULT_MARKER = '<!-- DEFAULT: change me -->';
 
+/**
+ * Decide whether a memory slot value counts as "filled" for
+ * interview-progress purposes.
+ *
+ * Rules (post 2026-04-22 bugfix):
+ *   - null / undefined → empty, NOT filled.
+ *   - string, whitespace only → empty, NOT filled.
+ *   - string containing the DEFAULT_MARKER sentinel → treated as
+ *     still-default, NOT filled.
+ *   - any non-empty structured JSON (object, array, number, boolean) →
+ *     filled. The DEFAULT_MARKER sentinel is a TEXT-PROMPT convention;
+ *     applying it to stringified JSON previously produced false positives
+ *     when an operator stored e.g. `{"note": "<!-- DEFAULT: ... -->"}` as
+ *     quoted documentation — the serialised form contained the sentinel
+ *     even though the slot was genuinely configured.
+ *   - trivially empty structured forms (`""`, `[]`, `{}`) are also NOT
+ *     filled — operators sometimes persist placeholders which are
+ *     indistinguishable from an unanswered slot.
+ *
+ * Exported for unit testing in isolation (pure function, no DB).
+ */
+export function isSlotValueFilled(raw: unknown): boolean {
+  if (raw == null) return false;
+  if (typeof raw === 'string') {
+    if (!raw.trim()) return false;
+    if (raw.includes(DEFAULT_MARKER)) return false;
+    return true;
+  }
+  // Non-string (number, boolean, object, array). Serialise only to detect
+  // trivially-empty forms.
+  let stringified: string;
+  try {
+    stringified = JSON.stringify(raw);
+  } catch {
+    // Non-serialisable (cyclic, BigInt). Treat as filled — operator
+    // wrote SOMETHING, we just can't reason about it.
+    return true;
+  }
+  if (!stringified || !stringified.trim()) return false;
+  if (stringified === '""' || stringified === '[]' || stringified === '{}') return false;
+  return true;
+}
+
 // ─── TenantStateSummary ────────────────────────────────────────────────────
 
 export interface LastBuildTransactionSummary {
@@ -204,11 +247,7 @@ export async function getInterviewProgressSummary(
   for (const row of rows) {
     const slotKey = row.key.slice(prefix.length);
     if (!ALL_SLOT_KEYS.has(slotKey)) continue;
-    const raw = row.value;
-    const stringValue =
-      typeof raw === 'string' ? raw : raw == null ? '' : JSON.stringify(raw);
-    if (!stringValue.trim()) continue;
-    if (stringValue.includes(DEFAULT_MARKER)) continue;
+    if (!isSlotValueFilled(row.value)) continue;
     filledSlots.push(slotKey);
     if (LOAD_BEARING_SET.has(slotKey)) loadBearingFilled += 1;
   }
