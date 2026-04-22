@@ -226,45 +226,58 @@ export function buildWriteSystemPromptTool(
           while (history.length > 10) history.shift();
         }
 
-        const updated = await c.prisma.tenantAiConfig.upsert({
-          where: { tenantId: c.tenantId },
-          update: {
-            [field]: args.text,
-            systemPromptVersion: { increment: 1 },
-            systemPromptHistory: history as Prisma.InputJsonValue,
-          },
-          create: {
-            tenantId: c.tenantId,
-            [field]: args.text,
-            // Prisma defaults everything else; explicit set here only for
-            // the two fields write_system_prompt owns.
-          } as any,
-          select: {
-            systemPromptVersion: true,
-            systemPromptCoordinator: true,
-            systemPromptScreening: true,
-          },
-        });
+        // Bugfix (2026-04-22): wrap the TenantAiConfig upsert and the
+        // AiConfigVersion insert in a single $transaction. Previously
+        // the upsert committed first and the version-insert ran
+        // separately; if the version-insert threw (DB hiccup, serialisation
+        // conflict), the live prompt was already flipped but no rollback
+        // anchor existed. The rollback tool reads `aiConfigVersion` rows
+        // — without one, the prompt could not be rolled back by the
+        // plan path. Manager would think the plan was safe; it wasn't.
+        const [updated, versionRow] = await c.prisma.$transaction(async (tx) => {
+          const u = await tx.tenantAiConfig.upsert({
+            where: { tenantId: c.tenantId },
+            update: {
+              [field]: args.text,
+              systemPromptVersion: { increment: 1 },
+              systemPromptHistory: history as Prisma.InputJsonValue,
+            },
+            create: {
+              tenantId: c.tenantId,
+              [field]: args.text,
+              // Prisma defaults everything else; explicit set here only for
+              // the two fields write_system_prompt owns.
+            } as any,
+            select: {
+              systemPromptVersion: true,
+              systemPromptCoordinator: true,
+              systemPromptScreening: true,
+            },
+          });
 
-        // Write an AiConfigVersion snapshot tagged with buildTransactionId.
-        // The rollback path reads `config.systemPromptCoordinator` /
-        // `...Screening` — we include both so the rollback can restore
-        // either side.
-        const versionRow = await c.prisma.aiConfigVersion.create({
-          data: {
-            tenantId: c.tenantId,
-            version: updated.systemPromptVersion,
-            config: {
-              systemPromptCoordinator: updated.systemPromptCoordinator ?? null,
-              systemPromptScreening: updated.systemPromptScreening ?? null,
-              sourceTemplateVersion: args.sourceTemplateVersion,
-              slotValues: args.slotValues,
-              variantWritten: args.variant,
-            } as Prisma.InputJsonValue,
-            note: `BUILD write_system_prompt (${args.variant}) — template=${args.sourceTemplateVersion}, coverage=${coverage.coverageRatio.toFixed(2)}`,
-            buildTransactionId: args.transactionId ?? null,
-          },
-          select: { id: true, version: true },
+          // Write an AiConfigVersion snapshot tagged with buildTransactionId.
+          // The rollback path reads `config.systemPromptCoordinator` /
+          // `...Screening` — we include both so the rollback can restore
+          // either side. Inside the same tx so a throw here rolls the
+          // upsert back too.
+          const v = await tx.aiConfigVersion.create({
+            data: {
+              tenantId: c.tenantId,
+              version: u.systemPromptVersion,
+              config: {
+                systemPromptCoordinator: u.systemPromptCoordinator ?? null,
+                systemPromptScreening: u.systemPromptScreening ?? null,
+                sourceTemplateVersion: args.sourceTemplateVersion,
+                slotValues: args.slotValues,
+                variantWritten: args.variant,
+              } as Prisma.InputJsonValue,
+              note: `BUILD write_system_prompt (${args.variant}) — template=${args.sourceTemplateVersion}, coverage=${coverage.coverageRatio.toFixed(2)}`,
+              buildTransactionId: args.transactionId ?? null,
+            },
+            select: { id: true, version: true },
+          });
+
+          return [u, v] as const;
         });
 
         // Main AI will pick up the new prompt after the tenant-config

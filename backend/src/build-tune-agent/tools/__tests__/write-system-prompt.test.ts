@@ -139,6 +139,14 @@ function makeFakePrisma(opts?: {
         return row;
       },
     },
+    // 2026-04-22: write_system_prompt now wraps the upsert + version
+    // insert in $transaction to keep the rollback anchor consistent
+    // with the live config flip. The fake `$transaction` runs the
+    // callback inline with the same prisma object as `tx` since our
+    // fakes don't model SQL isolation.
+    $transaction: async (callback: any) => {
+      return callback(prisma);
+    },
   };
   return {
     prisma,
