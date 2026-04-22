@@ -65,6 +65,9 @@ import {
   mergeSpan,
   type ComposeBubbleSelection,
 } from './compose-bubble'
+// Sprint 058-A F3/F6/F7 — Versions tab body (lazy-rendered; error-isolated
+// inside a try/catch so a crash here never takes down the Preview tab).
+import { VersionsTab } from './versions-tab'
 
 export interface ArtifactDrawerTarget {
   artifact: BuildArtifactType
@@ -178,6 +181,13 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
   // Sprint 056-A F1 — compose-at-cursor bubble state.
   const [composeBubbleSelection, setComposeBubbleSelection] =
     useState<ComposeBubbleSelection | null>(null)
+  // Sprint 058-A F3 — tab state. Default 'preview'; 'versions' shows the
+  // Versions tab body. History-view opens (drawer surfaced from the write-
+  // ledger) stay on 'preview' so the rationale + diff land on open.
+  const [activeTab, setActiveTab] = useState<'preview' | 'versions'>('preview')
+  // Bumped after a Versions-tab revert so the drawer re-fetches the artifact
+  // and the Preview body shows the reverted state on tab switch-back.
+  const [reloadKey, setReloadKey] = useState(0)
 
   // Load the artifact whenever the target changes. Guarded by `open` to
   // avoid eager fetches when the drawer isn't mounted visibly.

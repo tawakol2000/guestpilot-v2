@@ -522,6 +522,8 @@ export interface BuildArtifactHistoryRow {
   prevBody: unknown
   newBody: unknown
   metadata?: Record<string, unknown> | null
+  /** Sprint 058-A F6 — operator-set version tag (alphanum + _-). */
+  versionLabel?: string | null
 }
 
 export interface BuildArtifactHistoryPage {
@@ -612,6 +614,131 @@ export interface CancelPlanItemResponse {
   alreadyExecuting?: boolean
   /** Full list after the write (not present on the already-executing path). */
   cancelledItemIndexes?: number[]
+}
+
+// ─── Sprint 058-A F3 — arbitrary-version revert ──────────────────────────
+
+/**
+ * POST /api/build/history/:id/revert-to — restore the artifact to the
+ * state that the named history row represents (writes the row's
+ * `newBody` back through the apply layer). Admin-only, tenant-scoped.
+ */
+export async function apiRevertToVersion(
+  historyId: string,
+  opts: { dryRun?: boolean } = {},
+): Promise<ApplyArtifactResult> {
+  return buildFetch<ApplyArtifactResult>(
+    `/api/build/history/${encodeURIComponent(historyId)}/revert-to`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: Boolean(opts.dryRun) }),
+    },
+  )
+}
+
+// ─── Sprint 058-A F6 — version tags ──────────────────────────────────────
+
+export interface TagHistoryRowResponse {
+  ok: boolean
+  row: {
+    id: string
+    versionLabel: string | null
+    artifactType: BuildArtifactType | 'tool_definition'
+    artifactId: string
+  }
+}
+
+/**
+ * POST /api/build/history/:id/tag — attach a version label (max 40
+ * chars, alphanum + dash + underscore). Tenant-scoped.
+ */
+export async function apiTagHistoryRow(
+  historyId: string,
+  label: string,
+): Promise<TagHistoryRowResponse> {
+  return buildFetch<TagHistoryRowResponse>(
+    `/api/build/history/${encodeURIComponent(historyId)}/tag`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    },
+  )
+}
+
+/**
+ * DELETE /api/build/history/:id/tag — clear the version label. Idempotent.
+ */
+export async function apiUntagHistoryRow(
+  historyId: string,
+): Promise<TagHistoryRowResponse> {
+  return buildFetch<TagHistoryRowResponse>(
+    `/api/build/history/${encodeURIComponent(historyId)}/tag`,
+    { method: 'DELETE' },
+  )
+}
+
+// ─── Sprint 058-A F9d — session-artifacts hydration ──────────────────────
+
+export interface SessionArtifactRow {
+  historyId: string
+  artifactType: BuildArtifactType | 'tool_definition'
+  artifactId: string
+  operation: 'CREATE' | 'UPDATE' | 'DELETE' | 'REVERT'
+  actorEmail: string | null
+  conversationId: string | null
+  touchedAt: string
+  metadata?: Record<string, unknown> | null
+}
+
+export interface SessionArtifactsPage {
+  rows: SessionArtifactRow[]
+}
+
+/**
+ * GET /api/build/sessions/:conversationId/artifacts — hydrate the
+ * Studio's session-artifacts rail on page reload. Returns every
+ * BuildArtifactHistory row attached to the given conversation.
+ */
+export async function apiGetSessionArtifacts(
+  conversationId: string,
+): Promise<SessionArtifactsPage> {
+  return buildFetch<SessionArtifactsPage>(
+    `/api/build/sessions/${encodeURIComponent(conversationId)}/artifacts`,
+  )
+}
+
+// ─── Sprint 058-A F8 — composer enhance-prompt ────────────────────────────
+
+export interface EnhancePromptResponse {
+  ok: boolean
+  rewrite?: string
+  reason?:
+    | 'empty_draft'
+    | 'too_short'
+    | 'no_api_key'
+    | 'rate_limited'
+    | 'server_error'
+    | string
+  /** Present on rate_limited; ms until the next retry is allowed. */
+  retryAfterMs?: number
+}
+
+/**
+ * POST /api/build/enhance-prompt — Nano-backed rewrite of the composer
+ * draft. Returns `{ ok: true, rewrite }` on success, `{ ok: false,
+ * reason }` on graceful degradation (rate limit, empty, Nano error).
+ */
+export async function apiEnhancePrompt(
+  draft: string,
+  conversationId?: string | null,
+): Promise<EnhancePromptResponse> {
+  return buildFetch<EnhancePromptResponse>('/api/build/enhance-prompt', {
+    method: 'POST',
+    body: JSON.stringify({
+      draft,
+      ...(conversationId ? { conversationId } : {}),
+    }),
+  })
 }
 
 /**
