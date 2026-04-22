@@ -88,11 +88,12 @@ async function main() {
       hostawayAccountId: 'demo-account-12345',
       webhookSecret: crypto.randomBytes(16).toString('hex'),
       plan: 'FREE',
-      isAdmin: false,
+      isAdmin: true,
     },
     update: {
       passwordHash,
       name: 'Studio Demo Tenant',
+      isAdmin: true,
     },
   });
   console.log(`[seed-studio-demo] tenant.id = ${tenant.id}`);
@@ -264,7 +265,7 @@ async function main() {
         },
       }),
       textPart(
-        "Welcome aboard. I can see you already have one SOP and one FAQ on file, plus one listing — so we're in brownfield mode. Before we add anything new, let me ask: what's your biggest guest-reply headache right now?",
+        "Welcome aboard. I can see you already have one SOP and one FAQ on file, plus one listing — so the basics are already live. Before we add anything new, let me ask: what's your biggest guest-reply headache right now?",
         { origin: 'ai' },
       ),
     ],
