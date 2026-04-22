@@ -35,7 +35,9 @@ export function TenantStateBanner({
 }: TenantStateBannerProps) {
   if (!state) return null
 
-  const mode = state.isGreenfield ? 'GREENFIELD' : 'BROWNFIELD'
+  // Operator-facing label. "GREENFIELD/BROWNFIELD" is internal engineering
+  // jargon; operators see "Setup" (no existing config) vs "Live" (running).
+  const mode = state.isGreenfield ? 'SETUP' : 'LIVE'
   const pillStyle = state.isGreenfield
     ? { bg: STUDIO_COLORS.warnBg, fg: STUDIO_COLORS.warnFg }
     : { bg: STUDIO_COLORS.accentSoft, fg: STUDIO_COLORS.accent }

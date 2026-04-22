@@ -357,7 +357,12 @@ export function StudioChat({
 
     if (!didInitialMessagesRender.current) {
       didInitialMessagesRender.current = true
-      scrollerRef.current?.scrollTo({ top: 0 })
+      // Defer one frame so the scroller's scrollHeight is settled before
+      // we pin to 0 — otherwise a late-arriving child (e.g. the tool
+      // drawer portal) can nudge the browser past our scrollTo.
+      requestAnimationFrame(() => {
+        scrollerRef.current?.scrollTo({ top: 0 })
+      })
       setNewMsgCount(0)
       return
     }

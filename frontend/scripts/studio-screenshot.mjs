@@ -85,7 +85,7 @@ async function main() {
     });
     // Give the Studio chat a moment to hydrate + fetch initial messages.
     await page.waitForLoadState('networkidle', { timeout: 30_000 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3500);
 
     // Wait for at least one message row or the empty state.
     const messageSelector = '[data-testid="studio-chat"] [class*="px-5"], main [class*="py-4"]';

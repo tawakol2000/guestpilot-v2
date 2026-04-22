@@ -98,7 +98,7 @@ export function StateSnapshotCard(props: StateSnapshotCardProps) {
             color: STUDIO_COLORS.inkMuted,
           }}
         >
-          {s.posture}
+          {s.posture === 'GREENFIELD' ? 'SETUP' : 'LIVE'}
         </span>
       </header>
 
