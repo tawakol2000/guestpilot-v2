@@ -21,6 +21,7 @@ import { invalidateToolCache } from '../../services/tool-definition.service';
 import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 import { emitArtifactHistory } from './artifact-history';
 import { sanitiseArtifactPayload } from './sanitise-artifact-payload';
+import { isPublicHttpsUrl } from '../../lib/url-safety';
 
 /**
  * Upper-bound char cap on system-prompt writes at the admin-apply seam.
@@ -290,6 +291,15 @@ async function applyTool(prisma: PrismaClient, input: ApplyInput): Promise<Apply
   if (!tool) return error(input, 'tool not found');
   const description = asString(input.body.description);
   const webhookUrl = asString(input.body.webhookUrl);
+  // 2026-04-23 (security pass): same write-time SSRF guard as the
+  // BUILD agent's create_tool_definition. Admin drawer can also edit
+  // webhookUrl, so this surface needs the check too.
+  if (webhookUrl) {
+    const safety = isPublicHttpsUrl(webhookUrl);
+    if (!safety.ok) {
+      return error(input, `webhookUrl blocked: ${safety.reason}`);
+    }
+  }
   const parameters = (input.body.parameters ?? undefined) as any;
   const webhookTimeout = asNumber(input.body.webhookTimeout);
   const enabled = asBool(input.body.enabled);

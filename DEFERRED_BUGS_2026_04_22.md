@@ -37,6 +37,20 @@
 - **Fix sketch:** Pass the claimed `pending.id` through the AI ctx; change the update to `where: { id: claimedId, fired: true }`. If the update's affected-count is 0, drop the suggestion silently (a fresher turn is in flight).
 - **Blast radius:** Copilot-mode tenants where guests rapid-fire during the 5-30s generation window. Affects approveSuggestion downstream because the operator may approve a suggestion that's stale w.r.t. the latest guest message.
 
+### [LOW] devLogin has only env-var guard (defence-in-depth)
+- **File:** `backend/src/controllers/auth.controller.ts:154-189` + `backend/src/routes/auth.ts`
+- **Symptom:** `devLogin` is gated on `NODE_ENV !== 'production' && DEV_AUTH_BYPASS === '1'`. If a non-prod deploy ever has `DEV_AUTH_BYPASS=1` set + a reachable surface, anyone who hits the endpoint can mint a token for any tenant by email or id.
+- **Why deferred:** Not exploitable in current production config; depends on deployer discipline. User should decide whether to add a third gate (random `DEV_AUTH_BYPASS_SECRET` that must match a request header) or restrict by IP allowlist.
+- **Fix sketch:** Generate a `DEV_AUTH_BYPASS_SECRET` per deploy; require body to include the secret; refuse if `RAILWAY_ENVIRONMENT === 'production'` regardless of NODE_ENV.
+
+### [LOW] sopVariant + tool-definition findFirst patterns rely on JS-side tenant comparison (defence-in-depth)
+- **Files:**
+  - `backend/src/routes/knowledge.ts:181-185, 241-245, 351-355, 381-385`
+  - `backend/src/services/tool-definition.service.ts:289-322, 408-424, 433-449`
+- **Symptom:** Patterns like `findFirst({ where: { id }, include: { sopDefinition: { select: { tenantId } } } })` then JS-side `if (row.sopDefinition.tenantId !== tenantId) ...`. Today the comparison is correct; future editors who drop the JS check (e.g. inlining for "perf") would re-introduce IDOR. tool-definition service helpers accept bare `id` and rely on the route's pre-flight findFirst.
+- **Why deferred:** No exploitable bug today. Just couples scope-correctness to caller discipline.
+- **Fix sketch:** Push tenant scope into the Prisma where clause: `findFirst({ where: { id, sopDefinition: { tenantId } } })`. For tool-definition service, thread tenantId into every helper signature and do the findFirst inside.
+
 ### [LOW] WebhookLog table has no retention sweep
 - **File:** `backend/src/controllers/webhooks.controller.ts:203-226` + a new job under `backend/src/jobs/webhookLogRetention.job.ts`
 - **Symptom:** Every Hostaway webhook persists a row with the full payload to `WebhookLog`. No retention job, no size cap. High-volume tenants (hundreds of webhooks/day from reservation polling + message updates) accumulate indefinitely.

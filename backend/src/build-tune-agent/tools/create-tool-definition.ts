@@ -31,6 +31,7 @@ import { sanitiseArtifactPayload } from '../lib/sanitise-artifact-payload';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
 import { openRitualWindow } from '../lib/ritual-state';
+import { isPublicHttpsUrl } from '../../lib/url-safety';
 
 // snake_case — same convention the main AI's system tools use
 // (get_sop, get_faq, search_available_properties, …). Prevents drift
@@ -82,7 +83,14 @@ export function buildCreateToolDefinitionTool(
       webhookUrl: z
         .string()
         .url()
-        .refine((u) => u.startsWith('https://'), 'webhookUrl must be https://'),
+        .refine((u) => u.startsWith('https://'), 'webhookUrl must be https://')
+        // 2026-04-23 (security pass): block obvious SSRF targets at
+        // write-time. The send-time check in webhook-tool.service.ts
+        // also rejects via DNS resolution to defeat rebinding.
+        .refine(
+          (u: string) => isPublicHttpsUrl(u).ok,
+          'webhookUrl points at a private/loopback/link-local/metadata address (SSRF protection)',
+        ),
       webhookAuth: webhookAuthSchema,
       // KNOWN-GAP (2026-04-22): `availableStatuses` is accepted, surfaced
       // in the dry-run preview, and stamped into BuildArtifactHistory
