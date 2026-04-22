@@ -265,11 +265,21 @@ export function makeConversationsController(prisma: PrismaClient) {
           res.status(400).json({ error: parsed.error.flatten() });
           return;
         }
-        await prisma.reservation.updateMany({
-          where: { tenantId },
+        // Bugfix (2026-04-22): the previous version had no status filter,
+        // so toggling AI on at the tenant level re-enabled it on
+        // CANCELLED + CHECKED_OUT reservations. Webhook G4 explicitly
+        // sets aiEnabled=false on those statuses for safety; if a guest
+        // replied after the toggle, the AI pipeline would fire on a
+        // booking that was supposed to be terminal. Restrict the
+        // updateMany to active statuses only.
+        const result = await prisma.reservation.updateMany({
+          where: {
+            tenantId,
+            status: { notIn: ['CANCELLED' as any, 'CHECKED_OUT' as any] },
+          },
           data: { aiEnabled: parsed.data.aiEnabled },
         });
-        res.json({ ok: true, aiEnabled: parsed.data.aiEnabled });
+        res.json({ ok: true, aiEnabled: parsed.data.aiEnabled, updated: result.count });
       } catch (err) {
         console.error('[Conversations] aiToggleAll error:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -303,12 +313,28 @@ export function makeConversationsController(prisma: PrismaClient) {
 
         const aiEnabled = aiMode !== 'off';
 
+        // Bugfix (2026-04-22): the previous version wrote
+        // `aiMode: aiEnabled ? aiMode : 'autopilot'` when toggling OFF.
+        // That silently overwrote the prior aiMode preference with
+        // 'autopilot', so any later flip to enabled (e.g. via
+        // aiToggleAll) jumped every conversation to autopilot — even
+        // ones that were previously in copilot. Autopilot sends
+        // directly without manager approval, so this was a silent
+        // safety regression on every property toggle off→on cycle.
+        // Fix: persist the actual aiMode value ('off' is a legitimate
+        // mode in the column already) so a later "on" can come back to
+        // the prior preference. Same for status filter — don't
+        // re-enable on CANCELLED/CHECKED_OUT (parity with aiToggleAll).
         const result = await prisma.reservation.updateMany({
-          where: { tenantId, propertyId },
-          data: { aiEnabled, aiMode: aiEnabled ? aiMode : 'autopilot' },
+          where: {
+            tenantId,
+            propertyId,
+            status: { notIn: ['CANCELLED' as any, 'CHECKED_OUT' as any] },
+          },
+          data: { aiEnabled, aiMode },
         });
 
-        broadcastToTenant(tenantId, 'property_ai_changed', { propertyId, aiMode: aiEnabled ? aiMode : 'autopilot', aiEnabled });
+        broadcastToTenant(tenantId, 'property_ai_changed', { propertyId, aiMode, aiEnabled });
 
         res.json({ ok: true, propertyId, aiMode, updated: result.count });
       } catch (err) {
