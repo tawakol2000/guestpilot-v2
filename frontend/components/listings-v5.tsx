@@ -1607,22 +1607,34 @@ export default function ListingsV5(): React.ReactElement {
                       disabled={dirtyIds.length === 0 || bulkSaving}
                       onClick={async () => {
                         setBulkSaving(true)
+                        // Bugfix (2026-04-23): capture the dirty kbs
+                        // BEFORE the await so the post-success
+                        // setProperties closure doesn't depend on
+                        // potentially-stale `editStates`. Previously
+                        // it worked by accident because both setters
+                        // batched, but the ordering was fragile —
+                        // any future await between them would skip
+                        // updates in `setProperties` after `setEditStates`
+                        // had already cleared `dirty`.
+                        const snapshot = dirtyIds
+                          .map(id => ({ id, kb: editStates[id]?.kb }))
+                          .filter((s): s is { id: string; kb: any } => !!s.kb)
                         try {
-                          await Promise.all(dirtyIds.map(id => {
-                            const s = editStates[id]; if (!s) return Promise.resolve()
-                            return apiUpdateKnowledgeBase(id, s.kb)
+                          await Promise.all(snapshot.map(s =>
+                            apiUpdateKnowledgeBase(s.id, s.kb)
+                          ))
+                          // Update properties source-of-truth so revert uses saved values.
+                          // Done BEFORE setEditStates so the snapshot is the source.
+                          setProperties(prev => prev.map(p => {
+                            const s = snapshot.find(x => x.id === p.id)
+                            if (!s) return p
+                            return { ...p, customKnowledgeBase: { ...s.kb } }
                           }))
                           setEditStates(prev => {
                             const next = { ...prev }
-                            dirtyIds.forEach(id => { if (next[id]) next[id] = { ...next[id], dirty: false } })
+                            snapshot.forEach(s => { if (next[s.id]) next[s.id] = { ...next[s.id], dirty: false } })
                             return next
                           })
-                          // Update properties source-of-truth so revert uses saved values
-                          setProperties(prev => prev.map(p => {
-                            const s = editStates[p.id]
-                            if (!s?.dirty) return p
-                            return { ...p, customKnowledgeBase: { ...s.kb } }
-                          }))
                         } catch (err) { console.error('Bulk save failed:', err) }
                         finally { setBulkSaving(false) }
                       }}
