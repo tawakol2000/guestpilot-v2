@@ -33,9 +33,20 @@
 | 10 | LOW | `fc91531` | `__tests__/studio-chat-queue-flush-wedge.test.tsx` — deterministic vitest harness for sync-throw, rejected-promise, and 5s-timeout safety nets |
 | 11 | LOW | `1062406` | `specs/045-build-mode/NEXT.md` — codified `tsc --noEmit + npm run build` in after-gate routine |
 
-## Round 2+
+## Round 2 — HIGH (2026-04-22 → 2026-04-23)
 
-(Updated as work proceeds. Sections appended below.)
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 12 | HIGH | `a79f643` | `services/doc-handoff.service.ts` — atomic optimistic-lock claim before WhatsApp send (no more multi-instance double-sends) |
+| 13 | HIGH | `cea2f98` | `controllers/build-controller.ts` — preserve existing history-row metadata when stamping REVERT (no more silent destruction of rationale/buildTransactionId/testResult/version) |
+| 14 | HIGH | `8b4cc9a` | `tools/write-system-prompt.ts` — wrap TenantAiConfig upsert + AiConfigVersion insert in `$transaction` (no more un-rollbackable state on partial commit) |
+| 15 | HIGH | `0f1ea81` | `tools/suggestion-action.ts` — applyArtifactChangeFromUi single-flight Map + previewId stamped at create-time (close TOCTOU on double-click) |
+| 16 | HIGH | `df4ab0b` | `controllers/messages.controller.ts` — tenant-scope PendingAiReply lookup (defence-in-depth) |
+| 17 | HIGH | `b896a96` | `services/summary.service.ts` — optional tenantId param + scope every query (defence-in-depth, prompt-injection vector closed) |
+
+## Round 2 — MEDIUM + LOW
+
+(Appended as committed.)
 
 ## Test counts
 
