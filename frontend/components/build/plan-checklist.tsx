@@ -91,14 +91,16 @@ function deriveRowState(
   cancelledIndexes: ReadonlySet<number>,
 ): RowState {
   if (isCancelled) return 'cancelled'
+  // A per-row cancel flag wins over any "we've applied N things so rows
+  // [0..N-1] must be done" heuristic. The heuristic was dropping `×` on
+  // cancelled rows whose index happened to fall under appliedItems.length
+  // (which can include writes from other, in-scope txn rows that weren't
+  // plan items themselves, e.g. a same-session system-prompt edit).
+  if (cancelledIndexes.has(idx)) return 'cancelled'
   const isDone = appliedItems.some((a) => a.type === item.type && a.name === item.name)
   if (isDone) return 'done'
-  // Sprint 058-A F2 — per-row cancel flag. A done row cannot be cancelled
-  // (we check isDone first), a current row cannot be cancelled (it's
-  // already in-flight), only a pending row can flip to ×.
   const firstPending = appliedItems.length
   if (idx < firstPending) return 'done'
-  if (cancelledIndexes.has(idx)) return 'cancelled'
   if (idx === firstPending) return 'current'
   return 'pending'
 }
