@@ -38,7 +38,19 @@ const mapChannel = mapHostawayChannel;
 export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log('[ReservationSync] Background sync job started (interval: 120s, lookback: 24h)');
 
+  // Bugfix (2026-04-23): module-scope overlap guard. Same fix already
+  // applied to messageSync.job.ts. If the tenant fleet grows or
+  // Hostaway responds slowly, a tick can exceed the 120s interval;
+  // overlapping ticks compete for the same rows + the same OAuth
+  // token refreshes, wasting CPU + Hostaway rate budget.
+  let running = false;
+
   return setInterval(async () => {
+    if (running) {
+      console.log('[ReservationSync] Previous tick still running — skipping this cycle.');
+      return;
+    }
+    running = true;
     try {
       const tenants = await prisma.tenant.findMany({
         where: { hostawayAccountId: { not: '' }, hostawayApiKey: { not: '' } },
@@ -247,6 +259,8 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
       }
     } catch (err: any) {
       console.error('[ReservationSync] Job cycle failed:', err.message);
+    } finally {
+      running = false;
     }
   }, 120_000);
 }
