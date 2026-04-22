@@ -99,6 +99,42 @@ function buildRevertBody(
       return null;
   }
 }
+/**
+ * Sprint 058-A F3 — mirror of `buildRevertBody` but reading from the
+ * `newBody` JSON blob (the body that row applied). `newBody` is the
+ * same shape the `/apply` endpoint accepts, so this mostly passes
+ * fields through while guarding against bad stored payloads.
+ */
+function buildRevertBodyFromNew(
+  artifactType: string,
+  newBody: unknown,
+): Record<string, unknown> | null {
+  if (!newBody || typeof newBody !== 'object') return null;
+  const p = newBody as Record<string, unknown>;
+  switch (artifactType) {
+    case 'sop':
+    case 'property_override':
+      return typeof p.content === 'string' ? { content: p.content } : null;
+    case 'faq':
+      return {
+        ...(typeof p.question === 'string' ? { question: p.question } : {}),
+        ...(typeof p.answer === 'string' ? { answer: p.answer } : {}),
+      };
+    case 'system_prompt':
+      return typeof p.text === 'string' ? { text: p.text } : null;
+    case 'tool_definition':
+    case 'tool':
+      return {
+        ...(typeof p.description === 'string' ? { description: p.description } : {}),
+        ...(p.parameters !== undefined ? { parameters: p.parameters } : {}),
+        ...(typeof p.webhookUrl === 'string' ? { webhookUrl: p.webhookUrl } : {}),
+        ...(typeof p.webhookTimeout === 'number' ? { webhookTimeout: p.webhookTimeout } : {}),
+        ...(typeof p.enabled === 'boolean' ? { enabled: p.enabled } : {}),
+      };
+    default:
+      return null;
+  }
+}
 import {
   assembleSystemPromptRegions,
   type AgentMode,
@@ -1134,6 +1170,8 @@ export function makeBuildController(prisma: PrismaClient) {
             prevBody: true,
             newBody: true,
             metadata: true,
+            // Sprint 058-A F6 — version labels surface in the Versions tab + ledger.
+            versionLabel: true,
           },
         });
         res.json({
@@ -1483,6 +1521,215 @@ export function makeBuildController(prisma: PrismaClient) {
       } catch (err) {
         console.error('[build-controller] sessionArtifacts failed:', err);
         res.status(500).json({ error: 'SESSION_ARTIFACTS_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 058-A F3 — POST /api/build/history/:id/revert-to
+     *
+     * Arbitrary-version revert. Given a target `BuildArtifactHistory` row,
+     * restore the artifact to the state that row represented — i.e. use
+     * `newBody` (the body the row applied). Writes through the same apply
+     * layer as the 053-A D4 `/revert` endpoint so sanitiser + history row
+     * generation stays single-sourced. The new history row carries
+     * `metadata.revertedToHistoryId` so downstream consumers can chain
+     * the lineage.
+     *
+     * Tenant-scoped. Admin-only. Rejects targets belonging to a different
+     * artifact than the caller intends (not applicable here — the target
+     * row is resolved by id, which already carries its artifactType +
+     * artifactId). Returns 404 when the row isn't visible to the caller.
+     */
+    async revertToVersion(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      if (!isRawPromptEditorEnabled()) {
+        res.status(404).json({ error: `No route: ${req.method} ${req.path}` });
+        return;
+      }
+      try {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: req.tenantId },
+          select: { isAdmin: true, email: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
+        const historyId = String(req.params.id ?? '');
+        if (!historyId) {
+          res.status(400).json({ error: 'MISSING_HISTORY_ID' });
+          return;
+        }
+        const row = await prisma.buildArtifactHistory.findFirst({
+          where: { id: historyId, tenantId: req.tenantId },
+        });
+        if (!row) {
+          res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
+          return;
+        }
+        if (row.newBody == null) {
+          res.status(422).json({ ok: false, error: 'NO_NEW_BODY' });
+          return;
+        }
+        const dryRun = Boolean((req.body ?? {}).dryRun);
+        const body = buildRevertBodyFromNew(row.artifactType, row.newBody);
+        if (!body) {
+          res.status(422).json({
+            ok: false,
+            error: 'UNREVERTABLE_TYPE',
+            artifactType: row.artifactType,
+          });
+          return;
+        }
+        const applyType: ApplyArtifactType =
+          row.artifactType === 'tool_definition'
+            ? 'tool'
+            : (row.artifactType as ApplyArtifactType);
+        const result = await applyArtifactUpdate(prisma, {
+          tenantId: req.tenantId,
+          type: applyType,
+          id: row.artifactId,
+          dryRun,
+          body,
+          actorUserId: (req as any).userId ?? null,
+          actorEmail: tenant.email ?? null,
+          conversationId: row.conversationId,
+          metadata: { revertedToHistoryId: row.id },
+        });
+        if (!result.ok) {
+          res.status(422).json(result);
+          return;
+        }
+        // On non-dry-run, stamp the newly-written row as REVERT so the
+        // ledger reads "Reverted to <target>" rather than a stray UPDATE.
+        if (!dryRun) {
+          const mostRecent = await prisma.buildArtifactHistory.findFirst({
+            where: {
+              tenantId: req.tenantId,
+              artifactType: row.artifactType,
+              artifactId: row.artifactId,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (mostRecent && mostRecent.id !== row.id) {
+            await prisma.buildArtifactHistory
+              .update({
+                where: { id: mostRecent.id },
+                data: {
+                  operation: 'REVERT',
+                  metadata: { revertedToHistoryId: row.id },
+                },
+              })
+              .catch((err) => {
+                console.error('[build] revertToVersion stamp failed (logged):', err);
+              });
+          }
+        }
+        res.json(result);
+      } catch (err) {
+        console.error('[build-controller] revertToVersion failed:', err);
+        res.status(500).json({ error: 'REVERT_TO_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 058-A F6 — POST /api/build/history/:id/tag
+     *
+     * Attach a short human-readable version label to a history row. Used
+     * by the Versions tab (F3) so operators can tag a row as "stable" or
+     * "before-early-checkin-rework" and revert to it by name later.
+     *
+     * Validation: label is 1–40 chars of [A-Za-z0-9_-]. Tenant-scoped.
+     */
+    async tagHistoryRow(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      try {
+        const historyId = String(req.params.id ?? '');
+        if (!historyId) {
+          res.status(400).json({ error: 'MISSING_HISTORY_ID' });
+          return;
+        }
+        const rawLabel = (req.body ?? {}).label;
+        const label = typeof rawLabel === 'string' ? rawLabel.trim() : '';
+        if (!label) {
+          res.status(400).json({ error: 'MISSING_LABEL' });
+          return;
+        }
+        if (label.length > 40) {
+          res.status(400).json({ error: 'LABEL_TOO_LONG', max: 40 });
+          return;
+        }
+        if (!/^[A-Za-z0-9_-]+$/.test(label)) {
+          res.status(400).json({ error: 'INVALID_LABEL_CHARSET' });
+          return;
+        }
+        const row = await prisma.buildArtifactHistory.findFirst({
+          where: { id: historyId, tenantId: req.tenantId },
+          select: { id: true },
+        });
+        if (!row) {
+          res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
+          return;
+        }
+        const updated = await prisma.buildArtifactHistory.update({
+          where: { id: historyId },
+          data: { versionLabel: label },
+          select: {
+            id: true,
+            versionLabel: true,
+            artifactType: true,
+            artifactId: true,
+          },
+        });
+        res.json({ ok: true, row: updated });
+      } catch (err) {
+        console.error('[build-controller] tagHistoryRow failed:', err);
+        res.status(500).json({ error: 'TAG_FAILED' });
+      }
+    },
+
+    /**
+     * Sprint 058-A F6 — DELETE /api/build/history/:id/tag
+     *
+     * Clear the versionLabel on a history row. Tenant-scoped. Idempotent
+     * on rows that weren't tagged — the response shape is the same.
+     */
+    async untagHistoryRow(
+      req: AuthenticatedRequest,
+      res: Response,
+    ): Promise<void> {
+      try {
+        const historyId = String(req.params.id ?? '');
+        if (!historyId) {
+          res.status(400).json({ error: 'MISSING_HISTORY_ID' });
+          return;
+        }
+        const row = await prisma.buildArtifactHistory.findFirst({
+          where: { id: historyId, tenantId: req.tenantId },
+          select: { id: true },
+        });
+        if (!row) {
+          res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
+          return;
+        }
+        const updated = await prisma.buildArtifactHistory.update({
+          where: { id: historyId },
+          data: { versionLabel: null },
+          select: {
+            id: true,
+            versionLabel: true,
+            artifactType: true,
+            artifactId: true,
+          },
+        });
+        res.json({ ok: true, row: updated });
+      } catch (err) {
+        console.error('[build-controller] untagHistoryRow failed:', err);
+        res.status(500).json({ error: 'UNTAG_FAILED' });
       }
     },
 

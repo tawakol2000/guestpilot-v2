@@ -90,5 +90,18 @@ export function buildRouter(prisma: PrismaClient): Router {
     ctl.sessionArtifacts(req, res)
   );
 
+  // Sprint 058-A F3 — arbitrary-version revert.
+  router.post('/history/:id/revert-to', (req: any, res) =>
+    ctl.revertToVersion(req, res)
+  );
+
+  // Sprint 058-A F6 — version tag endpoints.
+  router.post('/history/:id/tag', (req: any, res) =>
+    ctl.tagHistoryRow(req, res)
+  );
+  router.delete('/history/:id/tag', (req: any, res) =>
+    ctl.untagHistoryRow(req, res)
+  );
+
   return router;
 }
