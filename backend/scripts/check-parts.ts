@@ -8,8 +8,8 @@ async function main() {
   for (const m of msgs) {
     const ps = m.parts as any[];
     for (const part of ps) {
-      if (part.type === 'data-build-plan') {
-        console.log('data-build-plan:', JSON.stringify(part.data, null, 2));
+      if (part.type === 'data-session-diff-summary') {
+        console.log('data-session-diff-summary:', JSON.stringify(part.data, null, 2));
       }
     }
   }

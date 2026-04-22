@@ -344,12 +344,23 @@ export function StudioChat({
     setIsAtBottom(scrollHeight - scrollTop - clientHeight < 64)
   }, [])
 
-  // Replace unconditional scroll with conditional logic: auto-scroll when
-  // at the bottom, otherwise show the pill.
+  // Skip auto-scroll on the first paint so loading a historical
+  // conversation lands at the top (operator reads intro → scroll down),
+  // not jammed at the bottom with everyone's context missing above.
+  // After the first non-empty render, subsequent new messages auto-scroll
+  // as before when the scroller is already at the bottom.
+  const didInitialMessagesRender = useRef(false)
   useEffect(() => {
     if (!messages.length) return
     const newIds = messages.filter((m) => !seenMsgIds.current.has(m.id))
     newIds.forEach((m) => seenMsgIds.current.add(m.id))
+
+    if (!didInitialMessagesRender.current) {
+      didInitialMessagesRender.current = true
+      scrollerRef.current?.scrollTo({ top: 0 })
+      setNewMsgCount(0)
+      return
+    }
 
     if (isAtBottom) {
       scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: 'smooth' })

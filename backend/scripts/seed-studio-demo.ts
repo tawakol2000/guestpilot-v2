@@ -518,17 +518,10 @@ async function main() {
     parts: [
       toolCallPart('emit_session_summary', { conversationId: convo.id }, { ok: true }),
       dataPart('data-session-diff-summary', {
-        conversationId: convo.id,
-        artifactsTouched: [
-          { type: 'sop', name: 'sop-early-check-in', operation: 'UPDATE', label: 'Early check-in' },
-          { type: 'faq', name: 'early-check-in-faq', operation: 'CREATE', label: 'Early check-in FAQ' },
-          { type: 'system_prompt', name: 'coordinator', operation: 'UPDATE', label: 'Coordinator prompt · v2' },
-        ],
-        testsRun: 1,
-        testsPassed: 1,
-        plansApproved: 1,
-        plansCancelledItems: 1,
-        durationMinutes: 42,
+        written: { created: 1, edited: 2, reverted: 0 },
+        tested: { runs: 1, totalVariants: 1, passed: 1 },
+        plans: { cancelled: 1 },
+        note: '1 SOP updated, 1 FAQ created, coordinator prompt bumped to v2. 1 tool deferred.',
       }),
       textPart("Here's what landed this session. The tool-config row is a ghost — operator declined.", { origin: 'ai' }),
     ],
