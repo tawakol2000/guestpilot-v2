@@ -381,16 +381,19 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         return asCallToolResult(payload);
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
-          failedTool: 'create_sop',
-          message: msg,
-        });
+        // Bugfix (2026-04-22): handle benign P2002 BEFORE marking the
+        // transaction PARTIAL — duplicate-create is not a plan-integrity
+        // failure. Same pattern as create_faq.ts.
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
           return asError(
             `create_sop: a unique-constraint collision occurred. Another SOP with the same (category, status, property) tuple exists — edit it rather than recreate.`
           );
         }
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_sop',
+          message: msg,
+        });
         span.end({ error: String(err) });
         return asError(`create_sop failed: ${msg}`);
       }

@@ -26,8 +26,16 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxAttempts = 3, baseDe
   throw new Error('Unreachable');
 }
 
-// Per-tenant token cache
+// Per-tenant token cache.
+// Bugfix (2026-04-22): on cache miss every concurrent caller used to
+// hit `/accessTokens` independently — a thundering herd on cold start
+// or 24h token expiry. We now cache an in-flight Promise<string>
+// keyed on accountId so concurrent callers await the same fetch.
+// Once the promise resolves, we replace it with the resolved token in
+// `tokenCache`. On rejection, the in-flight slot is cleared so the
+// next caller retries.
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+const inFlightTokenFetches = new Map<string, Promise<string>>();
 
 async function getAccessToken(accountId: string, apiKey: string): Promise<string> {
   const cached = tokenCache.get(accountId);
@@ -35,21 +43,33 @@ async function getAccessToken(accountId: string, apiKey: string): Promise<string
     return cached.token;
   }
 
-  const res = await retryWithBackoff(() => axios.post(
-    `${HOSTAWAY_BASE_URL}/v1/accessTokens`,
-    new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: accountId,
-      client_secret: apiKey,
-      scope: 'general',
-    }).toString(),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  ));
+  const inFlight = inFlightTokenFetches.get(accountId);
+  if (inFlight) return inFlight;
 
-  const token: string = res.data.access_token;
-  const expiresIn: number = (res.data.expires_in || 86400) - 60;
-  tokenCache.set(accountId, { token, expiresAt: Date.now() + expiresIn * 1000 });
-  return token;
+  const fetch = (async () => {
+    try {
+      const res = await retryWithBackoff(() => axios.post(
+        `${HOSTAWAY_BASE_URL}/v1/accessTokens`,
+        new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: accountId,
+          client_secret: apiKey,
+          scope: 'general',
+        }).toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      ));
+
+      const token: string = res.data.access_token;
+      const expiresIn: number = (res.data.expires_in || 86400) - 60;
+      tokenCache.set(accountId, { token, expiresAt: Date.now() + expiresIn * 1000 });
+      return token;
+    } finally {
+      inFlightTokenFetches.delete(accountId);
+    }
+  })();
+
+  inFlightTokenFetches.set(accountId, fetch);
+  return fetch;
 }
 
 async function getClient(accountId: string, apiKey: string): Promise<AxiosInstance> {

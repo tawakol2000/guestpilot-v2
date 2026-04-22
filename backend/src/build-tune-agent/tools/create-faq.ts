@@ -206,17 +206,23 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
         return asCallToolResult(payload);
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
-          failedTool: 'create_faq',
-          message: msg,
-        });
-        // Surface unique-constraint collision in a readable form.
+        // Bugfix (2026-04-22): handle the benign P2002 (unique-constraint
+        // duplicate) BEFORE marking the build-transaction PARTIAL.
+        // Previously the order was reversed: any duplicate-FAQ attempt
+        // (manager retried the same phrasing) flipped the entire
+        // transaction to PARTIAL, blocking further writes and forcing a
+        // fresh plan. Duplicate creates are not a real failure mode for
+        // the plan's integrity.
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
           return asError(
             `create_faq: an FAQ with this question already exists for this scope (tenant/property). Edit the existing entry via propose_suggestion(category='FAQ') instead of creating a duplicate.`
           );
         }
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_faq',
+          message: msg,
+        });
         span.end({ error: String(err) });
         return asError(`create_faq failed: ${msg}`);
       }

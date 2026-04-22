@@ -36,24 +36,49 @@ function getLocalMinutes(date: Date, timezone: string): number {
 
 function getTodayMidnightInTimezone(now: Date, timezone: string): Date {
   try {
-    // Get the local date string in the target timezone (e.g. "2025-03-16")
-    const localDateStr = new Intl.DateTimeFormat('en-CA', {
+    // Bugfix (2026-04-22): the previous implementation parsed
+    // `toLocaleString('en-US', ...)` strings (e.g. "3/20/2026, 12:00:00 AM")
+    // as Date inputs with an appended ` UTC` suffix. Those strings are
+    // not spec-compliant Date inputs; Node parses them best-effort but
+    // the resulting offsetMs was unreliable for many time zones,
+    // especially across DST boundaries. nextWorkingHoursStart consumed
+    // this offset to defer guest messages outside working hours, so a
+    // broken offset → messages scheduled for the wrong local time
+    // (sometimes hours off).
+    //
+    // New approach: use Intl.DateTimeFormat parts to read the local
+    // year/month/day/hour/minute in the target timezone, then build
+    // the corresponding UTC instant by adjusting until the formatter
+    // round-trips to the desired local clock. Same approach
+    // doc-handoff.service.ts:atLocalTime() already uses; this one
+    // targets local midnight specifically.
+    const dateParts = new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }).format(now);
+    }).formatToParts(now);
+    const part = (t: string) => Number(dateParts.find((p) => p.type === t)?.value);
+    const year = part('year');
+    const month = part('month');
+    const day = part('day');
 
-    // Determine the UTC offset at that local midnight by comparing two interpretations
-    const nominalMidnight = new Date(`${localDateStr}T00:00:00Z`); // treated as UTC
-    const offsetProbe = new Date(
-      new Date(`${localDateStr}T00:00:00`).toLocaleString('en-US', { timeZone: timezone }) + ' UTC'
-    );
-    const utcProbe = new Date(
-      new Date(`${localDateStr}T00:00:00`).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC'
-    );
-    const offsetMs = utcProbe.getTime() - offsetProbe.getTime();
-    return new Date(nominalMidnight.getTime() + offsetMs);
+    // Naively assume local midnight = UTC midnight on that calendar day,
+    // then adjust by however much the formatter says we're off.
+    const naiveUtc = Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+    const probed = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(naiveUtc));
+    const probedH = Number(probed.find((p) => p.type === 'hour')?.value);
+    const probedM = Number(probed.find((p) => p.type === 'minute')?.value);
+    // Difference from desired (00:00) to what the formatter shows.
+    // Note: probedH can be 24 in some Intl outputs at midnight; treat as 0.
+    const normalisedProbedH = probedH === 24 ? 0 : probedH;
+    const diffMinutes = (0 - normalisedProbedH) * 60 + (0 - probedM);
+    return new Date(naiveUtc + diffMinutes * 60_000);
   } catch {
     // Fallback: UTC midnight
     const d = new Date(now);

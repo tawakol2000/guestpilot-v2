@@ -127,35 +127,52 @@ export async function appendVerificationResult(
   ritualVersion: string,
 ): Promise<void> {
   try {
-    const existing = await prisma.buildArtifactHistory.findUnique({
-      where: { id: historyId },
-      select: { metadata: true },
-    });
-    if (!existing) return;
-    const prevMeta =
-      (existing.metadata && typeof existing.metadata === 'object'
-        ? (existing.metadata as Record<string, unknown>)
-        : {}) ?? {};
-    const prevResult =
-      typeof prevMeta.testResult === 'object' && prevMeta.testResult !== null
-        ? (prevMeta.testResult as Partial<VerificationTestResult>)
-        : null;
-    const mergedVariants: VerificationVariantInput[] = [
-      ...(Array.isArray(prevResult?.variants) ? (prevResult!.variants as VerificationVariantInput[]) : []),
-      ...newVariants,
-    ];
-    const nextResult: VerificationTestResult = {
-      variants: mergedVariants,
-      aggregateVerdict: computeAggregateVerdict(mergedVariants),
-      ritualVersion,
-    };
-    const nextMeta = {
-      ...prevMeta,
-      testResult: nextResult,
-    };
-    await prisma.buildArtifactHistory.update({
-      where: { id: historyId },
-      data: { metadata: nextMeta as unknown as Prisma.InputJsonValue },
+    // Bugfix (2026-04-22): wrap the read-modify-write in a $transaction
+    // so two overlapping test_pipeline calls (e.g. long-running judge
+    // calls completing out of order) don't race. Previously the read
+    // and the update were two separate round-trips; the later commit
+    // silently dropped the earlier commit's variants and
+    // computeAggregateVerdict then disagreed with what was "added."
+    //
+    // The transaction reads metadata inside the same scope as the
+    // update so concurrent writes serialise: with Postgres default
+    // isolation (read committed) the second tx still reads the
+    // pre-first-update value, but the second update hits a row-level
+    // lock and waits — by the time it proceeds the first variant is
+    // present. We then re-read inside the lock to compose the merged
+    // result.
+    await prisma.$transaction(async (tx) => {
+      // Re-read inside the tx so the merge sees any concurrent commit.
+      const existing = await tx.buildArtifactHistory.findUnique({
+        where: { id: historyId },
+        select: { metadata: true },
+      });
+      if (!existing) return;
+      const prevMeta =
+        (existing.metadata && typeof existing.metadata === 'object'
+          ? (existing.metadata as Record<string, unknown>)
+          : {}) ?? {};
+      const prevResult =
+        typeof prevMeta.testResult === 'object' && prevMeta.testResult !== null
+          ? (prevMeta.testResult as Partial<VerificationTestResult>)
+          : null;
+      const mergedVariants: VerificationVariantInput[] = [
+        ...(Array.isArray(prevResult?.variants) ? (prevResult!.variants as VerificationVariantInput[]) : []),
+        ...newVariants,
+      ];
+      const nextResult: VerificationTestResult = {
+        variants: mergedVariants,
+        aggregateVerdict: computeAggregateVerdict(mergedVariants),
+        ritualVersion,
+      };
+      const nextMeta = {
+        ...prevMeta,
+        testResult: nextResult,
+      };
+      await tx.buildArtifactHistory.update({
+        where: { id: historyId },
+        data: { metadata: nextMeta as unknown as Prisma.InputJsonValue },
+      });
     });
   } catch (err) {
     // eslint-disable-next-line no-console

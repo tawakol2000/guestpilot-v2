@@ -40,12 +40,19 @@ function makeCtx(): ToolContext & {
 } {
   const emitted: Array<{ type: string; id?: string; data: unknown }> = [];
   return {
-    prisma: {
-      buildArtifactHistory: {
-        findUnique: async () => null,
-        update: async () => ({}),
-      },
-    } as any,
+    prisma: ((): any => {
+      const fake: any = {
+        buildArtifactHistory: {
+          findUnique: async () => null,
+          update: async () => ({}),
+        },
+        // 2026-04-22: appendVerificationResult now wraps the
+        // read-modify-write in $transaction. Fake runs callback
+        // inline with the same prisma object as `tx`.
+        $transaction: async (cb: any) => cb(fake),
+      };
+      return fake;
+    })(),
     tenantId: 't1',
     conversationId: 'conv1',
     userId: 'u1',

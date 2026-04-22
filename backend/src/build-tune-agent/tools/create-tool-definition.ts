@@ -275,16 +275,19 @@ export function buildCreateToolDefinitionTool(
         return asCallToolResult(payload);
       } catch (err: any) {
         const msg = err?.message ?? String(err);
-        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
-          failedTool: 'create_tool_definition',
-          message: msg,
-        });
+        // Bugfix (2026-04-22): handle benign P2002 BEFORE marking the
+        // transaction PARTIAL — duplicate-name collision is not a
+        // plan-integrity failure. Same pattern as create_faq.ts.
         if (err?.code === 'P2002') {
           span.end({ error: 'UNIQUE_CONSTRAINT' });
           return asError(
             `create_tool_definition: unique-constraint collision on (tenant, name). Pick a different name or edit the existing tool.`
           );
         }
+        await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {
+          failedTool: 'create_tool_definition',
+          message: msg,
+        });
         span.end({ error: String(err) });
         return asError(`create_tool_definition failed: ${msg}`);
       }
