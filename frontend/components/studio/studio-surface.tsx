@@ -515,6 +515,12 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               traceViewEnabled={capabilities.traceViewEnabled}
               onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
               onUserMessageSent={handleUserMessageSent}
+              tenantState={tenantState}
+              onOpenPrompt={
+                capabilities.isAdmin && capabilities.rawPromptEditorEnabled
+                  ? () => setRawPromptOpen(true)
+                  : undefined
+              }
             />
           </StudioErrorBoundary>
         </div>

@@ -31,8 +31,11 @@ import {
   apiRejectSuggestedFix,
   buildTurnEndpoint,
   type BuildPlanData,
+  type BuildTenantState,
   type TestPipelineResultData,
 } from '@/lib/build-api'
+import { TenantStateBanner } from './tenant-state-banner'
+import { SessionDiffCard, type SessionDiffSummaryData } from './session-diff-card'
 import { STUDIO_COLORS, getStudioCategoryStyle } from './tokens'
 import { SuggestedFixCard, type SuggestedFixTarget } from './suggested-fix'
 import { QuestionChoicesCard } from './question-choices'
@@ -99,6 +102,15 @@ export interface StudioChatProps {
    * substantive user message.
    */
   onUserMessageSent?: (text: string) => void
+  /**
+   * Sprint 058-A F5 — tenant state supplied by the surface for the
+   * sticky banner at the top of the chat scroll area. Optional so old
+   * tests that don't plumb it through still render.
+   */
+  tenantState?: BuildTenantState | null
+  /** Sprint 058-A F5 — open the raw-prompt drawer when the banner's
+   *  caption or chevron is clicked (admin + raw-prompt-editor flag). */
+  onOpenPrompt?: () => void
 }
 
 // Sprint 058-A F9c — AI SDK internal lifecycle markers. These are
@@ -195,6 +207,8 @@ export function StudioChat({
   traceViewEnabled = false,
   onOpenVerificationForHistoryId,
   onUserMessageSent,
+  tenantState,
+  onOpenPrompt,
 }: StudioChatProps) {
   const transport = useMemo(
     () =>
@@ -437,6 +451,15 @@ export function StudioChat({
       style={{ background: STUDIO_COLORS.canvas, position: 'relative' }}
     >
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto" style={{ position: 'relative' }} onScroll={handleScroll}>
+        {/* Sprint 058-A F5 — sticky tenant-state banner. Sits inside the
+            scroll container so it stays pinned while messages scroll
+            below. Returns null when tenantState is nullish. */}
+        {tenantState ? (
+          <TenantStateBanner
+            state={tenantState}
+            onOpenPrompt={onOpenPrompt}
+          />
+        ) : null}
         {/* F3a — jump-to-latest pill. Appears when operator has scrolled
             up and new messages have arrived. Clicking jumps to bottom and
             clears the counter. */}
@@ -1144,6 +1167,15 @@ function StandalonePart({
         }}
       />
     )
+  }
+
+  if (type === 'data-session-diff-summary') {
+    // Sprint 058-A F4 — agent-emitted turn summary. Renders inline with
+    // the assistant message, not hoisted to a rail. Graceful: partial
+    // data still renders because SessionDiffCard defaults missing
+    // fields to zero.
+    const data = (part.data ?? {}) as SessionDiffSummaryData
+    return <SessionDiffCard data={data} />
   }
 
   if (type === 'data-advisory') {
