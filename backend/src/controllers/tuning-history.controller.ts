@@ -357,6 +357,22 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
           // value on the snapshot and tags it as coordinator/screening using
           // a substring sniff, recovering the prior content reliably.
           const picked = pickPromptText(target);
+          // 2026-04-22 fix: refuse to roll back ambiguous snapshots
+          // (both variants present in the same row). Mirrors
+          // version-history.ts ROLLBACK_AMBIGUOUS guard. Without this
+          // we'd silently restore the wrong variant on a legacy
+          // snapshot that carried both.
+          if (picked.ambiguous) {
+            res.status(400).json({
+              error: 'ROLLBACK_AMBIGUOUS',
+              detail:
+                'This snapshot contains both coordinator and screening prompt text. ' +
+                'The legacy HTTP rollback can only restore one variant; use the ' +
+                'BUILD-mode rollback tool which knows which variant the agent ' +
+                'wrote, or restore via the artifact-drawer (per-variant Versions tab).',
+            });
+            return;
+          }
           const variant: 'coordinator' | 'screening' = picked.variant ?? 'coordinator';
           const prevContent: string = picked.text;
           if (!prevContent) {
@@ -607,7 +623,11 @@ export function makeTuningHistoryController(prisma: PrismaClient) {
   };
 }
 
-function pickPromptText(h: any): { variant: 'coordinator' | 'screening' | null; text: string } {
+function pickPromptText(h: any): {
+  variant: 'coordinator' | 'screening' | null;
+  text: string;
+  ambiguous?: boolean;
+} {
   // Robust read of which variant the snapshot stored. Suggestion-controller
   // writes the key dynamically (`[suggestion.systemPromptVariant]`), so the
   // key may be 'coordinator', 'screening', or any other string the diagnostic
@@ -615,16 +635,40 @@ function pickPromptText(h: any): { variant: 'coordinator' | 'screening' | null; 
   // Walk every string-valued key longer than 50 chars (i.e. actual prompt
   // text) and best-effort tag it as coordinator/screening using a substring
   // sniff on the key name.
+  //
+  // Bugfix (2026-04-22): if BOTH variants are present in the same row,
+  // surface `ambiguous: true` so the rollback caller can refuse the
+  // operation (mirroring `version-history.ts`'s ROLLBACK_AMBIGUOUS
+  // guard). Previously the function returned whichever key Object.keys
+  // enumerated first — silently rolling back the wrong variant when a
+  // legacy snapshot carried both.
   if (!h || typeof h !== 'object') return { variant: null, text: '' }
   const keys = Object.keys(h)
+  let coord: string | null = null
+  let screen: string | null = null
   for (const k of keys) {
     const v = (h as any)[k]
     if (typeof v !== 'string' || v.length < 50) continue
-    if (k === 'coordinator' || k === 'screening') return { variant: k, text: v }
+    if (k === 'coordinator') {
+      if (coord === null) coord = v
+      continue
+    }
+    if (k === 'screening') {
+      if (screen === null) screen = v
+      continue
+    }
     const lower = k.toLowerCase()
-    if (lower.includes('screen')) return { variant: 'screening', text: v }
-    if (lower.includes('coord')) return { variant: 'coordinator', text: v }
+    if (lower.includes('screen') && screen === null) screen = v
+    else if (lower.includes('coord') && coord === null) coord = v
   }
+  if (coord !== null && screen !== null) {
+    // Best-effort default text payload so the response shape doesn't
+    // break, but `ambiguous: true` is the load-bearing signal for the
+    // rollback caller to reject with 400.
+    return { variant: 'coordinator', text: coord, ambiguous: true }
+  }
+  if (screen !== null) return { variant: 'screening', text: screen }
+  if (coord !== null) return { variant: 'coordinator', text: coord }
   return { variant: null, text: '' }
 }
 

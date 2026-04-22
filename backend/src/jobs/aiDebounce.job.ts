@@ -84,8 +84,51 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
             screeningAnswers: reservation.screeningAnswers as Record<string, unknown>,
           },
           prisma
-        ).catch(err => {
+        ).catch(async (err) => {
           console.error(`[AiDebounceJob] Error generating reply for conv ${conversation.id}:`, err);
+          // Bugfix (2026-04-22): the previous version logged and dropped
+          // the failure on the floor. PendingAiReply.fired was already
+          // set to true at the claim, so the row would never be retried
+          // — guests silently never received a reply if the model call
+          // crashed mid-flight. The BullMQ worker path has attempts:3
+          // + backoff; this poll fallback had none, so reliability
+          // depended on whether REDIS_URL was set.
+          //
+          // Mitigation without a schema change: reset fired=false and
+          // bump scheduledAt by 60s so the next poll picks it up.
+          // Cap retries by age — if the message is more than 5 minutes
+          // older than its original createdAt, give up (leave fired=true)
+          // to avoid infinite loops on a deterministic failure.
+          try {
+            const ageMs = Date.now() - pending.createdAt.getTime();
+            const RETRY_AGE_CAP_MS = 5 * 60 * 1000; // 5 minutes
+            if (ageMs > RETRY_AGE_CAP_MS) {
+              console.error(
+                `[AiDebounceJob] Pending reply ${pending.id} exceeded retry-age cap ${RETRY_AGE_CAP_MS}ms — leaving fired=true.`,
+              );
+              return;
+            }
+            // Re-claim only if we're still the owner (still fired=true and
+            // matching scheduledAt — defensive against another worker
+            // having already taken the row).
+            const released = await prisma.pendingAiReply.updateMany({
+              where: { id: pending.id, fired: true },
+              data: {
+                fired: false,
+                scheduledAt: new Date(Date.now() + 60_000),
+              },
+            });
+            if (released.count > 0) {
+              console.log(
+                `[AiDebounceJob] Reset fired=false on ${pending.id}; will retry in ~60s.`,
+              );
+            }
+          } catch (resetErr) {
+            console.error(
+              `[AiDebounceJob] Failed to reset fired=false on ${pending.id}:`,
+              resetErr,
+            );
+          }
         });
       }
     } catch (err) {

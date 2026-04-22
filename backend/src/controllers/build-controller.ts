@@ -1147,6 +1147,17 @@ export function makeBuildController(prisma: PrismaClient) {
         const q = req.query ?? {};
         const conversationId =
           typeof q.conversationId === 'string' ? q.conversationId : null;
+        // Bugfix (2026-04-22): the previous endpoint accepted no
+        // artifact-scoped filters, so the Versions tab in the drawer
+        // had to pull a wide page (limit:50) and filter client-side.
+        // On a busy tenant the last 50 rows could be dominated by
+        // unrelated artifacts and the tab rendered empty for an
+        // artifact that DID have history. Accept artifactType +
+        // artifactId as optional server-side filters.
+        const artifactType =
+          typeof q.artifactType === 'string' ? q.artifactType : null;
+        const artifactId =
+          typeof q.artifactId === 'string' ? q.artifactId : null;
         const rawLimit =
           typeof q.limit === 'string' ? parseInt(q.limit, 10) : 10;
         const limit = Number.isFinite(rawLimit)
@@ -1156,6 +1167,14 @@ export function makeBuildController(prisma: PrismaClient) {
           where: {
             tenantId: req.tenantId,
             ...(conversationId ? { conversationId } : {}),
+            ...(artifactType
+              ? artifactType === 'tool'
+                // Match the frontend convention: drawer renders
+                // tool_definition rows under the 'tool' label.
+                ? { artifactType: { in: ['tool', 'tool_definition'] } }
+                : { artifactType }
+              : {}),
+            ...(artifactId ? { artifactId } : {}),
           },
           orderBy: { createdAt: 'desc' },
           take: limit,

@@ -81,16 +81,21 @@ export function VersionsTab({
     let cancelled = false
     setLoading(true)
     setError(null)
-    // Pull a wide page so we can filter client-side — the rail already
-    // pages on artifactId which the server does not, so this is a
-    // forward-compat hook for a later server-side filter.
-    apiListBuildArtifactHistory({ limit: 50 })
+    // 2026-04-22 fix: server-side artifact filter (was a client-side
+    // filter on a wide page that could miss this artifact's rows on
+    // busy tenants). The 'tool' alias also matches 'tool_definition'
+    // server-side now — kept the client-side filter as a defensive
+    // double-check during the rollout window.
+    apiListBuildArtifactHistory({
+      limit: 50,
+      artifactType: artifact,
+      artifactId,
+    })
       .then((page) => {
         if (cancelled) return
         const filtered = page.rows.filter(
           (r) =>
             r.artifactId === artifactId &&
-            // Map tool_definition → tool for the drawer's single view.
             (r.artifactType === artifact ||
               (artifact === 'tool' && r.artifactType === 'tool_definition')),
         )

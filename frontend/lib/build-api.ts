@@ -531,11 +531,25 @@ export interface BuildArtifactHistoryPage {
 }
 
 export async function apiListBuildArtifactHistory(
-  opts: { conversationId?: string; limit?: number } = {},
+  opts: {
+    conversationId?: string
+    limit?: number
+    /**
+     * Bugfix (2026-04-22): server-side artifact filter. Without this
+     * the Versions tab in the artifact-drawer pulled the last 50 rows
+     * across all artifacts and filtered client-side; on a busy tenant
+     * the targeted artifact's rows could be evicted from the page and
+     * the tab rendered empty even when history existed.
+     */
+    artifactType?: string
+    artifactId?: string
+  } = {},
 ): Promise<BuildArtifactHistoryPage> {
   const qs = new URLSearchParams()
   if (opts.conversationId) qs.set('conversationId', opts.conversationId)
   if (typeof opts.limit === 'number') qs.set('limit', String(opts.limit))
+  if (opts.artifactType) qs.set('artifactType', opts.artifactType)
+  if (opts.artifactId) qs.set('artifactId', opts.artifactId)
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
   return buildFetch<BuildArtifactHistoryPage>(
     `/api/build/artifacts/history${suffix}`,

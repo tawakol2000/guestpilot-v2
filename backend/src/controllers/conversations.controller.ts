@@ -386,10 +386,52 @@ export function makeConversationsController(prisma: PrismaClient) {
         }
 
         const newStatus = action === 'accept' ? ReservationStatus.CONFIRMED : ReservationStatus.CANCELLED;
-        await prisma.reservation.update({
-          where: { id: conversation.reservationId },
-          data: { status: newStatus },
-        });
+        // Bugfix (2026-04-22): the Hostaway commit at line ~374 has
+        // already succeeded by this point. If the local DB update
+        // fails (timeout, transient connection), Hostaway says the
+        // reservation is CONFIRMED but our DB still treats it as
+        // INQUIRY (restricted access, no door code, no auto-replies).
+        // The webhook eventually resyncs but the window is operator-
+        // visible.
+        //
+        // Safe-retry the local update with a short backoff so a
+        // transient blip self-heals before we punt to the webhook.
+        // We don't retry the Hostaway call itself — that's already
+        // committed and Hostaway is the source of truth.
+        let updateOk = false;
+        let lastUpdateErr: unknown = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            await prisma.reservation.update({
+              where: { id: conversation.reservationId },
+              data: { status: newStatus },
+            });
+            updateOk = true;
+            break;
+          } catch (err) {
+            lastUpdateErr = err;
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+            }
+          }
+        }
+        if (!updateOk) {
+          // Hostaway succeeded but we couldn't persist locally. Surface
+          // a 207 Multi-Status with a clear note so the operator knows
+          // the action landed remotely; the webhook will resync.
+          console.error(
+            '[Conversations] inquiryAction local update failed after 3 retries (Hostaway already committed):',
+            lastUpdateErr,
+          );
+          res.status(207).json({
+            ok: true,
+            status: newStatus,
+            warning: 'HOSTAWAY_COMMITTED_LOCAL_UPDATE_DEFERRED',
+            detail:
+              'The action committed remotely on Hostaway. Local state will resync via webhook within a minute.',
+          });
+          return;
+        }
 
         // After acceptance, Airbnb releases phone/email that were hidden during inquiry.
         // Pull the fresh reservation from Hostaway and update the Guest record so the
