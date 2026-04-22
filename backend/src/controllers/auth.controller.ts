@@ -144,6 +144,50 @@ export function makeAuthController(prisma: PrismaClient) {
       }
     },
 
+    /**
+     * Dev-only: mint a signed JWT for a known tenant without a password.
+     * Gated on NODE_ENV !== 'production' AND DEV_AUTH_BYPASS=1 so a
+     * misconfigured prod deploy can't hand out tokens. Used by the seed
+     * script's `/dev-login` landing page so a developer can jump straight
+     * to the Studio tab for a demo conversation without the login form.
+     */
+    async devLogin(req: Request, res: Response): Promise<void> {
+      try {
+        if (process.env.NODE_ENV === 'production' || process.env.DEV_AUTH_BYPASS !== '1') {
+          res.status(404).json({ error: 'Not found' });
+          return;
+        }
+
+        const tenantId = (req.body?.tenantId || req.query?.tenantId) as string | undefined;
+        const email = (req.body?.email || req.query?.email) as string | undefined;
+        if (!tenantId && !email) {
+          res.status(400).json({ error: 'tenantId or email is required' });
+          return;
+        }
+
+        const tenant = tenantId
+          ? await prisma.tenant.findUnique({ where: { id: tenantId } })
+          : await prisma.tenant.findUnique({ where: { email: email! } });
+        if (!tenant) {
+          res.status(404).json({ error: 'Tenant not found' });
+          return;
+        }
+
+        const token = signToken({ tenantId: tenant.id, email: tenant.email, plan: tenant.plan });
+
+        res.json({
+          token,
+          tenantId: tenant.id,
+          email: tenant.email,
+          plan: tenant.plan,
+          webhookUrl: webhookUrl(tenant.id),
+        });
+      } catch (err) {
+        console.error('[Auth] devLogin error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+
     async getSettings(req: Request, res: Response): Promise<void> {
       try {
         const tenantId = (req as any).tenantId;

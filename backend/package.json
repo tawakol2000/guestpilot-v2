@@ -10,7 +10,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "seed:studio-demo": "ts-node scripts/seed-studio-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.109",
