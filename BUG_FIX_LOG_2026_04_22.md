@@ -17,6 +17,7 @@
 | 6 — third-order: races + leaks + sync edge | msg-sync sentinel + tenant-conn drift + calendar fetch race + inbox dedup | 5 | 4 (1 MED + 3 LOW) | 1 MED (ai.service copilot-suggestion landing; sacred file) | — |
 | 7 — areas not yet visited | hostaway-callback auth + handoff partial-image + calendar cache + reservationSync overlap | 4 | 4 (2 MED + 2 LOW) | 0 | — |
 | 8 — last-mile validation | template IDOR + doc-handoff midnight tz + system-prompt doc-drift | 3 | 3 (1 HIGH + 2 LOW) | 0 | scanner verdict: well is dry; round 9 not useful |
+| Security pass — SSRF + IDOR + auth | webhook-tool SSRF blocker (lib/url-safety) | 1 | 1 (1 HIGH) | 3 LOW (devLogin gate, sopVariant defence-in-depth, tool-definition service signatures) | hygiene scan + suggestions also logged in FEATURE_SUGGESTIONS |
 
 ## Round 1 (HIGH + MEDIUM, 2026-04-22)
 
@@ -136,6 +137,12 @@
 | 61 | LOW | `2b89eb1` | `services/doc-handoff.service.ts` atLocalTime — switched to en-GB + hourCycle:'h23' (no more midnight-as-24 day-skew on `00:00` reminder/handoff times) |
 | 62 | LOW | `2b89eb1` | `build-tune-agent/system-prompt.ts` — doc-drift sync (top-level docblock + buildSharedPrefix comment now correctly include RESPONSE_CONTRACT + CITATION_GRAMMAR) |
 
+## Security pass (post-bug-hunt, 2026-04-23)
+
+| # | Severity | SHA | Subject |
+|---|---|---|---|
+| 63 | HIGH | `50cd80b` | `lib/url-safety.ts` (new) + `services/webhook-tool.service.ts` + `tools/create-tool-definition.ts` Zod refine + `lib/artifact-apply.ts` admin-edit guard — SSRF blocker on custom-tool webhookUrl. Two-layer defence (write-time string check + send-time DNS resolution); covers IPv4 RFC1918/CGNAT/loopback/link-local/AWS-IMDS/multicast/reserved + IPv6 loopback/unspecified/unique-local/link-local/multicast/IPv4-mapped (both dotted and Node-compressed). Also caps maxRedirects:0 + scrubs response body from error path (was the actual exfil channel). 20 unit tests. |
+
 ## Test counts
 
 | Snapshot | Backend | Frontend |
@@ -151,12 +158,13 @@
 | End round 6 | 538/538 0 fail | 352/352 |
 | End round 7 | 538/538 0 fail | 352/352 |
 | End round 8 — final | 538/538 0 fail | 352/352 |
+| End security pass | 558/558 0 fail (538 + 20 url-safety) | 352/352 |
 
 ## Run summary
 
-**62 bugs fixed across 8 rounds.** Severity breakdown:
+**63 bugs fixed across 8 rounds + a security pass.** Severity breakdown:
 - **CRITICAL:** 0
-- **HIGH:** 11 (4× silent-data-drop in tools, 2× rollback/transaction integrity, 2× tenant-scope IDOR/defence-in-depth, 1× concurrent action-log/TOCTOU, 1× error-message info-disclosure, 1× cross-tenant template IDOR)
+- **HIGH:** 12 (4× silent-data-drop in tools, 2× rollback/transaction integrity, 2× tenant-scope IDOR/defence-in-depth, 1× concurrent action-log/TOCTOU, 1× error-message info-disclosure, 1× cross-tenant template IDOR, 1× SSRF in custom-tool webhook)
 - **MEDIUM:** 27 (race conditions, scope filters, transaction wraps, retry semantics, sync correctness, atomic claims, cache invalidation, multi-device sync gaps, etc.)
 - **LOW:** 24 (small surface-area improvements, defensive guards, doc drift, performance hardening)
 
