@@ -23,9 +23,19 @@ export interface EvaluateOpts {
 
 /**
  * Lexicographic string compare on HH:MM (24-h) matches numeric ordering for
- * valid inputs. Callers should regex-validate shape before calling.
+ * valid zero-padded inputs ("09:00", not "9:00"). Bugfix (2026-04-22):
+ * defensive regex guard added so an unpadded input like "9:00" does not
+ * silently auto-approve out-of-policy times via the lexicographic
+ * comparison `'9:00' >= '11:00' === true` (because '9' > '1').
+ *
+ * Returning `false` on malformed input means the auto-accept does not
+ * fire, the request falls through to the manual escalation path — the
+ * safe degradation.
  */
+const HHMM_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
 function within(kind: 'check_in' | 'check_out', requested: string, threshold: string): boolean {
+  if (!HHMM_REGEX.test(requested) || !HHMM_REGEX.test(threshold)) return false;
   if (kind === 'check_out') return requested <= threshold;
   return requested >= threshold;
 }

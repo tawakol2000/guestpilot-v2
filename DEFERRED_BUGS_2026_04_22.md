@@ -16,6 +16,12 @@
 
 ## Items
 
+### [LOW] translateAndSend bypasses copilot edit-diagnostic capture
+- **File:** `backend/src/controllers/messages.controller.ts:355-394` (translate-and-send branch) vs `:100-220` (regular send branch)
+- **Symptom:** Managers who use the in-app translator to translate-and-send a reply skip the entire diagnostic-capture pipeline (pendingDraft lookup → recentAiApiLog → REJECT_TRIGGERED diagnostic emit). Their corrected outputs never feed the tuning corpus, so we lose tuning signal for multilingual managers.
+- **Why deferred:** Non-trivial port — the diagnostic capture has side effects (Tuning suggestion writes, similarity scoring, critical-failure flag emission) that need careful translation from "compare manager-typed text against AI draft" to "compare translated-output against AI draft." User should confirm: (a) does the diagnostic semantics make sense when the manager's intent is in source language but the sent text is the translated output? (b) which text should the diagnostic compare against the draft — the source-lang input or the en-translated output?
+- **Fix sketch:** Mirror lines 111-220's pendingDraft + recentAiApiLog + diagnostic-emit block inside the translate branch, comparing the translated output against the AI draft (treating the manager's translation as their corrected reply).
+
 ### [MEDIUM] create_tool_definition.availableStatuses silently dropped
 - **File:** `backend/src/build-tune-agent/tools/create-tool-definition.ts:87` + `prisma/schema.prisma` ToolDefinition + `backend/src/services/ai.service.ts` (sacred)
 - **Symptom:** Agent declares a custom tool restricted to e.g. `[CONFIRMED]` only. The Zod schema accepts it; the dryRun preview surfaces it; BuildArtifactHistory metadata captures it; but it is never persisted to the ToolDefinition row (no column) and never honoured by main-AI status gating. Manager believes the tool is restricted; main AI calls it in every status.
