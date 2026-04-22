@@ -83,13 +83,26 @@ function parseComposeResponse(raw: string): { replacement: string; rationale: st
 
 /**
  * Verify that the given artifactId belongs to the tenant by scanning the
- * BuildArtifactHistory table. Returns true if a row is found.
+ * BuildArtifactHistory table first (covers BUILD-written artifacts), then
+ * falling back to the underlying table for legacy / pre-history artifacts.
  *
- * Falls back gracefully: if the artifact has never been written by the
- * agent (no history row), we check the SopDefinition / FaqEntry /
- * TenantAiConfig tables to confirm ownership.
+ * Bugfix (2026-04-22):
+ *   - `system_prompt` now correctly accepts the variant enum
+ *     ('coordinator' | 'screening') — which is what `write_system_prompt`
+ *     actually writes into BuildArtifactHistory.artifactId. The previous
+ *     fallback required `artifactId === tenantId || artifactId.startsWith
+ *     (tenantId)`, which never matched because the variant name bears no
+ *     relation to the tenant id. Legacy tenants with a TenantAiConfig row
+ *     but no history row hit that fallback and would 404 on every
+ *     compose-span against the system prompt.
+ *   - `tool` and `property_override` previously had NO fallback at all —
+ *     the switch's `default: return false` caught them. Tools or overrides
+ *     that predate the BuildArtifactHistory table therefore returned 404
+ *     even when legitimately tenant-owned. Explicit cases added that join
+ *     through the right parent (ToolDefinition is tenant-scoped directly;
+ *     SopPropertyOverride is scoped via its parent SopDefinition.tenantId).
  */
-async function artifactBelongsToTenant(
+export async function artifactBelongsToTenant(
   prisma: PrismaClient,
   tenantId: string,
   artifactId: string,
@@ -120,15 +133,40 @@ async function artifactBelongsToTenant(
         return Boolean(row);
       }
       case 'system_prompt': {
+        // artifactId is the variant enum ('coordinator' | 'screening').
+        // The tenant "owns" both variants as soon as a TenantAiConfig row
+        // exists. We do NOT require a particular variant to be non-empty —
+        // composeSpan against an as-yet-unconfigured screening prompt is
+        // still a legitimate edit request.
+        if (artifactId !== 'coordinator' && artifactId !== 'screening') {
+          return false;
+        }
         const row = await (prisma as any).tenantAiConfig?.findFirst?.({
           where: { tenantId },
           select: { tenantId: true },
         });
-        // For system_prompt the artifactId is the tenantId itself or a variant key.
-        return Boolean(row) && (artifactId === tenantId || artifactId.startsWith(tenantId));
+        return Boolean(row);
+      }
+      case 'tool': {
+        const row = await (prisma as any).toolDefinition?.findFirst?.({
+          where: { id: artifactId, tenantId },
+          select: { id: true },
+        });
+        return Boolean(row);
+      }
+      case 'property_override': {
+        // Scope via the parent SopDefinition.tenantId.
+        const row = await (prisma as any).sopPropertyOverride?.findFirst?.({
+          where: {
+            id: artifactId,
+            sopDefinition: { tenantId },
+          },
+          select: { id: true },
+        });
+        return Boolean(row);
       }
       default:
-        // For unknown types, deny to be safe.
+        // Unknown types still deny to be safe.
         return false;
     }
   } catch {
