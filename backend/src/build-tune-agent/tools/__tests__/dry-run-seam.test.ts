@@ -111,6 +111,9 @@ function makeFakePrisma(opts?: {
     aiConfigVersion: {
       create: async () => { writes.push('aiConfigVersion.create'); return { id: 'should-not-happen', version: 1 }; },
     },
+    // 2026-04-22: write_system_prompt now wraps upsert + version-insert
+    // in $transaction. Fake runs callback inline.
+    $transaction: async (cb: any) => cb(prisma),
   };
   return { prisma, writes };
 }

@@ -1016,7 +1016,43 @@ export interface ApplyFromUiResult {
  * early if a prior accept for the same `previewId` already landed
  * (idempotency per sprint-047 Session A non-negotiable §6).
  */
+/**
+ * Bugfix (2026-04-22): TOCTOU race protection for double-click /
+ * flaky-network re-clicks of the same preview-id.
+ *
+ * Layer 1 — process-level single-flight Map.
+ *   Two concurrent calls to applyArtifactChangeFromUi with the same
+ *   `${tenantId}:${previewId}` key collapse onto the SAME promise.
+ *   Single-instance dedupe; not cross-instance. The DB-level idempotency
+ *   check below covers cross-instance for already-completed work.
+ *
+ * Layer 2 — `appliedPayload.previewId` stamped at create-time (was
+ *   stamped after the artifact write completed). The findFirst
+ *   idempotency check now sees the stamp as soon as the create row
+ *   commits, narrowing the race window from "duration of the artifact
+ *   write" to "duration of the create round-trip."
+ *
+ * Layer 3 — proper fix (deferred): partial unique index on
+ *   `(tenantId, (appliedPayload->>'previewId'))` as a
+ *   `prisma db push`-safe schema change. Tracked in
+ *   DEFERRED_BUGS_2026_04_22.md.
+ */
+const _applyInFlight = new Map<string, Promise<ApplyFromUiResult>>();
+
 export async function applyArtifactChangeFromUi(
+  input: ApplyFromUiInput
+): Promise<ApplyFromUiResult> {
+  const dedupeKey = `${input.tenantId}:${input.previewId}`;
+  const existing = _applyInFlight.get(dedupeKey);
+  if (existing) return existing;
+  const p = _applyArtifactChangeFromUiCore(input).finally(() => {
+    _applyInFlight.delete(dedupeKey);
+  });
+  _applyInFlight.set(dedupeKey, p);
+  return p;
+}
+
+async function _applyArtifactChangeFromUiCore(
   input: ApplyFromUiInput
 ): Promise<ApplyFromUiResult> {
   const { prisma, tenantId, userId, conversationId, previewId } = input;
@@ -1066,6 +1102,14 @@ export async function applyArtifactChangeFromUi(
       appliedAt: new Date(),
       appliedByUserId: userId,
       applyMode: 'IMMEDIATE',
+      // 2026-04-22 bugfix: stamp previewId at create-time (Layer 2 of
+      // the TOCTOU defence). Was stamped only AFTER the artifact write
+      // completed via a follow-up update — that left a wide race
+      // window where two concurrent finders both saw `prior === null`.
+      // Stamping here means the second click's `findFirst` above will
+      // see the first click's row as soon as the create commits, even
+      // before the artifact write returns.
+      appliedPayload: { previewId, sanctionedBy: input.sanctionedBy } as Prisma.InputJsonValue,
     },
     select: { id: true, appliedAt: true },
   });

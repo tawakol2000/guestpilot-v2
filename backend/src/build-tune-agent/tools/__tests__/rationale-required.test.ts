@@ -116,6 +116,9 @@ function makeFakePrisma() {
         return { id: `hist-${history.length}` };
       },
     },
+    // 2026-04-22: write_system_prompt now wraps upsert + version-insert
+    // in $transaction. Fake runs callback inline.
+    $transaction: async (cb: any) => cb(prisma),
   };
   return { prisma, history, writes };
 }

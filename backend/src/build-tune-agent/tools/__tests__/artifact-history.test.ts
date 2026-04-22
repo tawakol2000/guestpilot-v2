@@ -140,6 +140,10 @@ function makeFakePrisma(opts?: {
         return rows[0] ?? null;
       },
     },
+    // 2026-04-22: write_system_prompt now wraps upsert + version-insert
+    // in $transaction. The fake runs the callback inline with the
+    // same prisma object as `tx`.
+    $transaction: async (cb: any) => cb(prisma),
   };
   return { prisma, historyRows };
 }
