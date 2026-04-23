@@ -351,6 +351,46 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     rawPromptEditorEnabled,
   )
 
+  // Bugfix (2026-04-23, React #310): `handleContentMouseUp` used to be
+  // declared BELOW the `if (!open || !target) return null` early
+  // return. When the drawer was closed, only the hooks above this
+  // point ran; when opened (or re-opened via a different target), the
+  // useCallback mounted, pushing the hook count up by one. React
+  // detected the mismatch and crashed with "Rendered more hooks than
+  // during the previous render" (#310). The operator saw a blank panel
+  // + "Something went wrong" every time they clicked any row in the
+  // Session Artifacts rail. Moving the hook ABOVE the early return
+  // keeps the hook count stable across all renders.
+  //
+  // `extractBodyText` is a plain function (not a hook) so it stays
+  // defined below the return to keep the diff minimal.
+  const handleContentMouseUp = useCallback(() => {
+    const domSel = window.getSelection()
+    if (!domSel || domSel.isCollapsed || !domSel.toString().trim()) return
+    const selectedText = domSel.toString()
+
+    // Inline body-text extraction — mirrors `extractBodyText` below.
+    // Kept here so the hook's closure doesn't reach into a function
+    // declared after the early return (would also dodge hoisting
+    // surprises on strict-mode re-runs).
+    const src = activeBody ?? (detail ? { body: detail.body } : null)
+    let bodyText = ''
+    if (src) {
+      if (typeof (src as any).content === 'string') bodyText = (src as any).content as string
+      else if (typeof (src as any).answer === 'string') bodyText = (src as any).answer as string
+      else if (typeof (src as any).text === 'string') bodyText = (src as any).text as string
+      else if (detail?.body) bodyText = detail.body
+    }
+    if (!bodyText) return
+
+    const start = bodyText.indexOf(selectedText)
+    if (start === -1) {
+      setComposeBubbleSelection({ start: 0, end: 0, text: selectedText })
+      return
+    }
+    setComposeBubbleSelection({ start, end: start + selectedText.length, text: selectedText })
+  }, [detail, activeBody])
+
   if (!open || !target) return null
 
   const headerTitle = detail?.title ?? target.sessionArtifact?.title ?? 'Artifact'
@@ -455,29 +495,12 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
     return ''
   }
 
-  // Sprint 056-A F1 — selection capture. Fires on mouseup inside the
-  // content body. We convert the DOM selection to character offsets within
-  // the body-text string. Only fires when a non-empty range is selected.
-  const handleContentMouseUp = useCallback(() => {
-    const domSel = window.getSelection()
-    if (!domSel || domSel.isCollapsed || !domSel.toString().trim()) return
-    const selectedText = domSel.toString()
-
-    const bodyText = extractBodyText()
-    if (!bodyText) return
-
-    // Find the first occurrence of the selected text in the body string.
-    // Character-offset anchoring — not DOM range — so it survives re-renders.
-    const start = bodyText.indexOf(selectedText)
-    if (start === -1) {
-      // Fall back: use raw selection text with offsets 0..0 so the bubble
-      // still appears, but the merge won't be position-accurate.
-      setComposeBubbleSelection({ start: 0, end: 0, text: selectedText })
-      return
-    }
-    setComposeBubbleSelection({ start, end: start + selectedText.length, text: selectedText })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, activeBody])
+  // Sprint 056-A F1 + bugfix (2026-04-23): `handleContentMouseUp` was
+  // declared HERE — below the `if (!open || !target) return null` early
+  // return — which gave the component a variable hook count between
+  // closed and open renders, triggering React #310. The hook moved
+  // above the early return; this comment kept as a tombstone so a
+  // future refactor doesn't reintroduce the bug.
 
   // Sprint 056-A F1 — apply accepted replacement into the preview buffer.
   function handleBubbleAccept(replacement: string) {

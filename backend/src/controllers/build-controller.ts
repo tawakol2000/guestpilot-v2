@@ -639,7 +639,58 @@ export function makeBuildController(prisma: PrismaClient) {
         return;
       }
       try {
-        const tx = await prisma.buildTransaction.findFirst({
+        // Bugfix (2026-04-23): the original approve flow was read-check-
+        // update across three distinct DB round-trips, leaving a TOCTOU
+        // window where two concurrent /approve calls from different
+        // admin sessions could both pass the "approvedAt is null" check
+        // and race the subsequent update — whoever wrote second
+        // silently overwrote the first approver's userId, leaving a
+        // dishonest audit row.
+        //
+        // Tighten it with updateMany + atomic filter
+        // `approvedAt: null` so the flip is a single indivisible write:
+        // whoever's SQL lands first matches the filter and flips it,
+        // the loser's filter no longer matches (approvedAt is no
+        // longer null) and count=0. The loser then re-reads and
+        // returns the winner's row with alreadyApproved=true.
+        //
+        // Preserves all previous response shapes, including the 404 +
+        // 200-alreadyApproved branches.
+        const claim = await prisma.buildTransaction.updateMany({
+          where: { id, tenantId, approvedAt: null },
+          data: {
+            approvedAt: new Date(),
+            approvedByUserId: userId,
+          },
+        });
+        if (claim.count === 0) {
+          // Either the row doesn't exist / isn't this tenant's, OR a
+          // concurrent approver won the race. Distinguish via a single
+          // read — cheap, only on the loss path.
+          const existing = await prisma.buildTransaction.findFirst({
+            where: { id, tenantId },
+            select: {
+              id: true,
+              status: true,
+              approvedAt: true,
+              approvedByUserId: true,
+            },
+          });
+          if (!existing) {
+            res.status(404).json({ error: 'PLAN_NOT_FOUND' });
+            return;
+          }
+          res.json({
+            id: existing.id,
+            status: existing.status,
+            approvedAt: existing.approvedAt?.toISOString() ?? null,
+            approvedByUserId: existing.approvedByUserId,
+            alreadyApproved: true,
+          });
+          return;
+        }
+        // Won the race; fetch the canonical row for the response body.
+        const updated = await prisma.buildTransaction.findFirst({
           where: { id, tenantId },
           select: {
             id: true,
@@ -648,34 +699,10 @@ export function makeBuildController(prisma: PrismaClient) {
             approvedByUserId: true,
           },
         });
-        if (!tx) {
-          res.status(404).json({ error: 'PLAN_NOT_FOUND' });
+        if (!updated) {
+          res.status(500).json({ error: 'APPROVE_FAILED' });
           return;
         }
-        if (tx.approvedAt) {
-          // Idempotent — already approved.
-          res.json({
-            id: tx.id,
-            status: tx.status,
-            approvedAt: tx.approvedAt.toISOString(),
-            approvedByUserId: tx.approvedByUserId,
-            alreadyApproved: true,
-          });
-          return;
-        }
-        const updated = await prisma.buildTransaction.update({
-          where: { id },
-          data: {
-            approvedAt: new Date(),
-            approvedByUserId: userId,
-          },
-          select: {
-            id: true,
-            status: true,
-            approvedAt: true,
-            approvedByUserId: true,
-          },
-        });
         res.json({
           id: updated.id,
           status: updated.status,
@@ -1338,8 +1365,14 @@ export function makeBuildController(prisma: PrismaClient) {
                 && !Array.isArray(mostRecent.metadata)
                 ? (mostRecent.metadata as Record<string, unknown>)
                 : {};
+            // Bugfix (2026-04-23): defence-in-depth tenant scope on the
+            // stamp update. The `mostRecent` findFirst already filtered
+            // by tenantId, but the subsequent unguarded update would
+            // mutate any matching id — so a future refactor dropping
+            // the findFirst tenant filter wouldn't be caught. Prisma
+            // throws P2025 on tenant mismatch, logged by the .catch.
             await prisma.buildArtifactHistory.update({
-              where: { id: mostRecent.id },
+              where: { id: mostRecent.id, tenantId: req.tenantId },
               data: {
                 operation: 'REVERT',
                 metadata: {
@@ -1672,9 +1705,11 @@ export function makeBuildController(prisma: PrismaClient) {
             orderBy: { createdAt: 'desc' },
           });
           if (mostRecent && mostRecent.id !== row.id) {
+            // Bugfix (2026-04-23): defence-in-depth tenant scope —
+            // mirror the stamp guard added in `revertArtifactFromHistory`.
             await prisma.buildArtifactHistory
               .update({
-                where: { id: mostRecent.id },
+                where: { id: mostRecent.id, tenantId: req.tenantId },
                 data: {
                   operation: 'REVERT',
                   metadata: { revertedToHistoryId: row.id },
@@ -1733,8 +1768,15 @@ export function makeBuildController(prisma: PrismaClient) {
           res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
           return;
         }
+        // Bugfix (2026-04-23): defence-in-depth tenant scope on the
+        // update — the findFirst above validated ownership, but adding
+        // tenantId to the update's where clause means a future refactor
+        // that drops the findFirst still can't mutate another tenant's
+        // row. Prisma throws P2025 if the id matches but tenantId
+        // doesn't, converting any accidental cross-tenant write into a
+        // hard failure.
         const updated = await prisma.buildArtifactHistory.update({
-          where: { id: historyId },
+          where: { id: historyId, tenantId: req.tenantId },
           data: { versionLabel: label },
           select: {
             id: true,
@@ -1774,8 +1816,10 @@ export function makeBuildController(prisma: PrismaClient) {
           res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
           return;
         }
+        // Bugfix (2026-04-23): defence-in-depth tenant scope — mirror
+        // the guard added in `tagHistoryRow`.
         const updated = await prisma.buildArtifactHistory.update({
-          where: { id: historyId },
+          where: { id: historyId, tenantId: req.tenantId },
           data: { versionLabel: null },
           select: {
             id: true,
