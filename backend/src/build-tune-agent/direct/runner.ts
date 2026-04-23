@@ -77,12 +77,21 @@ export interface DirectRunInput {
   assistantMessageId: string;
 }
 
+// Bugfix (2026-04-23): was a single `'api_error'` bucket that
+// squashed rate-limit (429), server-overload (529), transient 5xx,
+// and outright misconfig into the same signal — ops couldn't tell
+// retryable from terminal without digging through console.warn logs.
+// Split into classes so observability + client messaging can branch.
 export type DirectFallbackReason =
   | 'unknown_tool'
   | 'hook_error'
   | 'bridge_error'
   | 'history_error'
-  | 'api_error';
+  | 'api_error'        // unknown / unclassified upstream failure
+  | 'api_rate_limit'   // 429
+  | 'api_overloaded'   // 529 (or explicit 'overloaded_error')
+  | 'api_server_error' // 5xx
+  | 'api_aborted';     // client disconnected mid-turn (AbortSignal fired)
 
 export interface DirectRunResult {
   status: 'success' | 'fallback' | 'error';
@@ -96,6 +105,29 @@ export interface DirectRunResult {
 
 /** Max number of tool-use rounds per turn. Matches runtime.ts convention. */
 const MAX_TOOL_ROUNDS = 5;
+
+/**
+ * Bugfix (2026-04-23): classify Anthropic SDK errors into a specific
+ * fallback reason so observability + retry logic can branch. Previously
+ * every thrown error fell into `api_error`, losing the distinction
+ * between a transient 429 (retry immediately) vs a 529 overloaded
+ * (retry with backoff) vs a real 5xx (page the operator) vs a client
+ * abort (don't retry — user walked away).
+ */
+function classifyApiError(err: unknown): DirectFallbackReason {
+  if (err && typeof err === 'object') {
+    const e = err as { status?: number; name?: string; message?: string };
+    if (e.name === 'AbortError' || /aborted/i.test(e.message ?? '')) {
+      return 'api_aborted';
+    }
+    if (e.status === 429) return 'api_rate_limit';
+    if (e.status === 529) return 'api_overloaded';
+    if (typeof e.status === 'number' && e.status >= 500 && e.status < 600) {
+      return 'api_server_error';
+    }
+  }
+  return 'api_error';
+}
 
 export async function runDirectTurn(
   input: DirectRunInput,
@@ -161,11 +193,12 @@ export async function runDirectTurn(
         thinking: input.thinking,
       }) as unknown as Record<string, unknown>;
     } catch (err) {
+      const reason = classifyApiError(err);
       console.warn(
-        `[DirectRunner] fallback: reason=api_error (param build)`,
+        `[DirectRunner] fallback: reason=${reason} (param build)`,
         err instanceof Error ? err.message : err,
       );
-      return { status: 'fallback', fallbackReason: 'api_error' };
+      return { status: 'fallback', fallbackReason: reason };
     }
 
     // Raw Anthropic stream.
@@ -173,11 +206,12 @@ export async function runDirectTurn(
     try {
       rawStream = input.anthropic.messages.stream(params);
     } catch (err) {
+      const reason = classifyApiError(err);
       console.warn(
-        `[DirectRunner] fallback: reason=api_error (stream init)`,
+        `[DirectRunner] fallback: reason=${reason} (stream init)`,
         err instanceof Error ? err.message : err,
       );
-      return { status: 'fallback', fallbackReason: 'api_error' };
+      return { status: 'fallback', fallbackReason: reason };
     }
 
     // Collect tool_use blocks we see via the bridge's synthetic assistant

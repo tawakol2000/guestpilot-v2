@@ -44,10 +44,17 @@ export function MarkdownBody({
     if (!scrollToSectionSlug) return
     const root = rootRef.current
     if (!root) return
+    // Bugfix (2026-04-23): the in-component `slugify` helper lowercases
+    // its output, but parents sometimes pass a pre-slugified value
+    // that preserved case (e.g. "Family-only" from a plan-item
+    // sectionId). Strict equality missed those. Normalise both sides
+    // to lowercase so the match is case-insensitive — slugs are
+    // opaque tokens, case shouldn't disambiguate.
+    const targetSlug = scrollToSectionSlug.toLowerCase()
     const frame = requestAnimationFrame(() => {
       const target = Array.from(
         root.querySelectorAll<HTMLElement>('[data-section]'),
-      ).find((el) => el.dataset.section === scrollToSectionSlug)
+      ).find((el) => (el.dataset.section ?? '').toLowerCase() === targetSlug)
       if (target) {
         target.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }

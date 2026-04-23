@@ -24,11 +24,24 @@ export function makeTuningComplaintController(prisma: PrismaClient) {
         const { tenantId } = req;
         const messageId: string =
           typeof req.body?.messageId === 'string' ? req.body.messageId.trim() : '';
-        const description: string =
+        // Bugfix (2026-04-23): was `req.body.description` untrimmed +
+        // unbounded. Empty/whitespace-only complaints used to flow
+        // through and surface as "Manager complaint (no description
+        // provided)" which misled downstream diagnostic + triage.
+        // Multi-kilobyte pastes also bloated the diagnostic prompt.
+        // Trim + hard-cap at 2000 chars (generous upper bound; the
+        // pipeline truncates further for model input) + reject empty
+        // with a clear error.
+        const descriptionRaw: string =
           typeof req.body?.description === 'string' ? req.body.description : '';
+        const description: string = descriptionRaw.trim().slice(0, 2000);
 
         if (!messageId) {
           res.status(400).json({ error: 'MESSAGE_ID_REQUIRED' });
+          return;
+        }
+        if (!description) {
+          res.status(400).json({ error: 'DESCRIPTION_REQUIRED' });
           return;
         }
 

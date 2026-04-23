@@ -24,7 +24,14 @@ export function ToolEditor({
     setRaw(text)
     try {
       const parsed = JSON.parse(text)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      // Bugfix (2026-04-23): the guard was `parsed && typeof parsed ===
+      // 'object' && !Array.isArray(parsed)`. `null` in JavaScript has
+      // typeof === 'object' AND is falsy, so the `parsed &&` short-
+      // circuit blocked it — but ONLY for a freshly-typed `null`. A
+      // paste that RESOLVED to null (e.g. wrapped in a ternary) could
+      // land `onChange(null)` and crash downstream `.content` reads.
+      // Use strict not-null to close the edge.
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
         setJsonError(null)
         onChange(parsed as Record<string, unknown>)
       } else {

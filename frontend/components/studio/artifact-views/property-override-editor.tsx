@@ -57,7 +57,11 @@ export function PropertyOverrideEditor({
     setRaw(text)
     try {
       const parsed = JSON.parse(text)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      // Bugfix (2026-04-23): see tool-editor.tsx for the same fix —
+      // `parsed && typeof === 'object'` short-circuited null but the
+      // guard is clearer (and safer vs exotic inputs) with an
+      // explicit not-null check.
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
         setJsonError(null)
         onChange(parsed as Record<string, unknown>)
       } else {
