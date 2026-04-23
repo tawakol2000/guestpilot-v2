@@ -2265,14 +2265,20 @@ export default function InboxV5() {
     })
 
     // AI decided not to send (empty message) — clear typing
-    socket.on('ai_typing_clear', (data: any) => {
+    // Bugfix (2026-04-23): handler was missing the ack callback. Since
+    // `broadcastCritical` wraps the emit in a 5s timeout + retry, the
+    // unacked handler used to trigger retries on slow clients and
+    // cause duplicate clears. Harmless but noisy; ack closes the
+    // loop.
+    socket.on('ai_typing_clear', (data: any, ack?: () => void) => {
       if (data.conversationId === selectedIdRef.current) {
         setAiTyping(false)
       }
+      if (typeof ack === 'function') ack()
     })
 
     // Streaming AI response text — show progressive text instead of "Generating response..."
-    socket.on('ai_typing_text', (data: any) => {
+    socket.on('ai_typing_text', (data: any, ack?: () => void) => {
       const convId = data.conversationId
       if (data.done) {
         // Stream finished — clear streaming text (full message arrives via normal 'message' event)
@@ -2302,6 +2308,7 @@ export default function InboxV5() {
           )
         }
       }
+      if (typeof ack === 'function') ack()
     })
 
     socket.on('reservation_created', () => {

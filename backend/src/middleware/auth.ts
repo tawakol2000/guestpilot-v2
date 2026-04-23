@@ -23,7 +23,15 @@ export function authMiddleware(
 
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    // Bugfix (2026-04-23): was `jwt.verify(token, JWT_SECRET)` with no
+    // options. Lock `algorithms: ['HS256']` so a forged token with
+    // `alg: 'none'` or an asymmetric algorithm confusion attack (RS256
+    // verified as HS256 with the public key as secret) can't slip
+    // past. We always sign with HS256 (default of jsonwebtoken), so
+    // restricting verify to HS256 is a tightening no-op.
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
+    }) as JwtPayload;
     req.tenantId = payload.tenantId;
     req.tenantPlan = payload.plan;
     next();
@@ -33,5 +41,8 @@ export function authMiddleware(
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+  // Bugfix (2026-04-23): explicit algorithm match the verify lock
+  // above. jsonwebtoken defaults to HS256 already; stating it keeps
+  // the pair explicit for the next reader.
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d', algorithm: 'HS256' });
 }

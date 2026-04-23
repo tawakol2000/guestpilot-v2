@@ -146,14 +146,28 @@ export function makeAuthController(prisma: PrismaClient) {
 
     /**
      * Dev-only: mint a signed JWT for a known tenant without a password.
-     * Gated on NODE_ENV !== 'production' AND DEV_AUTH_BYPASS=1 so a
-     * misconfigured prod deploy can't hand out tokens. Used by the seed
-     * script's `/dev-login` landing page so a developer can jump straight
-     * to the Studio tab for a demo conversation without the login form.
+     *
+     * Bugfix (2026-04-23): previous guard was
+     *   NODE_ENV === 'production' || DEV_AUTH_BYPASS !== '1'
+     * which is a denylist on `'production'`. Any deployment with
+     * NODE_ENV set to something other than 'production' (staging,
+     * preview, test, unset → undefined) passed the first clause, so
+     * an attacker who managed to set DEV_AUTH_BYPASS=1 on a staging
+     * environment with real data could mint tokens for any tenant
+     * there. Flip to an ALLOWLIST: require NODE_ENV === 'development'
+     * AND DEV_AUTH_BYPASS === '1'. Staging/preview/unset now fail
+     * closed.
+     *
+     * Used by the seed script's `/dev-login` landing page so a
+     * developer can jump straight to the Studio tab for a demo
+     * conversation without the login form.
      */
     async devLogin(req: Request, res: Response): Promise<void> {
       try {
-        if (process.env.NODE_ENV === 'production' || process.env.DEV_AUTH_BYPASS !== '1') {
+        if (
+          process.env.NODE_ENV !== 'development' ||
+          process.env.DEV_AUTH_BYPASS !== '1'
+        ) {
           res.status(404).json({ error: 'Not found' });
           return;
         }
