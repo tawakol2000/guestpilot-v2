@@ -77,7 +77,12 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
       title: z.string().min(3).max(80),
       body: z.string().min(20).max(8000),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
-      rationale: z.string(),
+      // Bugfix (2026-04-23): was `z.string()` unbounded — empty/short
+      // rationales passed Zod and then failed the downstream
+      // `validateRationale(15..280)` check with a generic message.
+      // Fail at the schema boundary so the agent gets actionable
+      // "minimum 15 chars" guidance on its retry turn.
+      rationale: z.string().min(15).max(280),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },

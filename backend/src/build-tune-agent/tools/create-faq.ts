@@ -49,7 +49,8 @@ export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolCont
       answer: z.string().min(1).max(4000),
       propertyId: z.string().optional(),
       triggers: z.array(z.string().min(1).max(200)).max(20).optional(),
-      rationale: z.string(),
+      // Bugfix (2026-04-23): see create-sop.ts for the same fix.
+      rationale: z.string().min(15).max(280),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },

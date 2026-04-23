@@ -57,16 +57,58 @@ export async function validateBuildTransaction(
   }
   // Flip PLANNED → EXECUTING on first create_* reference so telemetry
   // shows when execution actually began vs just planning.
+  //
+  // Bugfix (2026-04-23): the original flow read status first, then
+  // issued an unguarded update(). Two concurrent create_* calls that
+  // both observed PLANNED could both reach the update — the later
+  // write would re-flip an already-EXECUTING row back to EXECUTING
+  // (no-op in this state, but the logic ALSO swallowed any real DB
+  // error via .catch(() => {}), so a rolled-back transaction being
+  // re-used would silently "succeed" as the second writer raced past
+  // the status check. Use updateMany with an atomic `status: PLANNED`
+  // filter so exactly one writer flips the row; losers read the
+  // current status and return the correct answer instead of silently
+  // retriggering execution on a terminal transaction.
+  //
+  // Also adds tenantId scoping to the update filter (defence-in-depth;
+  // the findFirst above already validated it).
   if (status === 'PLANNED') {
-    await prisma.buildTransaction
-      .update({
-        where: { id: transactionId },
+    try {
+      const claim = await prisma.buildTransaction.updateMany({
+        where: { id: transactionId, tenantId, status: 'PLANNED' },
         data: { status: 'EXECUTING' },
-      })
-      .catch(() => {
-        /* race-safe: another call beat us to the flip */
       });
-    return { ok: true, transaction: { id: tx.id, status: 'EXECUTING' } };
+      if (claim.count === 1) {
+        return { ok: true, transaction: { id: tx.id, status: 'EXECUTING' } };
+      }
+      // Lost the race (another writer flipped). Re-read the canonical
+      // status so we return what's actually on disk, not what we saw
+      // before the race.
+      const fresh = await prisma.buildTransaction.findFirst({
+        where: { id: transactionId, tenantId },
+        select: { status: true },
+      });
+      const freshStatus = (fresh?.status ?? status) as BuildTransactionStatus;
+      if (
+        freshStatus === 'COMPLETED' ||
+        freshStatus === 'PARTIAL' ||
+        freshStatus === 'ROLLED_BACK'
+      ) {
+        return {
+          ok: false,
+          error: `BuildTransaction ${transactionId} is ${freshStatus} — cannot add more items. Create a fresh plan with plan_build_changes for additional artifacts.`,
+        };
+      }
+      return { ok: true, transaction: { id: tx.id, status: freshStatus } };
+    } catch (err) {
+      console.error('[build-transaction] atomic flip failed:', err);
+      return {
+        ok: false,
+        error: `BuildTransaction ${transactionId} flip failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
   }
   return { ok: true, transaction: { id: tx.id, status } };
 }

@@ -617,6 +617,32 @@ export function makeBuildController(prisma: PrismaClient) {
         onError: (err) => {
           const errorText = err instanceof Error ? err.message : String(err);
           console.error('[build-controller] stream error:', errorText);
+          // Bugfix (2026-04-23): the build-controller stream used to
+          // return `errorText` and rely on the AI SDK's implicit error
+          // channel, but the client's useChat hook surfaces that via
+          // `error: string` only — no visible part lands in the chat
+          // log, so a mid-stream Anthropic 5xx / 529 silently closed
+          // the stream and the UI showed nothing. Mirror the
+          // tuning-chat.controller pattern: persist a `data-agent-error`
+          // stub so the reloaded transcript has a visible error row
+          // and the operator can see what happened.
+          prisma.tuningMessage
+            .create({
+              data: {
+                conversationId,
+                role: 'assistant',
+                parts: [
+                  {
+                    type: 'data-agent-error',
+                    id: `error:${assistantMessageId}`,
+                    data: { error: errorText },
+                  },
+                ] as unknown as Prisma.InputJsonValue,
+              },
+            })
+            .catch((persistErr) =>
+              console.warn('[build-controller] error-stub persist failed:', persistErr),
+            );
           return errorText;
         },
       });

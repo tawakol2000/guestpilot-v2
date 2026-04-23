@@ -40,6 +40,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
 import { openRitualWindow } from '../lib/ritual-state';
+import { invalidateTenantConfigCache } from '../../services/tenant-config.service';
 
 // Spec §6 graduation criteria — load-bearing slots must be covered with
 // non-default values before write_system_prompt is allowed.
@@ -109,7 +110,8 @@ export function buildWriteSystemPromptTool(
       slotValues: z.record(z.string(), z.string()),
       managerSanctioned: z
         .literal(true, "managerSanctioned must be true — manager must sanction the write in their last turn"),
-      rationale: z.string(),
+      // Bugfix (2026-04-23): see create-sop.ts for the same fix.
+      rationale: z.string().min(15).max(280),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },
@@ -333,6 +335,16 @@ export function buildWriteSystemPromptTool(
           artifactId: args.variant,
           operation,
         });
+
+        // Bugfix (2026-04-23): tenant-config cache had a 60s TTL, so a
+        // just-written system prompt stayed invisible to the main
+        // pipeline for up to a minute. The admin-apply path in
+        // artifact-apply.ts was already calling
+        // `invalidateTenantConfigCache` (2026-04-22 fix); the agent
+        // write path was missed. Mirror it here so edits propagate
+        // immediately — matches the operator's expectation that
+        // "apply" means "live on the next guest message."
+        invalidateTenantConfigCache(c.tenantId);
 
         const previewUrl = `/system-prompt/${versionRow.id}`;
         const payload = {

@@ -24,6 +24,7 @@ import {
   apiListTuningConversations,
   apiPatchTuningConversation,
   isAuthenticated,
+  type TuningConversationAnchor,
   type TuningConversationMessage,
   type TuningConversationSummary,
 } from '@/lib/api'
@@ -83,6 +84,7 @@ type LoadState =
       tenantState: BuildTenantState
       conversationId: string
       initialMessages: UIMessage[]
+      anchorMessage: TuningConversationAnchor | null
     }
 
 export function StudioSurface({ conversationId, onConversationChange }: StudioSurfaceProps) {
@@ -190,6 +192,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
 
         let selectedId = conversationId
         let initialMessages: UIMessage[] = []
+        let anchorMessage: TuningConversationAnchor | null = null
 
         if (selectedId) {
           // Bugfix (2026-04-23, React #185): if this id was created by a
@@ -206,12 +209,14 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               tenantState,
               conversationId: selectedId,
               initialMessages: [],
+              anchorMessage: null,
             })
             return
           }
           try {
             const { conversation } = await apiGetTuningConversation(selectedId)
             initialMessages = rehydrate(conversation.messages)
+            anchorMessage = conversation.anchorMessage
             // F9f — remember the loaded title so we know whether to
             // auto-rename on first user message. Also treat it as
             // "already named" if it's non-default (operator edited).
@@ -256,6 +261,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           tenantState,
           conversationId: selectedId,
           initialMessages,
+          anchorMessage,
         })
 
         // Sprint 058-A F9d — hydrate the session-artifacts rail from the
@@ -548,6 +554,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               conversationId={load.conversationId}
               greenfield={tenantState.isGreenfield}
               initialMessages={load.initialMessages}
+              anchorMessage={load.anchorMessage}
               onStateSnapshot={handleStateSnapshot}
               onTestResult={handleTestResult}
               onPlanApproved={handlePlanApproved}

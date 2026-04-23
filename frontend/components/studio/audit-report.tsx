@@ -37,6 +37,18 @@ const STATUS_LABEL: Record<StudioStatus, string> = {
   unknown: 'Unknown',
 }
 
+// Bugfix (2026-04-23): audit rows were rendering the raw enum value
+// (`tool_definition`, `system_prompt`) in monospace, which reads as
+// engineering slang to an operator scanning a report. Human-friendly
+// labels aligned with the session-artifacts rail + the artifact-drawer.
+const ARTIFACT_LABEL: Record<AuditReportRowData['artifact'], string> = {
+  system_prompt: 'System prompt',
+  sop: 'SOP',
+  faq: 'FAQ',
+  tool_definition: 'Tool',
+  property: 'Property',
+}
+
 export function AuditReportCard(props: AuditReportCardProps) {
   return (
     <article
@@ -123,14 +135,13 @@ export function AuditReportCard(props: AuditReportCardProps) {
                     {row.label}
                   </span>
                   <span
+                    title={row.artifact}
                     style={{
                       color: STUDIO_COLORS.inkSubtle,
                       fontSize: 11,
-                      fontFamily:
-                        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                     }}
                   >
-                    {row.artifact}
+                    {ARTIFACT_LABEL[row.artifact] ?? row.artifact}
                   </span>
                 </div>
                 <div

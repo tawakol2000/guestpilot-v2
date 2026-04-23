@@ -288,6 +288,17 @@ export function StudioChat({
   // stream in-order and don't get reordered in Vercel AI SDK v5, so
   // the index is stable.
   const forwardedIds = useRef<Set<string>>(new Set())
+  // Bugfix (2026-04-23): the Set lived for the full component lifetime,
+  // so switching between two Studio conversations without unmounting
+  // left keys from conversation A in memory. A state-snapshot from
+  // conversation B with the same `${m.id}:type:partIdx}` — which is
+  // possible because UIMessage ids can collide across sessions when
+  // the agent SDK re-uses its running counter — would be silently
+  // skipped. Reset whenever `conversationId` changes so each session
+  // starts with a fresh ledger.
+  useEffect(() => {
+    forwardedIds.current.clear()
+  }, [conversationId])
   useEffect(() => {
     for (const m of messages) {
       const parts = (m as any).parts as Array<Record<string, any>> | undefined
@@ -296,7 +307,10 @@ export function StudioChat({
         const p = parts[partIdx]
         const t = typeof p?.type === 'string' ? p.type : ''
         if (t !== 'data-state-snapshot' && t !== 'data-test-pipeline-result') continue
-        const stableKey = `${m.id}:${t}:${partIdx}`
+        // Include conversationId in the key so even if the Set clear
+        // misses (StrictMode double-invocation etc.) cross-conversation
+        // collisions can't happen.
+        const stableKey = `${conversationId}:${m.id}:${t}:${partIdx}`
         if (forwardedIds.current.has(stableKey)) continue
         // Only forward once the payload has arrived. Before the data
         // lands we leave the Set alone so this effect can re-evaluate
@@ -310,7 +324,7 @@ export function StudioChat({
         }
       }
     }
-  }, [messages, onStateSnapshot, onTestResult])
+  }, [messages, onStateSnapshot, onTestResult, conversationId])
 
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)

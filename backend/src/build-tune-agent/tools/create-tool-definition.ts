@@ -108,7 +108,8 @@ export function buildCreateToolDefinitionTool(
         .min(1, 'availableStatuses cannot be empty'),
       agentScope: z.enum(['screening', 'coordinator', 'both']).optional(),
       webhookTimeoutMs: z.number().int().min(1000).max(60000).optional(),
-      rationale: z.string(),
+      // Bugfix (2026-04-23): see create-sop.ts for the same fix.
+      rationale: z.string().min(15).max(280),
       transactionId: z.string().optional(),
       dryRun: z.boolean().optional(),
     },

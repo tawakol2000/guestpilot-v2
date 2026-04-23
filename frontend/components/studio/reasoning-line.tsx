@@ -13,7 +13,7 @@
  * side-panel if it prefers — the public API is just
  * `ReasoningLine({durationMs, content})`.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { STUDIO_COLORS } from './tokens'
 
 export interface ReasoningLineProps {
@@ -25,6 +25,20 @@ export interface ReasoningLineProps {
 
 export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
   const [open, setOpen] = useState(false)
+  // Bugfix (2026-04-23): the drawer only closed on click-outside — the
+  // Esc key did nothing. Keyboard users couldn't dismiss it. Artifact-
+  // drawer already does this; mirror the same pattern here.
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   const label =
     typeof durationMs === 'number' && durationMs > 0
       ? `Thought for ${Math.max(1, Math.round(durationMs / 1000))}s`

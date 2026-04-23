@@ -236,7 +236,12 @@ function LedgerRow({
               minWidth: 0,
             }}
           >
-            — {row.artifactId}
+            {/* Bugfix (2026-04-23): was rendering the raw CUID as a
+                pseudo-subtitle, which reads as garbage to the operator.
+                Truncate to the first 8 chars + ellipsis, with the full
+                id available via the span's title tooltip for anyone
+                who actually needs it (admin trace). */}
+            — <span title={row.artifactId}>{row.artifactId.slice(0, 8)}…</span>
           </span>
           <EditedChip metadata={row.metadata} />
         </button>
