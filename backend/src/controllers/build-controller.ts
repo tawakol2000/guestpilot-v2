@@ -665,6 +665,20 @@ export function makeBuildController(prisma: PrismaClient) {
         return;
       }
       try {
+        // Bugfix (2026-04-23, admin gate): approve records audit
+        // metadata on a destructive plan (the subsequent create_*
+        // writes reference the approval). Restrict to tenant admins —
+        // matches the /traces + /system-prompt gating pattern. A
+        // non-admin user was previously able to approve any plan for
+        // their tenant, leaking "who approved" integrity.
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { isAdmin: true },
+        });
+        if (!tenant?.isAdmin) {
+          res.status(403).json({ error: 'ADMIN_ONLY' });
+          return;
+        }
         // Bugfix (2026-04-23): the original approve flow was read-check-
         // update across three distinct DB round-trips, leaving a TOCTOU
         // window where two concurrent /approve calls from different
@@ -770,6 +784,18 @@ export function makeBuildController(prisma: PrismaClient) {
       const fixId = req.params.fixId;
       if (!fixId) {
         res.status(400).json({ error: 'MISSING_FIX_ID' });
+        return;
+      }
+      // Bugfix (2026-04-23, admin gate): accept writes a real artifact
+      // change (SOP body, FAQ content, system prompt, tool definition)
+      // into the tenant's config. Equivalent power to the agent's
+      // create_*/write_* tools. Restrict to tenant admins.
+      const tenantA = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { isAdmin: true },
+      });
+      if (!tenantA?.isAdmin) {
+        res.status(403).json({ error: 'ADMIN_ONLY' });
         return;
       }
 
@@ -944,6 +970,18 @@ export function makeBuildController(prisma: PrismaClient) {
         res.status(400).json({ error: 'MISSING_FIX_ID' });
         return;
       }
+      // Bugfix (2026-04-23, admin gate): reject writes rejection
+      // memory that shapes future agent proposals. Restrict to admins
+      // so non-admin users can't influence the tenant's corpus
+      // of accepted/rejected patterns.
+      const tenantR = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { isAdmin: true },
+      });
+      if (!tenantR?.isAdmin) {
+        res.status(403).json({ error: 'ADMIN_ONLY' });
+        return;
+      }
       const body = (req.body ?? {}) as {
         conversationId?: string;
         intent?: Partial<RejectionIntent> & {
@@ -1067,6 +1105,18 @@ export function makeBuildController(prisma: PrismaClient) {
       const id = req.params.id;
       if (!id) {
         res.status(400).json({ error: 'MISSING_PLAN_ID' });
+        return;
+      }
+      // Bugfix (2026-04-23, admin gate): rollback is the most destructive
+      // endpoint in the BUILD surface — it reverses an entire plan's
+      // worth of writes and stamps REVERT rows on the history. Admin-only,
+      // same rationale as approvePlan.
+      const tenantRow = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { isAdmin: true },
+      });
+      if (!tenantRow?.isAdmin) {
+        res.status(403).json({ error: 'ADMIN_ONLY' });
         return;
       }
       // Stub `tool()` that captures the handler so we can call it directly

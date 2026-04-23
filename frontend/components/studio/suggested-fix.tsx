@@ -25,7 +25,18 @@ export interface SuggestedFixTarget {
   // so the Studio accept-on-preview path can dispatch the write without
   // re-asking the agent. Additive; pre-session-A emitters omit them.
   sopCategory?: string
-  sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN'
+  // Bugfix (2026-04-23): was missing PENDING and CHECKED_OUT, so a
+  // suggested-fix targeting a PENDING-variant SOP would fail the
+  // typed apply path silently (TypeScript narrowed away the value
+  // before the server saw it). Matches the backend
+  // ApplyFromUiInput + Prisma enum — all six reservation statuses.
+  sopStatus?:
+    | 'DEFAULT'
+    | 'INQUIRY'
+    | 'PENDING'
+    | 'CONFIRMED'
+    | 'CHECKED_IN'
+    | 'CHECKED_OUT'
   sopPropertyId?: string
   faqEntryId?: string
   systemPromptVariant?: 'coordinator' | 'screening'

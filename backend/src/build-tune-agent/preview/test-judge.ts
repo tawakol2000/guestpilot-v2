@@ -21,9 +21,23 @@
  * don't force a rename.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'crypto';
 
 export const JUDGE_MODEL = 'claude-sonnet-4-6';
-export const JUDGE_PROMPT_VERSION = 'test-judge/v1 — 2026-04-19';
+// Bugfix (2026-04-23): was a hand-maintained string ("test-judge/v1 —
+// 2026-04-19") that authors had to remember to bump when editing
+// `JUDGE_SYSTEM`. Nothing enforced the bump — so silent judge drift
+// became possible (old verdicts carrying stale version tags next to
+// re-graded output). Derive the version from the first 10 chars of a
+// SHA-256 over the canonical judge prompt + model id, computed at
+// module load. Any edit to JUDGE_SYSTEM or JUDGE_MODEL advances the
+// tag automatically. The `v1 — YYYY-MM-DD` human tag stays as a
+// readable prefix so operators can eyeball the date when the prompt
+// was last touched; the hash suffix makes the version unique per
+// edit. `_HUMAN_TAG` should still be bumped by hand on intentional
+// material edits so the date advances, but the hash alone is enough
+// to detect drift.
+const _JUDGE_SYSTEM_HUMAN_TAG = 'test-judge/v1 — 2026-04-23';
 
 export interface TestJudgeInput {
   /** Compact summary of the tenant's active SOPs / top FAQs / system-prompt excerpt. ≤ ~2K tokens. */
@@ -77,6 +91,18 @@ When you assign a score below 0.7, set "failureCategory" to one of:
 Otherwise set "failureCategory" to null.
 
 Return ONLY the JSON object. No code fences, no prose prefix.`;
+
+// Derived AFTER JUDGE_SYSTEM is declared so the hash covers the final
+// prompt body. Any edit to the system text bumps the hash suffix and
+// surfaces as a visible version change in the verdict history —
+// operators can spot judge drift without re-reading the diff.
+const _JUDGE_SYSTEM_HASH = createHash('sha256')
+  .update(JUDGE_SYSTEM)
+  .update('\x00')
+  .update(JUDGE_MODEL)
+  .digest('hex')
+  .slice(0, 10);
+export const JUDGE_PROMPT_VERSION = `${_JUDGE_SYSTEM_HUMAN_TAG} (${_JUDGE_SYSTEM_HASH})`;
 
 /**
  * Shuffle an array deterministically-given-input by a simple seeded swap.
@@ -141,13 +167,29 @@ export async function runTestJudge(
     'Grade the <ai_reply> now. Return only the JSON object.',
   ].join('\n');
 
+  // Bugfix (2026-04-23): no explicit timeout used to mean a hung
+  // Anthropic connection would hang the judge call for the SDK
+  // default (~60s+) while the test_pipeline SSE stream showed a
+  // stuck spinner. Wrap in Promise.race with a 30s ceiling; the
+  // timeout path falls through to the same catch branch as any
+  // other judge failure, producing a score=0 + `judge-error`
+  // verdict so the UI renders a visible failure row instead of
+  // staying indefinitely pending.
+  const JUDGE_TIMEOUT_MS = 30_000;
   try {
-    const resp = await client.messages.create({
+    const apiCall = client.messages.create({
       model: JUDGE_MODEL,
       max_tokens: 512,
       system: JUDGE_SYSTEM,
       messages: [{ role: 'user', content: userPrompt }],
     });
+    const timer = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Judge call timed out after ${JUDGE_TIMEOUT_MS}ms`)),
+        JUDGE_TIMEOUT_MS,
+      ),
+    );
+    const resp = await Promise.race([apiCall, timer]);
     const text =
       resp.content
         .map((b) => (b.type === 'text' ? b.text : ''))
