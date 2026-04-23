@@ -2,6 +2,7 @@ import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { pushSubscribeLimiter } from '../middleware/rate-limit';
 import { getVapidPublicKey, subscribe, unsubscribe } from '../services/push.service';
 
 const iosRegisterSchema = z.object({
@@ -30,7 +31,7 @@ export function pushRouter(prisma: PrismaClient): Router {
   router.use(authMiddleware as unknown as RequestHandler);
 
   // POST /api/push/subscribe
-  router.post('/subscribe', async (req: any, res) => {
+  router.post('/subscribe', pushSubscribeLimiter as unknown as RequestHandler, async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
       const { subscription } = req.body;
@@ -48,7 +49,7 @@ export function pushRouter(prisma: PrismaClient): Router {
   });
 
   // DELETE /api/push/subscribe
-  router.delete('/subscribe', async (req: any, res) => {
+  router.delete('/subscribe', pushSubscribeLimiter as unknown as RequestHandler, async (req: any, res) => {
     try {
       const tenantId = req.tenantId as string;
       const { endpoint } = req.body;

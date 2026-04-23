@@ -46,11 +46,41 @@ export async function sendPushToTenant(
 
     if (subscriptions.length === 0) return;
 
-    const payloadStr = JSON.stringify({
+    let payloadStr = JSON.stringify({
       ...payload,
       icon: payload.icon || '/apple-icon.png',
       badge: payload.badge || '/icon-light-32x32.png',
     });
+
+    // Bugfix (2026-04-23): Web Push limits payloads to ~4KB. Without
+    // a guard, sending a long body (e.g. agent-generated escalation
+    // message that ballooned past 4KB) caused webpush.sendNotification
+    // to throw 413 — which was NOT handled by the 410/404 cleanup
+    // branch below, so the push silently disappeared with only a
+    // warn in the logs. Truncate the body field defensively before
+    // serialising again. Caps at ~3500 bytes for headroom over the
+    // surrounding metadata.
+    if (payloadStr.length > 4000) {
+      const truncBody = typeof payload.body === 'string'
+        ? payload.body.slice(0, 600) + '…'
+        : '';
+      payloadStr = JSON.stringify({
+        ...payload,
+        body: truncBody,
+        icon: payload.icon || '/apple-icon.png',
+        badge: payload.badge || '/icon-light-32x32.png',
+      });
+      // If still too big (e.g. exotic data field), hard-cap by truncating
+      // the serialized string itself with a closing brace approximation.
+      if (payloadStr.length > 4000) {
+        payloadStr = JSON.stringify({
+          title: typeof payload.title === 'string' ? payload.title.slice(0, 80) : '',
+          body: '…',
+          icon: payload.icon || '/apple-icon.png',
+          badge: payload.badge || '/icon-light-32x32.png',
+        });
+      }
+    }
 
     console.log(`[Push] Sending to ${subscriptions.length} device(s) for tenant ${tenantId}: ${payload.title}`);
 

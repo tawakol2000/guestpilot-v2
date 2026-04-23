@@ -77,3 +77,20 @@ export const reservationActionLimiter = rateLimit({
   store: createRedisStore('rl:res-action:'),
   passOnStoreError: true,
 });
+
+// Bugfix (2026-04-23): push-subscribe / push-unsubscribe had no rate
+// limit. A misbehaving (or malicious) client could spam the
+// subscribe endpoint with many fake endpoints to bloat the
+// PushSubscription table. 10/min per tenant matches the message
+// send limiter — push registrations should be rare in practice
+// (one per device install).
+export const pushSubscribeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded. Try again in a minute.' },
+  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  store: createRedisStore('rl:push-sub:'),
+  passOnStoreError: true,
+});
