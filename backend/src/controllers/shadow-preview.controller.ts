@@ -85,8 +85,14 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
         const conversation = preview.conversation;
         if (!conversation.hostawayConversationId) {
           // No Hostaway conversation id — cannot deliver. Roll back state and error.
+          // Bugfix (2026-04-23): defence-in-depth tenant scope on the
+          // rollback update. The messageId alone matched the unique
+          // constraint but the earlier findFirst had already validated
+          // tenancy; using {id, tenantId} ensures a future refactor
+          // that skips the findFirst can't roll back another tenant's
+          // preview state via a shared id collision.
           await prisma.message
-            .update({ where: { id: messageId }, data: { previewState: 'PREVIEW_PENDING' } })
+            .update({ where: { id: messageId, tenantId }, data: { previewState: 'PREVIEW_PENDING' } })
             .catch(() => {});
           res.status(502).json({ error: 'HOSTAWAY_DELIVERY_FAILED', detail: 'Conversation has no Hostaway id' });
           return;
@@ -105,13 +111,23 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
           const hostawayMsgId = String((hwResult as any)?.result?.id || '');
           const sentAt = new Date();
 
-          // Commit: clear previewState, fill hostawayMessageId + sentAt
+          // Commit: clear previewState, fill hostawayMessageId + sentAt.
+          //
+          // Bugfix (2026-04-23): also clear `originalAiText` when the
+          // send is unedited. Previously `originalAiText` was set at
+          // preview-create time and only cleared if the manager edited;
+          // a plain Send as-is left it populated, so downstream
+          // tuning-analyzer comparisons (and any future "did the
+          // operator edit this?" audit) saw a phantom original vs
+          // final mismatch even when they were the same text. Tenant
+          // scope on the update mirrors the rollback fix above.
           const updated = await prisma.message.update({
-            where: { id: messageId },
+            where: { id: messageId, tenantId },
             data: {
               previewState: null,
               hostawayMessageId: hostawayMsgId,
               sentAt,
+              ...(editedText === undefined ? { originalAiText: null } : {}),
             },
           });
 

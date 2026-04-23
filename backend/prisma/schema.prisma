@@ -450,6 +450,9 @@ model FaqEntry {
   @@index([tenantId, propertyId, status])
   @@index([tenantId, scope, status])
   @@index([tenantId, category, status])
+  // Bugfix (2026-04-23): FK index — rollback's deleteMany path
+  // table-scanned large FaqEntry tables on every plan rollback.
+  @@index([buildTransactionId])
 }
 
 enum FaqScope {
@@ -587,6 +590,8 @@ model AiConfigVersion {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, version(sort: Desc)])
+  // Bugfix (2026-04-23): FK index — see SopVariant for rationale.
+  @@index([buildTransactionId])
 }
 
 // ─── Tool Definitions (per-tenant, system + custom) ─────────────────────────
@@ -614,6 +619,8 @@ model ToolDefinition {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, name])
+  // Bugfix (2026-04-23): FK index — see SopVariant for rationale.
+  @@index([buildTransactionId])
 }
 
 // ─── SOP Definitions (per-tenant, editable by operators) ────────────────────
@@ -652,6 +659,12 @@ model SopVariant {
   sopDefinition SopDefinition @relation(fields: [sopDefinitionId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, status])
+  // Bugfix (2026-04-23): FK columns need explicit indexes in
+  // Postgres (Prisma doesn't auto-index FKs). Without these the
+  // rollback path (`deleteMany where buildTransactionId`) and the
+  // SOP-delete cascade both table-scan on large tenants.
+  @@index([sopDefinitionId])
+  @@index([buildTransactionId])
 }
 
 model SopPropertyOverride {
@@ -672,6 +685,10 @@ model SopPropertyOverride {
   property      Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@unique([sopDefinitionId, propertyId, status])
+  // Bugfix (2026-04-23): FK indexes — see SopVariant for rationale.
+  @@index([sopDefinitionId])
+  @@index([propertyId])
+  @@index([buildTransactionId])
 }
 
 // ─── Feature 045: BUILD-mode transaction grouping ──────────────────────────
@@ -747,6 +764,11 @@ model BuildArtifactHistory {
   @@index([tenantId, artifactType, artifactId, createdAt])
   @@index([tenantId, conversationId, createdAt])
   @@index([tenantId, versionLabel])
+  // Bugfix (2026-04-23): hot path "find all history for one artifact
+  // regardless of type/time" (e.g. revert-stamp lookups) was falling
+  // through to the 4-field index and only partially using it. A lean
+  // 2-field index resolves the artifactId lookup directly.
+  @@index([tenantId, artifactId])
 }
 
 // ─── Sprint 046 Session A: BUILD/TUNE tool-call observability ───────────────
@@ -768,6 +790,11 @@ model BuildToolCallLog {
 
   @@index([tenantId, createdAt])
   @@index([conversationId, turn])
+  // Bugfix (2026-04-23): admin trace view filters by `tool` on top of
+  // the tenantId/createdAt ordering; adding `tool` to the leading
+  // compound index so per-tool drilldowns don't scan the full tenant
+  // log.
+  @@index([tenantId, tool, createdAt(sort: Desc)])
 }
 
 // ─── Push Subscriptions (Web Push VAPID) ────────────────────────────────────
@@ -1050,6 +1077,12 @@ model TuningConversation {
 
   @@index([tenantId])
   @@index([anchorMessageId])
+  // Bugfix (2026-04-23): left-rail list filters by status (OPEN vs
+  // ARCHIVED/CLOSED) and orders by updatedAt; a compound index
+  // matching the hot query saves a post-filter sort on large
+  // tenants. Kept alongside the lean [tenantId] for membership
+  // checks that don't care about status.
+  @@index([tenantId, status, updatedAt(sort: Desc)])
 }
 
 model TuningMessage {
@@ -1062,6 +1095,11 @@ model TuningMessage {
   conversation TuningConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
+  // Bugfix (2026-04-23): transcript replay always orders by createdAt
+  // ASC per conversation; adding the sort to the compound index lets
+  // Postgres answer the common `findMany({orderBy:{createdAt:'asc'}})`
+  // from the index alone, skipping the post-filter sort.
+  @@index([conversationId, createdAt])
 }
 
 // Sprint 047 Session C — cross-session rejection memory.
