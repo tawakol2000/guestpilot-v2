@@ -15,13 +15,27 @@
  * we redirect to `/login` so the page fails closed.
  */
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { setToken, setTenantMeta } from '@/lib/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3001'
 
+// Bugfix (2026-04-23): Next.js 16 requires `useSearchParams()` to be
+// wrapped in a Suspense boundary during static generation. Without
+// this, the Vercel build fails at the prerender step for `/dev-login`
+// with "useSearchParams() should be wrapped in a suspense boundary".
+// The outer export is a trivial Suspense shell; the inner component
+// holds all the logic and can freely call useSearchParams.
 export default function DevLoginPage() {
+  return (
+    <Suspense fallback={<DevLoginLoading />}>
+      <DevLoginInner />
+    </Suspense>
+  )
+}
+
+function DevLoginInner() {
   const router = useRouter()
   const params = useSearchParams()
   const [error, setError] = useState('')
@@ -131,6 +145,19 @@ export default function DevLoginPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function DevLoginLoading() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: '#F2EDE8' }}
+    >
+      <p className="text-sm" style={{ color: '#8E8E93' }}>
+        Loading…
+      </p>
     </div>
   )
 }

@@ -1586,7 +1586,12 @@ export default function InboxV5() {
   // Socket.IO connection state
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'delayed' | 'reconnecting' | 'disconnected'>('reconnecting')
   const [showReconnectedBanner, setShowReconnectedBanner] = useState(false)
-  const seenMessageIds = useRef<Set<string>>(new Set())
+  // (2026-04-23: the prior `seenMessageIds = useRef<Set<string>>(new Set())`
+  // was declared here but never read — only `.clear()`ed on conversation
+  // switch. Round-6 client-side dedup introduced a Map<string, number>
+  // version below at the same name; the duplicate declaration failed
+  // Vercel's tsc strict build. Dead Set form removed — the Map .clear()
+  // still works at the same call sites.)
   const wsFailCount = useRef(0)
   const degradedPollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevStatusRef = useRef<string>('reconnecting')
