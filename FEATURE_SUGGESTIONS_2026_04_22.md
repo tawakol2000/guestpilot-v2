@@ -107,6 +107,13 @@
 **Effort:** XS.
 **Risk:** none — pure deletion of confirmed-unused content.
 
+### [LOW-impact] Codify `npx next build` in the frontend after-gate routine
+**Where:** sprint kickoff prompts; `specs/045-build-mode/NEXT.md` after-gate routine
+**Idea:** Add a required after-gate step: `cd frontend && npx next build` (not just vitest + tsc).
+**Why:** Vercel's deploy runs `npx next build` which performs strict tsc + static prerender checks. Vitest + tsc alone can pass while Vercel fails. Example: the 2026-04-23 deploy failed on a duplicate `const` declaration (tsc-strict caught) and a missing Suspense around `useSearchParams()` (Next's static-generation step caught). Both were invisible to `npm test -- --run`. Same class as the 2026-04-22 `tsc --noEmit` codification — transpile-only test runners miss production-grade compile errors.
+**Effort:** XS (docs only).
+**Risk:** none.
+
 ### [LOW-impact] Test-coverage targets for highest-leverage gaps
 **Where:**
   - `ai.service.ts:749` `stripCodeFences` (or its renamed equivalent) — pure-fn, table-driven test for hand-tuned edge cases (concatenated JSON, mixed code fences).
