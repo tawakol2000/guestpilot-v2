@@ -215,12 +215,22 @@ export async function getFaqForProperty(
 
   // Fetch global ACTIVE entries for this category
   // scope: GLOBAL means available to all properties, regardless of which property created it
+  //
+  // Bugfix (2026-04-23): also require `propertyId: null`. A historic
+  // bug could leave a GLOBAL-scope row with a non-null propertyId
+  // stamped on it (if an operator flipped PROPERTY→GLOBAL via the
+  // update endpoint before the bugfix that clears propertyId on
+  // scope change). Those rows would show up for every property's
+  // retrieval, creating cross-property leakage of a FAQ that was
+  // originally written for just one listing. Filter on null so only
+  // genuinely-global rows surface.
   const globalEntries = await prisma.faqEntry.findMany({
     where: {
       tenantId,
       category,
       status: 'ACTIVE',
       scope: 'GLOBAL',
+      propertyId: null,
     },
   });
 
