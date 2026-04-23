@@ -52,16 +52,21 @@ beforeEach(() => {
   hoisted.sendMessage.mockReset()
 })
 
+// Bugfix (2026-04-23): the helper previously seeded `mode` and
+// `interviewProgress` and the greenfield test passed `mode: 'GREENFIELD'`.
+// Neither field exists on BuildTenantState (the banner derives its mode
+// from `isGreenfield` directly — see tenant-state-banner.tsx L43),
+// so the tsc strict build (the one Vercel runs) failed on these
+// object-literal keys. The banner's observable behaviour depends only
+// on `isGreenfield`, so dropping the extras keeps the test intent.
 function tenantState(overrides: Partial<BuildTenantState> = {}): BuildTenantState {
   return {
     isGreenfield: false,
-    mode: 'BROWNFIELD',
-    interviewProgress: '',
     sopCount: 0,
+    sopsDefaulted: 0,
     faqCounts: { global: 0, perProperty: 0 },
     customToolCount: 0,
     propertyCount: 0,
-    lastBuildTransaction: null,
     ...overrides,
   } as BuildTenantState
 }
@@ -88,7 +93,7 @@ describe('StudioChat F5 — TenantStateBanner mount', () => {
         conversationId="c1"
         greenfield={true}
         initialMessages={[]}
-        tenantState={tenantState({ isGreenfield: true, mode: 'GREENFIELD' })}
+        tenantState={tenantState({ isGreenfield: true })}
       />,
     )
     const pill = await screen.findByTestId('tenant-state-pill')

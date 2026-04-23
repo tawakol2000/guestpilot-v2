@@ -223,6 +223,11 @@ interface Conversation {
   starred: boolean
   status: 'OPEN' | 'RESOLVED'
   checkInStatus: CheckInStatus
+  // Raw Hostaway reservation status (INQUIRY/PENDING/CONFIRMED/...) used
+  // for downstream enum-precise decisions (approve/reject gating, live
+  // SSE patches). Carried separately from `checkInStatus`, which is the
+  // UI-facing derived bucket (e.g. "checking-in-today").
+  reservationStatus?: string
   reservationId: string
   reservationCreatedAt: string
   messages: Message[]

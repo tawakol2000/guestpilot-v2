@@ -23,6 +23,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
+import { SEED_SOP_CONTENT } from './sop.service';
 
 // Slot inventory mirrored from `tools/write-system-prompt.ts`. Kept in
 // sync by `__tests__/template.test.ts` (slot-key alignment assertion)
@@ -128,6 +129,14 @@ export interface LastBuildTransactionSummary {
  */
 export interface TenantStateSummary {
   sopCount: number;
+  /**
+   * Of `sopCount`, how many still have their DEFAULT variant body
+   * byte-for-byte matching the canonical seed in SEED_SOP_CONTENT —
+   * i.e. the operator has never edited them. Derived client-side
+   * (no schema field) by loading all DEFAULT variants and comparing
+   * to the seed dictionary.
+   */
+  sopsDefaulted: number;
   faqCounts: { global: number; perProperty: number };
   customToolCount: number;
   propertyCount: number;
@@ -157,6 +166,12 @@ export async function getTenantStateSummary(
     customToolCount,
     propertyCount,
     lastTx,
+    // Bugfix (2026-04-23): count SOPs still on seed content so the
+    // BUILD agent's <tenant_state> can report a real number instead
+    // of the hard-coded 0. Selects only DEFAULT variants (status =
+    // 'DEFAULT' is the fallback body used when no status-specific
+    // variant exists — parity with the compare target).
+    defaultVariants,
   ] = await Promise.all([
     prisma.sopDefinition.count({ where: { tenantId } }),
     prisma.faqEntry.count({ where: { tenantId, scope: 'GLOBAL' } }),
@@ -176,12 +191,30 @@ export async function getTenantStateSummary(
         plannedItems: true,
       },
     }),
+    prisma.sopVariant.findMany({
+      where: { status: 'DEFAULT', sopDefinition: { tenantId } },
+      select: { content: true, sopDefinition: { select: { category: true } } },
+    }),
   ]);
+
+  // Byte-for-byte match against SEED_SOP_CONTENT. If the category isn't
+  // in the seed dictionary (e.g. operator-created SOP with a fresh
+  // category), it can't be "defaulted" — count only known-seeded
+  // categories whose content equals the seed.
+  let sopsDefaulted = 0;
+  for (const v of defaultVariants) {
+    const cat = v.sopDefinition?.category;
+    if (!cat) continue;
+    const seed = SEED_SOP_CONTENT[cat];
+    if (seed === undefined) continue;
+    if (v.content === seed) sopsDefaulted += 1;
+  }
 
   const isGreenfield = sopCount === 0 && faqGlobal === 0 && customToolCount === 0;
 
   const summary: TenantStateSummary = {
     sopCount,
+    sopsDefaulted,
     faqCounts: { global: faqGlobal, perProperty: faqPerProperty },
     customToolCount,
     propertyCount,
@@ -213,6 +246,14 @@ export interface InterviewProgressSummary {
   totalSlots: number;
   coveragePercent: number;
   loadBearingFilled: number;
+  /**
+   * Slot keys whose memory value contains the DEFAULT_MARKER sentinel.
+   * These don't count toward graduation but the agent should flag them
+   * for explicit operator review — the rendered <interview_progress>
+   * block surfaces them as "Defaulted slots flagged for review: …".
+   * Empty array when nothing is defaulted (common on fresh sessions).
+   */
+  defaultedSlots: string[];
 }
 
 /**
@@ -242,12 +283,25 @@ export async function getInterviewProgressSummary(
   const rows = await listMemoryByPrefix(prisma, tenantId, prefix, 50);
 
   const filledSlots: string[] = [];
+  const defaultedSlots: string[] = [];
   let loadBearingFilled = 0;
 
   for (const row of rows) {
     const slotKey = row.key.slice(prefix.length);
     if (!ALL_SLOT_KEYS.has(slotKey)) continue;
-    if (!isSlotValueFilled(row.value)) continue;
+    // Detect the DEFAULT marker explicitly. `isSlotValueFilled` lumps
+    // "never answered" and "answered with default" into one NOT-FILLED
+    // bucket, but the agent wants to distinguish them: defaulted slots
+    // were acknowledged by the manager and need an explicit review
+    // pass, while empty slots are just open questions.
+    const raw = row.value;
+    const isDefaulted =
+      typeof raw === 'string' && raw.includes(DEFAULT_MARKER);
+    if (isDefaulted) {
+      defaultedSlots.push(slotKey);
+      continue;
+    }
+    if (!isSlotValueFilled(raw)) continue;
     filledSlots.push(slotKey);
     if (LOAD_BEARING_SET.has(slotKey)) loadBearingFilled += 1;
   }
@@ -260,5 +314,6 @@ export async function getInterviewProgressSummary(
     totalSlots: TOTAL_SLOTS,
     coveragePercent,
     loadBearingFilled,
+    defaultedSlots,
   };
 }

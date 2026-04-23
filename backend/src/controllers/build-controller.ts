@@ -374,7 +374,7 @@ export function makeBuildController(prisma: PrismaClient) {
               systemPromptStatus: spStatus.status,
               systemPromptEditCount: spStatus.editCount,
               sopsDefined: tenantState.sopCount,
-              sopsDefaulted: 0,
+              sopsDefaulted: tenantState.sopsDefaulted,
               faqsGlobal: tenantState.faqCounts.global,
               faqsPropertyScoped: tenantState.faqCounts.perProperty,
               customToolsDefined: tenantState.customToolCount,
@@ -392,7 +392,7 @@ export function makeBuildController(prisma: PrismaClient) {
                 interviewProgress.filledSlots.length -
                 interviewProgress.loadBearingFilled,
               nonLoadBearingTotal: 14,
-              defaultedSlots: [] as string[],
+              defaultedSlots: interviewProgress.defaultedSlots,
             }
           : null;
 

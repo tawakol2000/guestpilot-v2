@@ -114,8 +114,10 @@ describe('StudioChat React #310 hooks-order repro (059-A F9a)', () => {
     // match conservatively so a benign unrelated error (e.g. a Next.js
     // router warning) does not false-positive the gate.
     const hooksErrors = consoleErrorSpy.mock.calls
-      .map((args) => args.map((a) => (typeof a === 'string' ? a : '')).join(' '))
-      .filter((s) =>
+      .map((args: unknown[]) =>
+        args.map((a: unknown) => (typeof a === 'string' ? a : '')).join(' '),
+      )
+      .filter((s: string) =>
         /Rendered more hooks than during the previous render|Invalid hook call|minified React error #310|Rendered fewer hooks than expected/i.test(
           s,
         ),
@@ -137,8 +139,10 @@ describe('StudioChat React #310 hooks-order repro (059-A F9a)', () => {
     }
 
     const hooksErrors = consoleErrorSpy.mock.calls
-      .map((args) => args.map((a) => (typeof a === 'string' ? a : '')).join(' '))
-      .filter((s) =>
+      .map((args: unknown[]) =>
+        args.map((a: unknown) => (typeof a === 'string' ? a : '')).join(' '),
+      )
+      .filter((s: string) =>
         /Rendered more hooks than during the previous render|Invalid hook call|minified React error #310|Rendered fewer hooks than expected/i.test(
           s,
         ),

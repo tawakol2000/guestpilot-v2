@@ -29,6 +29,13 @@ export interface BuildLastTransaction {
 
 export interface BuildTenantState {
   sopCount: number
+  /**
+   * Of `sopCount`, how many DEFAULT variants still match the canonical
+   * seed body byte-for-byte (operator hasn't edited them). Added
+   * 2026-04-23 alongside the BUILD-agent <tenant_state> fix; optional
+   * on the wire so older backends stay compatible.
+   */
+  sopsDefaulted?: number
   faqCounts: { global: number; perProperty: number }
   customToolCount: number
   propertyCount: number
@@ -356,6 +363,10 @@ export interface BuildPlanData {
   uiHint: string
   items: BuildPlanItem[]
   rationale: string
+  // Sprint 058-A F2 — indices (into `items`) the planner pre-flagged as
+  // cancelled. Optional; when present, `<PlanChecklist>` seeds its
+  // optimistic cancel set from this so the UI doesn't have to re-compute.
+  cancelledItemIndexes?: number[]
 }
 
 // ─── Sprint 054-A F3/F4 — verification-ritual verdict shape ──────────────

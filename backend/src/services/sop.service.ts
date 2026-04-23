@@ -427,7 +427,7 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
 };
 
 /** Default SOP content per category (used as DEFAULT variant during seeding). */
-const SEED_SOP_CONTENT: Record<string, string> = {
+export const SEED_SOP_CONTENT: Record<string, string> = {
   'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
 Extra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate to manager.`,
 
