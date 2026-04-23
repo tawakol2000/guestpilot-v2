@@ -1123,14 +1123,25 @@ function mapApiArtifactTitle(
 }
 
 /** Fallback StateSnapshotData derived from /api/build/tenant-state when
- *  the agent hasn't yet emitted `data-state-snapshot`. */
+ *  the agent hasn't yet emitted `data-state-snapshot`.
+ *
+ *  Bugfix (2026-04-23): the right-rail CURRENT STATE card was reporting
+ *  "System prompt — Empty" on every fresh Studio mount because this
+ *  adapter hardcoded `systemPromptStatus: 'EMPTY'` + `sopsDefaulted: 0`
+ *  regardless of the tenant's real state. The earlier service-level
+ *  fix populated `BuildTenantState.systemPromptStatus` /
+ *  `systemPromptEditCount` / `sopsDefaulted` on the wire (commit
+ *  2b24007), but this adapter was never updated to read them. Now
+ *  prefers the live wire fields and falls back to the stale defaults
+ *  ONLY if a pre-fix backend is responding.
+ */
 function deriveSnapshotFromTenantState(ts: BuildTenantState): StateSnapshotData {
   const summary: StateSnapshotSummary = {
     posture: ts.isGreenfield ? 'GREENFIELD' : 'BROWNFIELD',
-    systemPromptStatus: 'EMPTY',
-    systemPromptEditCount: 0,
+    systemPromptStatus: ts.systemPromptStatus ?? 'EMPTY',
+    systemPromptEditCount: ts.systemPromptEditCount ?? 0,
     sopsDefined: ts.sopCount,
-    sopsDefaulted: 0,
+    sopsDefaulted: ts.sopsDefaulted ?? 0,
     faqsGlobal: ts.faqCounts.global,
     faqsPropertyScoped: ts.faqCounts.perProperty,
     customToolsDefined: ts.customToolCount,
