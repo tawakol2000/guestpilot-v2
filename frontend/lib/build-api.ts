@@ -36,6 +36,16 @@ export interface BuildTenantState {
    * on the wire so older backends stay compatible.
    */
   sopsDefaulted?: number
+  /**
+   * Added 2026-04-23 (part 2). The Studio right-rail CURRENT STATE
+   * card was rendering "Empty" because the backend endpoint never
+   * returned this field. Now sourced from TenantAiConfig inside
+   * `getTenantStateSummary`. Optional on the wire so an older
+   * backend still validates.
+   */
+  systemPromptStatus?: 'EMPTY' | 'DEFAULT' | 'CUSTOMISED'
+  /** TenantAiConfig.systemPromptVersion. 0 for a fresh seed. */
+  systemPromptEditCount?: number
   faqCounts: { global: number; perProperty: number }
   customToolCount: number
   propertyCount: number

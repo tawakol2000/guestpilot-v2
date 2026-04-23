@@ -24,6 +24,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
 import { SEED_SOP_CONTENT } from './sop.service';
+import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from './ai.service';
 
 // Slot inventory mirrored from `tools/write-system-prompt.ts`. Kept in
 // sync by `__tests__/template.test.ts` (slot-key alignment assertion)
@@ -141,6 +142,23 @@ export interface TenantStateSummary {
   customToolCount: number;
   propertyCount: number;
   isGreenfield: boolean;
+  /**
+   * Bugfix (2026-04-23): originally only lived on the agent's
+   * <tenant_state> render path. The Studio right-rail "CURRENT STATE"
+   * card reads the same `TenantStateSummary` shape via
+   * `/api/build/tenant-state` + the `get_current_state(scope:'summary')`
+   * tool — so keeping the field service-side ensures every consumer
+   * reports the same truth.
+   *
+   *   EMPTY       — coordinator + screening both null/whitespace.
+   *   DEFAULT     — coordinator matches SEED_COORDINATOR_PROMPT
+   *                 verbatim (or startsWith it — the legacy migration
+   *                 appends a template-variable block).
+   *   CUSTOMISED  — coordinator diverges from the seed.
+   */
+  systemPromptStatus: 'EMPTY' | 'DEFAULT' | 'CUSTOMISED';
+  /** TenantAiConfig.systemPromptVersion. 0 for fresh seed. */
+  systemPromptEditCount: number;
   /** Present only when at least one BuildTransaction row exists. */
   lastBuildTransaction?: LastBuildTransactionSummary;
 }
@@ -172,6 +190,14 @@ export async function getTenantStateSummary(
     // 'DEFAULT' is the fallback body used when no status-specific
     // variant exists — parity with the compare target).
     defaultVariants,
+    // Bugfix (2026-04-23): TenantAiConfig carries the real system-prompt
+    // state (coordinator + screening text + version). The earlier fix
+    // only consulted this inside build-controller.ts, so the right-rail
+    // CURRENT STATE card — fed by `/api/build/tenant-state` — kept
+    // rendering "Empty" regardless. Moving the lookup into the service
+    // means every consumer (rail, agent prompt, tool response, banner
+    // caption) sees the same status.
+    aiCfg,
   ] = await Promise.all([
     prisma.sopDefinition.count({ where: { tenantId } }),
     prisma.faqEntry.count({ where: { tenantId, scope: 'GLOBAL' } }),
@@ -195,6 +221,14 @@ export async function getTenantStateSummary(
       where: { status: 'DEFAULT', sopDefinition: { tenantId } },
       select: { content: true, sopDefinition: { select: { category: true } } },
     }),
+    prisma.tenantAiConfig.findUnique({
+      where: { tenantId },
+      select: {
+        systemPromptCoordinator: true,
+        systemPromptScreening: true,
+        systemPromptVersion: true,
+      },
+    }),
   ]);
 
   // Byte-for-byte match against SEED_SOP_CONTENT. If the category isn't
@@ -212,6 +246,24 @@ export async function getTenantStateSummary(
 
   const isGreenfield = sopCount === 0 && faqGlobal === 0 && customToolCount === 0;
 
+  // Derive the system-prompt status from TenantAiConfig. Matches the
+  // earlier build-controller helper byte-for-byte; keeping the logic
+  // here so every wire consumer reports the same value.
+  const coord = (aiCfg?.systemPromptCoordinator ?? '').trim();
+  const screen = (aiCfg?.systemPromptScreening ?? '').trim();
+  const systemPromptEditCount = aiCfg?.systemPromptVersion ?? 0;
+  let systemPromptStatus: 'EMPTY' | 'DEFAULT' | 'CUSTOMISED';
+  if (!coord && !screen) {
+    systemPromptStatus = 'EMPTY';
+  } else {
+    const seedCoord = SEED_COORDINATOR_PROMPT.trim();
+    const seedScreen = SEED_SCREENING_PROMPT.trim();
+    const coordIsSeed = coord === seedCoord || coord.startsWith(seedCoord);
+    const screenIsSeed =
+      !screen || screen === seedScreen || screen.startsWith(seedScreen);
+    systemPromptStatus = coordIsSeed && screenIsSeed ? 'DEFAULT' : 'CUSTOMISED';
+  }
+
   const summary: TenantStateSummary = {
     sopCount,
     sopsDefaulted,
@@ -219,6 +271,8 @@ export async function getTenantStateSummary(
     customToolCount,
     propertyCount,
     isGreenfield,
+    systemPromptStatus,
+    systemPromptEditCount,
   };
 
   if (lastTx) {
