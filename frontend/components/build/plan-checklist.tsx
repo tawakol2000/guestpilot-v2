@@ -94,11 +94,20 @@ function renderTargetChip(target: BuildPlanItemTarget | undefined): string | nul
   // Drop the id chip entirely — the full id is available on the
   // parent row's title tooltip (plan-row renders artifactId there
   // when the row state is opened), and the chip row now carries
-  // only operator-facing signal. Unchanged for rows that have only
-  // an artifactId: no chip renders, which is the same as before
-  // when the id branch produced a lonely 8-char slug.
+  // only operator-facing signal.
+  //
+  // Bugfix (2026-04-23, second pass): also drop the §body sectionId
+  // chip. `body` is the catch-all section emitted by markdown-body
+  // when no explicit headings exist (markdown-body.tsx#deriveSystemPromptSections),
+  // so it carries zero diagnostic information — the operator just
+  // sees a `§body` token next to every system-prompt edit. Only
+  // chip non-default sections (anything other than 'body').
+  const sectionToken =
+    target.sectionId && target.sectionId !== 'body'
+      ? `§${target.sectionId}`
+      : null
   const parts = [
-    target.sectionId && `§${target.sectionId}`,
+    sectionToken,
     target.slotKey && `{${target.slotKey}}`,
     target.lineRange && `L${target.lineRange[0]}–${target.lineRange[1]}`,
   ].filter(Boolean)
@@ -606,10 +615,18 @@ function PlanRow({
 
         {/* Type badge + content */}
         <div className="min-w-0 flex-1">
-          <div className="grid items-center gap-3" style={{ gridTemplateColumns: '110px 1fr' }}>
+          {/* Bugfix (2026-04-23): the badge column was a fixed 110px
+              grid track with `tracking-wide` letterspacing, so
+              "SYSTEM PROMPT" wrapped onto two lines and shoved every
+              row to ~50px tall. Switched to a flex layout with the
+              badge inline at the start of the title row + tightened
+              the letterspacing — fits in one line for every label
+              including the long ones, and rows collapse back to
+              ~32px each. */}
+          <div className="flex items-start gap-2">
             <span
-              className="inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
-              style={{ background: style.bg, color: style.fg }}
+              className="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase"
+              style={{ background: style.bg, color: style.fg, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}
             >
               {style.label}
             </span>
