@@ -166,7 +166,14 @@ export function taskController(prisma: PrismaClient) {
           task = await prisma.task.findFirst({ where: { id, tenantId } });
           fireEscalationTrigger = true;
         } else {
-          task = await prisma.task.update({ where: { id }, data });
+          // Bugfix (2026-04-23): was `{where:{id}}` for non-status
+          // updates (title/note/urgency). Any caller with a valid
+          // JWT could mutate ANY task matching the id across tenants.
+          // Add tenantId to the where clause — Prisma throws P2025
+          // on mismatch, converting any accidental cross-tenant write
+          // into a 500 (caught by the outer try) instead of a silent
+          // IDOR.
+          task = await prisma.task.update({ where: { id, tenantId }, data });
         }
         if (!task) { res.status(404).json({ error: 'Task not found' }); return; }
         broadcastToTenant(tenantId, 'task_updated', { conversationId: task.conversationId, task });

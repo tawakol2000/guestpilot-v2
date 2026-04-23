@@ -152,12 +152,22 @@ export async function checkExtendAvailability(
     return JSON.stringify(errorResult);
   }
 
-  // Check if any day has a conflicting reservation
+  // Check if any day has a conflicting reservation.
+  //
+  // Bugfix (2026-04-23): Hostaway's calendar endpoint is documented to
+  // return exactly the requested range, but we've seen reports of
+  // over-returning (full-month responses for narrow date-window
+  // queries). Defensively filter each day against [checkStart,
+  // checkEnd] so a conflict on e.g. 2026-04-25 doesn't falsely fail
+  // a 2026-05-01..10 extension check. Days outside the window are
+  // skipped — neither counted as available nor flagged as conflict.
   let firstConflictDate: string | null = null;
   let availableDays = 0;
 
   for (const day of calendarDays) {
     const date = day.date || day.calendarDate;
+    if (typeof date !== 'string') continue;
+    if (date < checkStart || date > checkEnd) continue;
     const reservations = day.reservations || [];
     const isBlocked = day.isBlocked === 1 || day.isBlocked === true;
     const status = day.status;

@@ -52,7 +52,16 @@ function matchesPattern(text: string, pattern: string): boolean {
 export function detectEscalationSignals(messageText: string): EscalationSignal[] {
   if (!RULES) return [];
 
-  const textLower = messageText.toLowerCase();
+  // Bugfix (2026-04-23): guest messages feed into `.test()` over every
+  // cached trigger pattern + every soft-signal phrase (dozens of
+  // regexes). A 1MB adversarial paste would scan each pattern against
+  // the full string, burning CPU on every incoming message. Real
+  // guest messages are never longer than ~2KB; 10KB is a comfortable
+  // ceiling that still catches any legitimate long message. Trim
+  // before lowercasing so the case change pass is also bounded.
+  const bounded =
+    messageText.length > 10_000 ? messageText.slice(0, 10_000) : messageText;
+  const textLower = bounded.toLowerCase();
   const signals: EscalationSignal[] = [];
 
   // Check immediate triggers
