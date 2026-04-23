@@ -147,6 +147,7 @@ import {
   checkEnhanceRateLimit,
   type RateLimitBucket as EnhanceRateLimitBucket,
 } from '../services/enhance-prompt.service';
+import { SEED_COORDINATOR_PROMPT, SEED_SCREENING_PROMPT } from '../services/ai.service';
 
 // Sprint 056-A F1 — in-memory rate limiter keyed by conversationId or tenantId.
 // Window = 60s, limit = 10 requests. Shared across all requests to this process.
@@ -155,6 +156,46 @@ const composeSpanRateLimiter: ComposeSpanRateLimiter = new Map();
 // Sprint 058-A F8 — same-process enhance-prompt rate limiter. 20 req/min
 // keyed by conversationId (or tenantId if none in scope).
 const enhancePromptRateLimiter = new Map<string, EnhanceRateLimitBucket>();
+
+/**
+ * Bugfix (2026-04-23): the BUILD agent's `<tenant_state>` block was
+ * hard-coded to `systemPromptStatus: 'EMPTY'` at both call sites below,
+ * which caused the Studio agent to reason as though every tenant had
+ * zero system prompt (screenshot: "currently EMPTY per the tenant
+ * state"). This helper reads the actual TenantAiConfig and reports:
+ *
+ *   - EMPTY       — coordinator + screening both null/whitespace. For
+ *                   real tenants this is impossible after the
+ *                   auto-seed in tenant-config.service.ts L60, but we
+ *                   keep the branch for defence-in-depth.
+ *   - DEFAULT     — coordinator matches SEED_COORDINATOR_PROMPT
+ *                   verbatim (or matches it with the template-variable
+ *                   migration block appended). The tenant hasn't
+ *                   edited it yet.
+ *   - CUSTOMISED  — coordinator diverges from the seed. Operator has
+ *                   made edits or wrote their own prompt.
+ *
+ * `systemPromptVersion` starts at 0 (fresh seed), bumps to 1 on the
+ * legacy template-variable migration, and keeps incrementing on each
+ * save. We report version directly as `editCount` — imperfect but
+ * monotonic and useful signal for the agent.
+ */
+function computeSystemPromptStatus(cfg: {
+  systemPromptCoordinator: string | null;
+  systemPromptScreening: string | null;
+  systemPromptVersion: number;
+} | null): { status: 'EMPTY' | 'DEFAULT' | 'CUSTOMISED'; editCount: number } {
+  const coord = (cfg?.systemPromptCoordinator ?? '').trim();
+  const screen = (cfg?.systemPromptScreening ?? '').trim();
+  const editCount = cfg?.systemPromptVersion ?? 0;
+  if (!coord && !screen) return { status: 'EMPTY', editCount };
+  const seedCoord = SEED_COORDINATOR_PROMPT.trim();
+  const seedScreen = SEED_SCREENING_PROMPT.trim();
+  const coordIsSeed = coord === seedCoord || coord.startsWith(seedCoord);
+  const screenIsSeed = !screen || screen === seedScreen || screen.startsWith(seedScreen);
+  if (coordIsSeed && screenIsSeed) return { status: 'DEFAULT', editCount };
+  return { status: 'CUSTOMISED', editCount };
+}
 
 function extractLatestUserText(messages: UIMessage[] | undefined): string {
   if (!Array.isArray(messages) || messages.length === 0) return '';
@@ -275,7 +316,7 @@ export function makeBuildController(prisma: PrismaClient) {
         // that would require running an agent turn. The dynamic suffix
         // is therefore best-effort: a missing tenant-state / interview-
         // progress block falls back to null rather than 500-ing.
-        const [memory, pending, pendingTotal, tenantState, interviewProgress] =
+        const [memory, pending, pendingTotal, tenantState, interviewProgress, aiCfg] =
           await Promise.all([
             listMemoryByPrefix(prisma, req.tenantId, 'preferences/', 30),
             prisma.tuningSuggestion.findMany({
@@ -300,7 +341,21 @@ export function makeBuildController(prisma: PrismaClient) {
               req.tenantId,
               conversationId
             ).catch(() => null),
+            // Bugfix (2026-04-23): pull the tenant's actual system prompt
+            // state so <tenant_state> reports the truth instead of the
+            // hard-coded 'EMPTY'/0 values that used to live below.
+            prisma.tenantAiConfig
+              .findUnique({
+                where: { tenantId: req.tenantId },
+                select: {
+                  systemPromptCoordinator: true,
+                  systemPromptScreening: true,
+                  systemPromptVersion: true,
+                },
+              })
+              .catch(() => null),
           ]);
+        const spStatus = computeSystemPromptStatus(aiCfg);
 
         const countsByCategory = pending.reduce<Record<string, number>>(
           (acc, s) => {
@@ -316,11 +371,8 @@ export function makeBuildController(prisma: PrismaClient) {
               posture: (tenantState.isGreenfield
                 ? 'GREENFIELD'
                 : 'BROWNFIELD') as 'GREENFIELD' | 'BROWNFIELD',
-              systemPromptStatus: 'EMPTY' as
-                | 'EMPTY'
-                | 'DEFAULT'
-                | 'CUSTOMISED',
-              systemPromptEditCount: 0,
+              systemPromptStatus: spStatus.status,
+              systemPromptEditCount: spStatus.editCount,
               sopsDefined: tenantState.sopCount,
               sopsDefaulted: 0,
               faqsGlobal: tenantState.faqCounts.global,
@@ -504,7 +556,7 @@ export function makeBuildController(prisma: PrismaClient) {
       // Aggregate tenant state + interview progress before assembling the
       // agent prompt. Failure here degrades to nulls — the agent still
       // runs, but the dynamic suffix omits the tenant-state block.
-      const [tenantState, interviewProgress] = await Promise.all([
+      const [tenantState, interviewProgress, aiCfg] = await Promise.all([
         getTenantStateSummary(prisma, tenantId).catch((err) => {
           console.warn('[build-controller] tenant-state aggregate failed:', err);
           return null;
@@ -515,7 +567,26 @@ export function makeBuildController(prisma: PrismaClient) {
             return null;
           }
         ),
+        // Bugfix (2026-04-23): read the real system-prompt state so the
+        // BUILD agent's <tenant_state> block stops reporting EMPTY on a
+        // seeded tenant. Falls back to null on error — the helper
+        // returns a sane EMPTY default in that case, preserving the
+        // previous degrade-to-null contract.
+        prisma.tenantAiConfig
+          .findUnique({
+            where: { tenantId },
+            select: {
+              systemPromptCoordinator: true,
+              systemPromptScreening: true,
+              systemPromptVersion: true,
+            },
+          })
+          .catch((err) => {
+            console.warn('[build-controller] tenant-ai-config read failed:', err);
+            return null;
+          }),
       ]);
+      const spStatus = computeSystemPromptStatus(aiCfg);
 
       // Adapt tenant-state.service.TenantStateSummary → the runtime's
       // SystemPromptContext.tenantState shape. The two were defined
@@ -527,8 +598,8 @@ export function makeBuildController(prisma: PrismaClient) {
             posture: (tenantState.isGreenfield ? 'GREENFIELD' : 'BROWNFIELD') as
               | 'GREENFIELD'
               | 'BROWNFIELD',
-            systemPromptStatus: 'EMPTY' as 'EMPTY' | 'DEFAULT' | 'CUSTOMISED',
-            systemPromptEditCount: 0,
+            systemPromptStatus: spStatus.status,
+            systemPromptEditCount: spStatus.editCount,
             sopsDefined: tenantState.sopCount,
             sopsDefaulted: 0,
             faqsGlobal: tenantState.faqCounts.global,
