@@ -88,11 +88,19 @@ const PLAN_TYPE_TO_ARTIFACT: Record<BuildPlanItem['type'], BuildArtifactType> = 
 
 function renderTargetChip(target: BuildPlanItemTarget | undefined): string | null {
   if (!target) return null
+  // Bugfix (2026-04-23): plan-row chip used to surface the raw
+  // 8-char CUID prefix as a bare token, reading as garbage next to
+  // the human-meaningful sectionId / slotKey / lineRange chips.
+  // Drop the id chip entirely — the full id is available on the
+  // parent row's title tooltip (plan-row renders artifactId there
+  // when the row state is opened), and the chip row now carries
+  // only operator-facing signal. Unchanged for rows that have only
+  // an artifactId: no chip renders, which is the same as before
+  // when the id branch produced a lonely 8-char slug.
   const parts = [
     target.sectionId && `§${target.sectionId}`,
     target.slotKey && `{${target.slotKey}}`,
     target.lineRange && `L${target.lineRange[0]}–${target.lineRange[1]}`,
-    target.artifactId && target.artifactId.slice(0, 8),
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' · ') : null
 }
