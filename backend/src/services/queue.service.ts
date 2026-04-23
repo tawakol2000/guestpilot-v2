@@ -57,6 +57,13 @@ export async function addAiReplyJob(
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: true,
+        // Bugfix (2026-04-23): was missing `removeOnFail`, so jobs that
+        // exhausted their 3 retries lingered in the BullMQ "failed" set
+        // indefinitely — slow memory creep on the Redis instance and
+        // no natural GC. Keep failures for 2h (audit / inspection via
+        // BullBoard) then drop. Matches the cleanup cadence of other
+        // transient logs.
+        removeOnFail: { age: 2 * 60 * 60 },
       }
     );
   } catch (err) {

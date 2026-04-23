@@ -259,6 +259,16 @@ const statusConfig: Record<CheckInStatus, { label: string; color: string }> = {
   expired: { label: 'Expired', color: T.text.tertiary },
 }
 
+// Bugfix (2026-04-23): monotonic counter so synthetic SSE message ids
+// (fallback when the backend broadcast omits the real Message.id) can't
+// collide on burst sub-millisecond arrivals. Module-scope + wraps at
+// 2^31 to avoid unbounded growth in long-lived sessions.
+let _sseSyntheticIdCounter = 0
+function nextSseSyntheticIdSuffix(): number {
+  _sseSyntheticIdCounter = (_sseSyntheticIdCounter + 1) & 0x7fffffff
+  return _sseSyntheticIdCounter
+}
+
 function channelFromApi(ch: string): Channel {
   const n = ch.toUpperCase()
   if (n === 'AIRBNB') return 'airbnb'
@@ -1532,6 +1542,34 @@ export default function InboxV5() {
   const [loadingList, setLoadingList] = useState(true)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [aiTyping, setAiTyping] = useState(false)
+  // Bugfix (2026-04-23): typing indicator could stick indefinitely if
+  // the backend stream aborted before emitting `ai_typing_text{done:
+  // true}` / `ai_typing_clear` (e.g. AI provider 5xx, process crash,
+  // client socket drop mid-stream). Safety timeout: whenever typing
+  // flips on, auto-clear 120s later. 120s is a generous upper bound
+  // for any realistic AI turn — normal streams finish in 2-15s. A
+  // real event arriving before then clears the flag directly and
+  // cancels the timer.
+  const aiTypingSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!aiTyping) {
+      if (aiTypingSafetyTimer.current) {
+        clearTimeout(aiTypingSafetyTimer.current)
+        aiTypingSafetyTimer.current = null
+      }
+      return
+    }
+    aiTypingSafetyTimer.current = setTimeout(() => {
+      setAiTyping(false)
+      aiTypingSafetyTimer.current = null
+    }, 120_000)
+    return () => {
+      if (aiTypingSafetyTimer.current) {
+        clearTimeout(aiTypingSafetyTimer.current)
+        aiTypingSafetyTimer.current = null
+      }
+    }
+  }, [aiTyping])
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null)
   // Sprint 048 Session A — legacy-Copilot edit signal. Holds the original AI
   // draft text that was seeded into `replyText` via the suggestion pill's Edit
@@ -2128,7 +2166,13 @@ export default function InboxV5() {
 
       const newSseMsgs: Message[] = []
       // Prefer the real Message.id from the backend when present — enables Send/Edit targeting for shadow previews.
-      const realMsgId: string = msg.id || `sse-${Date.now()}`
+      // Bugfix (2026-04-23): fallback id was `sse-${Date.now()}` with
+      // millisecond granularity; two bursts within the same ms (well
+      // within reach of a fast SSE stream) collided, yielding duplicate
+      // React keys + dedup-set collisions. Append a monotonic
+      // per-render counter so every synthetic id is unique, even
+      // under bursts.
+      const realMsgId: string = msg.id || `sse-${Date.now()}-${nextSseSyntheticIdSuffix()}`
       if (sender === 'private') {
         const fromSelf = msg.role === 'AI_PRIVATE' || msg.role === 'MANAGER_PRIVATE'
         newSseMsgs.push({ id: realMsgId, sender: 'private', text: msg.content, time: formatTimestamp(msg.sentAt), fromSelf })

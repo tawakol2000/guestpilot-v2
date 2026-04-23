@@ -16,7 +16,17 @@ import { mapHostawayChannel } from '../lib/channel-mapper';
 function mapStatus(status?: string): ReservationStatus {
   if (!status) return ReservationStatus.INQUIRY;
   switch (status.toLowerCase()) {
-    case 'inquiry': case 'inquirypreapproved': case 'inquirydenied': case 'unknown':
+    // Bugfix (2026-04-23): was missing `inquirytimedout` +
+    // `inquirynotpossible`. webhooks.controller + import.service both
+    // mapped those to INQUIRY; the sync job fell through to the
+    // `default` branch which ALSO returns INQUIRY, so the runtime
+    // result was the same — but three code paths emitting the same
+    // enum value via different branches is a drift trap. Any future
+    // change to one site must be propagated to all four; keeping the
+    // case lists aligned removes the silent-divergence hazard.
+    case 'inquiry': case 'inquirypreapproved': case 'inquirydenied':
+    case 'inquirytimedout': case 'inquirynotpossible':
+    case 'unknown':
       return ReservationStatus.INQUIRY;
     case 'pending': case 'unconfirmed': case 'awaitingpayment': case 'awaitingguestverification':
       return ReservationStatus.PENDING;
