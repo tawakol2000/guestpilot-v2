@@ -118,6 +118,21 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   // it on close. Brief §1.1: focus returned to the opener.
   const artifactDrawerOpenerRef = useRef<HTMLElement | null>(null)
   const bootstrapRef = useRef(false)
+  // Bugfix (2026-04-23, React #185): the bootstrap effect below both
+  // FETCHES the current conversation id (if provided) AND FALLS THROUGH
+  // to CREATE a fresh one when the fetch fails. Combined with the
+  // post-create `onConversationChange(selectedId)` — which flips the
+  // prop and re-runs the effect — a transient fetch failure produced a
+  // "create → prop-change → fetch fails → create" infinite loop that
+  // React short-circuits as error #185.
+  //
+  // `createdIdsRef` remembers every conversation id this StudioSurface
+  // instance has created. When the effect re-runs because we just
+  // pushed an id via onConversationChange, we skip the fetch (we know
+  // we just made it) AND we never create a second one in the same
+  // mount. Cleared on unmount via the same bootstrapRef=false reset
+  // that already fires on conversationId change.
+  const createdIdsRef = useRef<Set<string>>(new Set())
 
   // Sprint 058-A F9f — session auto-naming state.
   //   currentTitleRef: title we last observed for the current session
@@ -177,6 +192,23 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         let initialMessages: UIMessage[] = []
 
         if (selectedId) {
+          // Bugfix (2026-04-23, React #185): if this id was created by a
+          // prior bootstrap in THIS mount, the parent pushed it back to
+          // us via onConversationChange and the effect re-ran. Skip the
+          // fetch — we already know the body is empty — and go straight
+          // to ready. Prevents the "fetch fails → create again" loop
+          // when replication lag or an ephemeral 5xx makes the row
+          // temporarily invisible.
+          if (createdIdsRef.current.has(selectedId)) {
+            if (cancelled) return
+            setLoad({
+              kind: 'ready',
+              tenantState,
+              conversationId: selectedId,
+              initialMessages: [],
+            })
+            return
+          }
           try {
             const { conversation } = await apiGetTuningConversation(selectedId)
             initialMessages = rehydrate(conversation.messages)
@@ -188,8 +220,18 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               autoTitleSetRef.current = true
             }
           } catch (err) {
-            console.warn('[studio] conversation rehydrate failed, creating fresh:', err)
-            selectedId = null
+            console.warn('[studio] conversation rehydrate failed:', err)
+            // Surface the error instead of silently minting another
+            // conversation — creating a fresh row here is exactly what
+            // produced React #185. The manager can retry by hitting
+            // "New session" or by navigating away and back, both of
+            // which resolve through the left-rail list rather than
+            // the failing id.
+            const msg = err instanceof Error ? err.message : String(err)
+            if (cancelled) return
+            setLoad({ kind: 'error', message: `Couldn’t load conversation: ${msg}` })
+            toast.error('Couldn’t load Studio conversation', { description: msg })
+            return
           }
         }
 
@@ -199,6 +241,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             title: tenantState.isGreenfield ? 'Studio — initial setup' : 'Studio session',
           })
           selectedId = conversation.id
+          createdIdsRef.current.add(selectedId)
           initialMessages = []
           // F9f — fresh session starts at the default title, so auto-naming
           // is free to overwrite on first intent.

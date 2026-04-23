@@ -845,6 +845,18 @@ function renderTenantState(ts: TenantStateSummary): string {
   const lastBuild = ts.lastBuildSessionAt
     ? `last BUILD session ${ts.lastBuildSessionAt}`
     : 'never opened BUILD before';
+  // Bugfix (2026-04-23): decision rule for when to pull the full
+  // system-prompt text via get_current_state. We deliberately do NOT
+  // inline the prompt body here — context bloat was the whole reason
+  // the manager asked for conditional loading. Status lets the agent
+  // pick: CUSTOMISED/DEFAULT + diagnostic intent → fetch; EMPTY +
+  // greenfield intent → don't fetch, propose from scratch/seed.
+  const promptGuidance =
+    ts.systemPromptStatus === 'EMPTY'
+      ? `No system prompt stored. Starting from scratch — do NOT call get_current_state(scope:'system_prompt'); offer to seed from the generic hospitality template or co-draft a fresh one.`
+      : ts.systemPromptStatus === 'DEFAULT'
+        ? `System prompt is still the seeded default. Call get_current_state(scope:'system_prompt') ONLY if the manager wants to review/edit it; otherwise skip the fetch to keep context lean.`
+        : `System prompt has been CUSTOMISED by the operator (${ts.systemPromptEditCount} edit${ts.systemPromptEditCount === 1 ? '' : 's'}). When tuning a specific reply, rating the current setup, or proposing a prompt edit → call get_current_state(scope:'system_prompt') to read the live text BEFORE proposing changes. Skip the fetch for unrelated questions.`;
   return `<tenant_state>
 Tenant configuration summary:
 - System prompt: ${ts.systemPromptStatus}${ts.systemPromptEditCount > 0 ? ` (${ts.systemPromptEditCount} edits)` : ''}
@@ -856,6 +868,8 @@ Tenant configuration summary:
 
 Opening posture: ${ts.posture}
   ${postureDetail}
+
+System-prompt load policy: ${promptGuidance}
 </tenant_state>`;
 }
 
