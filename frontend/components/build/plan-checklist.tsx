@@ -4,13 +4,27 @@
  * Sprint 055-A F1 — PlanChecklist rewrite as a progress tracker.
  *
  * Key changes vs Sprint 045/046:
- *  - Auto-approve on mount (useEffect, fires exactly once via useRef guard).
  *  - Approve/Dismiss buttons removed. Roll Back moved to three-dot overflow menu.
  *  - Per-row state glyph: ○ pending, ● current, ✓ done, × cancelled.
  *  - Per-row hover + keyboard "+" seed-composer affordance.
  *  - `appliedItems` prop drives done/pending row state.
  *  - Legacy graceful degradation: missing transactionId or pre-populated
  *    approvedAt in data → renders in approved state, headline "Plan proposed".
+ *
+ * Bugfix (2026-04-23): the original rewrite AUTO-APPROVED on mount via a
+ * useRef-guarded useEffect. Rendering a freshly-proposed plan immediately
+ * POSTed /plan/:id/approve and flipped the UI to "Plan approved · HH:MM" —
+ * even though the operator never clicked anything. The audit record
+ * logged `approvedByUserId` = the logged-in user for an approval they
+ * didn't give (integrity bug), and the "approved" badge misled operators
+ * into believing the agent had their sanction to proceed with writes.
+ * Constitution §"Human-in-the-loop for writes, forever" was violated.
+ *
+ * The fix: the plan now renders in `idle` state with an explicit
+ * "Approve plan" button in the footer. The approve POST only fires on
+ * that click. Legacy plans with `approvedAt` pre-populated still skip
+ * the button (pre-approved branch preserved). The three-dot Rollback
+ * action is unchanged.
  */
 import { useState, useEffect, useRef } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2, MoreHorizontal, Plus, RotateCcw, X } from 'lucide-react'
@@ -166,13 +180,21 @@ export function PlanChecklist({
     () => new Set<number>(data.cancelledItemIndexes ?? []),
   )
   const approveCalledRef = useRef(false)
+  const [approving, setApproving] = useState(false)
   const overflowRef = useRef<HTMLDivElement>(null)
 
-  // Auto-approve on mount — fires exactly once.
-  useEffect(() => {
-    if (preApproved) return
+  // Bugfix (2026-04-23): was auto-approved on mount — see the JSDoc
+  // at the top of this file. Now the operator must click the
+  // "Approve plan" button rendered in the footer, which invokes
+  // this handler. `approveCalledRef` still guards against a
+  // double-click between the optimistic pending state and the
+  // server response.
+  function handleApprove() {
+    if (!data.transactionId) return
     if (approveCalledRef.current) return
     approveCalledRef.current = true
+    setApproving(true)
+    setRetryError(false)
 
     apiApproveBuildPlan(data.transactionId)
       .then((res) => {
@@ -180,21 +202,19 @@ export function PlanChecklist({
         onApproved?.(data.transactionId)
       })
       .catch(() => {
+        // Release the single-click guard so the user can retry.
+        approveCalledRef.current = false
         setRetryError(true)
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      .finally(() => {
+        setApproving(false)
+      })
+  }
 
   function retryApprove() {
-    setRetryError(false)
-    apiApproveBuildPlan(data.transactionId)
-      .then((res) => {
-        setState({ kind: 'approved', approvedAt: res.approvedAt })
-        onApproved?.(data.transactionId)
-      })
-      .catch(() => {
-        setRetryError(true)
-      })
+    // Reuse the same handler so the ref-guard and busy state stay
+    // consistent with the primary button path.
+    handleApprove()
   }
 
   async function confirmRollback() {
@@ -475,12 +495,38 @@ export function PlanChecklist({
             )}
           </div>
         ) : (
-          <span
-            className="mr-auto font-mono text-[11px]"
-            style={{ color: STUDIO_COLORS.inkSubtle }}
-          >
-            Confirming plan…
-          </span>
+          // Bugfix (2026-04-23): was a passive "Confirming plan…" label
+          // while a mount-effect silently approved. Now the operator
+          // has to click — no write authorisation happens without an
+          // explicit action.
+          <>
+            <span
+              className="mr-auto text-[12px]"
+              style={{ color: STUDIO_COLORS.inkMuted }}
+            >
+              Review the items above, then approve.
+            </span>
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={approving || !data.transactionId}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-semibold"
+              style={{
+                background: STUDIO_COLORS.accent,
+                color: '#fff',
+                opacity: approving || !data.transactionId ? 0.6 : 1,
+                cursor:
+                  approving || !data.transactionId ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {approving ? (
+                <Loader2 size={12} strokeWidth={2.25} className="animate-spin" />
+              ) : (
+                <Check size={12} strokeWidth={2.25} />
+              )}
+              {approving ? 'Approving…' : 'Approve plan'}
+            </button>
+          </>
         )}
       </footer>
 
