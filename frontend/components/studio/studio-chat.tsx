@@ -55,6 +55,7 @@ import {
   type CitationArtifactType,
 } from './citation-parser'
 import { CitationChip } from './citation-chip'
+import { AgentProse } from './agent-prose'
 
 export interface StudioChatProps {
   conversationId: string
@@ -111,6 +112,15 @@ export interface StudioChatProps {
   /** Sprint 058-A F5 — open the raw-prompt drawer when the banner's
    *  caption or chevron is clicked (admin + raw-prompt-editor flag). */
   onOpenPrompt?: () => void
+  /**
+   * Anchored discussion — when the operator clicks "Discuss in Tuning"
+   * on a main-AI message, the tuning conversation is created with an
+   * anchor. On first mount into an empty transcript we auto-send an
+   * opener prompt so the agent summarises what the main AI did on that
+   * message, rather than showing a blank chat. Null for
+   * operator-initiated ("New session") Studio conversations.
+   */
+  anchorMessage?: { id: string; content?: string } | null
 }
 
 // Sprint 058-A F9c — AI SDK internal lifecycle markers. These are
@@ -209,7 +219,14 @@ export function StudioChat({
   onUserMessageSent,
   tenantState,
   onOpenPrompt,
+  anchorMessage,
 }: StudioChatProps) {
+  // Flag flipped to true for the single auto-opener send triggered below
+  // on fresh anchored conversations. The transport `body:` factory reads
+  // it, attaches `isOpener: true`, and flips it back to false so any
+  // subsequent real user send is persisted normally. Same pattern as
+  // the legacy /tuning ChatPanel.
+  const openerRef = useRef(false)
   const transport = useMemo(
     () =>
       new DefaultChatTransport<UIMessage>({
@@ -219,7 +236,14 @@ export function StudioChat({
           const token = getToken()
           return token ? { Authorization: `Bearer ${token}` } : {}
         },
-        body: () => ({ conversationId }),
+        body: () => {
+          const payload: Record<string, unknown> = { conversationId }
+          if (openerRef.current) {
+            payload.isOpener = true
+            openerRef.current = false
+          }
+          return payload
+        },
       }),
     [conversationId],
   )
@@ -229,6 +253,25 @@ export function StudioChat({
     messages: initialMessages,
     transport,
   })
+
+  // Auto-opener — when the operator clicks "Discuss in Tuning" on an
+  // inbox message, a TuningConversation is created with anchorMessageId
+  // set and we get dropped into Studio with zero messages. Without this
+  // effect the operator sees a blank chat; instead, fire a short opener
+  // prompt that points the agent at the anchor. At-most-once per mount,
+  // guarded by the ref so React Strict Mode double-invocation doesn't
+  // produce two turns.
+  const proactiveRequestedRef = useRef(false)
+  useEffect(() => {
+    if (proactiveRequestedRef.current) return
+    if (!anchorMessage) return
+    if (initialMessages.length > 0) return
+    if (messages.length > 0) return
+    proactiveRequestedRef.current = true
+    openerRef.current = true
+    const text = `I just opened this conversation to discuss a specific main-AI message (id=${anchorMessage.id}). Please use get_context to pull the anchored message, then summarize what the main AI did on it and what stands out. Keep it tight.`
+    sendMessage({ text })
+  }, [anchorMessage, initialMessages, messages, sendMessage])
 
   // Hoist data-state-snapshot + data-test-pipeline-result to the parent
   // (right rail). Track forwarded ids so rerenders don't re-fire the
@@ -1475,32 +1518,27 @@ function AttributedText({
 }) {
   const tokens = useMemo(() => parseCitations(text), [text])
   const hasCitations = tokens.some((t) => t.kind === 'citation')
+  // Bugfix (2026-04-23): prose was always rendered as raw <p>{text}</p>
+  // so **bold** / *italic* / ordered lists surfaced as literal markdown.
+  // Route plain chunks through AgentProse (react-markdown + remark-gfm)
+  // and interleave citation chips inline for the marker-bearing chunks.
   if (!hasCitations) {
-    return (
-      <p
-        data-origin={isUser ? 'user' : 'agent'}
-        className="whitespace-pre-wrap text-[14px] leading-[1.55]"
-        style={{
-          color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
-          margin: 0,
-        }}
-      >
-        {text}
-      </p>
-    )
+    return <AgentProse text={text} isUser={isUser} />
   }
   return (
-    <p
+    <div
       data-origin={isUser ? 'user' : 'agent'}
-      className="whitespace-pre-wrap text-[14px] leading-[1.55]"
       style={{
         color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
-        margin: 0,
       }}
     >
       {tokens.map((t, i) =>
         t.kind === 'text' ? (
-          <span key={`t:${i}`}>{t.text}</span>
+          // Rendering each text chunk through AgentProse means citations
+          // break out of any enclosing paragraph (react-markdown wraps
+          // single-line text in <p>), but that matches the pre-fix
+          // behaviour — chips sat inline with surrounding prose.
+          <AgentProse key={`t:${i}`} text={t.text} isUser={isUser} />
         ) : (
           <CitationChip
             key={`c:${i}:${t.raw}`}
@@ -1520,7 +1558,7 @@ function AttributedText({
           />
         ),
       )}
-    </p>
+    </div>
   )
 }
 
