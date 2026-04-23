@@ -263,13 +263,29 @@ export function StudioChat({
   // produce two turns.
   const proactiveRequestedRef = useRef(false)
   useEffect(() => {
+    // Bugfix (2026-04-23): the original guard ordering left a window
+    // where StrictMode's double-invoke could fire two sendMessage
+    // calls — the second invoke could observe `proactiveRequestedRef
+    // .current === false` if the React 19 reconciler scheduled the
+    // re-mount before we flipped the ref. Flip the ref FIRST, then
+    // guard on payload validity. Same shape as the backend's
+    // updateMany/atomic-claim pattern: claim the slot, then act.
+    //
+    // Also tightened the anchor null-check: was `!anchorMessage`,
+    // which passed when `anchorMessage = { id: undefined }`, then
+    // crashed at the template literal. Use optional chain on `.id`
+    // so a malformed/deleted anchor returns early instead.
     if (proactiveRequestedRef.current) return
-    if (!anchorMessage) return
+    proactiveRequestedRef.current = true
+    if (!anchorMessage?.id) return
     if (initialMessages.length > 0) return
     if (messages.length > 0) return
-    proactiveRequestedRef.current = true
     openerRef.current = true
-    const text = `I just opened this conversation to discuss a specific main-AI message (id=${anchorMessage.id}). Please use get_context to pull the anchored message, then summarize what the main AI did on it and what stands out. Keep it tight.`
+    const preview =
+      typeof anchorMessage.content === 'string'
+        ? anchorMessage.content.slice(0, 160)
+        : ''
+    const text = `I just opened this conversation to discuss a specific main-AI message (id=${anchorMessage.id}${preview ? `, preview: "${preview.replace(/"/g, '\\"')}"` : ''}). Please use get_context to pull the anchored message, then summarize what the main AI did on it and what stands out. Keep it tight.`
     sendMessage({ text })
   }, [anchorMessage, initialMessages, messages, sendMessage])
 

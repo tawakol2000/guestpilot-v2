@@ -807,7 +807,13 @@ function LeftRail({
                     : '2px solid transparent',
                 }}
               >
-                <span className="line-clamp-1 text-[12px] font-medium">
+                {/* Bugfix (2026-04-23): line-clamp-1 truncated long
+                    titles silently. Add a title attribute so the
+                    operator can hover to see the full text. */}
+                <span
+                  className="line-clamp-1 text-[12px] font-medium"
+                  title={c.title || undefined}
+                >
                   {c.title || 'Untitled session'}
                 </span>
                 <span className="text-[10.5px]" style={{ color: STUDIO_COLORS.inkSubtle }}>

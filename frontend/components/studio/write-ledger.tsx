@@ -76,6 +76,16 @@ export function WriteLedgerCard(props: WriteLedgerCardProps) {
   const [rows, setRows] = useState<BuildArtifactHistoryRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bugfix (2026-04-23): relative timestamps ("3 min ago") used to
+  // stick at their initial value because nothing caused a re-render
+  // once the fetch settled. Match the session-artifacts rail pattern:
+  // tick every 30s when rows exist; cleanup on unmount.
+  const [, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    if (rows.length === 0) return
+    const h = setInterval(() => setNowTick(Date.now()), 30_000)
+    return () => clearInterval(h)
+  }, [rows.length])
 
   useEffect(() => {
     if (!visible) return

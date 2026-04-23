@@ -4823,9 +4823,25 @@ export default function InboxV5() {
                                         setNavTab('studio')
                                       },
                                       onError: (err) => {
-                                        toast.error('Could not open tuning discussion', {
-                                          description: err instanceof Error ? err.message : String(err),
-                                        })
+                                        // Bugfix (2026-04-23): specific error surface.
+                                        // The backend returns 404 ANCHOR_MESSAGE_NOT_FOUND
+                                        // when the clicked message is a synthetic SSE id
+                                        // (sse-*) or a shadow-preview row that the inbox
+                                        // rendered from a stream but never persisted.
+                                        // Generic "Could not open" hid that; now tell the
+                                        // operator exactly why + what to do.
+                                        const raw = err instanceof Error ? err.message : String(err)
+                                        const isAnchorMissing = /ANCHOR_MESSAGE_NOT_FOUND/i.test(raw)
+                                        toast.error(
+                                          isAnchorMissing
+                                            ? 'Message not saved yet'
+                                            : 'Could not open tuning discussion',
+                                          {
+                                            description: isAnchorMissing
+                                              ? 'This message is still streaming. Try again in a few seconds once it lands.'
+                                              : raw,
+                                          },
+                                        )
                                       },
                                       beginBusy: () => setDiscussingMsgId(msg.id),
                                       endBusy: () => setDiscussingMsgId(null),

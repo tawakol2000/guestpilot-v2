@@ -63,6 +63,12 @@ export function makeTuningConversationController(prisma: PrismaClient) {
 
         const title = body.title ?? deriveTitleFromText(body.initialMessage) ?? null;
 
+        // Bugfix (2026-04-23): was returning only 5 fields, but the
+        // frontend's TuningConversationSummary type (used by the
+        // Studio left-rail + startNew flow) also reads `status`,
+        // `updatedAt`, and `messageCount`. Callers were falling back
+        // to hardcoded defaults ('OPEN', null, 0). Return the full
+        // summary shape so there's no drift between POST / GET / list.
         const conv = await prisma.tuningConversation.create({
           data: {
             tenantId,
@@ -77,11 +83,25 @@ export function makeTuningConversationController(prisma: PrismaClient) {
             title: true,
             anchorMessageId: true,
             triggerType: true,
+            status: true,
             createdAt: true,
+            updatedAt: true,
+            _count: { select: { messages: true } },
           },
         });
 
-        res.status(201).json({ conversation: conv });
+        res.status(201).json({
+          conversation: {
+            id: conv.id,
+            title: conv.title,
+            anchorMessageId: conv.anchorMessageId,
+            triggerType: conv.triggerType,
+            status: conv.status,
+            messageCount: conv._count.messages,
+            createdAt: conv.createdAt,
+            updatedAt: conv.updatedAt,
+          },
+        });
       } catch (err) {
         console.error('[tuning-conversation] create failed:', err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });
@@ -168,11 +188,19 @@ export function makeTuningConversationController(prisma: PrismaClient) {
         const { tenantId } = req;
         const { id } = req.params;
 
+        // Bugfix (2026-04-23): the include previously fetched the
+        // anchorMessage with no tenant filter. If data corruption or a
+        // historic race ever landed a TuningConversation pointing at
+        // another tenant's Message, this GET would leak that message
+        // body cross-tenant. Filter the relation explicitly — Prisma
+        // returns null when the join doesn't match the filter, which
+        // the response mapper below already treats as "no anchor."
         const conv = await prisma.tuningConversation.findFirst({
           where: { id, tenantId },
           include: {
             messages: { orderBy: { createdAt: 'asc' } },
             anchorMessage: {
+              where: { tenantId },
               select: {
                 id: true,
                 content: true,
@@ -237,12 +265,38 @@ export function makeTuningConversationController(prisma: PrismaClient) {
           return;
         }
 
+        // Bugfix (2026-04-23): align PATCH response shape with
+        // list/GET/create so the frontend gets a complete
+        // TuningConversationSummary and doesn't have to merge with
+        // hardcoded fallbacks. Also adds tenantId to the update's
+        // where clause as defence-in-depth (findFirst above already
+        // validated tenant scope).
         const updated = await prisma.tuningConversation.update({
-          where: { id },
+          where: { id, tenantId },
           data,
-          select: { id: true, title: true, status: true, updatedAt: true },
+          select: {
+            id: true,
+            title: true,
+            anchorMessageId: true,
+            triggerType: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: { select: { messages: true } },
+          },
         });
-        res.json({ conversation: updated });
+        res.json({
+          conversation: {
+            id: updated.id,
+            title: updated.title,
+            anchorMessageId: updated.anchorMessageId,
+            triggerType: updated.triggerType,
+            status: updated.status,
+            messageCount: updated._count.messages,
+            createdAt: updated.createdAt,
+            updatedAt: updated.updatedAt,
+          },
+        });
       } catch (err) {
         console.error('[tuning-conversation] patch failed:', err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });

@@ -178,9 +178,15 @@ export async function listRejectionHashes(
   conversationId: string
 ): Promise<Set<string>> {
   const prefix = `session/${conversationId}/rejected/`;
+  // Bugfix (2026-04-23): was unbounded. A manager who rejects many
+  // suggested-fixes in one long session could accumulate thousands
+  // of rejection hashes; reading them all every turn burns memory
+  // and DB time. 500 is ~10× the realistic upper bound for a single
+  // session and matches the prefix-list cap pattern used elsewhere.
   const rows = await prisma.agentMemory.findMany({
     where: { tenantId, key: { startsWith: prefix } },
     select: { key: true },
+    take: 500,
   });
   return new Set(
     rows
