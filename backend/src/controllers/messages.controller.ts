@@ -487,6 +487,21 @@ export function makeMessagesController(prisma: PrismaClient) {
           return;
         }
 
+        // Bugfix (2026-04-23): cap the translate payload. Guest messages
+        // are normally <2KB; a 100KB+ paste would forward the full
+        // string to the translation provider, risking 413 / timeout /
+        // quota exhaustion. 5000 chars is comfortably above the 99th
+        // percentile of real guest messages while keeping provider
+        // calls bounded. Return 413 so the client can surface a
+        // specific toast rather than a generic 502.
+        if (message.content.length > 5000) {
+          res.status(413).json({
+            error: 'MESSAGE_TOO_LONG',
+            detail: 'Message exceeds the 5,000-character translation limit.',
+          });
+          return;
+        }
+
         if (message.contentTranslationEn) {
           cached = true;
           ok = true;

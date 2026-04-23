@@ -187,10 +187,16 @@ export async function syncConversationMessages(
       if (existingLocal) {
         const newBody = hwMsg.body || '';
         if (existingLocal.content !== newBody) {
-          // Content changed — guest edited the message on Airbnb/Booking
+          // Content changed — guest edited the message on Airbnb/Booking.
+          // Bugfix (2026-04-23): also null out
+          // `contentTranslationEn`. The cached English translation
+          // applied to the OLD content, so after a guest edit the
+          // inbox would keep showing the stale translation next to
+          // the new text until someone manually re-translated. Null
+          // triggers lazy re-translate on next toggle click.
           await prisma.message.update({
             where: { id: existingLocal.id },
-            data: { content: newBody },
+            data: { content: newBody, contentTranslationEn: null },
           });
           updatedMessages++;
           console.log(`[Sync] Updated edited message ${existingLocal.id} (hostawayMsgId=${hostawayMsgId})`);
