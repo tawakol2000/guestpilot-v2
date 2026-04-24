@@ -69,22 +69,33 @@ test('shared prefix is byte-identical across calls (cacheable)', () => {
   assert.equal(buildStaticPrefix(), a);
 });
 
-test('shared prefix ordering: principles → response_contract → persona → taxonomy → tools → platform_context → critical_rules', () => {
+test('shared prefix ordering (sprint 060-A): principles → response_contract → persona → capabilities → citation_grammar → taxonomy → tools → context_handling → platform_context → never_do → critical_rules', () => {
   const p = buildSharedPrefix();
   const idxPrinciples = p.indexOf('<principles>');
   const idxResponseContract = p.indexOf('<response_contract>');
   const idxPersona = p.indexOf('<persona>');
+  const idxCapabilities = p.indexOf('<capabilities>');
+  const idxCitation = p.indexOf('<citation_grammar>');
   const idxTaxonomy = p.indexOf('<taxonomy>');
   const idxTools = p.indexOf('<tools>');
+  const idxContextHandling = p.indexOf('<context_handling>');
   const idxPlatform = p.indexOf('<platform_context>');
+  // NEVER_DO is referenced by name inside CONTEXT_HANDLING ("follows
+  // the <never_do> rules"); the actual block header is the LAST
+  // occurrence of the tag in Region A.
+  const idxNeverDo = p.lastIndexOf('<never_do>');
   const idxCritical = p.indexOf('<critical_rules>');
   assert.ok(idxPrinciples >= 0, 'principles must appear');
   assert.ok(idxResponseContract > idxPrinciples, 'response_contract must follow principles');
   assert.ok(idxPersona > idxResponseContract, 'persona must follow response_contract');
-  assert.ok(idxTaxonomy > idxPersona, 'taxonomy must follow persona');
+  assert.ok(idxCapabilities > idxPersona, 'capabilities must follow persona');
+  assert.ok(idxCitation > idxCapabilities, 'citation_grammar must follow capabilities');
+  assert.ok(idxTaxonomy > idxCitation, 'taxonomy must follow citation_grammar');
   assert.ok(idxTools > idxTaxonomy, 'tools must follow taxonomy');
-  assert.ok(idxPlatform > idxTools, 'platform_context must follow tools');
-  assert.ok(idxCritical > idxPlatform, 'critical_rules must come last in the shared prefix');
+  assert.ok(idxContextHandling > idxTools, 'context_handling must follow tools');
+  assert.ok(idxPlatform > idxContextHandling, 'platform_context must follow context_handling');
+  assert.ok(idxNeverDo > idxPlatform, 'never_do must follow platform_context');
+  assert.ok(idxCritical > idxNeverDo, 'critical_rules must come last in the shared prefix');
 });
 
 test('shared prefix carries the Sprint 046 Response Contract verbatim (7 rules)', () => {
@@ -93,7 +104,9 @@ test('shared prefix carries the Sprint 046 Response Contract verbatim (7 rules)'
   assert.ok(p.includes('## Response contract'));
   assert.ok(p.includes('emit AT MOST ONE of the following structured'));
   assert.ok(p.includes('Prose is optional and capped at 120 words'));
-  assert.ok(p.includes('DO NOT emit markdown tables, numbered lists'));
+  // Sprint 060-A: "You DO NOT emit markdown tables..." → "Emit
+  // structured cards or capped prose only; ..." (affirmative pass).
+  assert.ok(p.includes('Emit structured cards or capped prose only'));
   assert.ok(p.includes('question_choices'));
   assert.ok(p.includes('machine-readable target'));
   assert.ok(p.includes('Emoji status pills'));
@@ -139,8 +152,10 @@ test('TUNE addendum carries NO_FIX-as-default and the fragment rule', () => {
     prompt.includes('NO_FIX is the default'),
     'TUNE addendum must carry NO_FIX-as-default (moved from shared principles)'
   );
+  // Sprint 060-A: "proposedText/newText must never be a fragment" →
+  // "proposedText/newText always contains complete text" (affirmative pass).
   assert.ok(
-    prompt.includes('proposedText/newText must never be a fragment'),
+    prompt.includes('proposedText/newText always contains complete'),
     'TUNE addendum must carry the fragment rule (moved from shared critical_rules)'
   );
 });
