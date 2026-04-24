@@ -250,24 +250,14 @@ be a slug derived from the heading text by this rule:
   - lowercase the heading text
   - replace any run of non-alphanumeric characters with a single '-'
   - strip leading/trailing '-'
-This rule is byte-identical to the frontend slug function at
-frontend/lib/slug.ts and the backend mirror at
-backend/src/build-tune-agent/lib/slug.ts. The Studio drawer uses the
-same rule to stamp heading anchors, so a fragment that doesn't match
-silently no-ops rather than scrolling. Examples: "Early Check-in" →
-"early-check-in"; "Overnight guests?" → "overnight-guests".
+Examples: "Early Check-in" → "early-check-in"; "Overnight guests?"
+→ "overnight-guests".
 
 Examples:
   "Your CONFIRMED early-checkin variant [[cite:sop:clx12ab34]] says
    the arrival window is 14:00–22:00."
   "The FAQ [[cite:faq:clx99zz88#wifi]] covers WiFi credentials
    already — I won't duplicate it."
-
-Quote vs cite: if you're discussing an excerpt from an existing
-artifact, prefer a data-artifact-quote part (block quote with
-attribution) over inline citations — the block form is easier to
-scan. Citations are for claims ("this is where I got that");
-quotes are for excerpts ("here is what it says").
 
 Constraints:
 - Keep citations plain-text and un-nested.
