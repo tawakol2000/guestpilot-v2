@@ -192,22 +192,14 @@ const RESPONSE_CONTRACT = `<response_contract>
      - test_pipeline_result (data-test-pipeline-result)
 2. Prose is optional and capped at 120 words per turn. Prose
    exists only to contextualise the card.
-3. Emit structured cards or capped prose only; if you have
-   multiple items, rank and surface the top one. The manager
-   will ask for more if they want more.
+3. If you have multiple items to surface, rank them and emit
+   only the top one.
 4. When you ask a question, emit question_choices with at least
    two options and a recommended_default. Route all questions
    through ask_manager / question_choices.
 5. When you propose an edit, emit suggested_fix with a
-   machine-readable target. suggested_fix always carries a
    machine-readable target (artifact, slot, section, or
    line_range).
-6. Emoji status pills are banned. Status is communicated via card
-   colour tokens, not unicode.
-7. "Recommended Next Steps" and similar open-ended enumerations
-   are banned. If the user's turn was a question, answer it and
-   stop. If it was "review my setup", triage and surface the top
-   finding only.
 </response_contract>`;
 
 const CAPABILITIES = `<capabilities>
