@@ -71,18 +71,12 @@ test('citation grammar teaches the explicit slug rule (052-C4)', () => {
     /strip leading\/trailing '-'/i,
     'slug rule step 3 (strip dashes) missing',
   );
-  // The prompt must anchor both the frontend + backend implementation
-  // paths so the next reader can find the contract surface.
-  assert.match(
-    prompt,
-    /frontend\/lib\/slug\.ts/,
-    'frontend slug.ts path missing',
-  );
-  assert.match(
-    prompt,
-    /backend\/src\/build-tune-agent\/lib\/slug\.ts/,
-    'backend slug.ts path missing',
-  );
+  // Sprint 060-B: the frontend/backend slug-file path metadata
+  // paragraph was dropped from the prompt as pedagogical-not-rule
+  // (the model doesn't need to know where the rule is mirrored).
+  // Path-anchor assertions removed accordingly; the slug rule body
+  // remains load-bearing and is asserted by the three checks above
+  // plus the canonical-example assertions in the next test.
 });
 
 test('prompt examples match the backend slug function output (052-C4)', () => {

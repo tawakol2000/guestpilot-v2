@@ -98,18 +98,21 @@ test('shared prefix ordering (sprint 060-A): principles → response_contract �
   assert.ok(idxCritical > idxNeverDo, 'critical_rules must come last in the shared prefix');
 });
 
-test('shared prefix carries the Sprint 046 Response Contract verbatim (7 rules)', () => {
+test('shared prefix carries the Response Contract (5 rules post-060-B) plus banned-pattern anchors in NEVER_DO', () => {
   const p = buildSharedPrefix();
   assert.ok(p.includes('<response_contract>'));
   assert.ok(p.includes('## Response contract'));
   assert.ok(p.includes('emit AT MOST ONE of the following structured'));
   assert.ok(p.includes('Prose is optional and capped at 120 words'));
-  // Sprint 060-A: "You DO NOT emit markdown tables..." → "Emit
-  // structured cards or capped prose only; ..." (affirmative pass).
-  assert.ok(p.includes('Emit structured cards or capped prose only'));
+  // Sprint 060-B: rule 3 compressed to one sentence, rules 6 (emoji
+  // pills) and 7 ("Recommended Next Steps" enumerations) deleted from
+  // RESPONSE_CONTRACT — both still anchored verbatim in NEVER_DO.
+  assert.ok(p.includes('rank them and emit'));
   assert.ok(p.includes('question_choices'));
   assert.ok(p.includes('machine-readable target'));
-  assert.ok(p.includes('Emoji status pills'));
+  // NEVER_DO carries the banned-pattern anchors (lowercase 'emoji'
+  // post-dedup; "Recommended Next Steps" with quotes preserved).
+  assert.ok(p.includes('emoji status pills'));
   assert.ok(p.includes('"Recommended Next Steps"'));
 });
 
@@ -141,7 +144,9 @@ test('shared principles: truthfulness-over-validation retained; NO_FIX-as-defaul
     !p.includes('NO_FIX is the default'),
     'NO_FIX-as-default must NOT appear in shared prefix (moved to TUNE addendum)'
   );
-  assert.ok(p.includes('Refuse directly without lecturing.'));
+  // Sprint 060-B: P3 compressed from "Refuse directly without
+  // lecturing." → "Direct refusals."
+  assert.ok(p.includes('Direct refusals.'));
   assert.ok(p.includes('<critical_rules>'), 'terminal critical_rules block must appear');
 });
 
@@ -152,11 +157,12 @@ test('TUNE addendum carries NO_FIX-as-default and the fragment rule', () => {
     prompt.includes('NO_FIX is the default'),
     'TUNE addendum must carry NO_FIX-as-default (moved from shared principles)'
   );
-  // Sprint 060-A: "proposedText/newText must never be a fragment" →
-  // "proposedText/newText always contains complete text" (affirmative pass).
+  // Sprint 060-B: the duplicated "TUNE-mode critical rule" paragraph
+  // about fragments was dropped — the canonical rule lives in NEVER_DO
+  // (shared prefix), which the assembled prompt still carries.
   assert.ok(
-    prompt.includes('proposedText/newText always contains complete'),
-    'TUNE addendum must carry the fragment rule (moved from shared critical_rules)'
+    prompt.includes('No fragment proposedText / newText'),
+    'fragment rule must remain anchored in NEVER_DO (shared prefix)'
   );
 });
 

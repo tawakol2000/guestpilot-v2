@@ -281,9 +281,14 @@ test('F3: buildCacheStatsPayload handles zero denominator without NaN', () => {
 // Also asserts a floor on Region A (shared prefix) tokens — sprint
 // 060-A added three new blocks (<capabilities>, <context_handling>,
 // <never_do>) plus the PERSONA meta-firewall paragraph, taking the
-// Region-A baseline from ~4200 → ~5650 tokens. Floor set at 5000
-// with a comfortable margin below 5652 so accidental deletion of
-// any one of the three new blocks trips this test.
+// Region-A baseline from ~4200 → ~5650 tokens. Sprint 060-B then
+// compressed the prompt (PRINCIPLES, RESPONSE_CONTRACT, CAPABILITIES,
+// CITATION_GRAMMAR, CONTEXT_HANDLING, PLATFORM_CONTEXT, NEVER_DO,
+// CRITICAL_RULES, TUNE/BUILD addenda) cutting ~900 tokens from
+// Region A. Post-060-B Region A is ~4750 tokens. Floor set at 4500
+// with a comfortable margin below so accidental deletion of any
+// load-bearing block still trips the test, while the compression
+// cuts no longer trigger the old 5000 floor.
 test('record baseline token counts', () => {
   const shared = buildSharedPrefix();
   const tuneFull = assembleSystemPrompt(fixtureCtx('TUNE'));
@@ -296,15 +301,15 @@ test('record baseline token counts', () => {
   const toolsOnly = estimateToolsOnly();
   const toolsTokens = estimateTokens('x'.repeat(toolsOnly.chars));
 
-  // Sprint 060-A baseline floor — if Region A drops below this,
+  // Sprint 060-B baseline floor — if Region A drops below this,
   // one of CAPABILITIES / CONTEXT_HANDLING / NEVER_DO was likely
-  // removed. Actual post-sprint value is ~5652 tokens; floor is
-  // set at 5000 for a comfortable margin.
-  const SPRINT_060A_REGION_A_TOKEN_FLOOR = 5000;
+  // removed. Actual post-060-B value is ~4749 tokens; floor is
+  // set at 4500 for a comfortable margin.
+  const SPRINT_060B_REGION_A_TOKEN_FLOOR = 4500;
   const sharedTokens = estimateTokens(sharedOnly);
   assert.ok(
-    sharedTokens >= SPRINT_060A_REGION_A_TOKEN_FLOOR,
-    `Region A must be ≥${SPRINT_060A_REGION_A_TOKEN_FLOOR} tokens post-060-A (got ~${sharedTokens})`,
+    sharedTokens >= SPRINT_060B_REGION_A_TOKEN_FLOOR,
+    `Region A must be ≥${SPRINT_060B_REGION_A_TOKEN_FLOOR} tokens post-060-B (got ~${sharedTokens})`,
   );
 
   // Single structured line — easy to grep out of CI logs into PROGRESS.md.
