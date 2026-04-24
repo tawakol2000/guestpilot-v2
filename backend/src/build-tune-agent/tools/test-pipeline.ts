@@ -294,6 +294,7 @@ export function buildTestPipelineTool(
           `test_pipeline failed: ${err?.message ?? String(err)}`
         );
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }

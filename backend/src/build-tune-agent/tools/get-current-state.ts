@@ -637,6 +637,7 @@ export function buildGetCurrentStateTool(
         span.end({ error: String(err) });
         return asError(`get_current_state failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }

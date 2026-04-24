@@ -199,6 +199,7 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
         span.end({ error: String(err) });
         return asError(`get_context failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }

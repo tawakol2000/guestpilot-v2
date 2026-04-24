@@ -159,7 +159,8 @@ export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => 
         span.end({ error: String(err) });
         return asError(`get_version_history failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }
 
@@ -565,6 +566,7 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
         span.end({ error: String(err) });
         return asError(`rollback failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { destructiveHint: true } },
   );
 }

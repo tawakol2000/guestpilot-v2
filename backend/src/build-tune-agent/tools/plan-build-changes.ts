@@ -106,6 +106,7 @@ export function buildPlanBuildChangesTool(
         span.end({ error: String(err) });
         return asError(`plan_build_changes failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { idempotentHint: true } },
   );
 }

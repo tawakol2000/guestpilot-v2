@@ -81,6 +81,7 @@ export function buildGetEditHistoryTool(tool: typeof ToolFactory, ctx: () => Too
         console.error('[get_edit_history] query failed (returning empty rows):', err?.message ?? err);
         return asCallToolResult({ rows: [] });
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }

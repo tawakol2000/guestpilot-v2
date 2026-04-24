@@ -96,7 +96,8 @@ export function buildFetchEvidenceBundleTool(tool: typeof ToolFactory, ctx: () =
         span.end({ error: String(err) });
         return asError(`fetch_evidence_bundle failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }
 

@@ -119,6 +119,7 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
         span.end({ error: String(err) });
         return asError(`search_corrections failed: ${err?.message ?? String(err)}`);
       }
-    }
+    },
+    { annotations: { readOnlyHint: true } },
   );
 }
