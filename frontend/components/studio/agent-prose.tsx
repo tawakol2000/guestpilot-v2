@@ -24,7 +24,13 @@ interface AgentProseProps {
 }
 
 export function AgentProse({ text, isUser }: AgentProseProps) {
-  const color = isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted
+  // Sprint 046 — when rendering user content we're now inside an
+  // ink-filled bubble (MessageRow sets color: #FFFFFF on the bubble),
+  // so every inner element that used to hard-code a dark color must
+  // inherit from the bubble instead. The old layout rendered user
+  // text on a white canvas, which is why the ink color was correct
+  // pre-046. Assistant messages still use the muted-gray token.
+  const color = isUser ? 'inherit' : STUDIO_COLORS.inkMuted
   return (
     <div
       data-origin={isUser ? 'user' : 'agent'}
@@ -48,14 +54,16 @@ export function AgentProse({ text, isUser }: AgentProseProps) {
               data-origin={isUser ? 'user' : 'agent'}
               style={{
                 margin: '0 0 10px 0',
-                color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+                color: isUser ? 'inherit' : STUDIO_COLORS.inkMuted,
               }}
             >
               {children}
             </p>
           ),
           strong: ({ children }) => (
-            <strong style={{ fontWeight: 600, color: STUDIO_COLORS.ink }}>
+            // Sprint 046 — inherit inside the user bubble (white on
+            // ink), ink on the assistant body (dark on white).
+            <strong style={{ fontWeight: 600, color: isUser ? 'inherit' : STUDIO_COLORS.ink }}>
               {children}
             </strong>
           ),

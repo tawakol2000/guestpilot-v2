@@ -93,11 +93,17 @@ function renderStudio(messages: any[]) {
 }
 
 describe('StudioChat · typographic attribution', () => {
-  it('renders user-typed text with origin=user and ink colour', () => {
+  it('renders user-typed text with origin=user (bubble owns the color)', () => {
+    // Sprint 046 — user text now renders inside a blue-soft pill
+    // bubble. AgentProse inherits color from the bubble rather than
+    // hard-coding ink, so the test asserts the semantic origin marker
+    // (still 'user') and lets the bubble control the visual color.
     renderStudio([userMessage])
     const p = screen.getByText(/Tighten up the early-checkin SOP\./)
     expect(p.dataset.origin).toBe('user')
-    expect(p).toHaveStyle({ color: STUDIO_COLORS.ink })
+    // Color is inherited from the bubble (set on the outer bubble div).
+    // Asserting the inline style would be brittle — the contract that
+    // matters is the data-origin marker.
   })
 
   it('renders agent text with origin=agent and inkMuted colour', () => {

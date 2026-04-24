@@ -1071,16 +1071,18 @@ function MessageRow({
       }}
     >
       {isUser ? (
-        // ── User bubble (right-aligned) ─────────────────────────────
+        // ── User bubble (right-aligned, blue-soft pill) ─────────────
+        // Sprint 046 — pill styling per user review screenshot: full
+        // rounded corners, `--blue-soft` background, `--blue` text.
+        // Readable contrast and unmistakably a guest turn.
         <div style={{ display: 'flex', justifyContent: 'flex-end', maxWidth: 780, margin: '0 auto' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '85%' }}>
             <div
               style={{
-                padding: '11px 14px',
-                borderRadius: STUDIO_TOKENS_V2.radiusXl,
-                borderBottomRightRadius: 6,
-                background: STUDIO_TOKENS_V2.ink,
-                color: '#FFFFFF',
+                padding: '10px 16px',
+                borderRadius: 18,
+                background: STUDIO_TOKENS_V2.blueSoft,
+                color: STUDIO_TOKENS_V2.blue,
                 fontSize: 14.5,
                 lineHeight: 1.5,
                 wordBreak: 'break-word',
