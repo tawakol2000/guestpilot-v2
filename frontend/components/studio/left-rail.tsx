@@ -97,23 +97,38 @@ export function LeftRailV2({
     }
   }, [onSelect])
 
+  // Sprint 046 bug-fix — previously `now = Date.now()` was called on
+  // every render and passed as a useMemo dep. The dep changed every
+  // render so the memo never cached. Use a stable refresh-cycle
+  // timestamp instead — the rail re-renders on data change / toggle,
+  // not every RAF, so Date.now() sampled once per render is fine and
+  // the useMemo dep is just `items/searchQuery/…`.
   const now = Date.now()
-  const filteredItems = useMemo(() => {
-    const base = showEmpty
-      ? items
-      : items.filter((c) => {
-          if (c.id === selectedId) return true
-          if (c.messageCount > 0) return true
-          const createdAt = Date.parse(c.createdAt)
-          if (!Number.isFinite(createdAt)) return true
-          return now - createdAt < ONE_HOUR_MS
-        })
-    if (!searchQuery.trim()) return base
-    const q = searchQuery.trim().toLowerCase()
-    return base.filter((c) => (c.title || '').toLowerCase().includes(q))
-  }, [items, searchQuery, showEmpty, selectedId, now])
+  // Split the two filters apart so `hiddenCount` can accurately
+  // report how many items the empty-session filter removed —
+  // previously it also counted search-filtered items, which made the
+  // "N hidden" label over-report during a search.
+  const afterEmptyFilter = useMemo(() => {
+    if (showEmpty) return items
+    return items.filter((c) => {
+      if (c.id === selectedId) return true
+      if (c.messageCount > 0) return true
+      const createdAt = Date.parse(c.createdAt)
+      if (!Number.isFinite(createdAt)) return true
+      return now - createdAt < ONE_HOUR_MS
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, showEmpty, selectedId])
 
-  const hiddenCount = items.length - filteredItems.length
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return afterEmptyFilter
+    return afterEmptyFilter.filter((c) => (c.title || '').toLowerCase().includes(q))
+  }, [afterEmptyFilter, searchQuery])
+
+  // Only count items removed by the empty-session filter — not the
+  // search query. Gives the "N hidden" label its intended meaning.
+  const hiddenCount = items.length - afterEmptyFilter.length
 
   const { recent, earlier } = useMemo(() => {
     const r: TuningConversationSummary[] = []
@@ -127,7 +142,11 @@ export function LeftRailV2({
       }
     }
     return { recent: r, earlier: e }
-  }, [filteredItems, now])
+    // `now` sampled once per render is intentional; the dep list is
+    // trimmed to `filteredItems` so identical data doesn't re-run
+    // this on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredItems])
 
   return (
     <div className="flex h-full flex-col">
