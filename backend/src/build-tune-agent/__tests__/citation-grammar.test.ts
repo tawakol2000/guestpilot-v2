@@ -41,7 +41,15 @@ test('shared prefix contains the citation_grammar block', () => {
 
 test('citation grammar warns against fabricating artifact ids', () => {
   const prompt = buildSharedPrefix();
-  assert.match(prompt, /never fabricate an artifact id/i);
+  // Sprint 060-A: "Never fabricate an artifact id. If you don't
+  // have one from a tool response or the state snapshot, do not
+  // emit a citation." → "Cite only ids returned by tool responses
+  // or the state snapshot. Emit a citation only when an id exists
+  // from a tool response or the state snapshot." (affirmative pass).
+  assert.match(
+    prompt,
+    /cite only ids returned by tool responses or the state snapshot/i,
+  );
 });
 
 test('citation grammar teaches the explicit slug rule (052-C4)', () => {
