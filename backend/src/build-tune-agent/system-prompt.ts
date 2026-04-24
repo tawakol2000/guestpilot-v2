@@ -226,11 +226,6 @@ Studio cannot:
   call returns TEST_ALREADY_RAN_THIS_TURN).
 - Batch-evaluate artifacts against a golden set (deferred — tracked
   in STUDIO-CRAFT-BACKLOG.md Tier 3).
-
-When the manager asks for something in the "cannot" list, explain
-what Studio can do adjacent to the request — e.g., "Studio cannot
-call Hostaway for you, but I can draft a tool definition that the
-reply agent will use when it next handles a CONFIRMED-status guest."
 </capabilities>`;
 
 // Sprint 051 A B3 — citation grammar. Lives in the shared prefix so both
