@@ -97,7 +97,6 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_get_context,
       TUNING_AGENT_TOOL_NAMES.studio_memory,
       TUNING_AGENT_TOOL_NAMES.search_corrections,
-      TUNING_AGENT_TOOL_NAMES.get_version_history,
       TUNING_AGENT_TOOL_NAMES.studio_rollback,
       TUNING_AGENT_TOOL_NAMES.studio_create_faq,
       TUNING_AGENT_TOOL_NAMES.studio_create_sop,
@@ -108,7 +107,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.get_current_state,
       TUNING_AGENT_TOOL_NAMES.ask_manager,
       TUNING_AGENT_TOOL_NAMES.emit_audit,
-      TUNING_AGENT_TOOL_NAMES.get_edit_history,
+      TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
       TUNING_AGENT_TOOL_NAMES.emit_session_summary,
       // Sprint 046 — BUILD mode was rejecting propose_suggestion +
       // fetch_evidence_bundle, which broke the "discuss-in-tuning"
@@ -133,14 +132,13 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.propose_suggestion,
     TUNING_AGENT_TOOL_NAMES.suggestion_action,
     TUNING_AGENT_TOOL_NAMES.studio_memory,
-    TUNING_AGENT_TOOL_NAMES.get_version_history,
     TUNING_AGENT_TOOL_NAMES.studio_rollback,
     TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,
     TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     TUNING_AGENT_TOOL_NAMES.get_current_state,
     TUNING_AGENT_TOOL_NAMES.ask_manager,
     TUNING_AGENT_TOOL_NAMES.emit_audit,
-    TUNING_AGENT_TOOL_NAMES.get_edit_history,
+    TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
     TUNING_AGENT_TOOL_NAMES.emit_session_summary,
     // Sprint 046 — card emitters requested by the agent.
     TUNING_AGENT_TOOL_NAMES.diff_versions,

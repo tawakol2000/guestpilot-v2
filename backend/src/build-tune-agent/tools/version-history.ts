@@ -1,13 +1,15 @@
 /**
- * get_version_history + rollback — lightweight agent-facing wrappers over
- * sprint-03's tuning-history controller logic. Scope:
+ * studio_rollback — agent-facing wrapper over sprint-03's tuning-history
+ * controller logic.
  *
- *   - get_version_history(artifactType?, artifactId?, limit?) — returns the
- *     agent a compact list of recent edits.
  *   - rollback(artifactType, versionId) — SYSTEM_PROMPT and TOOL_DEFINITION
  *     supported; SOP/FAQ return NOT_SUPPORTED to match sprint-03's 501 path.
  *
- * No controller coupling: reuses Prisma directly so the agent can call these
+ * 060-D: the broad version-history reader that used to live here folded
+ * into `studio_get_edit_history` (broad mode = artifactId omitted). This
+ * file now exclusively hosts the rollback tool.
+ *
+ * No controller coupling: reuses Prisma directly so the agent can call this
  * from its tool layer without needing an Express context.
  */
 import { z } from 'zod/v4';
@@ -24,145 +26,6 @@ import {
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 type ArtifactType = 'SYSTEM_PROMPT' | 'SOP_VARIANT' | 'FAQ_ENTRY' | 'TOOL_DEFINITION';
-
-export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
-  return tool(
-    'get_version_history',
-    'Recent artifact edits. Optionally filter by artifactType (SYSTEM_PROMPT / SOP_VARIANT / FAQ_ENTRY / TOOL_DEFINITION) or by artifactId. Returns the most recent `limit` entries across the tenant. Use to decide whether a rollback is the right move, and to spot oscillation.',
-    {
-      artifactType: z.enum(['SYSTEM_PROMPT', 'SOP_VARIANT', 'FAQ_ENTRY', 'TOOL_DEFINITION']).optional(),
-      artifactId: z.string().optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-    },
-    async (args) => {
-      const c = ctx();
-      const span = startAiSpan('tuning-agent.get_version_history', args);
-      try {
-        const take = args.limit ?? 20;
-        const entries: any[] = [];
-
-        // SYSTEM_PROMPT — read TenantAiConfig.systemPromptHistory.
-        if (!args.artifactType || args.artifactType === 'SYSTEM_PROMPT') {
-          const cfg = await c.prisma.tenantAiConfig.findUnique({
-            where: { tenantId: c.tenantId },
-            select: { systemPromptHistory: true },
-          });
-          const history: any[] = Array.isArray(cfg?.systemPromptHistory)
-            ? (cfg!.systemPromptHistory as any[])
-            : [];
-          for (const h of history) {
-            if (!h || typeof h !== 'object') continue;
-            const which = h.coordinator ? 'coordinator' : h.screening ? 'screening' : 'unknown';
-            if (args.artifactId && which !== args.artifactId) continue;
-            entries.push({
-              artifactType: 'SYSTEM_PROMPT',
-              artifactId: which,
-              version: typeof h.version === 'number' ? h.version : null,
-              versionId: `sp:${h.version ?? 'x'}:${h.timestamp ?? ''}`,
-              timestamp: typeof h.timestamp === 'string' ? h.timestamp : null,
-              note: typeof h.note === 'string' ? h.note : null,
-              rollbackSupported: true,
-            });
-          }
-        }
-
-        // TOOL_DEFINITION — one synthetic version-row per tool (reset to default).
-        if (!args.artifactType || args.artifactType === 'TOOL_DEFINITION') {
-          const tools = await c.prisma.toolDefinition.findMany({
-            where: {
-              tenantId: c.tenantId,
-              ...(args.artifactId ? { id: args.artifactId } : {}),
-            },
-            orderBy: { updatedAt: 'desc' },
-            take,
-          });
-          for (const t of tools) {
-            const hasDiff = t.description !== t.defaultDescription;
-            entries.push({
-              artifactType: 'TOOL_DEFINITION',
-              artifactId: t.id,
-              artifactLabel: t.name,
-              versionId: `tool:${t.id}:${t.updatedAt.toISOString()}`,
-              timestamp: t.updatedAt.toISOString(),
-              note: hasDiff ? 'description differs from default' : 'matches default',
-              rollbackSupported: hasDiff,
-            });
-          }
-        }
-
-        // SOP_VARIANT — snapshot rows from sprint 05 §2 are rollback targets.
-        if (!args.artifactType || args.artifactType === 'SOP_VARIANT') {
-          const sopHistory = await c.prisma.sopVariantHistory.findMany({
-            where: {
-              tenantId: c.tenantId,
-              ...(args.artifactId ? { targetId: args.artifactId } : {}),
-            },
-            orderBy: { editedAt: 'desc' },
-            take,
-          });
-          const sopDefIds = Array.from(
-            new Set(
-              sopHistory
-                .map(h => (h.previousContent as any)?.sopDefinitionId as string | undefined)
-                .filter((x): x is string => !!x)
-            )
-          );
-          const defs = sopDefIds.length
-            ? await c.prisma.sopDefinition.findMany({
-                where: { tenantId: c.tenantId, id: { in: sopDefIds } },
-                select: { id: true, category: true },
-              })
-            : [];
-          const defById = new Map(defs.map(d => [d.id, d.category]));
-          for (const h of sopHistory) {
-            const pc = h.previousContent as any;
-            const category = defById.get(pc?.sopDefinitionId) ?? 'unknown';
-            entries.push({
-              artifactType: 'SOP_VARIANT',
-              artifactId: h.targetId,
-              artifactLabel: `${category} (${pc?.status ?? '?'})${pc?.kind === 'override' ? ' override' : ''}`,
-              versionId: `svh:${h.id}`,
-              timestamp: h.editedAt.toISOString(),
-              note: pc?.kind === 'override' ? 'property override snapshot' : 'variant snapshot',
-              rollbackSupported: true,
-            });
-          }
-        }
-        if (!args.artifactType || args.artifactType === 'FAQ_ENTRY') {
-          const faqHistory = await c.prisma.faqEntryHistory.findMany({
-            where: {
-              tenantId: c.tenantId,
-              ...(args.artifactId ? { targetId: args.artifactId } : {}),
-            },
-            orderBy: { editedAt: 'desc' },
-            take,
-          });
-          for (const h of faqHistory) {
-            const pc = h.previousContent as any;
-            const q = typeof pc?.question === 'string' ? pc.question : '(unknown)';
-            entries.push({
-              artifactType: 'FAQ_ENTRY',
-              artifactId: h.targetId,
-              artifactLabel: q.slice(0, 80),
-              versionId: `feh:${h.id}`,
-              timestamp: h.editedAt.toISOString(),
-              rollbackSupported: true,
-            });
-          }
-        }
-
-        entries.sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''));
-        const payload = { count: Math.min(entries.length, take), entries: entries.slice(0, take) };
-        span.end(payload);
-        return asCallToolResult(payload);
-      } catch (err: any) {
-        span.end({ error: String(err) });
-        return asError(`get_version_history failed: ${err?.message ?? String(err)}`);
-      }
-    },
-    { annotations: { readOnlyHint: true } },
-  );
-}
 
 export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(

@@ -12,7 +12,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   propose_suggestion: `mcp__${TUNING_AGENT_SERVER_NAME}__propose_suggestion`,
   suggestion_action: `mcp__${TUNING_AGENT_SERVER_NAME}__suggestion_action`,
   studio_memory: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_memory`,
-  get_version_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_version_history`,
   studio_rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_rollback`,
   // Sprint 045, Gate 2 — BUILD-mode artifact creators.
   studio_create_faq: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_faq`,
@@ -29,7 +28,7 @@ export const TUNING_AGENT_TOOL_NAMES = {
   ask_manager: `mcp__${TUNING_AGENT_SERVER_NAME}__ask_manager`,
   emit_audit: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_audit`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
-  get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_edit_history`,
+  studio_get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_edit_history`,
   // Sprint 058-A F4 — end-of-turn session-diff summary card emitter.
   emit_session_summary: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_session_summary`,
   // Sprint 046 — card emitters for the two operator-visible surfaces
