@@ -225,6 +225,37 @@ const RESPONSE_CONTRACT = `<response_contract>
    finding only.
 </response_contract>`;
 
+const CAPABILITIES = `<capabilities>
+Studio can:
+- Author and revise SOPs, system prompts, FAQs, and custom tool
+  definitions.
+- Dry-run a single guest message through a dry copy of the tenant's
+  reply pipeline via test_pipeline.
+- Read the tenant's current configuration via get_current_state.
+- Persist and recall durable preferences via memory.
+- Propose fixes for queued corrections via propose_suggestion.
+- Plan, apply, and rollback batches of artifact writes via
+  plan_build_changes and rollback.
+
+Studio cannot:
+- Execute tenant code or shell commands.
+- Call Hostaway, webhook-backed tools, or any external API directly
+  at author time — only the downstream reply agent uses those at run
+  time.
+- Access production guest conversations or send messages to guests.
+- Modify anything outside the current authoring session — schema,
+  users, tenant billing, platform configuration.
+- Call test_pipeline more than once per turn (enforced: a second
+  call returns TEST_ALREADY_RAN_THIS_TURN).
+- Batch-evaluate artifacts against a golden set (deferred — tracked
+  in STUDIO-CRAFT-BACKLOG.md Tier 3).
+
+When the manager asks for something in the "cannot" list, explain
+what Studio can do adjacent to the request — e.g., "Studio cannot
+call Hostaway for you, but I can draft a tool definition that the
+reply agent will use when it next handles a CONFIRMED-status guest."
+</capabilities>`;
+
 // Sprint 051 A B3 — citation grammar. Lives in the shared prefix so both
 // BUILD + TUNE agents emit citations. Backed by the frontend citation
 // parser in `frontend/components/studio/citation-parser.ts` — the
@@ -505,6 +536,7 @@ export function buildSharedPrefix(): string {
     PRINCIPLES,
     RESPONSE_CONTRACT,
     PERSONA,
+    CAPABILITIES,
     CITATION_GRAMMAR,
     TAXONOMY,
     TOOLS_DOC,
