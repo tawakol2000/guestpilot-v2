@@ -72,6 +72,18 @@ function makeFakePrisma(opts?: {
         if (r) r.status = data.status;
         return r;
       },
+      // 2026-04-23 atomic flip: see create-sop.test.ts comment.
+      updateMany: async ({ where, data }: any) => {
+        const r = txRows.find(
+          (t) => t.id === where.id && t.tenantId === where.tenantId && t.status === where.status
+        );
+        if (!r) return { count: 0 };
+        r.status = data.status;
+        return { count: 1 };
+      },
+    },
+    buildArtifactHistory: {
+      create: async () => ({ id: `bah_${Date.now()}` }),
     },
     toolDefinition: {
       findFirst: async ({ where }: any) =>

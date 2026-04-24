@@ -91,6 +91,25 @@ function makeFakePrisma(opts?: {
         if (r) r.status = data.status;
         return r;
       },
+      // 2026-04-23: validateBuildTransaction flips PLANNED→EXECUTING via
+      // an atomic updateMany guarded by `status: 'PLANNED'` so concurrent
+      // writers can't both claim the same transaction. Mirror that
+      // single-writer semantics here.
+      updateMany: async ({ where, data }: any) => {
+        const r = txRows.find(
+          (t) => t.id === where.id && t.tenantId === where.tenantId && t.status === where.status
+        );
+        if (!r) return { count: 0 };
+        r.status = data.status;
+        return { count: 1 };
+      },
+    },
+    // write_system_prompt emits a BuildArtifactHistory row on every
+    // successful flip. The call is wrapped in a try/catch that logs
+    // and swallows, but omitting the model surfaces a noisy warning
+    // in test output — define a no-op so the logs stay clean.
+    buildArtifactHistory: {
+      create: async () => ({ id: `bah_${Date.now()}` }),
     },
     tenantAiConfig: {
       findUnique: async ({ where: _w }: any) => config,

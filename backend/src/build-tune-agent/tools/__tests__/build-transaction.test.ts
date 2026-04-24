@@ -68,6 +68,18 @@ function makeFakePrisma(rows: TxRow[]): any {
         if ('rationale' in data) r.rationale = data.rationale;
         return r;
       },
+      // 2026-04-23 atomic flip: validateBuildTransaction claims
+      // PLANNED→EXECUTING via updateMany + {status:'PLANNED'} filter to
+      // prevent concurrent writers racing past the status check. Only
+      // the first writer with a matching status wins.
+      updateMany: async ({ where, data }: any) => {
+        const r = rows.find(
+          (x) => x.id === where.id && x.tenantId === where.tenantId && x.status === where.status
+        );
+        if (!r) return { count: 0 };
+        if (data.status) r.status = data.status;
+        return { count: 1 };
+      },
     },
   };
 }

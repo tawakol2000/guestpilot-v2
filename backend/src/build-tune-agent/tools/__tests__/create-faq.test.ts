@@ -69,6 +69,19 @@ function makeFakePrisma(opts?: {
         txStatusFlips.push({ id: r.id, status: data.status });
         return r;
       },
+      // 2026-04-23 atomic flip: see create-sop.test.ts comment.
+      updateMany: async ({ where, data }: any) => {
+        const r = txRows.find(
+          (t) => t.id === where.id && t.tenantId === where.tenantId && t.status === where.status
+        );
+        if (!r) return { count: 0 };
+        r.status = data.status;
+        txStatusFlips.push({ id: r.id, status: data.status });
+        return { count: 1 };
+      },
+    },
+    buildArtifactHistory: {
+      create: async () => ({ id: `bah_${Date.now()}` }),
     },
     property: {
       findFirst: async ({ where }: any) => {
