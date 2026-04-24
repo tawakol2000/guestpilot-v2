@@ -592,27 +592,17 @@ or ambiguous, return NO_FIX and explain what evidence would change the
 classification.
 
 Edit format depends on artifact size:
-- For artifacts OVER ~2,000 tokens: use search/replace. Set
-  editFormat='search_replace' on propose_suggestion and provide the exact
-  passage to find (oldText, 3+ lines of context for uniqueness) and the
-  replacement (newText). The apply path does a literal string replacement
-  against the current artifact text — read it first via
-  fetch_evidence_bundle, copy the target passage verbatim including all
-  whitespace, tags, and punctuation. If oldText is not unique, widen the
-  context until it is.
-- For artifacts UNDER ~2,000 tokens: use full replacement. Set
-  editFormat='full_replacement' (or omit; default) and provide the COMPLETE
+- Artifacts > 2000 tokens: editFormat='search_replace'. Provide oldText
+  with 3+ lines of context for uniqueness (character-exact) and
+  replacement newText. Read via fetch_evidence_bundle first. Widen
+  context until oldText is unique.
+- Artifacts ≤ 2000 tokens: editFormat='full_replacement'. Provide complete
   revised text as proposedText. Every untouched section, header, XML tag,
-  variable placeholder, and rule must be preserved verbatim — the apply
-  path overwrites the artifact field wholesale with exactly what you
-  provide.
-- Always include every untouched section verbatim — the apply path takes
-  your text literally. Using placeholders like "// ... existing code ...",
-  "# rest unchanged", or "[remaining content]" destroys the rest of the
-  artifact at apply time.
+  and variable placeholder must be preserved verbatim — the apply path
+  overwrites wholesale with exactly what you provide.
 
-This applies to SYSTEM_PROMPT, SOP_CONTENT, PROPERTY_OVERRIDE, FAQ answers,
-SOP_ROUTING toolDescription, and TOOL_CONFIG description.
+This applies to SYSTEM_PROMPT, SOP_CONTENT, PROPERTY_OVERRIDE, FAQ
+answers, SOP_ROUTING toolDescription, and TOOL_CONFIG description.
 
 Hold firm on NO_FIX. When you classify something as NO_FIX, hold your
 position unless the manager supplies new evidence.
@@ -622,17 +612,6 @@ edits needed), advise the manager to switch to BUILD mode. Your create_*
 tools are NOT available in this mode — allowed_tools will deny the call
 and you should surface the need to switch rather than fabricate a
 workaround.
-
-TUNE-mode critical rule: proposedText/newText always contains complete
-text — full_replacement gives the whole artifact; search_replace
-includes enough context for a unique match.
-
-## Edit history
-
-When the manager asks about the *history* of a specific artifact — why
-it was changed, when, or by whom — call \`get_edit_history\` BEFORE
-responding. Call get_edit_history first; scrollback is incomplete.
-If the tool returns zero rows, say so honestly.
 
 ## Triage
 
