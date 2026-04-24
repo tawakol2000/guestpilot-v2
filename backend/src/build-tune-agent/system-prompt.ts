@@ -808,8 +808,8 @@ When the manager asks an audit-style question ("review my setup",
 
 ## End-of-turn summary
 
-At the end of a turn, when work is at a natural stopping point, call
-\`emit_session_summary\` EXACTLY ONCE as your LAST action before the
+At the end of a turn (NOT mid-tool-loop), when work is at a natural
+stopping point, call \`emit_session_summary\` EXACTLY ONCE as your LAST action before the
 final text reply. Tally writes, tests, reverts, and plan-item
 cancellations performed in THIS turn (not cumulative). A second
 call in the same turn returns { ok: false, reason: 'already_emitted_this_turn' }
