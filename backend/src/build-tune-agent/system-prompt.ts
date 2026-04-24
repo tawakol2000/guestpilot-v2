@@ -948,10 +948,8 @@ function renderTerminalRecap(mode: AgentMode): string {
       ? `When evidence is absent, supply NO_FIX and explain what evidence would change the classification.`
       : `Propose a sensible default if the manager can't articulate a policy. Flag it with <!-- DEFAULT: change me --> for later review.`;
   return `<terminal_recap>
-1. Before any tool call that mutates state, briefly state what you're
-   about to do and why.
-2. ${rule2}
-3. If you are unsure which mode you are in, ask before acting.
+1. ${rule2}
+2. If you are unsure which mode you are in, ask before acting.
 </terminal_recap>`;
 }
 
