@@ -39,6 +39,51 @@ import { SessionDiffCard, type SessionDiffSummaryData } from './session-diff-car
 import { STUDIO_COLORS, STUDIO_TOKENS_V2, getStudioCategoryStyle } from './tokens'
 import { useStudioShell } from './studio-shell-context'
 import { FileIcon, FlaskIcon } from './icons'
+
+// Sprint 046 bug follow-up — which tool names count as "context reads"
+// that should surface in the Plan tab's CONTEXT IN USE list. Kept as a
+// Set for O(1) lookup in the tool-call stream walker. Extend carefully:
+// any tool in this list will render in the operator-visible context
+// rail, so restrict to tools that actually fetch artifacts.
+const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'get_sop',
+  'get_faq',
+  'get_context',
+  'get_current_state',
+  'fetch_evidence_bundle',
+  'search_properties',
+  'search_available_properties',
+  'get_system_prompt',
+  'get_property',
+  'get_tool',
+  'list_sops',
+  'list_faqs',
+  'list_tools',
+  'list_properties',
+])
+
+/** Best-effort extraction of a short human-readable target from a tool
+ *  call's input payload. Returns null when we can't infer one. */
+function extractToolTarget(toolName: string, input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null
+  const obj = input as Record<string, unknown>
+  const candidates: Array<string | undefined> = [
+    typeof obj.category === 'string' ? obj.category : undefined,
+    typeof obj.sopId === 'string' ? obj.sopId : undefined,
+    typeof obj.faqId === 'string' ? obj.faqId : undefined,
+    typeof obj.id === 'string' ? obj.id : undefined,
+    typeof obj.name === 'string' ? obj.name : undefined,
+    typeof obj.query === 'string' ? obj.query : undefined,
+    typeof obj.propertyId === 'string' ? obj.propertyId : undefined,
+    typeof obj.path === 'string' ? obj.path : undefined,
+  ]
+  for (const c of candidates) {
+    if (c && c.trim().length > 0) {
+      return c.length > 48 ? `${c.slice(0, 46)}…` : c
+    }
+  }
+  return null
+}
 import { SuggestedFixCard, type SuggestedFixTarget } from './suggested-fix'
 import { QuestionChoicesCard } from './question-choices'
 import { AuditReportCard, type AuditReportRowData } from './audit-report'
@@ -362,6 +407,42 @@ export function StudioChat({
     window.addEventListener('studio:composer-insert', onInsert)
     return () => window.removeEventListener('studio:composer-insert', onInsert)
   }, [])
+
+  // Sprint 046 bug follow-up — feed the shell's derivedContext from the
+  // agent's tool-call parts so PlanTab's CONTEXT IN USE list reflects
+  // everything the agent has *read* (SOPs, FAQs, evidence bundles,
+  // etc.), not just writes. `onArtifactTouched` only fires for writes;
+  // reads have to be derived from the tool-call stream.
+  const shellContext = useStudioShell()
+  useEffect(() => {
+    const setDerived = shellContext.setDerivedContext
+    if (typeof setDerived !== 'function') return
+    const items: { toolName: string; target: string | null; at: string }[] = []
+    const seen = new Set<string>()
+    for (const m of messages) {
+      const parts = (m as any).parts as Array<Record<string, any>> | undefined
+      if (!Array.isArray(parts)) continue
+      for (const p of parts) {
+        const t = typeof p?.type === 'string' ? p.type : ''
+        if (!t.startsWith('tool-')) continue
+        // Only surface tools the agent uses to READ context. Keep the
+        // list small + trustworthy — write tools already surface via
+        // session-artifacts, so don't double-count.
+        const toolName = typeof p.toolName === 'string' ? p.toolName : t.slice('tool-'.length)
+        if (!READ_TOOL_NAMES.has(toolName)) continue
+        const callKey = typeof p.toolCallId === 'string' ? p.toolCallId : `${m.id}:${toolName}:${items.length}`
+        if (seen.has(callKey)) continue
+        seen.add(callKey)
+        items.push({
+          toolName,
+          target: extractToolTarget(toolName, p.input),
+          at: new Date().toISOString(),
+        })
+      }
+    }
+    setDerived(items)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages])
 
   // Sprint 058-A F8 — composer ✨ enhance-prompt button. Nano rewrites
   // the operator's draft into a tighter, clearer instruction. The

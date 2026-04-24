@@ -25,6 +25,7 @@ import { STUDIO_TOKENS_V2 } from './tokens'
 import { useIsNarrow } from './hooks/use-is-narrow'
 import {
   StudioShellContext,
+  type DerivedContextItem,
   type PreviewInputState,
   type RightPanelTab,
   type StudioShellContextValue,
@@ -144,6 +145,10 @@ export function StudioShell(props: StudioShellProps) {
     [onRunPreview],
   )
 
+  // Derived-context state (bug follow-up) — populated by StudioChat as
+  // tool-call parts stream in. PlanTab renders it in CONTEXT IN USE.
+  const [derivedContext, setDerivedContext] = useState<DerivedContextItem[]>([])
+
   // Reference-picker state (FR-025a). The anchorEl ref lets the picker
   // popover attach to the composer chip that opened it.
   const [referencePickerOpen, setReferencePickerOpen] = useState(false)
@@ -172,6 +177,8 @@ export function StudioShell(props: StudioShellProps) {
       runPreview,
       openReferencePicker,
       closeReferencePicker,
+      derivedContext,
+      setDerivedContext,
     }),
     [
       activeRightTab,
@@ -183,6 +190,7 @@ export function StudioShell(props: StudioShellProps) {
       runPreview,
       openReferencePicker,
       closeReferencePicker,
+      derivedContext,
     ],
   )
 

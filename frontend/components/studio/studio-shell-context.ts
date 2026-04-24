@@ -21,6 +21,24 @@ export interface PreviewInputState {
   lastError: string | null
 }
 
+/**
+ * Sprint 046 bug-follow-up — derived context.
+ *
+ * The `sessionArtifacts` stream only records *writes* (the agent
+ * creating / modifying / reverting an artifact). Reads (get_sop,
+ * get_context, get_faq, fetch_evidence_bundle, etc.) never show up
+ * there, so the Plan tab's CONTEXT IN USE list looked empty even
+ * when the agent had clearly consulted a pile of artifacts.
+ *
+ * `derivedContext` is populated by StudioChat walking its SSE tool
+ * parts and surfaces in PlanTab's CONTEXT IN USE alongside writes.
+ */
+export interface DerivedContextItem {
+  toolName: string
+  target: string | null
+  at: string
+}
+
 export interface StudioShellContextValue {
   // Layout
   activeRightTab: RightPanelTab
@@ -38,6 +56,11 @@ export interface StudioShellContextValue {
   // Reference picker (FR-025a) — composer chip → shell opens popover
   openReferencePicker: (anchorEl: HTMLElement) => void
   closeReferencePicker: () => void
+
+  // Derived-context tracker (bug follow-up) — see DerivedContextItem
+  // doc above. StudioChat updates this; PlanTab renders it.
+  derivedContext: DerivedContextItem[]
+  setDerivedContext: (items: DerivedContextItem[]) => void
 }
 
 export const StudioShellContext = createContext<StudioShellContextValue | null>(null)
@@ -59,6 +82,8 @@ const NO_OP_CONTEXT: StudioShellContextValue = {
   runPreview: () => {},
   openReferencePicker: () => {},
   closeReferencePicker: () => {},
+  derivedContext: [],
+  setDerivedContext: () => {},
 }
 
 /**

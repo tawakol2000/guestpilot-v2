@@ -161,7 +161,7 @@ describe('StudioSurface F9d — session-artifacts hydration', () => {
     })
     // The empty-state line must NOT be present.
     expect(
-      screen.queryByText(/No artifacts touched in this session yet/),
+      screen.queryByText(/No context consulted in this session yet/),
     ).not.toBeInTheDocument()
   })
 
@@ -175,7 +175,7 @@ describe('StudioSurface F9d — session-artifacts hydration', () => {
     )
     await waitFor(() => {
       expect(
-        screen.getByText(/No artifacts touched in this session yet/),
+        screen.getByText(/No context consulted in this session yet/),
       ).toBeInTheDocument()
     })
   })
@@ -191,7 +191,7 @@ describe('StudioSurface F9d — session-artifacts hydration', () => {
     // The whole surface must still render — no crash, rail stays empty.
     await waitFor(() => {
       expect(
-        screen.getByText(/No artifacts touched in this session yet/),
+        screen.getByText(/No context consulted in this session yet/),
       ).toBeInTheDocument()
     })
   })

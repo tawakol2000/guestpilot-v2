@@ -19,6 +19,7 @@ import { STUDIO_TOKENS_V2 } from '../tokens'
 import { StateSnapshotCard, type StateSnapshotData } from '../state-snapshot'
 import { FileIcon, BookIcon, FlaskIcon, HotelIcon } from '../icons'
 import type { SessionArtifact } from '../session-artifacts'
+import { useStudioShell } from '../studio-shell-context'
 
 export interface PlanTabProps {
   snapshot: StateSnapshotData
@@ -28,6 +29,14 @@ export interface PlanTabProps {
 
 export function PlanTab({ snapshot, sessionArtifacts, onOpenArtifact }: PlanTabProps) {
   const recent = sessionArtifacts.slice(0, 5)
+  // Sprint 046 bug follow-up — include reads (get_sop, get_faq,
+  // get_context, fetch_evidence_bundle, etc.) that StudioChat has
+  // derived from the tool-call stream. Without this the list stayed
+  // empty even when the agent had obviously consulted a pile of
+  // artifacts — the underlying `sessionArtifacts` stream only tracks
+  // writes.
+  const { derivedContext } = useStudioShell()
+  const recentReads = derivedContext.slice(0, 5)
 
   const summary = snapshot.scope === 'summary' ? snapshot.summary : null
   const planTitle =
@@ -81,12 +90,14 @@ export function PlanTab({ snapshot, sessionArtifacts, onOpenArtifact }: PlanTabP
         >
           Context in use
         </span>
-        {recent.length === 0 ? (
+        {recent.length === 0 && recentReads.length === 0 ? (
           <p style={{ fontSize: 12, color: STUDIO_TOKENS_V2.muted2, margin: 0 }}>
-            No artifacts touched in this session yet.
+            No context consulted in this session yet.
           </p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {/* Writes first (the operator cares more about "what did
+               the agent change") */}
             {recent.map((a) => (
               <li key={a.id}>
                 <button
@@ -127,6 +138,58 @@ export function PlanTab({ snapshot, sessionArtifacts, onOpenArtifact }: PlanTabP
                   </span>
                   <KindPill kind={a.artifact} />
                 </button>
+              </li>
+            ))}
+            {/* Reads next — tool-call derived context (get_sop, get_faq,
+               fetch_evidence_bundle, …). Non-clickable: the shell
+               doesn't hold an artifactId for these (the agent's tool
+               input holds the target), so opening them needs a future
+               "map tool-read → artifact drawer" wire-up. */}
+            {recentReads.map((r, i) => (
+              <li key={`read:${r.toolName}:${i}`}>
+                <div
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 8px',
+                    background: 'transparent',
+                    borderRadius: 6,
+                    fontFamily: 'var(--font-mono, JetBrains Mono, monospace)',
+                  }}
+                >
+                  <FileIcon size={13} style={{ color: STUDIO_TOKENS_V2.muted2 }} />
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: 12.5,
+                      color: STUDIO_TOKENS_V2.ink2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={r.target ?? r.toolName}
+                  >
+                    {r.toolName}
+                    {r.target ? ` · ${r.target}` : ''}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      padding: '1px 6px',
+                      border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                      borderRadius: 4,
+                      color: STUDIO_TOKENS_V2.muted2,
+                      fontFamily: 'var(--font-sans, Inter Tight, sans-serif)',
+                    }}
+                  >
+                    read
+                  </span>
+                </div>
               </li>
             ))}
           </ul>

@@ -110,6 +110,17 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.emit_audit,
       TUNING_AGENT_TOOL_NAMES.get_edit_history,
       TUNING_AGENT_TOOL_NAMES.emit_session_summary,
+      // Sprint 046 — BUILD mode was rejecting propose_suggestion +
+      // fetch_evidence_bundle, which broke the "discuss-in-tuning"
+      // flow from the inbox (agent tried to fetch evidence, got
+      // denied, degraded to prose instead of emitting a
+      // data-suggested-fix card for the operator to Accept/Reject).
+      // These three tools are safe to allow in BUILD — suggestion
+      // flow is staged via `data-suggested-fix` and still requires
+      // operator approval to apply.
+      TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
+      TUNING_AGENT_TOOL_NAMES.propose_suggestion,
+      TUNING_AGENT_TOOL_NAMES.suggestion_action,
     ];
   }
   return [
