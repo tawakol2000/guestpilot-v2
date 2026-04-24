@@ -6,7 +6,7 @@
     { "type": "content_block_start", "index": 0, "content_block": { "type": "text", "text": "" } },
     { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Let me check." } },
     { "type": "content_block_stop", "index": 0 },
-    { "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "toolu_abc", "name": "mcp__tuning-agent__get_context", "input": {} } },
+    { "type": "content_block_start", "index": 1, "content_block": { "type": "tool_use", "id": "toolu_abc", "name": "mcp__tuning-agent__studio_get_context", "input": {} } },
     { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "{\"scope\":" } },
     { "type": "content_block_delta", "index": 1, "delta": { "type": "input_json_delta", "partial_json": "\"summary\"}" } },
     { "type": "content_block_stop", "index": 1 },
@@ -29,8 +29,8 @@
     { "type": "text-start", "id": "text:asst-fix:1" },
     { "type": "text-delta", "id": "text:asst-fix:1", "delta": "Let me check." },
     { "type": "text-end", "id": "text:asst-fix:1" },
-    { "type": "tool-input-start", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__get_context" },
-    { "type": "tool-input-available", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__get_context", "input": { "scope": "summary" } },
+    { "type": "tool-input-start", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__studio_get_context" },
+    { "type": "tool-input-available", "toolCallId": "toolu_abc", "toolName": "mcp__tuning-agent__studio_get_context", "input": { "scope": "summary" } },
     { "type": "finish-step" },
     { "type": "finish", "finishReason": "stop" }
   ]

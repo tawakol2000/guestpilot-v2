@@ -58,7 +58,7 @@ function flattenPartsToText(parts: unknown, maxChars = 8_000): string {
 
 export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
-    'get_context',
+    'studio_get_context',
     'Current tuning conversation context: anchor message (if any), selected suggestion (if any), pending queue summary, last accepted suggestion. Call this first when a conversation opens. Verbosity "detailed" expands the recent-activity timeline.',
     {
       verbosity: z.enum(['concise', 'detailed']).optional(),

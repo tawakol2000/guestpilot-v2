@@ -6,12 +6,12 @@
 export const TUNING_AGENT_SERVER_NAME = 'tuning-agent';
 
 export const TUNING_AGENT_TOOL_NAMES = {
-  get_context: `mcp__${TUNING_AGENT_SERVER_NAME}__get_context`,
+  studio_get_context: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_context`,
   search_corrections: `mcp__${TUNING_AGENT_SERVER_NAME}__search_corrections`,
   fetch_evidence_bundle: `mcp__${TUNING_AGENT_SERVER_NAME}__fetch_evidence_bundle`,
   propose_suggestion: `mcp__${TUNING_AGENT_SERVER_NAME}__propose_suggestion`,
   suggestion_action: `mcp__${TUNING_AGENT_SERVER_NAME}__suggestion_action`,
-  memory: `mcp__${TUNING_AGENT_SERVER_NAME}__memory`,
+  studio_memory: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_memory`,
   get_version_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_version_history`,
   rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__rollback`,
   // Sprint 045, Gate 2 — BUILD-mode artifact creators.
@@ -21,7 +21,7 @@ export const TUNING_AGENT_TOOL_NAMES = {
   write_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__write_system_prompt`,
   plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__plan_build_changes`,
   // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
-  test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__test_pipeline`,
+  studio_test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_test_pipeline`,
   // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).
   get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
   // Sprint 046, Session B — card-shaped I/O wrappers (callable in both modes).

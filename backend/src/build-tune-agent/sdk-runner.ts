@@ -94,8 +94,8 @@ export interface RunTurnInput {
 function resolveAllowedTools(mode: AgentMode): string[] {
   if (mode === 'BUILD') {
     return [
-      TUNING_AGENT_TOOL_NAMES.get_context,
-      TUNING_AGENT_TOOL_NAMES.memory,
+      TUNING_AGENT_TOOL_NAMES.studio_get_context,
+      TUNING_AGENT_TOOL_NAMES.studio_memory,
       TUNING_AGENT_TOOL_NAMES.search_corrections,
       TUNING_AGENT_TOOL_NAMES.get_version_history,
       TUNING_AGENT_TOOL_NAMES.rollback,
@@ -104,7 +104,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.create_tool_definition,
       TUNING_AGENT_TOOL_NAMES.write_system_prompt,
       TUNING_AGENT_TOOL_NAMES.plan_build_changes,
-      TUNING_AGENT_TOOL_NAMES.test_pipeline,
+      TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
       TUNING_AGENT_TOOL_NAMES.get_current_state,
       TUNING_AGENT_TOOL_NAMES.ask_manager,
       TUNING_AGENT_TOOL_NAMES.emit_audit,
@@ -127,16 +127,16 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     ];
   }
   return [
-    TUNING_AGENT_TOOL_NAMES.get_context,
+    TUNING_AGENT_TOOL_NAMES.studio_get_context,
     TUNING_AGENT_TOOL_NAMES.search_corrections,
     TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
     TUNING_AGENT_TOOL_NAMES.propose_suggestion,
     TUNING_AGENT_TOOL_NAMES.suggestion_action,
-    TUNING_AGENT_TOOL_NAMES.memory,
+    TUNING_AGENT_TOOL_NAMES.studio_memory,
     TUNING_AGENT_TOOL_NAMES.get_version_history,
     TUNING_AGENT_TOOL_NAMES.rollback,
     TUNING_AGENT_TOOL_NAMES.plan_build_changes,
-    TUNING_AGENT_TOOL_NAMES.test_pipeline,
+    TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     TUNING_AGENT_TOOL_NAMES.get_current_state,
     TUNING_AGENT_TOOL_NAMES.ask_manager,
     TUNING_AGENT_TOOL_NAMES.emit_audit,

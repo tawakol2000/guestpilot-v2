@@ -295,7 +295,7 @@ test('allows apply when sanction present and no cooldown/oscillation', async () 
 test('ignores non-suggestion_action tools', async () => {
   const c = ctx({ prisma: {} });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.get_context, {});
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_get_context, {});
   assert.deepEqual(res, { continue: true });
 });
 

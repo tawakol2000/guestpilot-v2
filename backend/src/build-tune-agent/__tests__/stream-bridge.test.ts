@@ -80,7 +80,7 @@ test('tool_use content emits tool-input-start + tool-input-available', () => {
         role: 'assistant',
         type: 'message',
         content: [
-          { type: 'tool_use', id: 'tu1', name: 'mcp__tuning-agent__get_context', input: { verbosity: 'concise' } },
+          { type: 'tool_use', id: 'tu1', name: 'mcp__tuning-agent__studio_get_context', input: { verbosity: 'concise' } },
         ],
       },
     } as any,
@@ -91,7 +91,7 @@ test('tool_use content emits tool-input-start + tool-input-available', () => {
   const availableChunk = chunks.find((c) => c.type === 'tool-input-available');
   assert.ok(startChunk);
   assert.ok(availableChunk);
-  assert.equal(availableChunk.toolName, 'mcp__tuning-agent__get_context');
+  assert.equal(availableChunk.toolName, 'mcp__tuning-agent__studio_get_context');
   assert.deepEqual(availableChunk.input, { verbosity: 'concise' });
 });
 

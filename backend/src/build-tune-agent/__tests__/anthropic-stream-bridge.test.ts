@@ -143,6 +143,6 @@ test('assembled tool_use input_json parses full JSON across multiple deltas', as
   const block = assistant.message.content[0];
   assert.equal(block.type, 'tool_use');
   assert.equal(block.id, 'toolu_abc');
-  assert.equal(block.name, 'mcp__tuning-agent__get_context');
+  assert.equal(block.name, 'mcp__tuning-agent__studio_get_context');
   assert.deepEqual(block.input, { scope: 'summary' });
 });

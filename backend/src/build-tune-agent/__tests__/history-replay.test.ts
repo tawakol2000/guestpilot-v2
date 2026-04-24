@@ -100,7 +100,7 @@ test('loadConversationHistory: assistant tool_use block preserved verbatim', asy
         {
           type: 'tool-call',
           toolCallId: 'toolu_abc',
-          toolName: 'mcp__tuning-agent__get_context',
+          toolName: 'mcp__tuning-agent__studio_get_context',
           input: { scope: 'summary' },
         },
       ],
@@ -118,7 +118,7 @@ test('loadConversationHistory: assistant tool_use block preserved verbatim', asy
   assert.deepEqual(content[1], {
     type: 'tool_use',
     id: 'toolu_abc',
-    name: 'mcp__tuning-agent__get_context',
+    name: 'mcp__tuning-agent__studio_get_context',
     input: { scope: 'summary' },
   });
 });
@@ -159,7 +159,7 @@ test('loadConversationHistory: user tool_result via Vercel tool-<name> state=out
       role: 'user',
       parts: [
         {
-          type: 'tool-mcp__tuning-agent__get_context',
+          type: 'tool-mcp__tuning-agent__studio_get_context',
           toolCallId: 'toolu_xyz',
           state: 'output-available',
           output: 'plain result',

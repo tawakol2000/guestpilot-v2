@@ -22,7 +22,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 
 export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
-    'memory',
+    'studio_memory',
     "Durable tenant-scoped memory for the agent. Ops: 'view' reads a key; 'list' lists keys by prefix (preferences/, facts/, decisions/, rejections/); 'create' writes a new key (fails if exists); 'update' upserts; 'delete' removes. Keep values small and structured. Use preferences/ for durable rules, decisions/ for stamped choices, facts/ for learned tenant context.",
     {
       op: z.enum(['view', 'list', 'create', 'update', 'delete']),

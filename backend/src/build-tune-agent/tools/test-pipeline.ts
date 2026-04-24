@@ -115,7 +115,7 @@ export function buildTestPipelineTool(
     deps?.runTestJudge ??
     ((input: TestJudgeInput) => loadDefaultRunTestJudge()(input));
   return tool(
-    'test_pipeline',
+    'studio_test_pipeline',
     DESCRIPTION,
     {
       testMessage: z.string().min(1).max(1000).optional(),
