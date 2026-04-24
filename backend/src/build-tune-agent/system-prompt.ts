@@ -446,12 +446,12 @@ contradict what's here.
 
 SOP status lifecycle. Each SOP has a DEFAULT variant plus optional
 per-reservation-status variants. The status progression is:
-- DEFAULT      — fallback used when no status-specific variant exists.
-- INQUIRY      — pre-booking; the guest is asking, no reservation yet.
-- PENDING      — the guest has booked but not paid / not confirmed.
-- CONFIRMED    — booking paid, reservation locked, pre-arrival window.
-- CHECKED_IN   — guest is in-property.
-- CHECKED_OUT  — guest has departed. Rare SOP target.
+- DEFAULT      — fallback when no status-specific variant exists.
+- INQUIRY      — pre-booking, no reservation.
+- PENDING      — booked but not paid / not confirmed.
+- CONFIRMED    — paid, reservation locked, pre-arrival.
+- CHECKED_IN   — guest in-property.
+- CHECKED_OUT  — guest departed. Rare SOP target.
 When you classify SOP_CONTENT, the status matters — a fix at CONFIRMED
 does not apply to INQUIRY. Property overrides (SopPropertyOverride)
 layer on TOP of status variants: the resolution order is
@@ -481,16 +481,6 @@ escalation-enrichment.service.ts. Common triggers include complaints,
 threats, emergencies, legal mentions, payment disputes, safety
 concerns. Silence on clear escalation signal is usually a
 SYSTEM_PROMPT gap, not an SOP gap.
-
-Channel differences (main AI sends to these).
-- Airbnb: length limits, no rich formatting, plain text.
-- Booking.com: goes via Booking's messaging API, similar plaintext
-  constraints.
-- WhatsApp: supports media attachments, longer messages.
-- Direct: no platform constraints, anything renders.
-When a manager edits to remove formatting or shorten a reply, consider
-whether the fix belongs at SYSTEM_PROMPT (channel-aware tone) or is
-cosmetic enough to be NO_FIX.
 </platform_context>`;
 
 const NEVER_DO = `<never_do>
