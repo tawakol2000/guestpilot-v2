@@ -15,7 +15,7 @@
 // children; operator-visible surfaces remain identical until the tab
 // + rail components replace the placeholders.
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   BuildCapabilities,
   BuildTenantState,
@@ -69,9 +69,29 @@ export function StudioShell(props: StudioShellProps) {
   // Layout state — defaults follow FR-030 (Plan), FR-055 (tab + collapse
   // preserved across session switches inside one mount), and SC-007
   // (narrow viewport defaults collapsed).
+  //
+  // Sprint 046 bug-fix: the `useState(() => isNarrow)` initializer
+  // runs ONCE on mount. At that point useIsNarrow returns its SSR-safe
+  // default (isNarrow: false, width: null) because its useEffect hasn't
+  // run yet — so even on a 600px viewport both panels initialized to
+  // expanded and only collapsed if the operator clicked the chevrons.
+  // The useEffect below observes isNarrow after mount and syncs the
+  // collapse state on the transition from the SSR default to the real
+  // viewport size. A `didInitRef` guard prevents the sync from running
+  // every time isNarrow flips, which would fight the operator's own
+  // toggles.
   const [activeRightTab, setActiveRightTabRaw] = useState<RightPanelTab>('plan')
-  const [rightCollapsed, setRightCollapsed] = useState<boolean>(() => isNarrow)
-  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(() => isNarrow)
+  const [rightCollapsed, setRightCollapsed] = useState<boolean>(false)
+  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false)
+  const didInitCollapseRef = useRef(false)
+  useEffect(() => {
+    if (didInitCollapseRef.current) return
+    didInitCollapseRef.current = true
+    if (isNarrow) {
+      setRightCollapsed(true)
+      setLeftCollapsed(true)
+    }
+  }, [isNarrow])
 
   // Ledger tab is admin-gated; if capabilities flip mid-session the
   // active tab must reset to Plan so the operator isn't stuck viewing

@@ -36,6 +36,21 @@ import {
 } from '@/lib/build-api'
 import { TenantStateBanner } from './tenant-state-banner'
 import { SessionDiffCard, type SessionDiffSummaryData } from './session-diff-card'
+import {
+  VersionDiffBrowserCard,
+  type VersionDiffArtifactKind,
+} from './version-diff-browser'
+import {
+  InterviewProgressCard,
+  type InterviewSlotStatus,
+} from './interview-progress'
+
+function normaliseInterviewSlotStatus(raw: unknown): InterviewSlotStatus {
+  if (raw === 'filled' || raw === 'asking' || raw === 'skipped' || raw === 'pending') {
+    return raw
+  }
+  return 'pending'
+}
 import { STUDIO_COLORS, STUDIO_TOKENS_V2, getStudioCategoryStyle } from './tokens'
 import { useStudioShell } from './studio-shell-context'
 import { FileIcon, FlaskIcon } from './icons'
@@ -1608,6 +1623,64 @@ function StandalonePart({
     // fields to zero.
     const data = (part.data ?? {}) as SessionDiffSummaryData
     return <SessionDiffCard data={data} />
+  }
+
+  if (type === 'data-version-diff-browser') {
+    // Sprint 046 — side-by-side version-diff browser card. Agent emits
+    // this when it wants to show the operator two historical versions
+    // of an artifact + a rollback CTA.
+    const data = (part.data ?? {}) as Record<string, unknown>
+    const before = data.before as Record<string, unknown> | undefined
+    const after = data.after as Record<string, unknown> | undefined
+    if (!before || !after) return null
+    const kindRaw = typeof data.artifact === 'string' ? data.artifact : ''
+    const kind = (['system_prompt', 'sop', 'faq', 'tool_definition', 'property_override'] as const).includes(
+      kindRaw as VersionDiffArtifactKind,
+    )
+      ? (kindRaw as VersionDiffArtifactKind)
+      : 'sop'
+    return (
+      <VersionDiffBrowserCard
+        artifact={kind}
+        artifactId={typeof data.artifactId === 'string' ? data.artifactId : undefined}
+        artifactTitle={typeof data.artifactTitle === 'string' ? data.artifactTitle : undefined}
+        before={{
+          versionId: String(before.versionId ?? ''),
+          label: String(before.label ?? 'Before'),
+          createdAt: typeof before.createdAt === 'string' ? before.createdAt : undefined,
+          author: typeof before.author === 'string' ? before.author : undefined,
+          body: String(before.body ?? ''),
+        }}
+        after={{
+          versionId: String(after.versionId ?? ''),
+          label: String(after.label ?? 'After'),
+          createdAt: typeof after.createdAt === 'string' ? after.createdAt : undefined,
+          author: typeof after.author === 'string' ? after.author : undefined,
+          body: String(after.body ?? ''),
+        }}
+      />
+    )
+  }
+
+  if (type === 'data-interview-progress') {
+    // Sprint 046 — mid-interview slot-fill progress card. Agent emits
+    // this during greenfield onboarding / deep audits to show the
+    // operator how many load-bearing questions remain.
+    const data = (part.data ?? {}) as Record<string, unknown>
+    const rawSlots = Array.isArray(data.slots) ? (data.slots as Array<Record<string, unknown>>) : []
+    const slots = rawSlots.map((s) => ({
+      id: String(s.id ?? ''),
+      label: String(s.label ?? ''),
+      status: normaliseInterviewSlotStatus(s.status),
+      answer: typeof s.answer === 'string' ? s.answer : undefined,
+      loadBearing: Boolean(s.loadBearing),
+    }))
+    return (
+      <InterviewProgressCard
+        title={String(data.title ?? 'Interview')}
+        slots={slots}
+      />
+    )
   }
 
   if (type === 'data-advisory') {

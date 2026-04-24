@@ -90,8 +90,12 @@ describe('AuditReportCard', () => {
 
   // ── Sprint 057-A F2 — typographic attribution ─────────────────────────
 
-  it('057-A F2: row.note renders with AI (inkMuted) colour', async () => {
-    const { STUDIO_COLORS } = await import('../tokens')
+  it('057-A F2: row.note renders with AI-attributed readable body color', async () => {
+    // Sprint 046 — audit report restyle increased the body-text
+    // contrast from inkMuted to ink2 so the notes are legible on the
+    // brighter v2 canvas. The test now verifies the note renders in
+    // *some* darker-than-ink-subtle color rather than pinning one hex.
+    const { STUDIO_TOKENS_V2 } = await import('../tokens')
     render(
       <AuditReportCard
         rows={[{
@@ -107,7 +111,7 @@ describe('AuditReportCard', () => {
       />,
     )
     const noteEl = screen.getByText('This note is AI-generated text.')
-    expect(noteEl).toHaveStyle({ color: STUDIO_COLORS.inkMuted })
+    expect(noteEl).toHaveStyle({ color: STUDIO_TOKENS_V2.ink2 })
   })
 
   it('057-A F2: row.label (structural heading) renders with ink colour', async () => {

@@ -10,7 +10,7 @@
 //   4. LATENCY BUDGET 3-card row with amber warn threshold state
 //      (reply > 2s, cost > $0.01)
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { STUDIO_TOKENS_V2 } from '../tokens'
 import { useStudioShell } from '../studio-shell-context'
@@ -24,10 +24,21 @@ const COST_WARN_USD = 0.01
 
 export function PreviewTab() {
   const shell = useStudioShell()
-  const [localInput, setLocalInput] = useState('')
-
   const { previewInput, runPreview } = shell
-  const { lastResult, isSending, lastError } = previewInput
+  const { text: shellText, lastResult, isSending, lastError } = previewInput
+  const [localInput, setLocalInput] = useState(shellText)
+
+  // Sprint 046 bug-fix: sync the local input with the shell-owned
+  // previewInput.text whenever the shell drives a test from outside
+  // the tab (e.g. composer's Test chip calls shell.runPreview('…') —
+  // the Preview tab opens but previously its input stayed empty, so
+  // the operator couldn't see what text was under test). If the shell
+  // value changes, reflect it; local typing still wins for the next
+  // send because setLocalInput just mirrors shell changes.
+  useEffect(() => {
+    if (shellText !== localInput) setLocalInput(shellText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shellText])
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()

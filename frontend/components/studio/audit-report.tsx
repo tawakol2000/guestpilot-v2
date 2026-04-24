@@ -8,7 +8,7 @@
  * the row that matches `topFindingId`. Status dots are pure colour,
  * never emoji (Response Contract rule 6).
  */
-import { STUDIO_COLORS, STUDIO_STATUS_DOT, attributedStyle, type StudioStatus } from './tokens'
+import { STUDIO_COLORS, STUDIO_STATUS_DOT, STUDIO_TOKENS_V2, attributedStyle, type StudioStatus } from './tokens'
 
 export interface AuditReportRowData {
   artifact: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property'
@@ -54,36 +54,45 @@ export function AuditReportCard(props: AuditReportCardProps) {
     <article
       data-studio-card="audit-report"
       style={{
-        border: `1px solid ${STUDIO_COLORS.hairline}`,
-        borderRadius: 8,
-        background: STUDIO_COLORS.surfaceRaised,
+        border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+        borderRadius: STUDIO_TOKENS_V2.radiusLg,
+        background: STUDIO_TOKENS_V2.bg,
         marginTop: 8,
         overflow: 'hidden',
+        boxShadow: STUDIO_TOKENS_V2.shadowSm,
       }}
     >
+      {/* Sprint 046 — audit report restyle per operator screenshot:
+         more generous padding, larger headings and description type,
+         taller View / Fix buttons with v2 tokens. */}
       <header
         style={{
-          padding: '10px 14px',
-          borderBottom: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
-          color: STUDIO_COLORS.ink,
-          fontSize: 12,
-          fontWeight: 600,
-          letterSpacing: 0.2,
-          textTransform: 'uppercase',
+          padding: '16px 20px',
+          borderBottom: `1px solid ${STUDIO_TOKENS_V2.border}`,
           display: 'flex',
-          justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 20,
         }}
       >
-        <span>Audit report</span>
+        <span
+          style={{
+            color: STUDIO_TOKENS_V2.ink,
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            flexShrink: 0,
+          }}
+        >
+          Audit report
+        </span>
         {props.summary && (
           <span
             style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: STUDIO_COLORS.inkMuted,
-              textTransform: 'none',
-              letterSpacing: 0,
+              fontSize: 14,
+              fontWeight: 400,
+              color: STUDIO_TOKENS_V2.ink2,
+              lineHeight: 1.4,
             }}
           >
             {props.summary}
@@ -99,19 +108,19 @@ export function AuditReportCard(props: AuditReportCardProps) {
               key={(row.findingId ?? row.artifactId ?? row.label) + ':' + idx}
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 14px',
-                borderTop:
-                  idx === 0 ? 'none' : `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+                alignItems: 'flex-start',
+                gap: 14,
+                padding: '18px 20px',
+                borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
               }}
             >
               <span
                 title={STATUS_LABEL[row.status]}
                 aria-label={STATUS_LABEL[row.status]}
                 style={{
-                  width: 8,
-                  height: 8,
+                  width: 10,
+                  height: 10,
+                  marginTop: 6,
                   borderRadius: '50%',
                   background: STUDIO_STATUS_DOT[row.status],
                   flexShrink: 0,
@@ -121,15 +130,17 @@ export function AuditReportCard(props: AuditReportCardProps) {
                 <div
                   style={{
                     display: 'flex',
-                    gap: 6,
+                    gap: 8,
                     alignItems: 'baseline',
+                    flexWrap: 'wrap',
                   }}
                 >
                   <span
                     style={{
-                      color: STUDIO_COLORS.ink,
-                      fontSize: 13,
+                      color: STUDIO_TOKENS_V2.ink,
+                      fontSize: 15,
                       fontWeight: 600,
+                      letterSpacing: '-0.005em',
                     }}
                   >
                     {row.label}
@@ -137,8 +148,9 @@ export function AuditReportCard(props: AuditReportCardProps) {
                   <span
                     title={row.artifact}
                     style={{
-                      color: STUDIO_COLORS.inkSubtle,
-                      fontSize: 11,
+                      color: STUDIO_TOKENS_V2.muted2,
+                      fontSize: 13,
+                      fontWeight: 400,
                     }}
                   >
                     {ARTIFACT_LABEL[row.artifact] ?? row.artifact}
@@ -146,9 +158,10 @@ export function AuditReportCard(props: AuditReportCardProps) {
                 </div>
                 <div
                   style={{
-                    ...attributedStyle('ai'),
-                    fontSize: 12,
-                    marginTop: 2,
+                    color: STUDIO_TOKENS_V2.ink2,
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    marginTop: 4,
                   }}
                 >
                   {row.note}
@@ -159,14 +172,16 @@ export function AuditReportCard(props: AuditReportCardProps) {
                   type="button"
                   onClick={() => props.onFixTopFinding?.(props.topFindingId!)}
                   style={{
-                    padding: '5px 10px',
-                    fontSize: 11,
-                    fontWeight: 600,
+                    padding: '9px 18px',
+                    fontSize: 13,
+                    fontWeight: 500,
                     border: '1px solid transparent',
-                    background: STUDIO_COLORS.accent,
+                    background: STUDIO_TOKENS_V2.blue,
                     color: '#FFFFFF',
-                    borderRadius: 5,
+                    borderRadius: STUDIO_TOKENS_V2.radiusMd,
                     cursor: props.onFixTopFinding ? 'pointer' : 'default',
+                    flexShrink: 0,
+                    marginTop: 2,
                   }}
                 >
                   Fix
@@ -177,14 +192,16 @@ export function AuditReportCard(props: AuditReportCardProps) {
                   type="button"
                   onClick={() => props.onViewRow?.(row)}
                   style={{
-                    padding: '5px 10px',
-                    fontSize: 11,
+                    padding: '9px 18px',
+                    fontSize: 13,
                     fontWeight: 500,
-                    border: `1px solid ${STUDIO_COLORS.hairline}`,
-                    background: STUDIO_COLORS.surfaceRaised,
-                    color: STUDIO_COLORS.inkMuted,
-                    borderRadius: 5,
+                    border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                    background: STUDIO_TOKENS_V2.bg,
+                    color: STUDIO_TOKENS_V2.ink2,
+                    borderRadius: STUDIO_TOKENS_V2.radiusMd,
                     cursor: props.onViewRow ? 'pointer' : 'default',
+                    flexShrink: 0,
+                    marginTop: 2,
                   }}
                 >
                   View
