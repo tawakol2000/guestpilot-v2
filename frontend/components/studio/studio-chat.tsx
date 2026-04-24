@@ -423,6 +423,28 @@ export function StudioChat({
     return () => window.removeEventListener('studio:composer-insert', onInsert)
   }, [])
 
+  // Sprint 046 bug-fix — listen for send-message events the shell
+  // dispatches from Preview tab / Test chip / Re-run chevron. Without
+  // this listener the PreviewTab Send button / composer Test chip /
+  // tests-tab Re-run chevron all fired shell.runPreview() but the
+  // runner prop was never wired, so they silently failed with
+  // "Preview runner not yet wired up". Sending through the real chat
+  // pipeline means the agent receives the formatted message and can
+  // invoke test_pipeline as expected.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onSend = (e: Event) => {
+      const ce = e as CustomEvent<{ text: string }>
+      const text = ce.detail?.text
+      if (!text || !text.trim()) return
+      sendMessage({ text: text.trim() })
+    }
+    window.addEventListener('studio:send-message', onSend)
+    return () => window.removeEventListener('studio:send-message', onSend)
+    // sendMessage identity is stable per useChat contract
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Sprint 046 bug follow-up — feed the shell's derivedContext from the
   // agent's tool-call parts so PlanTab's CONTEXT IN USE list reflects
   // everything the agent has *read* (SOPs, FAQs, evidence bundles,

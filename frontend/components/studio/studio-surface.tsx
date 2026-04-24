@@ -546,6 +546,16 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
       tenantState={tenantState}
       conversationId={load.conversationId}
       capabilities={capabilities}
+      onRunPreview={(text) => {
+        // Sprint 046 bug-fix — route shell.runPreview through the real
+        // chat pipeline so the build agent actually receives the test
+        // request. Previously unwired, which silently failed every
+        // Preview tab Send / composer Test chip / Tests tab Re-run.
+        if (typeof window === 'undefined') return
+        window.dispatchEvent(
+          new CustomEvent('studio:send-message', { detail: { text } }),
+        )
+      }}
       onReferencePicked={(ref) => {
         // Sprint 046 T013 — emit a window event the composer listens
         // for. The composer appends the citation marker to its draft.

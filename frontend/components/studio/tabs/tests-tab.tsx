@@ -104,18 +104,19 @@ export function TestsTab() {
                   // asking the build agent to run `test_pipeline` for
                   // just this variant. The helper formats a message
                   // the agent's coordinator parses.
-                  const lastInput = shell.previewInput.text
-                  if (!lastInput.trim()) {
-                    // Fall back: re-run the full suite with the last
-                    // input (still populated because the Preview tab
-                    // keeps `previewInput.text` across runs).
-                    shell.runPreview(lastInput.trim() || 'Re-run test suite')
+                  const lastInput = shell.previewInput.text.trim()
+                  if (!lastInput) {
+                    // No prior input means there's nothing to re-run
+                    // against. Bounce the operator to Preview so they
+                    // can enter a guest message instead of sending a
+                    // junk "Re-run test suite" string to the agent.
+                    shell.setActiveRightTab('preview')
                     return
                   }
                   // Use the formatted message so the agent receives the
                   // structured `onlyVariant` annotation.
                   const formatted = formatRunTestPipelineMessage({
-                    message: lastInput.trim(),
+                    message: lastInput,
                     onlyVariant: id,
                   })
                   shell.runPreview(formatted)
