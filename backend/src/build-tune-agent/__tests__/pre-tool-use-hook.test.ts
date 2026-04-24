@@ -364,7 +364,7 @@ test('create_sop on a recently-edited artifact emits a recent-edit advisory with
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_sop, {
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_create_sop, {
     sopCategory: 'sop-checkin',
   });
   assert.deepEqual(res, { continue: true });
@@ -372,7 +372,7 @@ test('create_sop on a recently-edited artifact emits a recent-edit advisory with
     (p) => p.type === 'data-advisory' && p.data?.kind === 'recent-edit'
   );
   assert.ok(advisory, 'expected a recent-edit advisory for create_sop');
-  assert.match(String(advisory.id), /recent-edit:create_sop:/);
+  assert.match(String(advisory.id), /recent-edit:studio_create_sop:/);
 });
 
 test('create_sop on an artifact never written emits no advisory and does not block', async () => {
@@ -386,7 +386,7 @@ test('create_sop on an artifact never written emits no advisory and does not blo
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_sop, {
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_create_sop, {
     sopCategory: 'sop-never-written',
   });
   assert.deepEqual(res, { continue: true });
@@ -402,7 +402,7 @@ test('create_faq does not block the tool even without an advisory emitted', asyn
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.create_faq, {
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_create_faq, {
     question: 'Where can guests park?',
     category: 'parking',
   });
@@ -430,7 +430,7 @@ test('write_system_prompt on recently-edited variant emits recent-edit advisory'
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.write_system_prompt, {
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_create_system_prompt, {
     variant: 'coordinator',
     text: 'ignored by the hook',
   });

@@ -166,7 +166,7 @@ export function buildGetVersionHistoryTool(tool: typeof ToolFactory, ctx: () => 
 
 export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
-    'rollback',
+    'studio_rollback',
     "Revert artifact state. Two modes: (1) PER-ARTIFACT — pass artifactType + versionId to roll a single artifact back to a prior version. Supported types: SYSTEM_PROMPT, TOOL_DEFINITION, SOP_VARIANT, FAQ_ENTRY. (2) TRANSACTION — pass transactionId to revert ALL artifacts written under a BUILD-mode plan, in reverse dependency order (tool_definitions → system_prompt → faq → sop). Exactly one mode per call — passing both is an error. Always explain what you're rolling back and why before calling.",
     {
       artifactType: z.enum(['SYSTEM_PROMPT', 'SOP_VARIANT', 'FAQ_ENTRY', 'TOOL_DEFINITION']).optional(),

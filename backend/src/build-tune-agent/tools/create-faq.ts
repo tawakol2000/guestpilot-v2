@@ -41,7 +41,7 @@ RETURNS: { faqEntryId, version, previewUrl } or { dryRun: true, preview, diff }`
 
 export function buildCreateFaqTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
-    'create_faq',
+    'studio_create_faq',
     DESCRIPTION,
     {
       category: z.enum(FAQ_CATEGORIES as unknown as [string, ...string[]]),

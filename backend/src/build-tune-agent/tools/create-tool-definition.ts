@@ -71,7 +71,7 @@ export function buildCreateToolDefinitionTool(
   ctx: () => ToolContext
 ) {
   return tool(
-    'create_tool_definition',
+    'studio_create_tool_definition',
     DESCRIPTION,
     {
       name: z.string().regex(SNAKE_TOOL_NAME, 'name must be snake_case, 2–60 chars').max(60),

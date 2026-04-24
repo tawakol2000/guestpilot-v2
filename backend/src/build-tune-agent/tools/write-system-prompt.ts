@@ -98,7 +98,7 @@ export function buildWriteSystemPromptTool(
   ctx: () => ToolContext
 ) {
   return tool(
-    'write_system_prompt',
+    'studio_create_system_prompt',
     DESCRIPTION,
     {
       variant: z.enum(['coordinator', 'screening']),

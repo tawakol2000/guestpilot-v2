@@ -64,7 +64,7 @@ RETURNS: { sopId, variantId, version, previewUrl } or { dryRun: true, preview, d
 
 export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
-    'create_sop',
+    'studio_create_sop',
     DESCRIPTION,
     {
       sopCategory: z

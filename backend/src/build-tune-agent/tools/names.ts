@@ -13,12 +13,13 @@ export const TUNING_AGENT_TOOL_NAMES = {
   suggestion_action: `mcp__${TUNING_AGENT_SERVER_NAME}__suggestion_action`,
   studio_memory: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_memory`,
   get_version_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_version_history`,
-  rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__rollback`,
+  studio_rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_rollback`,
   // Sprint 045, Gate 2 — BUILD-mode artifact creators.
-  create_faq: `mcp__${TUNING_AGENT_SERVER_NAME}__create_faq`,
-  create_sop: `mcp__${TUNING_AGENT_SERVER_NAME}__create_sop`,
-  create_tool_definition: `mcp__${TUNING_AGENT_SERVER_NAME}__create_tool_definition`,
-  write_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__write_system_prompt`,
+  studio_create_faq: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_faq`,
+  studio_create_sop: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_sop`,
+  studio_create_tool_definition: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_tool_definition`,
+  // 060-D: verb alignment — write_system_prompt → studio_create_system_prompt.
+  studio_create_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_system_prompt`,
   plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__plan_build_changes`,
   // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
   studio_test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_test_pipeline`,

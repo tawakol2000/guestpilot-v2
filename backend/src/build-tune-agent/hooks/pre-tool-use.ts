@@ -50,10 +50,10 @@ import { DATA_PART_TYPES, type AdvisoryData } from '../data-parts';
  * — they're direct-write by design, not manager-sanctioned applies.
  */
 const BUILD_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
-  TUNING_AGENT_TOOL_NAMES.create_sop,
-  TUNING_AGENT_TOOL_NAMES.create_faq,
-  TUNING_AGENT_TOOL_NAMES.create_tool_definition,
-  TUNING_AGENT_TOOL_NAMES.write_system_prompt,
+  TUNING_AGENT_TOOL_NAMES.studio_create_sop,
+  TUNING_AGENT_TOOL_NAMES.studio_create_faq,
+  TUNING_AGENT_TOOL_NAMES.studio_create_tool_definition,
+  TUNING_AGENT_TOOL_NAMES.studio_create_system_prompt,
 ]);
 
 /**
@@ -66,7 +66,7 @@ function buildWriteTargetWhere(
   toolName: string,
   toolInput: Record<string, unknown>
 ): Record<string, unknown> | null {
-  if (toolName === TUNING_AGENT_TOOL_NAMES.create_sop) {
+  if (toolName === TUNING_AGENT_TOOL_NAMES.studio_create_sop) {
     const sopCategory = (toolInput.sopCategory as string | undefined) ?? null;
     if (!sopCategory) return null;
     return {
@@ -75,7 +75,7 @@ function buildWriteTargetWhere(
       sopPropertyId: (toolInput.propertyId as string | undefined) ?? null,
     };
   }
-  if (toolName === TUNING_AGENT_TOOL_NAMES.create_faq) {
+  if (toolName === TUNING_AGENT_TOOL_NAMES.studio_create_faq) {
     // FAQ creates don't have a stable faqEntryId pre-write (the row is
     // generated inside create_faq). Match by the category+question+
     // propertyId tuple stored alongside the TuningSuggestion.
@@ -89,7 +89,7 @@ function buildWriteTargetWhere(
     if (propertyId !== null) where.faqPropertyId = propertyId;
     return where;
   }
-  if (toolName === TUNING_AGENT_TOOL_NAMES.create_tool_definition) {
+  if (toolName === TUNING_AGENT_TOOL_NAMES.studio_create_tool_definition) {
     // Mirrors suggestion_action's TOOL_CONFIG cooldown key: two
     // suggestions targeting the same tool share `beforeText` = the
     // current tool description. For a fresh create, we haven't seen the
@@ -98,7 +98,7 @@ function buildWriteTargetWhere(
     // more precise match requires a tool-id column we don't have.
     return { diagnosticCategory: 'TOOL_CONFIG' };
   }
-  if (toolName === TUNING_AGENT_TOOL_NAMES.write_system_prompt) {
+  if (toolName === TUNING_AGENT_TOOL_NAMES.studio_create_system_prompt) {
     const variant = (toolInput.variant as string | undefined) ?? null;
     if (!variant) return null;
     return { systemPromptVariant: variant };
@@ -178,7 +178,7 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
     // The rollback tool bypassed compliance entirely, which violated the
     // human-in-the-loop principle. Require an explicit rollback sanction
     // before the handler runs.
-    if (pre.tool_name === TUNING_AGENT_TOOL_NAMES.rollback) {
+    if (pre.tool_name === TUNING_AGENT_TOOL_NAMES.studio_rollback) {
       const last = c.readLastUserMessage();
       if (!detectRollbackSanction(last)) {
         return denyHook(
