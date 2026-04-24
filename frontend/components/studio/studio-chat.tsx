@@ -1146,6 +1146,19 @@ function MessageRow({
   const reasoningParts: Array<Record<string, any>> = []
   const toolParts: Array<Record<string, any>> = []
   const standaloneParts: Array<Record<string, any>> = []
+  // Sprint 046 bug-fix — if a finalised assistant turn has zero
+  // renderable parts (agent silently errored, hit a budget, SDK
+  // cancelled the stream, etc.) we previously rendered a ghost row:
+  // just the Studio avatar + name with an empty body. The operator
+  // saw no signal and couldn't retry. Fallback below covers that.
+  const hasRenderableContent =
+    textParts.length > 0 ||
+    reasoningParts.length > 0 ||
+    toolParts.length > 0 ||
+    standaloneParts.length > 0
+  // Only show the fallback on *finalised* turns (not the currently-
+  // streaming last message, where transient empty states are normal).
+  const showEmptyTurnFallback = !isUser && !hasRenderableContent && !isLast
   // Sprint 058-A F9b — merge consecutive reasoning parts into a single
   // entry so each reasoning streak renders as one <ReasoningLine>, not
   // one per SDK chunk. Without this, chunk boundaries produce the
@@ -1265,6 +1278,37 @@ function MessageRow({
               gap: 10,
             }}
           >
+            {/* Sprint 046 bug-fix — visible fallback for finalised
+               assistant turns that produced zero content. Prevents the
+               "ghost bubble" operators were seeing when the agent
+               errored mid-stream. */}
+            {showEmptyTurnFallback ? (
+              <EmptyAssistantTurnFallback
+                onRetry={() => {
+                  // Find the preceding user message and resend its
+                  // text. If we can't find one (edge case), just
+                  // surface a generic retry nudge via the composer.
+                  const prev = conversationMessages
+                    ? [...conversationMessages].slice(0, conversationMessages.indexOf(message)).reverse().find((m) => (m as any).role === 'user')
+                    : null
+                  if (prev) {
+                    const prevParts = ((prev as any).parts as Array<Record<string, any>> | undefined) ?? []
+                    const lastUserText = prevParts
+                      .map((p) => (typeof p?.text === 'string' ? p.text : ''))
+                      .filter(Boolean)
+                      .join('\n\n')
+                      .trim()
+                    if (lastUserText && onSendText) {
+                      onSendText(lastUserText)
+                      return
+                    }
+                  }
+                  // No recoverable context — seed the composer so the
+                  // operator can adjust + resend.
+                  setDraft((d) => (d && !d.endsWith(' ') ? `${d} ` : d))
+                }}
+              />
+            ) : null}
             {/* Sprint 057-A F1 — tool-chain summary. */}
             <ToolChainSummary
               parts={toolParts}
@@ -1981,6 +2025,53 @@ function mapQuoteArtifactToDrawer(raw: unknown): SessionArtifactType | null {
     default:
       return null
   }
+}
+
+// Sprint 046 bug-fix — visible fallback for finalised assistant turns
+// with zero content. Replaces the prior "ghost bubble" (Studio avatar
+// + name, empty body) that gave operators no signal when the agent
+// errored silently, hit a budget, or the stream was cancelled.
+function EmptyAssistantTurnFallback({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      aria-label="Agent returned no response"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 12px',
+        background: STUDIO_TOKENS_V2.warnBg,
+        border: `1px solid ${STUDIO_TOKENS_V2.warnFg}33`,
+        borderRadius: STUDIO_TOKENS_V2.radiusMd,
+        fontSize: 13,
+        color: STUDIO_TOKENS_V2.ink2,
+        maxWidth: 680,
+      }}
+    >
+      <span style={{ flex: 1 }}>
+        The agent didn’t reply. It may have errored mid-stream or hit a
+        budget. Resend to try again.
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{
+          padding: '5px 12px',
+          fontSize: 12.5,
+          fontWeight: 500,
+          color: STUDIO_TOKENS_V2.ink,
+          background: STUDIO_TOKENS_V2.bg,
+          border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+          borderRadius: STUDIO_TOKENS_V2.radiusSm,
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        Resend
+      </button>
+    </div>
+  )
 }
 
 function TypingIndicator() {
