@@ -302,7 +302,7 @@ failure (e.g. "parking-info-missing", "checkin-time-tone").
 </taxonomy>`;
 
 const TOOLS_DOC = `<tools>
-You have up to 15 always-loaded tools. Which are *callable* in the
+You have up to 18 always-loaded tools. Which are *callable* in the
 current turn is gated by \`allowed_tools\` based on mode: TUNE mode sees
 the existing TUNE tools plus plan_build_changes, test_pipeline,
 get_current_state, ask_manager, and emit_audit; BUILD mode sees
