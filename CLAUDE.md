@@ -189,6 +189,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL via Prisma. New fields on `Property` (×2), `Tenant` (×2 fallback), `Reservation` (×2 override). Extend `Task` with `metadata Json?` + new values for the existing `type String` column. One new table `AutomatedReplyTemplate`. (043-checkin-checkout-actions)
 - TypeScript 5.x on Node.js 18+ (backend); Next.js 16 + React 19 (frontend). Same as CLAUDE.md. + Express 4.x, Prisma ORM, axios (backend) + React 19, Tailwind 4, shadcn/ui (frontend). New external dependency: WAsender HTTP API (existing external account, credentials via env). (044-doc-handoff-whatsapp)
 - PostgreSQL via Prisma. Changes: two new columns on `Tenant` (manager recipient, security recipient, reminder HH:MM, handoff HH:MM, feature on/off) — actually four + bool = five fields. Extend `Reservation.screeningAnswers.documentChecklist` JSON structure with per-slot image refs (backward-compatible JSON extension, no schema migration needed for that). One new table `DocumentHandoffState` (reservation-scoped, holds per-message-type scheduled fire time, status, attempt count, last error, provider message ID). Applied with `npx prisma db push` per constitution §Development Workflow. (044-doc-handoff-whatsapp)
+- TypeScript 5.x on Node 18+ (frontend only) + Next.js 16, React 19, Tailwind 4, shadcn/ui, `ai` (SDK), existing studio/build components, `next/font/google` for Inter Tight + JetBrains Mono (046-studio-redesign)
+- N/A — no backend or schema changes; all data comes from existing endpoints (046-studio-redesign)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui

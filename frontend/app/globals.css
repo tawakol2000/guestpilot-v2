@@ -25,6 +25,14 @@
 @theme inline {
   --font-sans: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-display: var(--font-playfair), 'Playfair Display', Georgia, serif;
+  /* Sprint 046 — Studio design-overhaul fonts. Globally declared so
+   * Tailwind's `font-studio` / `font-studio-mono` utilities resolve
+   * everywhere; the scoped override under `[data-studio-shell]` below
+   * also remaps `font-sans` / `font-mono` inside the Studio surface
+   * so existing utility classes render in Inter Tight / JetBrains Mono
+   * without changing class names on every Studio component. */
+  --font-studio: var(--font-inter-tight), 'Inter Tight', system-ui, sans-serif;
+  --font-studio-mono: var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-popover: var(--popover);
@@ -57,6 +65,23 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Sprint 046 — inside the Studio design-overhaul shell, remap the
+   * Tailwind `font-sans` / `font-mono` utilities to Inter Tight +
+   * JetBrains Mono so existing utility classes pick up the new fonts
+   * without class-by-class migration. Scoped to `[data-studio-shell]`
+   * so the rest of the app keeps its Plus Jakarta Sans / Playfair
+   * Display stack. Also sets the spec-required global letter-spacing
+   * (−0.005em) and base font-size / line-height for the Studio surface
+   * only (FR-003). */
+  [data-studio-shell] {
+    --font-sans: var(--font-inter-tight), 'Inter Tight', system-ui, sans-serif;
+    --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
   }
 }
 

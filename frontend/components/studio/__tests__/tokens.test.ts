@@ -21,13 +21,15 @@ describe('attributedStyle', () => {
     expect(attributedStyle('mixed')).toEqual({ color: STUDIO_COLORS.inkMuted })
   })
 
-  it('inkMuted is approximately #666666 (not the old #52525B from prior spec)', () => {
-    // The token file uses #666666 — this test pins the actual value so
-    // a rebase that silently changes it surfaces here.
-    expect(STUDIO_COLORS.inkMuted).toBe('#666666')
+  it('inkMuted is #6b6d76 (Sprint 046 v2 palette)', () => {
+    // Sprint 046 — v2 palette migration. The old Studio value was
+    // #666666; the new handoff-spec value is #6b6d76 (muted tier).
+    expect(STUDIO_COLORS.inkMuted).toBe('#6b6d76')
   })
 
-  it('ink is #0A0A0A', () => {
-    expect(STUDIO_COLORS.ink).toBe('#0A0A0A')
+  it('ink is #0a0a0b (Sprint 046 v2 palette)', () => {
+    // Sprint 046 — near-black ink from the handoff palette, swapped
+    // from #0A0A0A.
+    expect(STUDIO_COLORS.ink).toBe('#0a0a0b')
   })
 })

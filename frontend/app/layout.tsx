@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Playfair_Display } from 'next/font/google'
+import { fontInterTight, fontJetbrainsMono } from './fonts'
 import './globals.css'
 
 const plusJakarta = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-jakarta', weight: ['400', '500', '600', '700', '800'] })
@@ -18,7 +19,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${plusJakarta.variable} ${playfair.variable} font-sans antialiased`}>
+      <body
+        className={`${plusJakarta.variable} ${playfair.variable} ${fontInterTight.variable} ${fontJetbrainsMono.variable} font-sans antialiased`}
+      >
         {children}
       </body>
     </html>

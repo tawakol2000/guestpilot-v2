@@ -77,7 +77,11 @@ const planMessage = {
 } satisfies Partial<UIMessage> as unknown as UIMessage
 
 describe('StudioChat · plan approval → onArtifactTouched', () => {
-  it('fires onArtifactTouched once per plan item when the plan auto-approves on mount', async () => {
+  it('fires onArtifactTouched once per plan item after the operator clicks Approve plan', async () => {
+    // 2026-04-23 behavior change: auto-approve on mount was retired
+    // (plan-checklist.tsx). The operator must now click "Approve plan"
+    // in the footer for the per-item onArtifactTouched callbacks to
+    // fire. This test updated to match.
     const onArtifactTouched = vi.fn()
     const onPlanApproved = vi.fn()
 
@@ -91,8 +95,15 @@ describe('StudioChat · plan approval → onArtifactTouched', () => {
       />,
     )
 
-    // Sprint 055-A F1 — auto-approve fires on mount (no "Approve plan" button).
-    // Wait for the async approval to resolve.
+    // No call fired yet — the Approve plan button hasn't been clicked.
+    expect(approveSpy).not.toHaveBeenCalled()
+    expect(onArtifactTouched).not.toHaveBeenCalled()
+
+    // Click the Approve plan button.
+    const { fireEvent } = await import('@testing-library/react')
+    const btn = await screen.findByRole('button', { name: /approve plan/i })
+    fireEvent.click(btn)
+
     await waitFor(() => {
       expect(approveSpy).toHaveBeenCalledWith('tx-deadbeef1234')
     })

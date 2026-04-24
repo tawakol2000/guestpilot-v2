@@ -78,24 +78,34 @@ describe('PlanChecklist — 055-A F1', () => {
     vi.restoreAllMocks()
   })
 
-  // ── Test 1: Auto-approve fires exactly once on mount ───────────────────
+  // ── Test 1: Manual "Approve plan" click fires exactly once ─────────────
+  //
+  // 2026-04-23 behavior change: auto-approve on mount was retired — the
+  // operator now clicks "Approve plan" in the footer. This test updated
+  // to match (previously asserted the now-removed auto-fire).
 
-  it('auto-approve fires exactly once on mount (StrictMode double-invoke safe)', async () => {
+  it('"Approve plan" click fires exactly once (double-click guarded)', async () => {
     mockApproveSuccess()
     const data = makePlan()
 
-    // Render normally first — should fire once.
-    const { unmount, rerender } = render(<PlanChecklist data={data} />)
+    const { unmount } = render(<PlanChecklist data={data} />)
+
+    // Before click — no approval fired.
+    expect(apiApproveBuildPlan).toHaveBeenCalledTimes(0)
+
+    // Click the Approve plan button.
+    const btn = screen.getByRole('button', { name: /approve plan/i })
+    fireEvent.click(btn)
+
     await waitFor(() => {
       expect(apiApproveBuildPlan).toHaveBeenCalledTimes(1)
     })
     expect(apiApproveBuildPlan).toHaveBeenCalledWith('tx-test-1234abcd')
 
-    // Re-render (simulates React StrictMode re-invoke or parent re-render) —
-    // must NOT fire a second request. The useRef guard makes it idempotent.
-    rerender(<PlanChecklist data={data} />)
+    // Second click while the first is in-flight or after it resolves —
+    // the useRef single-click guard keeps it at one call.
+    fireEvent.click(btn)
     await waitFor(() => {
-      // Still exactly once — no second call.
       expect(apiApproveBuildPlan).toHaveBeenCalledTimes(1)
     })
 
@@ -196,11 +206,15 @@ describe('PlanChecklist — 055-A F1', () => {
 
   // ── Test 5: Auto-approve failure shows retry pill ──────────────────────
 
-  it('auto-approve failure shows "Couldn\'t confirm plan" inline pill', async () => {
+  it('approval failure shows "Couldn\'t confirm plan" inline pill after click', async () => {
+    // 2026-04-23: auto-approve removed — operator clicks Approve, then
+    // the failure path surfaces the pill + Retry button.
     mockApproveFailure()
     const data = makePlan()
 
     render(<PlanChecklist data={data} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /approve plan/i }))
 
     // The retry error pill should appear after the failed approval
     await waitFor(() => {

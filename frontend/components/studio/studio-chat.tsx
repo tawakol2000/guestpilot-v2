@@ -36,7 +36,9 @@ import {
 } from '@/lib/build-api'
 import { TenantStateBanner } from './tenant-state-banner'
 import { SessionDiffCard, type SessionDiffSummaryData } from './session-diff-card'
-import { STUDIO_COLORS, getStudioCategoryStyle } from './tokens'
+import { STUDIO_COLORS, STUDIO_TOKENS_V2, getStudioCategoryStyle } from './tokens'
+import { useStudioShell } from './studio-shell-context'
+import { FileIcon, FlaskIcon } from './icons'
 import { SuggestedFixCard, type SuggestedFixTarget } from './suggested-fix'
 import { QuestionChoicesCard } from './question-choices'
 import { AuditReportCard, type AuditReportRowData } from './audit-report'
@@ -344,6 +346,22 @@ export function StudioChat({
 
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)
+
+  // Sprint 046 T013 — listen for composer-insert events from the
+  // ReferencePicker (shell-level component). Appends the citation
+  // marker to the current draft at textarea focus position (simplified
+  // to "append at end" — cursor-position insertion lands in polish).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onInsert = (e: Event) => {
+      const ce = e as CustomEvent<{ text: string }>
+      const text = ce.detail?.text
+      if (!text) return
+      setDraft((prev) => (prev && !prev.endsWith(' ') ? `${prev} ${text}` : `${prev}${text}`))
+    }
+    window.addEventListener('studio:composer-insert', onInsert)
+    return () => window.removeEventListener('studio:composer-insert', onInsert)
+  }, [])
 
   // Sprint 058-A F8 — composer ✨ enhance-prompt button. Nano rewrites
   // the operator's draft into a tighter, clearer instruction. The
@@ -670,16 +688,27 @@ export function StudioChat({
 
       <form
         onSubmit={onSubmit}
-        className="border-t px-5 py-3"
+        className="border-t"
         style={{
-          borderColor: STUDIO_COLORS.hairline,
-          background: STUDIO_COLORS.surfaceRaised,
+          borderColor: STUDIO_TOKENS_V2.border,
+          background: STUDIO_TOKENS_V2.bg,
+          padding: '8px 20px 14px',
         }}
       >
+        {/* Sprint 046 T012 — composer card, v2 tokens. 14px radius,
+           border-strong, small shadow, 780px max-width per FR-025. */}
         <div
-          className="mx-auto flex max-w-3xl items-end gap-2 rounded-lg border bg-white p-1.5"
-          style={{ borderColor: STUDIO_COLORS.hairline }}
+          className="mx-auto flex flex-col gap-2"
+          style={{
+            maxWidth: 780,
+            background: STUDIO_TOKENS_V2.bg,
+            border: `1px solid ${STUDIO_TOKENS_V2.borderStrong}`,
+            borderRadius: STUDIO_TOKENS_V2.radiusXl,
+            padding: '10px 12px 8px',
+            boxShadow: STUDIO_TOKENS_V2.shadowSm,
+          }}
         >
+          <div className="flex items-end gap-2">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -808,15 +837,36 @@ export function StudioChat({
             type="submit"
             disabled={!canSend}
             aria-label="Send message"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md disabled:opacity-60"
+            className="flex shrink-0 items-center justify-center disabled:opacity-60"
             style={{
-              background: canSend ? STUDIO_COLORS.ink : STUDIO_COLORS.surfaceSunken,
-              color: canSend ? '#FFFFFF' : STUDIO_COLORS.inkSubtle,
+              width: 30,
+              height: 30,
+              borderRadius: STUDIO_TOKENS_V2.radiusMd,
+              background: canSend ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.surface3,
+              color: canSend ? '#FFFFFF' : STUDIO_TOKENS_V2.muted2,
             }}
           >
             <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
           </button>
+          </div>
+          {/* Sprint 046 T013 — composer chips row. Reference opens the
+             artifact-picker popover (FR-025a); Test forwards the draft
+             to the Preview tab's test-pipeline (FR-025b). Paperclip is
+             dropped (Clarifications Q2). */}
+          <ComposerChips draft={draft} />
         </div>
+        {/* Sprint 046 FR-025 — foot line. */}
+        <p
+          className="mx-auto mt-2"
+          style={{
+            maxWidth: 780,
+            fontSize: 11,
+            color: STUDIO_TOKENS_V2.muted2,
+            textAlign: 'center',
+          }}
+        >
+          Studio · Sonnet 4.6 · Edits are drafts until you publish
+        </p>
       </form>
 
       <ToolCallDrawer
@@ -841,38 +891,95 @@ function StudioEmptyState({
   greenfield: boolean
   onPick: (text: string) => void
 }) {
-  // Kept minimal per plan §6.2 — no suggestion grid, one plain hint and a
-  // single "get started" prompt. The agent's first turn will emit a
-  // question_choices card, which is the real guided path.
+  // Sprint 046 T037 — new empty-state illustration per design handoff:
+  // 48×48 blue-soft message icon + "Start a new thread" headline +
+  // muted subtext + ink-filled "Get started" button.
   const prompt = greenfield
     ? 'I run short-let apartments. Help me set this up from scratch.'
     : 'Review my current setup and tell me the single biggest gap.'
-  const headline = greenfield ? 'Let’s set up your AI.' : 'What should we change?'
+  const headline = greenfield ? 'Start a new thread' : 'Start a new thread'
   const sub = greenfield
-    ? 'Tell me about your business in plain English. I’ll ask a few follow-up questions and never write anything without your sign-off.'
+    ? 'Describe your property business in plain English — I’ll ask a few follow-up questions and never write without your sign-off.'
     : 'Ask me to audit your setup, add an SOP, change an FAQ, or rewrite a prompt section. Every change is atomic and revertable.'
   return (
-    <section className="px-6 py-10">
-      <div className="mx-auto max-w-xl">
-        <h1 className="text-[18px] font-semibold leading-tight" style={{ color: STUDIO_COLORS.ink }}>
-          {headline}
-        </h1>
-        <p className="mt-2 text-[13.5px] leading-5" style={{ color: STUDIO_COLORS.inkMuted }}>
-          {sub}
-        </p>
-        <button
-          type="button"
-          onClick={() => onPick(prompt)}
-          className="mt-5 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[13px] font-medium"
-          style={{
-            background: STUDIO_COLORS.surfaceSunken,
-            borderColor: STUDIO_COLORS.hairline,
-            color: STUDIO_COLORS.ink,
-          }}
+    <section
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '60px 24px',
+        minHeight: '60%',
+      }}
+    >
+      {/* 48×48 blue-soft square with message-square icon */}
+      <div
+        aria-hidden
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: STUDIO_TOKENS_V2.radiusMd,
+          background: STUDIO_TOKENS_V2.blueSoft,
+          color: STUDIO_TOKENS_V2.blue,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 18,
+        }}
+      >
+        <svg
+          width={24}
+          height={24}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
-          {greenfield ? 'Start with a walkthrough' : 'Start with an audit'}
-        </button>
+          <path d="M4 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H9l-5 4V5z" />
+        </svg>
       </div>
+      <h1
+        style={{
+          fontSize: 18,
+          fontWeight: 500,
+          color: STUDIO_TOKENS_V2.ink,
+          margin: 0,
+          letterSpacing: '-0.01em',
+        }}
+      >
+        {headline}
+      </h1>
+      <p
+        style={{
+          marginTop: 6,
+          maxWidth: 440,
+          textAlign: 'center',
+          fontSize: 14,
+          lineHeight: 1.5,
+          color: STUDIO_TOKENS_V2.muted,
+        }}
+      >
+        {sub}
+      </p>
+      <button
+        type="button"
+        onClick={() => onPick(prompt)}
+        style={{
+          marginTop: 20,
+          padding: '8px 14px',
+          borderRadius: STUDIO_TOKENS_V2.radiusMd,
+          background: STUDIO_TOKENS_V2.ink,
+          color: '#FFFFFF',
+          border: 'none',
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: 'pointer',
+        }}
+      >
+        {greenfield ? 'Start with a walkthrough' : 'Start with an audit'}
+      </button>
     </section>
   )
 }
@@ -949,99 +1056,181 @@ function MessageRow({
     }
   }
 
+  // Sprint 046 T024+T025 — bubble redesign.
+  //
+  // User messages: right-aligned ink-filled bubble (max 85% width, 14px
+  //   radius with 6px bottom-right "tail", white 14.5px text).
+  // Assistant messages: 24×24 avatar + "Studio" header + 32px left-padded
+  //   body column with 10px gap between blocks (reasoning, tool-chain,
+  //   artifact refs, etc).
   return (
     <div
-      className="px-5 py-4"
       style={{
-        borderBottom: isLast ? undefined : `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+        padding: '0 24px',
+        marginBottom: 28,
       }}
     >
-      <div
-        className="mb-1 text-[11px] font-semibold uppercase tracking-wide"
-        style={{ color: isUser ? STUDIO_COLORS.accent : STUDIO_COLORS.inkMuted }}
-      >
-        {isUser ? 'You' : 'Agent'}
-      </div>
-
-      {/* Sprint 057-A F1 — tool-chain summary (assistant messages only).
-          Renders nothing when there are no tool-call parts. */}
-      {!isUser && (
-        <ToolChainSummary
-          parts={toolParts}
-          onOpenToolDrawer={onOpenToolDrawer}
-          onExpandedChange={setToolChainExpanded}
-        />
-      )}
-
-      {textParts.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {textParts.map((p, i) => (
-            <AttributedText
-              key={`t:${i}`}
-              text={p.text ?? ''}
-              isUser={isUser}
-              onOpenArtifact={onOpenArtifact}
-            />
-          ))}
+      {isUser ? (
+        // ── User bubble (right-aligned) ─────────────────────────────
+        <div style={{ display: 'flex', justifyContent: 'flex-end', maxWidth: 780, margin: '0 auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '85%' }}>
+            <div
+              style={{
+                padding: '11px 14px',
+                borderRadius: STUDIO_TOKENS_V2.radiusXl,
+                borderBottomRightRadius: 6,
+                background: STUDIO_TOKENS_V2.ink,
+                color: '#FFFFFF',
+                fontSize: 14.5,
+                lineHeight: 1.5,
+                wordBreak: 'break-word',
+              }}
+            >
+              {textParts.length > 0
+                ? textParts.map((p, i) => (
+                    <AttributedText
+                      key={`t:${i}`}
+                      text={p.text ?? ''}
+                      isUser
+                      onOpenArtifact={onOpenArtifact}
+                    />
+                  ))
+                : null}
+            </div>
+          </div>
         </div>
-      )}
-
-      {reasoningParts.length > 0 && (
-        // Sprint 058-A F9b — `flex flex-col gap-1` defensively separates
-        // adjacent <ReasoningLine> instances so their inline labels never
-        // run together (e.g. "Agent reasoning · viewAgent reasoning · view").
-        <div className="mt-1.5 flex flex-col gap-1">
-          {reasoningParts.map((p, i) => (
-            <ReasoningLine key={`r:${i}`} content={p.text ?? ''} />
-          ))}
-        </div>
-      )}
-
-      {/* Standalone tool chips — hidden via CSS when the summary is
-          collapsed; visible when expanded. Non-tool parts always visible. */}
-      {toolParts.length > 0 && (
-        <div
-          className="mt-2 flex flex-col gap-2"
-          style={{ display: toolChainExpanded ? undefined : 'none' }}
-          aria-hidden={!toolChainExpanded}
-        >
-          {toolParts.map((p, i) => (
-            <StandalonePart
-              key={`tool:${i}`}
-              part={p}
-              conversationId={conversationId}
-              conversationMessages={conversationMessages}
-              setDraft={setDraft}
-              onPlanApproved={onPlanApproved}
-              onPlanRolledBack={onPlanRolledBack}
-              onArtifactTouched={onArtifactTouched}
-              onOpenArtifact={onOpenArtifact}
-              onSendText={onSendText}
+      ) : (
+        // ── Assistant message with avatar header + body column ──────
+        <div style={{ maxWidth: 780, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: STUDIO_TOKENS_V2.radiusSm,
+                border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                background: STUDIO_TOKENS_V2.bg,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: STUDIO_TOKENS_V2.blue,
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width={14}
+                height={14}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 4v16" />
+                <path d="M4 12h16" />
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </div>
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: STUDIO_TOKENS_V2.ink }}>Studio</span>
+          </div>
+          <div
+            style={{
+              paddingLeft: 32,
+              marginTop: 6,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            {/* Sprint 057-A F1 — tool-chain summary. */}
+            <ToolChainSummary
+              parts={toolParts}
               onOpenToolDrawer={onOpenToolDrawer}
-              onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+              onExpandedChange={setToolChainExpanded}
             />
-          ))}
-        </div>
-      )}
 
-      {standaloneParts.length > 0 && (
-        <div className="mt-2 flex flex-col gap-2">
-          {standaloneParts.map((p, i) => (
-            <StandalonePart
-              key={`s:${i}`}
-              part={p}
-              conversationId={conversationId}
-              conversationMessages={conversationMessages}
-              setDraft={setDraft}
-              onPlanApproved={onPlanApproved}
-              onPlanRolledBack={onPlanRolledBack}
-              onArtifactTouched={onArtifactTouched}
-              onOpenArtifact={onOpenArtifact}
-              onSendText={onSendText}
-              onOpenToolDrawer={onOpenToolDrawer}
-              onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
-            />
-          ))}
+            {textParts.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1.6,
+                  color: STUDIO_TOKENS_V2.ink2,
+                  maxWidth: 680,
+                }}
+              >
+                {textParts.map((p, i) => (
+                  <AttributedText
+                    key={`t:${i}`}
+                    text={p.text ?? ''}
+                    isUser={false}
+                    onOpenArtifact={onOpenArtifact}
+                  />
+                ))}
+              </div>
+            )}
+
+            {reasoningParts.length > 0 && (
+              // Sprint 058-A F9b — `flex flex-col gap-1` defensively separates
+              // adjacent <ReasoningLine> instances so their inline labels never
+              // run together.
+              <div className="flex flex-col gap-1">
+                {reasoningParts.map((p, i) => (
+                  <ReasoningLine key={`r:${i}`} content={p.text ?? ''} />
+                ))}
+              </div>
+            )}
+
+            {/* Standalone tool chips — hidden when the summary is collapsed. */}
+            {toolParts.length > 0 && (
+              <div
+                className="flex flex-col gap-2"
+                style={{ display: toolChainExpanded ? undefined : 'none' }}
+                aria-hidden={!toolChainExpanded}
+              >
+                {toolParts.map((p, i) => (
+                  <StandalonePart
+                    key={`tool:${i}`}
+                    part={p}
+                    conversationId={conversationId}
+                    conversationMessages={conversationMessages}
+                    setDraft={setDraft}
+                    onPlanApproved={onPlanApproved}
+                    onPlanRolledBack={onPlanRolledBack}
+                    onArtifactTouched={onArtifactTouched}
+                    onOpenArtifact={onOpenArtifact}
+                    onSendText={onSendText}
+                    onOpenToolDrawer={onOpenToolDrawer}
+                    onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+                  />
+                ))}
+              </div>
+            )}
+
+            {standaloneParts.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {standaloneParts.map((p, i) => (
+                  <StandalonePart
+                    key={`s:${i}`}
+                    part={p}
+                    conversationId={conversationId}
+                    conversationMessages={conversationMessages}
+                    setDraft={setDraft}
+                    onPlanApproved={onPlanApproved}
+                    onPlanRolledBack={onPlanRolledBack}
+                    onArtifactTouched={onArtifactTouched}
+                    onOpenArtifact={onOpenArtifact}
+                    onSendText={onSendText}
+                    onOpenToolDrawer={onOpenToolDrawer}
+                    onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1623,6 +1812,72 @@ function TypingIndicator() {
       style={{ color: STUDIO_COLORS.inkSubtle }}
     >
       <span>Agent is thinking…</span>
+    </div>
+  )
+}
+
+// ─── Sprint 046 T013 — composer chips (Reference + Test) ───────────────────
+
+function ComposerChips({ draft }: { draft: string }) {
+  const shell = useStudioShell()
+  return (
+    <div
+      role="toolbar"
+      aria-label="Composer actions"
+      className="flex items-center gap-1"
+      style={{ paddingLeft: 2 }}
+    >
+      <button
+        type="button"
+        data-chip="reference"
+        aria-label="Insert reference to an SOP, FAQ, prompt, tool, or property override"
+        onClick={(e) => shell.openReferencePicker(e.currentTarget as HTMLElement)}
+        className="inline-flex items-center gap-1.5"
+        style={{
+          padding: '5px 8px',
+          borderRadius: STUDIO_TOKENS_V2.radiusSm,
+          fontSize: 12,
+          color: STUDIO_TOKENS_V2.muted,
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = STUDIO_TOKENS_V2.ink2
+          e.currentTarget.style.background = STUDIO_TOKENS_V2.surface
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = STUDIO_TOKENS_V2.muted
+          e.currentTarget.style.background = 'transparent'
+        }}
+      >
+        <FileIcon size={14} aria-hidden />
+        Reference
+      </button>
+      <button
+        type="button"
+        data-chip="test"
+        aria-label="Test the current draft against the draft reply-pipeline"
+        disabled={!draft.trim()}
+        onClick={() => {
+          if (!draft.trim()) return
+          shell.runPreview(draft.trim())
+        }}
+        className="inline-flex items-center gap-1.5"
+        style={{
+          padding: '5px 8px',
+          borderRadius: STUDIO_TOKENS_V2.radiusSm,
+          fontSize: 12,
+          color: draft.trim() ? STUDIO_TOKENS_V2.muted : STUDIO_TOKENS_V2.muted2,
+          background: 'transparent',
+          border: 'none',
+          cursor: draft.trim() ? 'pointer' : 'default',
+          opacity: draft.trim() ? 1 : 0.5,
+        }}
+      >
+        <FlaskIcon size={14} aria-hidden />
+        Test
+      </button>
     </div>
   )
 }

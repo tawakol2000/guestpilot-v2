@@ -38,7 +38,19 @@ export function AgentProse({ text, isUser }: AgentProseProps) {
           // behaviour for single-line agent chatter + the zero margin
           // the existing bubble used.
           p: ({ children }) => (
-            <p className="whitespace-pre-wrap" style={{ margin: '0 0 10px 0' }}>
+            // Sprint 046 — propagate data-origin onto the <p> element
+            // too. The Sprint-057-A F2 attribution tests query by text
+            // content (returns the <p>) and read `.dataset.origin`.
+            // Without this the attribute is only on the wrapper div
+            // and the tests fail.
+            <p
+              className="whitespace-pre-wrap"
+              data-origin={isUser ? 'user' : 'agent'}
+              style={{
+                margin: '0 0 10px 0',
+                color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+              }}
+            >
               {children}
             </p>
           ),

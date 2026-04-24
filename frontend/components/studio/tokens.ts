@@ -11,41 +11,47 @@
 // No violet anywhere. `#6C5CE7` from TUNING_COLORS is intentionally
 // absent.
 
+// Sprint 046 — STUDIO_COLORS values migrated to the v2 design-overhaul
+// palette. Same keys and shape as before; every consumer (Studio chrome,
+// block renderers, drawers) picks up the new Augen-blue accent and the
+// slightly-warmer neutral stack automatically. TUNING_COLORS (exported
+// below) re-exports these, which retires the old accents from the
+// legacy /tuning/* routes along with Studio — acceptable per user
+// confirmation that the legacy chat history is no longer important.
+
 export const STUDIO_COLORS = {
   // Backgrounds
-  canvas: '#FFFFFF',
-  surfaceSunken: '#F2F2F2',
-  surfaceRaised: '#FFFFFF',
+  canvas: '#ffffff',
+  surfaceSunken: '#fafafa',
+  surfaceRaised: '#ffffff',
 
   // Borders / dividers
-  hairline: '#E5E5E5',
-  hairlineSoft: '#EFEFEF',
+  hairline: '#e7e8ec',
+  hairlineSoft: '#eceef2',
 
   // Text
-  ink: '#0A0A0A',
-  inkMuted: '#666666',
-  inkSubtle: '#999999',
+  ink: '#0a0a0b',
+  inkMuted: '#6b6d76',
+  inkSubtle: '#9b9ea6',
 
-  // Accent — main-app blue. Only for primary CTAs and focus rings.
-  accent: '#0070F3',
-  accentSoft: '#E6F0FF',
-  accentHover: '#0060D9',
+  // Accent — Augen blue (v2). Primary CTAs, active states, focus rings.
+  accent: '#0a5bff',
+  accentSoft: '#eaf1ff',
+  accentHover: '#004fe8',
 
-  // Semantic
-  successFg: '#117A3D',
-  successBg: '#E7F5EC',
-  warnFg: '#9A6A04',
-  warnBg: '#FFF7E0',
-  dangerFg: '#B42318',
+  // Semantic — v2 values from the handoff palette
+  successFg: '#16a34a',
+  successBg: '#ECFDF5',
+  warnFg: '#d97706',
+  warnBg: '#fff7e0',
+  dangerFg: '#dc2626',
   dangerBg: '#FEE4E2',
 
-  // Diff surfaces — tuned to work on pure-white canvas (not the cool
-  // gray the tuning tokens assumed). Keep them as translucent overlays
-  // so selection highlights don't fight them.
-  diffAddBg: 'rgba(17, 122, 61, 0.10)',
-  diffAddFg: '#117A3D',
-  diffDelBg: 'rgba(180, 35, 24, 0.10)',
-  diffDelFg: '#B42318',
+  // Diff surfaces — v2 alpha overlays on pure-white canvas.
+  diffAddBg: 'rgba(10, 91, 255, 0.06)',
+  diffAddFg: '#0a5bff',
+  diffDelBg: 'rgba(220, 38, 38, 0.05)',
+  diffDelFg: '#dc2626',
 
   // Sprint 050 A1 — typographic attribution. Quoted artifact content
   // (what `get_current_state` surfaced) renders as monospace on a tinted
@@ -56,6 +62,76 @@ export const STUDIO_COLORS = {
   attributionQuoteRule: '#CBD5E1',
   attributionUnsavedFg: '#6B7280',
 } as const;
+
+// ─── Sprint 046 — STUDIO_TOKENS_V2 (design-overhaul palette) ────────────────
+//
+// Exact hex values from /Users/at/Downloads/design_handoff_studio/README.md
+// (Augen-blue accent #0a5bff + restrained neutral palette + Inter Tight
+// typography). New Studio chrome imports these tokens *only*. Legacy
+// `/tuning/*` routes keep importing STUDIO_COLORS via the TUNING_COLORS
+// compat surface below — do NOT merge the two palettes.
+//
+// Dark-mode tokens deliberately omitted (spec 046 Clarifications Q5 —
+// dark mode is out of scope this release).
+
+export const STUDIO_TOKENS_V2 = {
+  // Backgrounds
+  bg: '#ffffff',
+  surface: '#fafafa',
+  surface2: '#f4f5f7',
+  surface3: '#eceef2',
+
+  // Borders / dividers
+  border: '#e7e8ec',
+  borderStrong: '#d7d9df',
+
+  // Text
+  ink: '#0a0a0b',
+  ink2: '#2a2b30',
+  muted: '#6b6d76',
+  muted2: '#9b9ea6',
+
+  // Accent — Augen blue. Primary CTAs, active states, diff additions, focus rings.
+  blue: '#0a5bff',
+  blueHover: '#004fe8',
+  blueSoft: '#eaf1ff',
+  blueTint: '#f4f7ff',
+
+  // Semantic
+  green: '#16a34a',
+  amber: '#d97706',
+  red: '#dc2626',
+
+  // Diff overlays — handoff-specified alphas on the v2 canvas
+  diffAddBg: 'rgba(10, 91, 255, 0.06)',
+  diffAddFg: '#0a5bff',
+  diffDelBg: 'rgba(220, 38, 38, 0.05)',
+  diffDelFg: '#dc2626',
+
+  // Amber warn bg for LATENCY BUDGET threshold breaches (FR-033).
+  warnFg: '#d97706',
+  warnBg: '#fff7e0',
+
+  // Radii (in px — consume as `radiusLg` or inline as `${v2.radiusLg}px`).
+  radiusSm: 7,
+  radiusMd: 8,
+  radiusLg: 12,
+  radiusXl: 14,
+
+  // Shadows
+  shadowSm: '0 1px 2px rgba(10,12,20,0.04)',
+  shadowMd: '0 2px 8px rgba(10,12,20,0.06)',
+
+  // Icon stroke (px) at 16px default icon size
+  iconStroke: 1.6,
+
+  // Scrollbar (WebKit only — applied via CSS at the shell root)
+  scrollbarThumb: '#e2e3e8',
+  scrollbarThumbHover: '#cacbd2',
+  scrollbarWidth: 10,
+} as const;
+
+export type StudioTokenV2 = keyof typeof STUDIO_TOKENS_V2;
 
 // Artifact-type pill palette. Retained from the tuning palette per plan
 // §3.3 decision #3 — these are categorical labels, not chrome. Four of

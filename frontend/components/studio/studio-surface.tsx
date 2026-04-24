@@ -66,7 +66,15 @@ import {
   ArtifactDrawer,
   type ArtifactDrawerTarget,
 } from './artifact-drawer'
-import { STUDIO_COLORS } from './tokens'
+import { STUDIO_COLORS, STUDIO_TOKENS_V2 } from './tokens'
+import { StudioShell } from './studio-shell'
+import { TopBar } from './top-bar'
+import { RightPanelTabs } from './right-panel-tabs'
+import { PlanTab } from './tabs/plan-tab'
+import { PreviewTab } from './tabs/preview-tab'
+import { TestsTab } from './tabs/tests-tab'
+import { LedgerTab } from './tabs/ledger-tab'
+import { LeftRailV2 } from './left-rail'
 
 export interface StudioSurfaceProps {
   /** Optional — sync the chosen conversation id back to the parent (URL). */
@@ -523,18 +531,47 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   const effectiveSnapshot: StateSnapshotData =
     snapshot ?? deriveSnapshotFromTenantState(tenantState)
 
-  return (
-    <div
-      className="flex min-h-0 flex-1"
-      style={{ background: STUDIO_COLORS.canvas, overflow: 'hidden' }}
-    >
-      <LeftRail
-        selectedId={load.conversationId}
-        onSelect={(id) => onConversationChange?.(id)}
-      />
+  // Sprint 046 T010 — new StudioShell wraps the three-pane layout. All
+  // existing bootstrap state (load, capabilities, drawers, auto-naming,
+  // createdIdsRef loop-guard, etc.) remains in this component; the
+  // shell renders its leftRail / rightPanel / drawers slots from the
+  // same LeftRail / RightRail / *Drawer components that used to be
+  // siblings inside the old tree. Feature parity first — the legacy
+  // LeftRail and RightRail mounts stay until their Phase-5 / Phase-4
+  // replacements land (T033 / T026).
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {showPropagationBanner ? (
+  return (
+    <StudioShell
+      tenantName={'Studio'}
+      tenantState={tenantState}
+      conversationId={load.conversationId}
+      capabilities={capabilities}
+      onReferencePicked={(ref) => {
+        // Sprint 046 T013 — emit a window event the composer listens
+        // for. The composer appends the citation marker to its draft.
+        const marker = `{{cite:${ref.kind}:${ref.id}}}`
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('studio:composer-insert', { detail: { text: marker } }),
+          )
+        }
+      }}
+      topBar={
+        <TopBar
+          tenantName={'Studio'}
+          sessionTitle={currentTitleRef.current ?? 'Studio session'}
+        />
+      }
+      leftRail={
+        <LeftRailV2
+          tenantName={tenantState.isGreenfield ? 'Studio' : 'Workspace'}
+          propertyCount={tenantState.propertyCount}
+          selectedId={load.conversationId}
+          onSelect={(id) => onConversationChange?.(id)}
+        />
+      }
+      banner={
+        showPropagationBanner ? (
           <div
             className="border-b px-5 py-2"
             style={{
@@ -544,499 +581,174 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           >
             <PropagationBanner onDismiss={() => setShowPropagationBanner(false)} />
           </div>
-        ) : null}
-        <div className="min-h-0 flex-1">
-          {/* Sprint 058-A F9a — catch render errors inside StudioChat so the
-              whole Studio surface never blanks out. The boundary's recovery
-              card is itself a graceful-degradation surface (spec §1). */}
-          <StudioErrorBoundary>
-            <StudioChat
-              conversationId={load.conversationId}
-              greenfield={tenantState.isGreenfield}
-              initialMessages={load.initialMessages}
-              anchorMessage={load.anchorMessage}
-              onStateSnapshot={handleStateSnapshot}
-              onTestResult={handleTestResult}
-              onPlanApproved={handlePlanApproved}
-              onPlanRolledBack={handlePlanRolledBack}
-              onArtifactTouched={handleArtifactTouched}
-              onOpenArtifact={openArtifactFromCitation}
-              isAdmin={capabilities.isAdmin}
-              traceViewEnabled={capabilities.traceViewEnabled}
-              onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
-              onUserMessageSent={handleUserMessageSent}
-              tenantState={tenantState}
-              onOpenPrompt={
-                capabilities.isAdmin && capabilities.rawPromptEditorEnabled
-                  ? () => setRawPromptOpen(true)
-                  : undefined
-              }
+        ) : null
+      }
+      rightPanel={
+        <RightPanelTabs
+          isAdmin={capabilities.isAdmin}
+          rawPromptEditorEnabled={Boolean(capabilities.rawPromptEditorEnabled)}
+          planPanel={
+            <PlanTab
+              snapshot={effectiveSnapshot}
+              sessionArtifacts={sessionArtifacts}
+              onOpenArtifact={openArtifactFromRow}
             />
-          </StudioErrorBoundary>
-        </div>
-      </main>
-
-      <RightRail
-        snapshot={effectiveSnapshot}
-        testResults={testResults}
-        sessionArtifacts={sessionArtifacts}
-        onOpenArtifact={openArtifactFromRow}
-        traceButtonVisible={capabilities.traceViewEnabled && capabilities.isAdmin}
-        onOpenTrace={() => setTraceOpen(true)}
-        rawPromptButtonVisible={
-          Boolean(capabilities.rawPromptEditorEnabled) && capabilities.isAdmin
-        }
-        onOpenRawPrompt={() => setRawPromptOpen(true)}
-        ledgerVisible={
-          Boolean(capabilities.rawPromptEditorEnabled) && capabilities.isAdmin
-        }
-        ledgerConversationId={load.conversationId}
-        ledgerRefreshKey={ledgerRefreshKey}
-        onOpenLedgerRow={(row: BuildArtifactHistoryRow) => {
-          // 054-A F2 — carry the full history row so the drawer can
-          // render the rationale card above the diff when opened from
-          // the ledger rail. Non-ledger opens (session-artifacts rail,
-          // deep links) do NOT pass historyRow, so the drawer stays
-          // clean in its normal read mode.
-          setArtifactDrawer({
-            open: true,
-            target: {
-              artifact: ledgerArtifactType(row.artifactType),
-              artifactId: row.artifactId,
-              historyRow: row,
-            },
-          })
-        }}
-        onRevertLedgerRow={async (row: BuildArtifactHistoryRow) => {
-          // Two-step: dry-run preview, then native confirm before commit.
-          // 054-A polish: in-drawer "Preview Revert + Confirm Revert" UI.
-          try {
-            const preview = await apiRevertArtifactFromHistory(row.id, {
-              dryRun: true,
-            })
-            if (!preview.ok) {
-              alert(`Revert preview failed: ${preview.error ?? 'unknown'}`)
-              return
-            }
-            const proceed = window.confirm(
-              `Revert ${row.artifactType} "${row.artifactId}" to its pre-write state? This writes a REVERT row to the ledger.`,
-            )
-            if (!proceed) return
-            const result = await apiRevertArtifactFromHistory(row.id, {
-              dryRun: false,
-            })
-            if (!result.ok) {
-              alert(`Revert failed: ${result.error ?? 'unknown'}`)
-              return
-            }
-            setLedgerRefreshKey((k) => k + 1)
-          } catch (err) {
-            alert(
-              `Revert error: ${err instanceof Error ? err.message : String(err)}`,
-            )
           }
-        }}
-      />
-
-      <TraceDrawer
-        open={traceOpen}
-        onClose={() => setTraceOpen(false)}
-        conversationId={load.conversationId}
-      />
-      <RawPromptDrawer
-        open={rawPromptOpen}
-        onClose={() => setRawPromptOpen(false)}
-        conversationId={load.conversationId}
-      />
-      <ArtifactDrawer
-        open={artifactDrawer.open}
-        target={artifactDrawer.target}
-        onClose={closeArtifactDrawer}
-        isAdmin={capabilities.isAdmin}
-        traceViewEnabled={capabilities.traceViewEnabled}
-        rawPromptEditorEnabled={Boolean(capabilities.rawPromptEditorEnabled)}
-        sessionStartIso={sessionStartIso}
-      />
-    </div>
-  )
-}
-
-// ─── Left rail: Studio conversation list ───────────────────────────────────
-
-function LeftRail({
-  selectedId,
-  onSelect,
-}: {
-  selectedId: string
-  onSelect: (id: string) => void
-}) {
-  const [items, setItems] = useState<TuningConversationSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  // Sprint 058-A F9f step 3 — hide zero-message sessions older than 1h
-  // by default so the sidebar stops reading as a graveyard of empty
-  // rows. Operator can flip this to show them via the toggle.
-  const [showEmpty, setShowEmpty] = useState(false)
-
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await apiListTuningConversations({ limit: 30 })
-      setItems(res.conversations)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  // F9f — empty-session filter. Hide messageCount===0 rows older than
-  // 1h unless the operator flipped the toggle. Also always show the
-  // currently-selected session so the operator never "loses" their
-  // active context to a filter.
-  const ONE_HOUR_MS = 60 * 60 * 1000
-  const now = Date.now()
-  const visibleItems = showEmpty
-    ? items
-    : items.filter((c) => {
-        if (c.id === selectedId) return true
-        if (c.messageCount > 0) return true
-        const createdAt = Date.parse(c.createdAt)
-        if (!Number.isFinite(createdAt)) return true
-        return now - createdAt < ONE_HOUR_MS
-      })
-  const hiddenCount = items.length - visibleItems.length
-
-  async function startNew() {
-    try {
-      const { conversation } = await apiCreateTuningConversation({
-        triggerType: 'MANUAL',
-        title: 'Studio session',
-      })
-      setItems((list) => [
-        {
-          id: conversation.id,
-          title: conversation.title,
-          anchorMessageId: null,
-          triggerType: conversation.triggerType,
-          status: 'OPEN',
-          messageCount: 0,
-          createdAt: conversation.createdAt,
-          updatedAt: conversation.createdAt,
-        },
-        ...list,
-      ])
-      onSelect(conversation.id)
-    } catch (err) {
-      toast.error('Couldn’t start a new Studio session', {
-        description: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  return (
-    <aside
-      className="flex flex-col border-r"
-      style={{
-        width: 240,
-        minWidth: 240,
-        borderColor: STUDIO_COLORS.hairline,
-        background: STUDIO_COLORS.surfaceRaised,
-      }}
-    >
-      <header
-        className="flex items-center justify-between border-b px-3 py-2"
-        style={{ borderColor: STUDIO_COLORS.hairlineSoft }}
-      >
-        <span
-          className="text-[11px] font-semibold uppercase tracking-wide"
-          style={{ color: STUDIO_COLORS.inkMuted }}
-        >
-          Sessions
-        </span>
-        <button
-          type="button"
-          onClick={startNew}
-          className="rounded border px-2 py-0.5 text-[11px] font-medium"
-          style={{
-            borderColor: STUDIO_COLORS.hairline,
-            background: STUDIO_COLORS.surfaceRaised,
-            color: STUDIO_COLORS.ink,
-          }}
-        >
-          New
-        </button>
-      </header>
-      <ul className="flex-1 overflow-auto py-1">
-        {loading && items.length === 0 ? (
-          <li
-            className="px-3 py-2 text-[11px]"
-            style={{ color: STUDIO_COLORS.inkSubtle }}
-          >
-            Loading…
-          </li>
-        ) : null}
-        {error ? (
-          <li className="px-3 py-2 text-[11px]" style={{ color: STUDIO_COLORS.dangerFg }}>
-            {error}
-          </li>
-        ) : null}
-        {!loading && !error && items.length === 0 ? (
-          <li className="px-3 py-2 text-[11px]" style={{ color: STUDIO_COLORS.inkSubtle }}>
-            No sessions yet.
-          </li>
-        ) : null}
-        {visibleItems.map((c) => {
-          const active = c.id === selectedId
-          return (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(c.id)}
-                className="flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left"
-                style={{
-                  background: active ? STUDIO_COLORS.accentSoft : 'transparent',
-                  color: STUDIO_COLORS.ink,
-                  borderLeft: active
-                    ? `2px solid ${STUDIO_COLORS.accent}`
-                    : '2px solid transparent',
-                }}
-              >
-                {/* Bugfix (2026-04-23): line-clamp-1 truncated long
-                    titles silently. Add a title attribute so the
-                    operator can hover to see the full text. */}
-                <span
-                  className="line-clamp-1 text-[12px] font-medium"
-                  title={c.title || undefined}
-                >
-                  {c.title || 'Untitled session'}
-                </span>
-                <span className="text-[10.5px]" style={{ color: STUDIO_COLORS.inkSubtle }}>
-                  {c.messageCount} message{c.messageCount === 1 ? '' : 's'}
-                </span>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-      {/* Sprint 058-A F9f — "Show empty sessions" toggle. Only renders
-          when there is at least one hidden session, so the control doesn't
-          clutter the rail for users who don't have the problem. */}
-      {(hiddenCount > 0 || showEmpty) && (
-        <footer
-          className="border-t px-3 py-2"
-          style={{ borderColor: STUDIO_COLORS.hairlineSoft }}
-        >
-          <label
-            className="flex items-center gap-2 text-[11px]"
-            style={{ color: STUDIO_COLORS.inkMuted, cursor: 'pointer' }}
-          >
-            <input
-              type="checkbox"
-              data-testid="show-empty-sessions-toggle"
-              checked={showEmpty}
-              onChange={(e) => setShowEmpty(e.target.checked)}
+          previewPanel={<PreviewTab />}
+          testsPanel={<TestsTab />}
+          ledgerPanel={
+            <LedgerTab
+              conversationId={load.conversationId}
+              refreshKey={ledgerRefreshKey}
+              onOpenRow={(row: BuildArtifactHistoryRow) => {
+                setArtifactDrawer({
+                  open: true,
+                  target: {
+                    artifact: ledgerArtifactType(row.artifactType),
+                    artifactId: row.artifactId,
+                    historyRow: row,
+                  },
+                })
+              }}
+              onRevertRow={async (row: BuildArtifactHistoryRow) => {
+                // Two-step: dry-run preview, then native confirm before commit.
+                try {
+                  const preview = await apiRevertArtifactFromHistory(row.id, {
+                    dryRun: true,
+                  })
+                  if (!preview.ok) {
+                    alert(`Revert preview failed: ${preview.error ?? 'unknown'}`)
+                    return
+                  }
+                  const proceed = window.confirm(
+                    `Revert ${row.artifactType} "${row.artifactId}" to its pre-write state? This writes a REVERT row to the ledger.`,
+                  )
+                  if (!proceed) return
+                  const result = await apiRevertArtifactFromHistory(row.id, {
+                    dryRun: false,
+                  })
+                  if (!result.ok) {
+                    alert(`Revert failed: ${result.error ?? 'unknown'}`)
+                    return
+                  }
+                  setLedgerRefreshKey((k) => k + 1)
+                } catch (err) {
+                  alert(
+                    `Revert error: ${err instanceof Error ? err.message : String(err)}`,
+                  )
+                }
+              }}
             />
-            Show empty sessions
-            {!showEmpty && hiddenCount > 0 ? (
-              <span
-                className="ml-auto text-[10.5px]"
-                style={{ color: STUDIO_COLORS.inkSubtle }}
-              >
-                {hiddenCount} hidden
-              </span>
-            ) : null}
-          </label>
-        </footer>
-      )}
-    </aside>
-  )
-}
-
-// ─── Right rail: state snapshot + latest test results ──────────────────────
-
-function RightRail({
-  snapshot,
-  testResults,
-  sessionArtifacts,
-  onOpenArtifact,
-  traceButtonVisible,
-  onOpenTrace,
-  rawPromptButtonVisible,
-  onOpenRawPrompt,
-  ledgerVisible,
-  ledgerConversationId,
-  ledgerRefreshKey,
-  onOpenLedgerRow,
-  onRevertLedgerRow,
-}: {
-  snapshot: StateSnapshotData
-  testResults: TestPipelineResultData[]
-  sessionArtifacts: SessionArtifact[]
-  onOpenArtifact: (a: SessionArtifact) => void
-  traceButtonVisible: boolean
-  onOpenTrace: () => void
-  rawPromptButtonVisible: boolean
-  onOpenRawPrompt: () => void
-  ledgerVisible: boolean
-  ledgerConversationId: string | null
-  ledgerRefreshKey: number
-  onOpenLedgerRow: (row: BuildArtifactHistoryRow) => void
-  onRevertLedgerRow: (row: BuildArtifactHistoryRow) => void
-}) {
-  return (
-    <aside
-      className="flex flex-col gap-3 border-l overflow-auto"
-      style={{
-        width: 320,
-        minWidth: 320,
-        borderColor: STUDIO_COLORS.hairline,
-        background: STUDIO_COLORS.surfaceSunken,
-        padding: 14,
-      }}
+          }
+          utilityFooter={
+            capabilities.isAdmin && (capabilities.traceViewEnabled || capabilities.rawPromptEditorEnabled) ? (
+              <>
+                {capabilities.traceViewEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setTraceOpen(true)}
+                    aria-label="Open agent trace (admin)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      width: '100%',
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                      background: STUDIO_TOKENS_V2.bg,
+                      color: STUDIO_TOKENS_V2.muted,
+                      borderRadius: STUDIO_TOKENS_V2.radiusSm,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Agent trace
+                  </button>
+                ) : null}
+                {capabilities.rawPromptEditorEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setRawPromptOpen(true)}
+                    aria-label="Open raw system prompt (admin)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      width: '100%',
+                      padding: '6px 10px',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                      background: STUDIO_TOKENS_V2.bg,
+                      color: STUDIO_TOKENS_V2.muted,
+                      borderRadius: STUDIO_TOKENS_V2.radiusSm,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Raw system prompt
+                  </button>
+                ) : null}
+              </>
+            ) : undefined
+          }
+        />
+      }
+      drawers={
+        <>
+          <TraceDrawer
+            open={traceOpen}
+            onClose={() => setTraceOpen(false)}
+            conversationId={load.conversationId}
+          />
+          <RawPromptDrawer
+            open={rawPromptOpen}
+            onClose={() => setRawPromptOpen(false)}
+            conversationId={load.conversationId}
+          />
+          <ArtifactDrawer
+            open={artifactDrawer.open}
+            target={artifactDrawer.target}
+            onClose={closeArtifactDrawer}
+            isAdmin={capabilities.isAdmin}
+            traceViewEnabled={capabilities.traceViewEnabled}
+            rawPromptEditorEnabled={Boolean(capabilities.rawPromptEditorEnabled)}
+            sessionStartIso={sessionStartIso}
+          />
+        </>
+      }
     >
-      <StateSnapshotCard data={snapshot} />
-      <SessionArtifactsCard
-        artifacts={sessionArtifacts}
-        onOpen={onOpenArtifact}
-      />
-      {testResults.length > 0 && (() => {
-        const latest = testResults[0]
-        const variants = Array.isArray(latest.variants) ? latest.variants : []
-        const firstVariant = variants[0]
-        if (!firstVariant) return null
-        const passed = variants.filter((v) => v.verdict === 'passed').length
-        return (
-          <div
-            className="rounded-md border bg-white p-3"
-            style={{ borderColor: STUDIO_COLORS.hairline }}
-          >
-            <div
-              className="mb-2 text-[11px] font-semibold uppercase tracking-wide"
-              style={{ color: STUDIO_COLORS.inkMuted }}
-            >
-              Recent test
-            </div>
-            <div
-              className="mb-1 text-[12px] font-semibold"
-              style={{
-                color:
-                  latest.aggregateVerdict === 'all_passed'
-                    ? STUDIO_COLORS.successFg
-                    : STUDIO_COLORS.warnFg,
-              }}
-            >
-              {passed}/{variants.length} passed
-            </div>
-            <div className="text-[12px]" style={{ color: STUDIO_COLORS.ink }}>
-              {firstVariant.pipelineOutput.slice(0, 140)}
-              {firstVariant.pipelineOutput.length > 140 ? '…' : ''}
-            </div>
-            <div
-              className="mt-1 text-[10.5px]"
-              style={{ color: STUDIO_COLORS.inkSubtle }}
-            >
-              {firstVariant.latencyMs}ms · {firstVariant.replyModel}
-            </div>
-          </div>
-        )
-      })()}
-      <WriteLedgerCard
-        visible={ledgerVisible}
-        conversationId={ledgerConversationId}
-        refreshKey={ledgerRefreshKey}
-        onOpenRow={onOpenLedgerRow}
-        onRevertRow={onRevertLedgerRow}
-      />
-      {traceButtonVisible || rawPromptButtonVisible ? (
-        <div
-          style={{
-            marginTop: 'auto',
-            paddingTop: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          {traceButtonVisible ? (
-            <button
-              type="button"
-              onClick={onOpenTrace}
-              aria-label="Open agent trace (admin)"
-              title="Agent trace (admin)"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                width: '100%',
-                padding: '6px 10px',
-                fontSize: 11,
-                fontWeight: 500,
-                border: `1px solid ${STUDIO_COLORS.hairline}`,
-                background: STUDIO_COLORS.surfaceRaised,
-                color: STUDIO_COLORS.inkMuted,
-                borderRadius: 5,
-                cursor: 'pointer',
-              }}
-            >
-              <GearIcon />
-              <span>Agent trace</span>
-            </button>
-          ) : null}
-          {rawPromptButtonVisible ? (
-            <button
-              type="button"
-              onClick={onOpenRawPrompt}
-              aria-label="Open raw system prompt (admin)"
-              title="Raw system prompt (admin)"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                width: '100%',
-                padding: '6px 10px',
-                fontSize: 11,
-                fontWeight: 500,
-                border: `1px solid ${STUDIO_COLORS.hairline}`,
-                background: STUDIO_COLORS.surfaceRaised,
-                color: STUDIO_COLORS.inkMuted,
-                borderRadius: 5,
-                cursor: 'pointer',
-              }}
-            >
-              <GearIcon />
-              <span>Raw system prompt</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </aside>
+      {/* Sprint 058-A F9a — catch render errors inside StudioChat so the
+          whole Studio surface never blanks out. The boundary's recovery
+          card is itself a graceful-degradation surface (spec §1). */}
+      <StudioErrorBoundary>
+        <StudioChat
+          conversationId={load.conversationId}
+          greenfield={tenantState.isGreenfield}
+          initialMessages={load.initialMessages}
+          anchorMessage={load.anchorMessage}
+          onStateSnapshot={handleStateSnapshot}
+          onTestResult={handleTestResult}
+          onPlanApproved={handlePlanApproved}
+          onPlanRolledBack={handlePlanRolledBack}
+          onArtifactTouched={handleArtifactTouched}
+          onOpenArtifact={openArtifactFromCitation}
+          isAdmin={capabilities.isAdmin}
+          traceViewEnabled={capabilities.traceViewEnabled}
+          onOpenVerificationForHistoryId={openArtifactDrawerForHistoryId}
+          onUserMessageSent={handleUserMessageSent}
+          tenantState={tenantState}
+          onOpenPrompt={
+            capabilities.isAdmin && capabilities.rawPromptEditorEnabled
+              ? () => setRawPromptOpen(true)
+              : undefined
+          }
+        />
+      </StudioErrorBoundary>
+    </StudioShell>
   )
 }
 
-function GearIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  )
-}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
