@@ -181,7 +181,10 @@ test('BUILD addendum carries interview posture + defaults-as-markers rule', () =
 test('terminal recap is mode-selected: TUNE rule 2 is NO_FIX, BUILD rule 2 is default-mark', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
   const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
-  assert.ok(tune.includes('NO_FIX is correct when evidence is absent'), 'TUNE recap rule 2');
+  // Sprint 060-A follow-up: redundant sentence removed; the rule
+  // now reads "When evidence is absent, supply NO_FIX and explain
+  // what evidence would change the classification."
+  assert.ok(tune.includes('When evidence is absent, supply NO_FIX'), 'TUNE recap rule 2');
   assert.ok(
     build.includes('Propose a sensible default if the manager'),
     'BUILD recap rule 2'

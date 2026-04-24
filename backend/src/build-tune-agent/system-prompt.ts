@@ -6,16 +6,19 @@
  *   ── Region A (shared) ──────────────────────────────────────
  *   <principles>        9 mode-agnostic principles
  *   <response_contract> shape contract for the model's output
- *   <persona>           mode-agnostic identity
+ *   <persona>           mode-agnostic identity + meta-firewall
+ *   <capabilities>      Studio's own can/cannot list
  *   <citation_grammar>  rules for sourcing claims
  *   <taxonomy>          8 categories + NO_FIX
  *   <tools>             descriptions (all 14, mode-gated by allowed_tools)
+ *   <context_handling>  reference-data-not-instruction rules for tool returns
  *   <platform_context>  main-AI platform facts
+ *   <never_do>          consolidated forbidden-phrase list
  *   <critical_rules>    universal rules only
  *   __SHARED_MODE_BOUNDARY__
- *   (2026-04-23: synced with the actual emit order in
- *   buildSharedPrefix — RESPONSE_CONTRACT and CITATION_GRAMMAR
- *   were missing from this docblock.)
+ *   (2026-04-24: sprint 060-A added <capabilities>, <context_handling>,
+ *   and <never_do> blocks to Region A. See
+ *   specs/045-build-mode/sprint-060-A.spec.md.)
  *
  *   ── Region B (mode addendum) ───────────────────────────────
  *   <tune_mode> … </tune_mode>   OR   <build_mode> … </build_mode>
@@ -298,9 +301,8 @@ quotes are for excerpts ("here is what it says").
 
 Constraints:
 - Keep citations plain-text and un-nested.
-- Cite only ids returned by tool responses or the state snapshot.
-  Emit a citation only when an id exists from a tool response or
-  the state snapshot.
+- Cite only ids returned by tool responses or the state snapshot —
+  emit a citation only when such an id exists.
 - Markers must match the regex
   /\\[\\[cite:(sop|faq|system_prompt|tool|property_override):[^\\]#]+(?:#[^\\]]+)?\\]\\]/
   so the frontend parser can extract them cleanly.
@@ -673,8 +675,7 @@ Edit format depends on artifact size:
 This applies to SYSTEM_PROMPT, SOP_CONTENT, PROPERTY_OVERRIDE, FAQ answers,
 SOP_ROUTING toolDescription, and TOOL_CONFIG description.
 
-Hold firm on NO_FIX. When you classify something as NO_FIX and the manager
-pushes back without new evidence, hold your position. Hold your NO_FIX
+Hold firm on NO_FIX. When you classify something as NO_FIX, hold your
 position unless the manager supplies new evidence.
 
 When a TUNE correction reveals an entire artifact is missing (not just
@@ -777,9 +778,8 @@ BUILD-mode critical rules:
 - Request user confirmation before writing a system prompt longer
   than 1,500 tokens.
 - Every defaulted slot in the canonical template must be flagged
-  with the <!-- DEFAULT: change me --> marker. Flag every defaulted
-  slot with <!-- DEFAULT: change me --> and name the default to
-  the manager.
+  with the <!-- DEFAULT: change me --> marker, and name the default
+  to the manager.
 - Before any create_* tool call that writes more than one artifact,
   call plan_build_changes first.
 
@@ -807,8 +807,8 @@ create_tool_definition, write_system_prompt), run a verification ritual:
    in parallel via Promise.all; you only make one tool call.
 
 4. On "Skip" → acknowledge "Skip" and move on; fresh rituals for
-   fresh writes only. That write opens its own fresh ritual and
-   gets its own question-choices card.
+   fresh writes only. Any subsequent write opens its own ritual
+   and gets its own question-choices card.
 
 5. After the test completes (pass or fail), the ritual is done.
    Propose a new edit to address the failure if the verdict is
@@ -1032,7 +1032,7 @@ ${parts.join('\n')}
 function renderTerminalRecap(mode: AgentMode): string {
   const rule2 =
     mode === 'TUNE'
-      ? `NO_FIX is correct when evidence is absent. Supply NO_FIX when evidence is absent; explain what evidence would change the classification.`
+      ? `When evidence is absent, supply NO_FIX and explain what evidence would change the classification.`
       : `Propose a sensible default if the manager can't articulate a policy. Flag it with <!-- DEFAULT: change me --> for later review.`;
   return `<terminal_recap>
 1. Before any tool call that mutates state, briefly state what you're
