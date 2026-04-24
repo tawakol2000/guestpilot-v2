@@ -25,7 +25,6 @@ import { buildAskManagerTool } from './ask-manager';
 import { buildEmitAuditTool } from './emit-audit';
 import { buildGetEditHistoryTool } from './get-edit-history';
 import { buildEmitSessionSummaryTool } from './emit-session-summary';
-import { buildDiffVersionsTool } from './diff-versions';
 import { buildEmitInterviewProgressTool } from './emit-interview-progress';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -59,7 +58,6 @@ export async function buildTuningAgentMcpServer(
       buildEmitAuditTool(tool, getCtx),
       buildGetEditHistoryTool(tool, getCtx),
       buildEmitSessionSummaryTool(tool, getCtx),
-      buildDiffVersionsTool(tool, getCtx),
       buildEmitInterviewProgressTool(tool, getCtx),
     ],
   });

@@ -119,8 +119,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       // operator approval to apply.
       TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
-      // Sprint 046 — card emitters requested by the agent itself.
-      TUNING_AGENT_TOOL_NAMES.diff_versions,
+      // Sprint 046 — interview progress emitter (slated for runtime auto-emit
+      // in 060-D phase 6).
       TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
     ];
   }
@@ -138,8 +138,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.emit_audit,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
     TUNING_AGENT_TOOL_NAMES.emit_session_summary,
-    // Sprint 046 — card emitters requested by the agent.
-    TUNING_AGENT_TOOL_NAMES.diff_versions,
+    // Sprint 046 — interview progress emitter (slated for runtime auto-emit
+    // in 060-D phase 6).
     TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
   ];
 }
