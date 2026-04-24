@@ -118,8 +118,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       // flow is staged via `data-suggested-fix` and still requires
       // operator approval to apply.
       TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
-      TUNING_AGENT_TOOL_NAMES.propose_suggestion,
-      TUNING_AGENT_TOOL_NAMES.suggestion_action,
+      TUNING_AGENT_TOOL_NAMES.studio_suggestion,
       // Sprint 046 — card emitters requested by the agent itself.
       TUNING_AGENT_TOOL_NAMES.diff_versions,
       TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
@@ -129,8 +128,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_get_context,
     TUNING_AGENT_TOOL_NAMES.search_corrections,
     TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
-    TUNING_AGENT_TOOL_NAMES.propose_suggestion,
-    TUNING_AGENT_TOOL_NAMES.suggestion_action,
+    TUNING_AGENT_TOOL_NAMES.studio_suggestion,
     TUNING_AGENT_TOOL_NAMES.studio_memory,
     TUNING_AGENT_TOOL_NAMES.studio_rollback,
     TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,

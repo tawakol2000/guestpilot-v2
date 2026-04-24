@@ -9,8 +9,8 @@ export const TUNING_AGENT_TOOL_NAMES = {
   studio_get_context: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_context`,
   search_corrections: `mcp__${TUNING_AGENT_SERVER_NAME}__search_corrections`,
   fetch_evidence_bundle: `mcp__${TUNING_AGENT_SERVER_NAME}__fetch_evidence_bundle`,
-  propose_suggestion: `mcp__${TUNING_AGENT_SERVER_NAME}__propose_suggestion`,
-  suggestion_action: `mcp__${TUNING_AGENT_SERVER_NAME}__suggestion_action`,
+  // 060-D: propose_suggestion + suggestion_action merged into studio_suggestion.
+  studio_suggestion: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_suggestion`,
   studio_memory: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_memory`,
   studio_rollback: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_rollback`,
   // Sprint 045, Gate 2 — BUILD-mode artifact creators.

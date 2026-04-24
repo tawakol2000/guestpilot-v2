@@ -189,12 +189,15 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
       return { continue: true } as HookJSONOutput;
     }
 
-    // Only intercept suggestion_action applies; all other tools pass through.
-    if (pre.tool_name !== TUNING_AGENT_TOOL_NAMES.suggestion_action) {
+    // Only intercept studio_suggestion applies / edit_then_applies; other
+    // tools pass through. 060-D: tool_input uses `op` (not `action`); we
+    // map propose/apply/reject/edit_then_apply → the legacy action vocabulary
+    // so the rest of this function reads naturally.
+    if (pre.tool_name !== TUNING_AGENT_TOOL_NAMES.studio_suggestion) {
       return { continue: true } as HookJSONOutput;
     }
     const toolInput = (pre.tool_input ?? {}) as {
-      action?: string;
+      op?: string;
       suggestionId?: string;
       draft?: {
         category?: string;
@@ -212,7 +215,7 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
         beforeText?: string;
       };
     };
-    const action = toolInput.action;
+    const action = toolInput.op;
     const isWrite = action === 'apply' || action === 'edit_then_apply';
     if (!isWrite) {
       return { continue: true } as HookJSONOutput;

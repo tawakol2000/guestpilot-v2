@@ -43,7 +43,12 @@ export function buildPostToolUseHook(_ctx: () => HookContext): HookCallback {
     // edit-format fields, and null-violations for NO_FIX / MISSING_CAPABILITY.
     // On failure, feed the reason back as additionalContext so the agent
     // self-corrects on the next turn rather than silently shipping bad output.
-    if (post.tool_name === TUNING_AGENT_TOOL_NAMES.propose_suggestion) {
+    // 060-D: propose_suggestion folded into studio_suggestion(op='propose').
+    // The validator only fires when the propose op is invoked.
+    if (
+      post.tool_name === TUNING_AGENT_TOOL_NAMES.studio_suggestion &&
+      (post.tool_input as { op?: string })?.op === 'propose'
+    ) {
       const validationError = validateProposeSuggestion(post.tool_input);
       if (validationError) {
         return {

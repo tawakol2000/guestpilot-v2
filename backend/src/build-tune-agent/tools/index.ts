@@ -11,8 +11,7 @@ import type { ToolContext } from './types';
 import { buildGetContextTool } from './get-context';
 import { buildSearchCorrectionsTool } from './search-corrections';
 import { buildFetchEvidenceBundleTool } from './fetch-evidence-bundle';
-import { buildProposeSuggestionTool } from './propose-suggestion';
-import { buildSuggestionActionTool } from './suggestion-action';
+import { buildSuggestionTool } from './suggestion';
 import { buildMemoryTool } from './memory';
 import { buildRollbackTool } from './version-history';
 import { buildCreateFaqTool } from './create-faq';
@@ -46,8 +45,7 @@ export async function buildTuningAgentMcpServer(
       buildGetContextTool(tool, getCtx),
       buildSearchCorrectionsTool(tool, getCtx),
       buildFetchEvidenceBundleTool(tool, getCtx),
-      buildProposeSuggestionTool(tool, getCtx),
-      buildSuggestionActionTool(tool, getCtx),
+      buildSuggestionTool(tool, getCtx),
       buildMemoryTool(tool, getCtx),
       buildRollbackTool(tool, getCtx),
       buildCreateFaqTool(tool, getCtx),

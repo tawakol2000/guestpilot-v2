@@ -49,7 +49,8 @@ function invoke(hook: any, toolName: string, toolInput: unknown) {
 test('passes through non-apply suggestion_action calls', async () => {
   const c = ctx({ prisma: {} });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, { action: 'queue' });
+  // 060-D: 'queue' op was dropped; 'propose' is the new non-write op that the hook passes through.
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, { op: 'propose' });
   assert.deepEqual(res, { continue: true });
 });
 
@@ -63,8 +64,8 @@ test('denies apply without manager sanction', async () => {
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's1',
   });
   assert.equal(res.continue, false);
@@ -109,8 +110,8 @@ test('emits recent-edit advisory without denying when prior apply is within 48h'
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's1',
   });
   assert.deepEqual(res, { continue: true });
@@ -158,8 +159,8 @@ test('does NOT emit recent-edit advisory when prior apply is older than 48h', as
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's3',
   });
   assert.deepEqual(res, { continue: true });
@@ -202,8 +203,8 @@ test('allows immediate second apply of the same artifact (no cooldown deny)', as
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's2',
   });
   assert.deepEqual(res, { continue: true });
@@ -246,8 +247,8 @@ test('oscillation reversal without confidence boost emits advisory, does NOT den
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's1',
   });
   assert.deepEqual(res, { continue: true });
@@ -284,8 +285,8 @@ test('allows apply when sanction present and no cooldown/oscillation', async () 
     },
   });
   const hook = buildPreToolUseHook(() => c);
-  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.suggestion_action, {
-    action: 'apply',
+  const res = await invoke(hook, TUNING_AGENT_TOOL_NAMES.studio_suggestion, {
+    op: 'apply',
     suggestionId: 's1',
   });
   assert.deepEqual(res, { continue: true });
