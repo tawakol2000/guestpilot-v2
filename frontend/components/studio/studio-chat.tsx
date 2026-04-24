@@ -66,6 +66,7 @@ const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
   'get_context',
   'get_current_state',
   'fetch_evidence_bundle',
+  'search_corrections',
   'search_properties',
   'search_available_properties',
   'get_system_prompt',
@@ -75,7 +76,22 @@ const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
   'list_faqs',
   'list_tools',
   'list_properties',
+  'get_edit_history',
+  'get_version_history',
+  'diff_versions',
 ])
+
+/**
+ * 2026-04-24 bugfix: tuning-agent MCP tools arrive in the stream as
+ * `mcp__tuning-agent__get_current_state`, not `get_current_state`. The
+ * READ_TOOL_NAMES lookup was always missing, which is why the Plan
+ * tab's "Context in use" has been permanently blank even when the
+ * agent had clearly fetched a pile of artifacts. Normalise once here.
+ */
+const MCP_PREFIX = 'mcp__tuning-agent__'
+function normalizeToolName(raw: string): string {
+  return raw.startsWith(MCP_PREFIX) ? raw.slice(MCP_PREFIX.length) : raw
+}
 
 /** Best-effort extraction of a short human-readable target from a tool
  *  call's input payload. Returns null when we can't infer one. */
@@ -316,6 +332,11 @@ export function StudioChat({
     transport,
   })
 
+  // Hoisted: used by the forward-loop effect below so test-pipeline
+  // results land on the shell (Tests tab reads them) in addition to
+  // the parent's local state.
+  const shellContext = useStudioShell()
+
   // Auto-opener — when the operator clicks "Discuss in Tuning" on an
   // inbox message, a TuningConversation is created with anchorMessageId
   // set and we get dropped into Studio with zero messages. Without this
@@ -398,7 +419,14 @@ export function StudioChat({
           onStateSnapshot?.(p.data as StateSnapshotData)
         } else if (t === 'data-test-pipeline-result' && p.data) {
           forwardedIds.current.add(stableKey)
-          onTestResult?.(p.data as TestPipelineResultData)
+          const data = p.data as TestPipelineResultData
+          onTestResult?.(data)
+          // 2026-04-24: also push into the shell so the right-panel
+          // Tests tab switches from the "No tests yet" empty state to
+          // the per-variant case rows. Previously the result was only
+          // surfaced on the inline chat card and the Tests tab stayed
+          // blank forever.
+          shellContext.setPreviewLastResult?.(data)
         }
       }
     }
@@ -449,8 +477,9 @@ export function StudioChat({
   // agent's tool-call parts so PlanTab's CONTEXT IN USE list reflects
   // everything the agent has *read* (SOPs, FAQs, evidence bundles,
   // etc.), not just writes. `onArtifactTouched` only fires for writes;
-  // reads have to be derived from the tool-call stream.
-  const shellContext = useStudioShell()
+  // reads have to be derived from the tool-call stream. `shellContext`
+  // is hoisted above useChat so the forward-loop effect can push
+  // test-pipeline results too.
   useEffect(() => {
     const setDerived = shellContext.setDerivedContext
     if (typeof setDerived !== 'function') return
@@ -465,7 +494,8 @@ export function StudioChat({
         // Only surface tools the agent uses to READ context. Keep the
         // list small + trustworthy — write tools already surface via
         // session-artifacts, so don't double-count.
-        const toolName = typeof p.toolName === 'string' ? p.toolName : t.slice('tool-'.length)
+        const rawToolName = typeof p.toolName === 'string' ? p.toolName : t.slice('tool-'.length)
+        const toolName = normalizeToolName(rawToolName)
         if (!READ_TOOL_NAMES.has(toolName)) continue
         const callKey = typeof p.toolCallId === 'string' ? p.toolCallId : `${m.id}:${toolName}:${items.length}`
         if (seen.has(callKey)) continue
@@ -810,19 +840,21 @@ export function StudioChat({
         style={{
           borderColor: STUDIO_TOKENS_V2.border,
           background: STUDIO_TOKENS_V2.bg,
-          padding: '8px 20px 14px',
+          padding: '6px 20px 8px',
         }}
       >
-        {/* Sprint 046 T012 — composer card, v2 tokens. 14px radius,
-           border-strong, small shadow, 780px max-width per FR-025. */}
+        {/* Sprint 046 T012 — composer card, v2 tokens.
+           2026-04-24: trimmed inner + outer padding and dropped the
+           textarea to rows=1 so the card height collapses roughly
+           40% without losing the chips row or send target. */}
         <div
-          className="mx-auto flex flex-col gap-2"
+          className="mx-auto flex flex-col gap-1"
           style={{
             maxWidth: 780,
             background: STUDIO_TOKENS_V2.bg,
             border: `1px solid ${STUDIO_TOKENS_V2.borderStrong}`,
             borderRadius: STUDIO_TOKENS_V2.radiusXl,
-            padding: '10px 12px 8px',
+            padding: '6px 10px 6px',
             boxShadow: STUDIO_TOKENS_V2.shadowSm,
           }}
         >
@@ -853,7 +885,7 @@ export function StudioChat({
                 }
               }
             }}
-            rows={2}
+            rows={1}
             placeholder={
               isBusy
                 ? queuedMessages.length > 0
@@ -867,7 +899,7 @@ export function StudioChat({
                   : 'What do you want to build or change?'
             }
             disabled={false}
-            className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-5 outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
+            className="min-h-[28px] flex-1 resize-none border-0 bg-transparent px-2 py-1 text-sm leading-5 outline-none placeholder:text-[#9CA3AF] disabled:opacity-60"
             style={{ color: STUDIO_COLORS.ink }}
             aria-label="Message the studio agent"
           />
@@ -1203,33 +1235,34 @@ function MessageRow({
     >
       {isUser ? (
         // ── User bubble (right-aligned, blue-soft pill) ─────────────
-        // Sprint 046 — pill styling per user review screenshot: full
-        // rounded corners, `--blue-soft` background, `--blue` text.
-        // Readable contrast and unmistakably a guest turn.
+        // Sprint 046 — pill styling per user review screenshot.
+        // 2026-04-24: hard bottom-right corner as the "tail" signature
+        // for a sender bubble (matches iMessage convention). Flattened
+        // the wrapper tree so padding and max-width live on one node
+        // instead of a 3-deep flex stack.
         <div style={{ display: 'flex', justifyContent: 'flex-end', maxWidth: 780, margin: '0 auto' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '85%' }}>
-            <div
-              style={{
-                padding: '10px 16px',
-                borderRadius: 18,
-                background: STUDIO_TOKENS_V2.blueSoft,
-                color: STUDIO_TOKENS_V2.blue,
-                fontSize: 14.5,
-                lineHeight: 1.5,
-                wordBreak: 'break-word',
-              }}
-            >
-              {textParts.length > 0
-                ? textParts.map((p, i) => (
-                    <AttributedText
-                      key={`t:${i}`}
-                      text={p.text ?? ''}
-                      isUser
-                      onOpenArtifact={onOpenArtifact}
-                    />
-                  ))
-                : null}
-            </div>
+          <div
+            style={{
+              maxWidth: '85%',
+              padding: '10px 16px',
+              borderRadius: '18px 18px 4px 18px',
+              background: STUDIO_TOKENS_V2.blueSoft,
+              color: STUDIO_TOKENS_V2.blue,
+              fontSize: 14.5,
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}
+          >
+            {textParts.length > 0
+              ? textParts.map((p, i) => (
+                  <AttributedText
+                    key={`t:${i}`}
+                    text={p.text ?? ''}
+                    isUser
+                    onOpenArtifact={onOpenArtifact}
+                  />
+                ))
+              : null}
           </div>
         </div>
       ) : (

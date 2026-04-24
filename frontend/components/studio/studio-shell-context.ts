@@ -52,6 +52,15 @@ export interface StudioShellContextValue {
   previewInput: PreviewInputState
   setPreviewInputText: (t: string) => void
   runPreview: (text: string) => void
+  /**
+   * 2026-04-24: the SSE stream lands test results via StudioChat's
+   * `onTestResult` → surface-level handler, which was previously only
+   * setting local state on the surface. The Tests tab reads
+   * `previewInput.lastResult`, so the surface now calls this setter
+   * to forward the result into the shell and the Tests tab finally
+   * shows the per-variant rows when a run completes.
+   */
+  setPreviewLastResult: (result: TestPipelineResultData) => void
 
   // Reference picker (FR-025a) — composer chip → shell opens popover
   openReferencePicker: (anchorEl: HTMLElement) => void
@@ -80,6 +89,7 @@ const NO_OP_CONTEXT: StudioShellContextValue = {
   },
   setPreviewInputText: () => {},
   runPreview: () => {},
+  setPreviewLastResult: () => {},
   openReferencePicker: () => {},
   closeReferencePicker: () => {},
   derivedContext: [],

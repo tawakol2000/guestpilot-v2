@@ -120,6 +120,29 @@ export function StudioShell(props: StudioShellProps) {
     setPreviewInput((prev) => ({ ...prev, text }))
   }, [])
 
+  /**
+   * 2026-04-24 — receive SSE-delivered test-pipeline results into the
+   * shell so the Tests tab can render them. Called by the surface's
+   * `handleTestResult`, which is fired from StudioChat when it sees a
+   * `data-test-pipeline-result` part in the stream. Clears
+   * `isSending` + `lastError` so the Preview tab stops showing the
+   * spinner.
+   */
+  const setPreviewLastResult = useCallback((result: TestPipelineResultData) => {
+    setPreviewInput((prev) => ({
+      ...prev,
+      isSending: false,
+      lastResult: result,
+      lastError: null,
+    }))
+    // Surface the result: flip the right-rail over to Tests so the
+    // operator sees the per-variant case rows the moment the run
+    // completes. Only auto-flip when we're currently on Preview —
+    // don't interrupt the operator if they've navigated to Plan /
+    // Ledger mid-run.
+    setActiveRightTabRaw((prev) => (prev === 'preview' ? 'tests' : prev))
+  }, [])
+
   const runPreview = useCallback(
     (text: string) => {
       if (!text.trim()) return
@@ -195,6 +218,7 @@ export function StudioShell(props: StudioShellProps) {
       previewInput,
       setPreviewInputText,
       runPreview,
+      setPreviewLastResult,
       openReferencePicker,
       closeReferencePicker,
       derivedContext,
@@ -208,6 +232,7 @@ export function StudioShell(props: StudioShellProps) {
       previewInput,
       setPreviewInputText,
       runPreview,
+      setPreviewLastResult,
       openReferencePicker,
       closeReferencePicker,
       derivedContext,
