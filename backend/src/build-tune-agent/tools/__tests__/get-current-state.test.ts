@@ -21,6 +21,11 @@ import assert from 'node:assert/strict';
 import {
   buildCurrentStatePayload,
   deriveSystemPromptSections,
+  applyTruncationSignal,
+  filterSopsByQuery,
+  filterFaqsByQuery,
+  filterToolsByQuery,
+  SOFT_CAP_BYTES,
 } from '../get-current-state';
 
 type Row = Record<string, any>;
@@ -82,6 +87,10 @@ function makeFakePrisma(opts?: {
           variants: s.variants,
           propertyOverrides: s.overrides,
         })),
+    },
+    // Used by getTenantStateSummary to count defaulted SOPs.
+    sopVariant: {
+      findMany: async () => [],
     },
     faqEntry: {
       count: async ({ where }: any) => {
@@ -355,6 +364,150 @@ test('get_current_state tools: flags isCustom for non-system tools', async () =>
   const custom = payload.tools.find((t) => t.name === 'check_reservation');
   assert.equal(sys!.isCustom, false);
   assert.equal(custom!.isCustom, true);
+});
+
+test('applyTruncationSignal: small payload → truncated=null, unmodified', () => {
+  const payload: any = {
+    scope: 'faqs',
+    faqs: [
+      { id: 'f1', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'short answer', status: 'ACTIVE' },
+    ],
+  };
+  const out = applyTruncationSignal(payload);
+  assert.equal(out.truncated, null);
+  assert.equal(out.faqs[0].answer, 'short answer');
+});
+
+test('applyTruncationSignal: oversized payload → clips longest strings + records paths', () => {
+  const bigAnswer = 'x'.repeat(60_000);
+  const mediumAnswer = 'y'.repeat(4_000);
+  const payload: any = {
+    scope: 'faqs',
+    faqs: [
+      { id: 'f1', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'q1', answer: bigAnswer, status: 'ACTIVE' },
+      { id: 'f2', category: 'parking', scope: 'GLOBAL', propertyId: null, question: 'q2', answer: mediumAnswer, status: 'ACTIVE' },
+      { id: 'f3', category: 'keys', scope: 'GLOBAL', propertyId: null, question: 'q3', answer: 'tiny', status: 'ACTIVE' },
+    ],
+  };
+  const out = applyTruncationSignal(payload, 10_000, 800);
+  assert.ok(out.truncated, 'truncated envelope attached');
+  assert.ok(out.truncated!.originalBytes > 60_000);
+  assert.ok(out.truncated!.keptBytes <= 10_000 + 500, 'clipped under soft cap (plus envelope overhead)');
+  assert.ok(out.truncated!.clipped.length >= 1);
+  // f1.answer should be clipped (longest).
+  const f1Clip = out.truncated!.clipped.find((c: any) => c.path === 'faqs[id=f1].answer');
+  assert.ok(f1Clip, 'f1.answer should appear in clipped list');
+  assert.equal(f1Clip!.originalLen, 60_000);
+  assert.equal(f1Clip!.keptLen, 800);
+  // f3.answer untouched — was tiny already.
+  assert.equal(out.faqs[2].answer, 'tiny');
+  // f1.answer mutated with sentinel.
+  assert.ok(out.faqs[0].answer.endsWith('clipped artifact]') === false || out.faqs[0].answer.includes('clipped'));
+  assert.ok(out.faqs[0].answer.length < 1500);
+});
+
+test('applyTruncationSignal: SOP variant content is clippable', () => {
+  const bigBody = 'z'.repeat(30_000);
+  const payload: any = {
+    scope: 'sops',
+    sops: [
+      {
+        id: 's1',
+        category: 'checkin',
+        toolDescription: 'desc',
+        enabled: true,
+        variants: [{ id: 'v1', status: 'DEFAULT', content: bigBody, enabled: true }],
+        propertyOverrides: [],
+      },
+    ],
+  };
+  const out = applyTruncationSignal(payload, 5_000, 400);
+  assert.ok(out.truncated);
+  const entry = out.truncated!.clipped.find((c: any) => c.path === 'sops[id=s1].variants[id=v1].content');
+  assert.ok(entry, 'SOP variant content clipped');
+  assert.equal(entry!.keptLen, 400);
+});
+
+test('buildCurrentStatePayload attaches truncated=null for small tenants', async () => {
+  const prisma = makeFakePrisma({
+    systemPrompt: { text: 'short prompt', version: 1 },
+  });
+  const payload = await buildCurrentStatePayload(prisma, 't1', 'system_prompt');
+  assert.equal(payload.truncated, null);
+});
+
+test('SOFT_CAP_BYTES is set generously above the ~16KB transport clip', () => {
+  assert.ok(SOFT_CAP_BYTES >= 32_000, 'soft cap should leave headroom over the observed 16KB transport clip');
+});
+
+test('filterSopsByQuery: matches category, toolDescription, variant content', () => {
+  const sops: any[] = [
+    { id: 's1', category: 'parking-lot', toolDescription: 'x', enabled: true, variants: [], propertyOverrides: [] },
+    { id: 's2', category: 'checkin', toolDescription: 'This covers parking validation flow', enabled: true, variants: [], propertyOverrides: [] },
+    { id: 's3', category: 'cleaning', toolDescription: 'x', enabled: true, variants: [{ id: 'v1', status: 'DEFAULT', content: 'Mention the PARKING fee', enabled: true }], propertyOverrides: [] },
+    { id: 's4', category: 'wifi', toolDescription: 'x', enabled: true, variants: [], propertyOverrides: [] },
+  ];
+  const out = filterSopsByQuery(sops as any, 'parking');
+  const ids = out.map((s) => s.id).sort();
+  assert.deepEqual(ids, ['s1', 's2', 's3']);
+});
+
+test('filterSopsByQuery: empty/undefined query returns all', () => {
+  const sops: any[] = [
+    { id: 's1', category: 'a', toolDescription: 'x', enabled: true, variants: [], propertyOverrides: [] },
+  ];
+  assert.equal(filterSopsByQuery(sops as any, '').length, 1);
+  assert.equal(filterSopsByQuery(sops as any, null).length, 1);
+  assert.equal(filterSopsByQuery(sops as any, undefined).length, 1);
+  assert.equal(filterSopsByQuery(sops as any, '   ').length, 1);
+});
+
+test('filterFaqsByQuery: matches question, answer, category case-insensitive', () => {
+  const faqs: any[] = [
+    { id: 'f1', category: 'parking', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'a', status: 'ACTIVE' },
+    { id: 'f2', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'Where is parking?', answer: 'a', status: 'ACTIVE' },
+    { id: 'f3', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'Use the garage near the PARKING meter', status: 'ACTIVE' },
+    { id: 'f4', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'a', status: 'ACTIVE' },
+  ];
+  const out = filterFaqsByQuery(faqs as any, 'PARKING');
+  const ids = out.map((f) => f.id).sort();
+  assert.deepEqual(ids, ['f1', 'f2', 'f3']);
+});
+
+test('filterToolsByQuery: matches name, displayName, description', () => {
+  const tools: any[] = [
+    { id: 't1', name: 'search_parking', displayName: 'X', description: 'x', type: 'custom', agentScope: 'both', enabled: true, isCustom: true },
+    { id: 't2', name: 'x', displayName: 'Find Parking Spot', description: 'x', type: 'custom', agentScope: 'both', enabled: true, isCustom: true },
+    { id: 't3', name: 'x', displayName: 'X', description: 'Looks up parking availability', type: 'custom', agentScope: 'both', enabled: true, isCustom: true },
+    { id: 't4', name: 'y', displayName: 'Y', description: 'y', type: 'custom', agentScope: 'both', enabled: true, isCustom: true },
+  ];
+  const out = filterToolsByQuery(tools as any, 'parking');
+  assert.deepEqual(out.map((t) => t.id).sort(), ['t1', 't2', 't3']);
+});
+
+test('buildCurrentStatePayload passes query through for scope=faqs', async () => {
+  const prisma = makeFakePrisma({
+    faqs: [
+      { id: 'f1', category: 'parking', scope: 'GLOBAL', propertyId: null, question: 'Where?', answer: 'Garage', status: 'ACTIVE' },
+      { id: 'f2', category: 'wifi', scope: 'GLOBAL', propertyId: null, question: 'Password?', answer: 'router', status: 'ACTIVE' },
+    ],
+  });
+  const payload = await buildCurrentStatePayload(prisma, 't1', 'faqs', 'parking');
+  if (payload.scope !== 'faqs') throw new Error('narrowing');
+  assert.equal(payload.faqs.length, 1);
+  assert.equal(payload.faqs[0].id, 'f1');
+});
+
+test('buildCurrentStatePayload query=null returns all (no filtering)', async () => {
+  const prisma = makeFakePrisma({
+    faqs: [
+      { id: 'f1', category: 'a', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'a', status: 'ACTIVE' },
+      { id: 'f2', category: 'b', scope: 'GLOBAL', propertyId: null, question: 'q', answer: 'a', status: 'ACTIVE' },
+    ],
+  });
+  const payload = await buildCurrentStatePayload(prisma, 't1', 'faqs', null);
+  if (payload.scope !== 'faqs') throw new Error('narrowing');
+  assert.equal(payload.faqs.length, 2);
 });
 
 test('get_current_state all: strict superset of summary + system_prompt + sops + faqs + tools', async () => {

@@ -111,12 +111,53 @@ export interface CurrentToolPayload {
   isCustom: boolean;
 }
 
+/**
+ * Sprint 046 follow-up (2026-04-24) — truncation signal.
+ *
+ * Large tenants serialize `scope:'all'` into 30–100+ KB of JSON. The
+ * Claude Agent SDK / MCP transport silently clips tool-result text at
+ * ~16 KB, which means the agent was receiving a mid-object cutoff with
+ * NO signal that anything was missing — leading to hallucinated
+ * "I don't see any SOPs for X" responses when the SOPs were just clipped
+ * off the end. This envelope gives the agent an explicit, structured
+ * signal of what was clipped so it can re-query with a narrower scope.
+ *
+ * Behavior:
+ *   - Byte size of raw payload measured before return.
+ *   - If under `SOFT_CAP_BYTES`, `truncated` is null.
+ *   - If over, longest string fields are iteratively clipped to a
+ *     minimum floor (`FIELD_FLOOR_CHARS`) with a `[…clipped]` sentinel
+ *     until the serialized payload fits the cap. Each clipped field is
+ *     recorded in `truncated.clipped` with the path + original length
+ *     so the agent can `get_sop`/`get_faq` that specific item for the
+ *     full body if needed.
+ */
+export const SOFT_CAP_BYTES = 48_000;
+export const FIELD_FLOOR_CHARS = 800;
+const CLIP_SENTINEL = '\n…[clipped by get_current_state — call the scoped get_sop/get_faq/get_tool for full body]';
+
+export interface TruncationSignal {
+  /** Raw bytes of the payload as JSON.stringified before any clipping. */
+  originalBytes: number;
+  /** Raw bytes of the payload after clipping (≤ SOFT_CAP_BYTES). */
+  keptBytes: number;
+  /** Soft cap used for this response (48_000 by default). */
+  softCapBytes: number;
+  /**
+   * Per-field clip log. Path format matches the payload JSON shape so
+   * the agent can map a clipped entry back to an id/category and
+   * re-fetch it.
+   */
+  clipped: Array<{ path: string; originalLen: number; keptLen: number }>;
+  note: string;
+}
+
 export type CurrentStatePayload =
-  | { scope: 'summary'; summary: TenantStateSummary }
-  | { scope: 'system_prompt'; systemPrompt: CurrentSystemPromptPayload }
-  | { scope: 'sops'; sops: CurrentSopPayload[] }
-  | { scope: 'faqs'; faqs: CurrentFaqPayload[] }
-  | { scope: 'tools'; tools: CurrentToolPayload[] }
+  | { scope: 'summary'; summary: TenantStateSummary; truncated?: TruncationSignal | null }
+  | { scope: 'system_prompt'; systemPrompt: CurrentSystemPromptPayload; truncated?: TruncationSignal | null }
+  | { scope: 'sops'; sops: CurrentSopPayload[]; truncated?: TruncationSignal | null }
+  | { scope: 'faqs'; faqs: CurrentFaqPayload[]; truncated?: TruncationSignal | null }
+  | { scope: 'tools'; tools: CurrentToolPayload[]; truncated?: TruncationSignal | null }
   | {
       scope: 'all';
       summary: TenantStateSummary;
@@ -124,6 +165,7 @@ export type CurrentStatePayload =
       sops: CurrentSopPayload[];
       faqs: CurrentFaqPayload[];
       tools: CurrentToolPayload[];
+      truncated?: TruncationSignal | null;
     };
 
 const DESCRIPTION = `Return the actual text of the tenant's configured artifacts. Pick the narrowest scope that answers the question at hand — calling wider than you need burns context tokens the rest of the turn could use.
@@ -134,7 +176,9 @@ SCOPES:
   'faqs' — all FaqEntries (global + property-scoped). Call before FAQ edits or when evaluating coverage gaps.
   'tools' — all ToolDefinitions (system + custom). Call before TOOL_CONFIG edits.
   'all' — union of all non-summary scopes + summary. Use ONLY for full-audit prompts ("review my setup"); a single 'all' call replaces four scoped calls.
-ONE scoped call per distinct need per turn. A second call with the same scope in the same turn is flagged by the output linter.`;
+ONE scoped call per distinct need per turn. A second call with the same scope in the same turn is flagged by the output linter.
+OPTIONAL 'query' FILTER: pass 'query: "<keyword>"' alongside any scope except 'summary'/'system_prompt' to narrow results to artifacts whose text (category, question/answer, variant content, name, displayName, description) contains the keyword (case-insensitive substring). Ideal for large tenants: 'get_current_state({ scope: "sops", query: "parking" })' returns only parking-related SOPs instead of the full fleet. With scope='all', the query filters sops/faqs/tools but leaves summary + systemPrompt untouched.
+TRUNCATION: every response carries a 'truncated' field. When non-null, long bodies have been clipped to keep the result under ${SOFT_CAP_BYTES / 1000} KB; 'truncated.clipped[]' lists each clipped field's path + originalLen + keptLen so you can re-fetch that exact artifact with the scoped tool (get_sop / get_faq / get_tool) for the full body. Do NOT edit a clipped artifact without re-fetching it first.`;
 
 /**
  * Derive section anchors from the system-prompt text. The canonical template
@@ -234,6 +278,61 @@ export async function fetchSystemPromptPayload(
   };
 }
 
+/**
+ * Case-insensitive substring match across all long-text fields of an
+ * artifact. Each scope has its own relevant set of fields to search —
+ * e.g. FAQ entries match on question + answer + category; tools match
+ * on name + displayName + description.
+ */
+function caseInsensitiveIncludes(haystack: string, needle: string): boolean {
+  if (!needle) return true;
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+export function filterSopsByQuery(
+  sops: CurrentSopPayload[],
+  query: string | null | undefined
+): CurrentSopPayload[] {
+  if (!query) return sops;
+  const q = query.trim();
+  if (!q) return sops;
+  return sops.filter((s) => {
+    if (caseInsensitiveIncludes(s.category, q)) return true;
+    if (caseInsensitiveIncludes(s.toolDescription, q)) return true;
+    for (const v of s.variants) if (caseInsensitiveIncludes(v.content, q)) return true;
+    for (const o of s.propertyOverrides) if (caseInsensitiveIncludes(o.content, q)) return true;
+    return false;
+  });
+}
+
+export function filterFaqsByQuery(
+  faqs: CurrentFaqPayload[],
+  query: string | null | undefined
+): CurrentFaqPayload[] {
+  if (!query) return faqs;
+  const q = query.trim();
+  if (!q) return faqs;
+  return faqs.filter((f) =>
+    caseInsensitiveIncludes(f.category, q) ||
+    caseInsensitiveIncludes(f.question, q) ||
+    caseInsensitiveIncludes(f.answer, q)
+  );
+}
+
+export function filterToolsByQuery(
+  tools: CurrentToolPayload[],
+  query: string | null | undefined
+): CurrentToolPayload[] {
+  if (!query) return tools;
+  const q = query.trim();
+  if (!q) return tools;
+  return tools.filter((t) =>
+    caseInsensitiveIncludes(t.name, q) ||
+    caseInsensitiveIncludes(t.displayName, q) ||
+    caseInsensitiveIncludes(t.description, q)
+  );
+}
+
 export async function fetchSopsPayload(
   prisma: ToolContext['prisma'],
   tenantId: string
@@ -328,40 +427,188 @@ export async function fetchToolsPayload(
   }));
 }
 
+interface StringLocator {
+  /** Mutation callback that replaces the string in-place in the payload. */
+  set: (val: string) => void;
+  get: () => string;
+  path: string;
+}
+
+/**
+ * Walk the payload and enumerate every string field at paths that are
+ * safe to clip. We deliberately DO NOT clip small metadata (ids,
+ * categories, statuses, version numbers, scope, question headers); we
+ * only target the known "long body" fields: system-prompt bodies, SOP
+ * variant content, SOP property-override content, SOP toolDescription,
+ * FAQ answers, tool descriptions.
+ */
+function collectClippableStrings(payload: CurrentStatePayload): StringLocator[] {
+  const out: StringLocator[] = [];
+  if (payload.scope === 'all' || payload.scope === 'system_prompt') {
+    const sp = (payload as any).systemPrompt as CurrentSystemPromptPayload | undefined;
+    if (sp) {
+      out.push({
+        path: 'systemPrompt.text',
+        get: () => sp.text,
+        set: (v) => { sp.text = v; },
+      });
+      out.push({
+        path: 'systemPrompt.variants.coordinator.text',
+        get: () => sp.variants.coordinator.text,
+        set: (v) => { sp.variants.coordinator.text = v; },
+      });
+      out.push({
+        path: 'systemPrompt.variants.screening.text',
+        get: () => sp.variants.screening.text,
+        set: (v) => { sp.variants.screening.text = v; },
+      });
+    }
+  }
+  if (payload.scope === 'all' || payload.scope === 'sops') {
+    const sops = (payload as any).sops as CurrentSopPayload[] | undefined;
+    if (sops) {
+      for (const s of sops) {
+        out.push({
+          path: `sops[id=${s.id}].toolDescription`,
+          get: () => s.toolDescription,
+          set: (v) => { s.toolDescription = v; },
+        });
+        for (const v of s.variants) {
+          out.push({
+            path: `sops[id=${s.id}].variants[id=${v.id}].content`,
+            get: () => v.content,
+            set: (val) => { v.content = val; },
+          });
+        }
+        for (const o of s.propertyOverrides) {
+          out.push({
+            path: `sops[id=${s.id}].propertyOverrides[id=${o.id}].content`,
+            get: () => o.content,
+            set: (val) => { o.content = val; },
+          });
+        }
+      }
+    }
+  }
+  if (payload.scope === 'all' || payload.scope === 'faqs') {
+    const faqs = (payload as any).faqs as CurrentFaqPayload[] | undefined;
+    if (faqs) {
+      for (const f of faqs) {
+        out.push({
+          path: `faqs[id=${f.id}].answer`,
+          get: () => f.answer,
+          set: (v) => { f.answer = v; },
+        });
+      }
+    }
+  }
+  if (payload.scope === 'all' || payload.scope === 'tools') {
+    const tools = (payload as any).tools as CurrentToolPayload[] | undefined;
+    if (tools) {
+      for (const t of tools) {
+        out.push({
+          path: `tools[id=${t.id}].description`,
+          get: () => t.description,
+          set: (v) => { t.description = v; },
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Attach a `truncated` envelope. Never mutates the caller's input
+ * unless clipping is necessary; when clipping IS necessary, the
+ * payload's string fields are modified in-place and the envelope
+ * records every field that was touched so the agent can re-fetch
+ * exactly that artifact with a narrower scope.
+ *
+ * Exported for unit tests — the runtime path goes through
+ * `buildCurrentStatePayload`.
+ */
+export function applyTruncationSignal<T extends CurrentStatePayload>(
+  payload: T,
+  softCapBytes: number = SOFT_CAP_BYTES,
+  fieldFloorChars: number = FIELD_FLOOR_CHARS
+): T {
+  const measure = () => JSON.stringify(payload).length;
+  const originalBytes = measure();
+  if (originalBytes <= softCapBytes) {
+    payload.truncated = null;
+    return payload;
+  }
+  const locators = collectClippableStrings(payload);
+  // Clip longest-first so we shrink the budget fastest.
+  locators.sort((a, b) => b.get().length - a.get().length);
+
+  const clipped: TruncationSignal['clipped'] = [];
+  for (const loc of locators) {
+    const current = loc.get();
+    if (current.length <= fieldFloorChars + CLIP_SENTINEL.length) continue;
+    const keptBody = current.slice(0, fieldFloorChars);
+    loc.set(keptBody + CLIP_SENTINEL);
+    clipped.push({
+      path: loc.path,
+      originalLen: current.length,
+      keptLen: keptBody.length,
+    });
+    if (measure() <= softCapBytes) break;
+  }
+  const keptBytes = measure();
+  payload.truncated = {
+    originalBytes,
+    keptBytes,
+    softCapBytes,
+    clipped,
+    note: clipped.length
+      ? `Payload exceeded soft cap; ${clipped.length} field(s) clipped. Re-query with the scoped get_sop/get_faq/get_tool for full body of any clipped artifact.`
+      : `Payload exceeded soft cap but no individual field was large enough to clip (floor=${fieldFloorChars} chars). Transport may still truncate; prefer a narrower scope.`,
+  };
+  return payload;
+}
+
 export async function buildCurrentStatePayload(
   prisma: ToolContext['prisma'],
   tenantId: string,
-  scope: CurrentStateScope
+  scope: CurrentStateScope,
+  query?: string | null
 ): Promise<CurrentStatePayload> {
+  let payload: CurrentStatePayload;
   if (scope === 'summary') {
     const summary = await getTenantStateSummary(prisma, tenantId);
-    return { scope, summary };
-  }
-  if (scope === 'system_prompt') {
+    payload = { scope, summary };
+  } else if (scope === 'system_prompt') {
     const systemPrompt = await fetchSystemPromptPayload(prisma, tenantId);
-    return { scope, systemPrompt };
+    payload = { scope, systemPrompt };
+  } else if (scope === 'sops') {
+    const sops = filterSopsByQuery(await fetchSopsPayload(prisma, tenantId), query);
+    payload = { scope, sops };
+  } else if (scope === 'faqs') {
+    const faqs = filterFaqsByQuery(await fetchFaqsPayload(prisma, tenantId), query);
+    payload = { scope, faqs };
+  } else if (scope === 'tools') {
+    const tools = filterToolsByQuery(await fetchToolsPayload(prisma, tenantId), query);
+    payload = { scope, tools };
+  } else {
+    // scope === 'all' — strict superset of the other scopes.
+    const [summary, systemPrompt, sops, faqs, tools] = await Promise.all([
+      getTenantStateSummary(prisma, tenantId),
+      fetchSystemPromptPayload(prisma, tenantId),
+      fetchSopsPayload(prisma, tenantId),
+      fetchFaqsPayload(prisma, tenantId),
+      fetchToolsPayload(prisma, tenantId),
+    ]);
+    payload = {
+      scope: 'all',
+      summary,
+      systemPrompt,
+      sops: filterSopsByQuery(sops, query),
+      faqs: filterFaqsByQuery(faqs, query),
+      tools: filterToolsByQuery(tools, query),
+    };
   }
-  if (scope === 'sops') {
-    const sops = await fetchSopsPayload(prisma, tenantId);
-    return { scope, sops };
-  }
-  if (scope === 'faqs') {
-    const faqs = await fetchFaqsPayload(prisma, tenantId);
-    return { scope, faqs };
-  }
-  if (scope === 'tools') {
-    const tools = await fetchToolsPayload(prisma, tenantId);
-    return { scope, tools };
-  }
-  // scope === 'all' — strict superset of the other scopes.
-  const [summary, systemPrompt, sops, faqs, tools] = await Promise.all([
-    getTenantStateSummary(prisma, tenantId),
-    fetchSystemPromptPayload(prisma, tenantId),
-    fetchSopsPayload(prisma, tenantId),
-    fetchFaqsPayload(prisma, tenantId),
-    fetchToolsPayload(prisma, tenantId),
-  ]);
-  return { scope: 'all', summary, systemPrompt, sops, faqs, tools };
+  return applyTruncationSignal(payload);
 }
 
 export function buildGetCurrentStateTool(
@@ -373,13 +620,18 @@ export function buildGetCurrentStateTool(
     DESCRIPTION,
     {
       scope: z.enum(['summary', 'system_prompt', 'sops', 'faqs', 'tools', 'all']),
+      query: z
+        .string()
+        .max(200)
+        .optional()
+        .describe('Optional case-insensitive keyword filter. Narrows sops/faqs/tools to entries whose text contains the keyword. Ignored for scope=summary|system_prompt.'),
     },
     async (args) => {
       const c = ctx();
       const span = startAiSpan('build-tune-agent.get_current_state', args);
       try {
-        const payload = await buildCurrentStatePayload(c.prisma, c.tenantId, args.scope);
-        span.end({ scope: args.scope });
+        const payload = await buildCurrentStatePayload(c.prisma, c.tenantId, args.scope, args.query ?? null);
+        span.end({ scope: args.scope, query: args.query ?? null });
         return asCallToolResult(payload);
       } catch (err: any) {
         span.end({ error: String(err) });
