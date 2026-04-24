@@ -20,7 +20,7 @@ export const TUNING_AGENT_TOOL_NAMES = {
   studio_create_tool_definition: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_tool_definition`,
   // 060-D: verb alignment — write_system_prompt → studio_create_system_prompt.
   studio_create_system_prompt: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_create_system_prompt`,
-  plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__plan_build_changes`,
+  studio_plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_plan_build_changes`,
   // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
   studio_test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_test_pipeline`,
   // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).

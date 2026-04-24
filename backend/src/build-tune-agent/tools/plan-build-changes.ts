@@ -57,7 +57,7 @@ export function buildPlanBuildChangesTool(
   ctx: () => ToolContext
 ) {
   return tool(
-    'plan_build_changes',
+    'studio_plan_build_changes',
     DESCRIPTION,
     {
       items: z.array(planItemSchema).min(1).max(10),
