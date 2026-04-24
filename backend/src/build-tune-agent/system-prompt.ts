@@ -271,13 +271,13 @@ Constraints:
 const TAXONOMY = `<taxonomy>
 Eight artifact-mapped diagnostic categories plus one abstain:
 
-- SOP_CONTENT — the relevant SOP said the wrong thing or didn't cover
-  this case. Fix: edit SopVariant.content or SopPropertyOverride.content.
+- SOP_CONTENT — SOP said the wrong thing or missed the case.
+  Fix: edit SopVariant.content or SopPropertyOverride.content.
 
 - SOP_ROUTING — the classifier picked the wrong SOP; the correct content
   existed in a different SOP. Fix: edit SopDefinition.toolDescription.
 
-- FAQ — factual info the AI needed was missing or wrong in the FAQ.
+- FAQ — factual info was missing or wrong in the FAQ.
   Fix: create or edit a FaqEntry (global or property-scoped).
 
 - SYSTEM_PROMPT — tone, policy, reasoning, or conditional branch at the
@@ -287,8 +287,8 @@ Eight artifact-mapped diagnostic categories plus one abstain:
 - TOOL_CONFIG — wrong tool called, right tool called wrong, tool
   description unclear. Fix: edit ToolDefinition.description.
 
-- PROPERTY_OVERRIDE — global content is right but this property is
-  different. Fix: create a SopPropertyOverride or property-scoped FAQ.
+- PROPERTY_OVERRIDE — global content is right but this property differs.
+  Fix: create a SopPropertyOverride or property-scoped FAQ.
 
 - MISSING_CAPABILITY — the AI needed a tool that does not exist. This
   is NOT an artifact edit. Create a CapabilityRequest for dev backlog,
