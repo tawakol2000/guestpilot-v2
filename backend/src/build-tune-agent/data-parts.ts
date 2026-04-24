@@ -46,6 +46,20 @@ export const DATA_PART_TYPES = {
    * independently whenever it lands.
    */
   artifact_quote: 'data-artifact-quote',
+  /**
+   * Sprint 046 — version diff browser card. Emitted by tools that
+   * surface historical artifact versions (e.g. an extension to
+   * `get_version_history`) so the frontend can render a side-by-side
+   * before/after plus a "Rollback to {after}" CTA instead of the
+   * agent describing the diff in prose.
+   */
+  version_diff_browser: 'data-version-diff-browser',
+  /**
+   * Sprint 046 — interview progress card. Emitted mid-interview
+   * (greenfield onboarding, deep audit) to show the operator the
+   * slot-fill progress + per-slot status.
+   */
+  interview_progress: 'data-interview-progress',
 } as const;
 
 export type DataPartType = (typeof DATA_PART_TYPES)[keyof typeof DATA_PART_TYPES];
@@ -158,6 +172,54 @@ export interface ArtifactQuoteData {
   body: string;
 }
 
+/**
+ * Sprint 046 — VersionDiffBrowserData. Side-by-side before/after view
+ * of two historical artifact versions with an optional rollback CTA.
+ * Emitted by an extension to `get_version_history` when the agent
+ * wants to render the diff visually instead of describing it.
+ */
+export interface VersionDiffBrowserData {
+  artifact: 'system_prompt' | 'sop' | 'faq' | 'tool_definition' | 'property_override';
+  artifactId?: string;
+  /** Optional operator-facing title (e.g. "Coordinator prompt"). */
+  artifactTitle?: string;
+  before: {
+    versionId: string;
+    label: string;
+    createdAt?: string;
+    author?: string;
+    body: string;
+  };
+  after: {
+    versionId: string;
+    label: string;
+    createdAt?: string;
+    author?: string;
+    body: string;
+  };
+}
+
+/**
+ * Sprint 046 — InterviewProgressData. Mid-interview slot-fill progress
+ * card. Emitted by the agent during greenfield onboarding / deep audits
+ * to show the operator how many load-bearing slots remain.
+ */
+export type InterviewSlotStatus = 'pending' | 'asking' | 'filled' | 'skipped';
+
+export interface InterviewProgressData {
+  /** Operator-visible title (e.g. "Greenfield onboarding"). */
+  title: string;
+  slots: Array<{
+    id: string;
+    label: string;
+    status: InterviewSlotStatus;
+    /** Short summary of the answer on filled slots. */
+    answer?: string;
+    /** When true, the agent falls back to defaults if the slot is skipped. */
+    loadBearing?: boolean;
+  }>;
+}
+
 // ─── Typed helper (non-enforcing) ──────────────────────────────────────
 
 /**
@@ -170,4 +232,6 @@ export type StructuredDataPart =
   | { type: typeof DATA_PART_TYPES.suggested_fix; id?: string; data: SuggestedFixData; transient?: boolean }
   | { type: typeof DATA_PART_TYPES.question_choices; id?: string; data: QuestionChoicesData; transient?: boolean }
   | { type: typeof DATA_PART_TYPES.audit_report; id?: string; data: AuditReportData; transient?: boolean }
-  | { type: typeof DATA_PART_TYPES.advisory; id?: string; data: AdvisoryData; transient?: boolean };
+  | { type: typeof DATA_PART_TYPES.advisory; id?: string; data: AdvisoryData; transient?: boolean }
+  | { type: typeof DATA_PART_TYPES.version_diff_browser; id?: string; data: VersionDiffBrowserData; transient?: boolean }
+  | { type: typeof DATA_PART_TYPES.interview_progress; id?: string; data: InterviewProgressData; transient?: boolean };

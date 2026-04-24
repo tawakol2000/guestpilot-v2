@@ -121,6 +121,9 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
       TUNING_AGENT_TOOL_NAMES.propose_suggestion,
       TUNING_AGENT_TOOL_NAMES.suggestion_action,
+      // Sprint 046 — card emitters requested by the agent itself.
+      TUNING_AGENT_TOOL_NAMES.diff_versions,
+      TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
     ];
   }
   return [
@@ -139,6 +142,9 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.emit_audit,
     TUNING_AGENT_TOOL_NAMES.get_edit_history,
     TUNING_AGENT_TOOL_NAMES.emit_session_summary,
+    // Sprint 046 — card emitters requested by the agent.
+    TUNING_AGENT_TOOL_NAMES.diff_versions,
+    TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
   ];
 }
 

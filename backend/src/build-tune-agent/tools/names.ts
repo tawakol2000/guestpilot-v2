@@ -31,4 +31,8 @@ export const TUNING_AGENT_TOOL_NAMES = {
   get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__get_edit_history`,
   // Sprint 058-A F4 — end-of-turn session-diff summary card emitter.
   emit_session_summary: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_session_summary`,
+  // Sprint 046 — card emitters for the two operator-visible surfaces
+  // the agent requested inside its own Studio session.
+  diff_versions: `mcp__${TUNING_AGENT_SERVER_NAME}__diff_versions`,
+  emit_interview_progress: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_interview_progress`,
 } as const;
