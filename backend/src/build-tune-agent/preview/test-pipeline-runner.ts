@@ -58,12 +58,39 @@ export interface RunPipelineDryInput {
   openai?: Pick<OpenAI, 'responses'>;
 }
 
+/**
+ * 2026-04-24: surfaces the structured pipeline output (escalation,
+ * scheduledTime, resolve/update task ids) so downstream consumers —
+ * the judge in particular — can credit a short-ack + background
+ * escalation as meeting the SOP. Before this, only the prose reply was
+ * visible to the judge, producing false-negative 'missing-sop-reference'
+ * verdicts on passport-submission tests that DID escalate correctly.
+ */
+export interface PipelineStructuredAction {
+  escalation: {
+    title: string;
+    note: string;
+    urgency: 'immediate' | 'scheduled' | 'info_request';
+  } | null;
+  scheduledTime: { kind: 'check_in' | 'check_out'; time: string } | null;
+  resolveTaskId: string | null;
+  updateTaskId: string | null;
+  confidence: number;
+}
+
 export interface RunPipelineDryResult {
   reply: string;
   replyModel: string;
   /** Compact tenant-context summary used for the judge grader. */
   tenantContextSummary: string;
   latencyMs: number;
+  /**
+   * Structured action the pipeline planned alongside the reply. Null
+   * when the model returned plain prose (e.g. when a future variant
+   * of the runner can't enforce a schema); non-null on the standard
+   * path.
+   */
+  action: PipelineStructuredAction | null;
 }
 
 const DEFAULT_STATUS: NonNullable<TestPipelineContext['reservationStatus']> =
@@ -134,6 +161,17 @@ export async function runPipelineDry(
   const client: Pick<OpenAI, 'responses'> =
     input.openai ?? new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  // 2026-04-24: match production's structured-output shape so the
+  // judge sees the SAME (reply, escalation) pair real guests trigger.
+  // Uses the same schema path as ai.service#COORDINATOR_SCHEMA /
+  // SCREENING_SCHEMA — duplicated here (not imported) to keep the dry
+  // runner a standalone module with no circular pull from the main
+  // pipeline. Drift risk: if ai.service ever changes the canonical
+  // schema field names, update both sides (see also direct production
+  // call site). The schema below omits fields the runner doesn't need
+  // (resolveTaskId, updateTaskId stay for fidelity) and is still
+  // strict-mode-compliant.
+  const schema = isInquiry ? DRY_SCREENING_SCHEMA : DRY_COORDINATOR_SCHEMA;
   const response = await (client.responses as any).create({
     model: normalisedModel,
     instructions: systemPrompt,
@@ -144,21 +182,154 @@ export async function runPipelineDry(
       },
     ],
     max_output_tokens: 600,
+    text: { format: schema },
   });
 
-  const reply = extractResponseText(response);
-  if (!reply) {
+  const parsed = extractStructuredResponse(response, isInquiry);
+  if (!parsed.reply) {
     throw new Error(
       'test_pipeline: OpenAI returned an empty reply. Check the tenant system prompt + SOPs.'
     );
   }
 
   return {
-    reply,
+    reply: parsed.reply,
     replyModel: normalisedModel,
     tenantContextSummary,
     latencyMs: Date.now() - started,
+    action: parsed.action,
   };
+}
+
+// ─── Structured output schemas — kept in sync with ai.service. ───
+// Strict mode requires every property to be in `required`; nullable
+// values use type: ['object', 'null'].
+
+const DRY_COORDINATOR_SCHEMA = {
+  type: 'json_schema' as const,
+  name: 'coordinator_response',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      guest_message: { type: 'string' },
+      escalation: {
+        type: ['object', 'null'] as any,
+        properties: {
+          title: { type: 'string' },
+          note: { type: 'string' },
+          urgency: { type: 'string', enum: ['immediate', 'scheduled', 'info_request'] },
+        },
+        required: ['title', 'note', 'urgency'],
+        additionalProperties: false,
+      },
+      resolveTaskId: { type: ['string', 'null'] as any },
+      updateTaskId: { type: ['string', 'null'] as any },
+      confidence: { type: 'number' },
+      scheduledTime: {
+        type: ['object', 'null'] as any,
+        properties: {
+          kind: { type: 'string', enum: ['check_in', 'check_out'] },
+          time: { type: 'string', pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$' },
+        },
+        required: ['kind', 'time'],
+        additionalProperties: false,
+      },
+    },
+    required: [
+      'guest_message',
+      'escalation',
+      'resolveTaskId',
+      'updateTaskId',
+      'confidence',
+      'scheduledTime',
+    ],
+    additionalProperties: false,
+  },
+};
+
+const DRY_SCREENING_SCHEMA = {
+  type: 'json_schema' as const,
+  name: 'screening_response',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      'guest message': { type: 'string' },
+      manager: {
+        type: 'object',
+        properties: {
+          needed: { type: 'boolean' },
+          title: { type: 'string' },
+          note: { type: 'string' },
+        },
+        required: ['needed', 'title', 'note'],
+        additionalProperties: false,
+      },
+      confidence: { type: 'number' },
+    },
+    required: ['guest message', 'manager', 'confidence'],
+    additionalProperties: false,
+  },
+};
+
+function extractStructuredResponse(
+  response: any,
+  isInquiry: boolean
+): { reply: string; action: PipelineStructuredAction | null } {
+  // Responses API surfaces the strict-schema JSON via the first
+  // output item's text blocks (or `output_text`). Fall back to the
+  // legacy text extractor if the model returned plain prose (e.g. a
+  // rare path where the schema couldn't be honoured).
+  const rawText = extractResponseText(response);
+  if (!rawText) return { reply: '', action: null };
+  let obj: any;
+  try {
+    obj = JSON.parse(rawText);
+  } catch {
+    return { reply: rawText, action: null };
+  }
+  if (isInquiry) {
+    const reply = typeof obj?.['guest message'] === 'string' ? obj['guest message'] : '';
+    const mgr = obj?.manager;
+    const needed = mgr && typeof mgr === 'object' && mgr.needed === true;
+    const action: PipelineStructuredAction = {
+      escalation: needed
+        ? {
+            title: String(mgr.title ?? ''),
+            note: String(mgr.note ?? ''),
+            urgency: 'info_request',
+          }
+        : null,
+      scheduledTime: null,
+      resolveTaskId: null,
+      updateTaskId: null,
+      confidence: typeof obj?.confidence === 'number' ? obj.confidence : 0,
+    };
+    return { reply, action };
+  }
+  const reply = typeof obj?.guest_message === 'string' ? obj.guest_message : '';
+  const esc = obj?.escalation;
+  const escOk =
+    esc &&
+    typeof esc === 'object' &&
+    typeof esc.title === 'string' &&
+    typeof esc.note === 'string' &&
+    (esc.urgency === 'immediate' || esc.urgency === 'scheduled' || esc.urgency === 'info_request');
+  const scheduled = obj?.scheduledTime;
+  const scheduledOk =
+    scheduled &&
+    typeof scheduled === 'object' &&
+    (scheduled.kind === 'check_in' || scheduled.kind === 'check_out') &&
+    typeof scheduled.time === 'string';
+  const action: PipelineStructuredAction = {
+    escalation: escOk ? { title: esc.title, note: esc.note, urgency: esc.urgency } : null,
+    scheduledTime: scheduledOk ? { kind: scheduled.kind, time: scheduled.time } : null,
+    resolveTaskId: typeof obj?.resolveTaskId === 'string' ? obj.resolveTaskId : null,
+    updateTaskId: typeof obj?.updateTaskId === 'string' ? obj.updateTaskId : null,
+    confidence: typeof obj?.confidence === 'number' ? obj.confidence : 0,
+  };
+  return { reply, action };
 }
 
 async function collectSopContext(

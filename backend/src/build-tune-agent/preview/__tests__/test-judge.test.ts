@@ -13,6 +13,7 @@ import {
   runTestJudge,
   parseJudgeJson,
   shuffleTenantContext,
+  formatPipelineAction,
   JUDGE_PROMPT_VERSION,
   JUDGE_MODEL,
 } from '../test-judge';
@@ -124,6 +125,115 @@ test('runTestJudge: network failure returns score=0 with judge-error category', 
   assert.equal(r.score, 0);
   assert.equal(r.failureCategory, 'judge-error');
   assert.match(r.rationale, /ECONNRESET/);
+});
+
+test('formatPipelineAction: undefined → legacy-caller placeholder', () => {
+  const s = formatPipelineAction(undefined);
+  assert.match(s, /None provided/);
+});
+
+test('formatPipelineAction: escalation object renders title + urgency + note', () => {
+  const s = formatPipelineAction({
+    escalation: {
+      title: 'document_verification',
+      note: 'Guest sent passport for compound permit',
+      urgency: 'info_request',
+    },
+    scheduledTime: null,
+    resolveTaskId: null,
+    updateTaskId: null,
+  });
+  assert.match(s, /title: "document_verification"/);
+  assert.match(s, /urgency: "info_request"/);
+  assert.match(s, /compound permit/);
+});
+
+test('formatPipelineAction: null escalation is rendered as null (not omitted)', () => {
+  const s = formatPipelineAction({
+    escalation: null,
+    scheduledTime: null,
+    resolveTaskId: null,
+    updateTaskId: null,
+  });
+  assert.match(s, /escalation: null/);
+});
+
+test('formatPipelineAction: includes scheduledTime and task ids when set', () => {
+  const s = formatPipelineAction({
+    escalation: null,
+    scheduledTime: { kind: 'check_out', time: '14:00' },
+    resolveTaskId: 'task-42',
+    updateTaskId: 'task-99',
+  });
+  assert.match(s, /kind: "check_out"/);
+  assert.match(s, /time: "14:00"/);
+  assert.match(s, /resolveTaskId: "task-42"/);
+  assert.match(s, /updateTaskId: "task-99"/);
+});
+
+test('runTestJudge: passes pipelineAction into the user prompt', async () => {
+  let capturedPrompt = '';
+  const client = {
+    messages: {
+      create: async (opts: any) => {
+        capturedPrompt = opts.messages[0].content;
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: '{"score": 0.8, "rationale": "Short ack + escalation is fine.", "failureCategory": null}',
+            },
+          ],
+        } as any;
+      },
+    },
+  } as any;
+  await runTestJudge(
+    {
+      tenantContext: 'SOP: acknowledge and escalate passport submissions.',
+      guestMessage: '[Guest sends passport] Here is my passport.',
+      aiReply: 'Thanks for sending the passport.',
+      pipelineAction: {
+        escalation: {
+          title: 'document_verification',
+          note: 'Passport received for visitor',
+          urgency: 'info_request',
+        },
+        scheduledTime: null,
+        resolveTaskId: null,
+        updateTaskId: null,
+      },
+    },
+    { client }
+  );
+  // Judge must see the action block so it can credit the escalation.
+  assert.match(capturedPrompt, /<pipeline_action>/);
+  assert.match(capturedPrompt, /document_verification/);
+  assert.match(capturedPrompt, /info_request/);
+});
+
+test('runTestJudge: absent pipelineAction falls back to legacy placeholder', async () => {
+  let capturedPrompt = '';
+  const client = {
+    messages: {
+      create: async (opts: any) => {
+        capturedPrompt = opts.messages[0].content;
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: '{"score": 0.8, "rationale": "ok", "failureCategory": null}',
+            },
+          ],
+        } as any;
+      },
+    },
+  } as any;
+  await runTestJudge(
+    { tenantContext: 'x', guestMessage: 'y', aiReply: 'z' },
+    { client }
+  );
+  assert.match(capturedPrompt, /None provided/);
 });
 
 test('runTestJudge: failureCategory only set when score <0.7', async () => {

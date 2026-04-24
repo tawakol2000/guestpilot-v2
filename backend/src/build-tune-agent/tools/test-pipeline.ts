@@ -178,6 +178,16 @@ export function buildTestPipelineTool(
                 tenantContext: dry.tenantContextSummary,
                 guestMessage: trigger,
                 aiReply: dry.reply,
+                // 2026-04-24: pass the structured pipeline action so
+                // the judge credits escalation/scheduledTime signals
+                // the SOP intended — fixes the passport-verification
+                // false-negative where "Thanks for sending the
+                // passport." + escalation was graded 'missing-sop-
+                // reference'. `action` is null only when the dry
+                // runner couldn't honour the schema; the judge
+                // falls back to legacy reply-only grading in that
+                // case (see JudgePipelineAction header).
+                pipelineAction: dry.action ?? undefined,
               });
             } catch (jerr: any) {
               // Empty/malformed judge output → test result still
@@ -196,6 +206,11 @@ export function buildTestPipelineTool(
             return {
               triggerMessage: trigger,
               pipelineOutput: dry.reply,
+              // 2026-04-24: include the structured action so the
+              // verdict card can render "Escalated as {title} (urgency)"
+              // alongside the prose reply — otherwise operators see a
+              // short ack and can't tell the escalation fired.
+              pipelineAction: dry.action ?? null,
               verdict,
               judgeReasoning: judge.rationale,
               judgeScore: judge.score,

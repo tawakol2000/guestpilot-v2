@@ -375,6 +375,59 @@ function VariantRow({ variant }: { variant: TestPipelineVariant }) {
               {variant.pipelineOutput}
             </p>
           </div>
+          {variant.pipelineAction?.escalation ? (
+            <div>
+              <div
+                className="font-semibold uppercase tracking-wide"
+                style={{ fontSize: 10.5, color: TUNING_COLORS.inkSubtle }}
+              >
+                Pipeline action
+              </div>
+              <div
+                className="mt-0.5 rounded-md border px-3 py-1.5 text-[12.5px] leading-5"
+                style={{
+                  borderColor: TUNING_COLORS.hairlineSoft,
+                  background: TUNING_COLORS.canvas,
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Escalated</span>
+                {' — '}
+                <span style={{ fontFamily: 'monospace' }}>
+                  {variant.pipelineAction.escalation.title}
+                </span>
+                {' · '}
+                <span style={{ color: TUNING_COLORS.inkSubtle }}>
+                  {variant.pipelineAction.escalation.urgency}
+                </span>
+                {variant.pipelineAction.escalation.note ? (
+                  <div style={{ marginTop: 4, color: TUNING_COLORS.inkSubtle }}>
+                    {variant.pipelineAction.escalation.note}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : variant.pipelineAction?.scheduledTime ? (
+            <div>
+              <div
+                className="font-semibold uppercase tracking-wide"
+                style={{ fontSize: 10.5, color: TUNING_COLORS.inkSubtle }}
+              >
+                Pipeline action
+              </div>
+              <div
+                className="mt-0.5 rounded-md border px-3 py-1.5 text-[12.5px] leading-5"
+                style={{
+                  borderColor: TUNING_COLORS.hairlineSoft,
+                  background: TUNING_COLORS.canvas,
+                }}
+              >
+                Scheduled {variant.pipelineAction.scheduledTime.kind.replace('_', '-')} at{' '}
+                <span style={{ fontFamily: 'monospace' }}>
+                  {variant.pipelineAction.scheduledTime.time}
+                </span>
+              </div>
+            </div>
+          ) : null}
           <div
             style={{
               fontSize: 10.5,

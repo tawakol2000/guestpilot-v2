@@ -37,7 +37,33 @@ export const JUDGE_MODEL = 'claude-sonnet-4-6';
 // edit. `_HUMAN_TAG` should still be bumped by hand on intentional
 // material edits so the date advances, but the hash alone is enough
 // to detect drift.
-const _JUDGE_SYSTEM_HUMAN_TAG = 'test-judge/v1 — 2026-04-23';
+const _JUDGE_SYSTEM_HUMAN_TAG = 'test-judge/v2 — 2026-04-24';
+
+/**
+ * Background action the pipeline planned, surfaced to the judge so it
+ * can credit a short ack + manager hand-off as appropriate.
+ *
+ * 2026-04-24: added because variants 1 & 2 of the passport-verification
+ * ritual were scoring 'missing-sop-reference' FAILS even though the
+ * pipeline's structured output CORRECTLY set escalation = { title:
+ * 'document_verification', urgency: 'info_request' }. The judge could
+ * only see the prose reply ("Thanks for sending the passport.") and
+ * had no way to know the SOP's escalation signal had fired. Judge now
+ * gets the full picture.
+ */
+export interface JudgePipelineAction {
+  escalation?: {
+    title: string;
+    note: string;
+    urgency: 'immediate' | 'scheduled' | 'info_request';
+  } | null;
+  scheduledTime?: {
+    kind: 'check_in' | 'check_out';
+    time: string;
+  } | null;
+  resolveTaskId?: string | null;
+  updateTaskId?: string | null;
+}
 
 export interface TestJudgeInput {
   /** Compact summary of the tenant's active SOPs / top FAQs / system-prompt excerpt. ≤ ~2K tokens. */
@@ -46,6 +72,13 @@ export interface TestJudgeInput {
   guestMessage: string;
   /** The AI reply the pipeline produced. */
   aiReply: string;
+  /**
+   * Structured non-reply actions the pipeline planned on this turn
+   * (escalation to manager, scheduled-time hand-off, task
+   * resolve/update). Optional for back-compat with callers that don't
+   * yet thread the structured pipeline output through.
+   */
+  pipelineAction?: JudgePipelineAction;
 }
 
 export interface TestJudgeResult {
@@ -71,23 +104,29 @@ export interface TestJudgeResult {
 
 const JUDGE_SYSTEM = `You are a strict but fair judge grading one AI reply that a serviced-apartment tenant's AI chatbot produced for a guest message. Return a single JSON object with keys "score" (number 0..1), "rationale" (string, 1-3 sentences), and "failureCategory" (string or null).
 
+You judge the WHOLE pipeline turn, not just the reply text. The turn has TWO parts:
+  A) <ai_reply>          — what the guest sees.
+  B) <pipeline_action>    — structured non-reply actions the pipeline planned (manager escalation, scheduled-time hand-off, task resolve/update). This is often how an SOP is satisfied WITHOUT spelling it out in prose.
+
 Grading criteria (descending importance):
 
-1. Does the reply address the guest's actual question or request?
-2. Does the reply reflect the tenant's policies, SOPs, and FAQs shown in the tenant context? A reply that IGNORES a clearly-applicable SOP scores low (≤0.5).
+1. Did the turn — reply + action combined — address the guest's question/request?
+2. Did the turn reflect the tenant's policies, SOPs, and FAQs shown? A turn that IGNORES a clearly-applicable SOP in BOTH the reply and the pipeline_action scores low (≤0.5). If the SOP prescribes "acknowledge and escalate", a short acknowledgement IS acceptable when <pipeline_action> contains a matching escalation (title/urgency) — do NOT penalise "missing-sop-reference" in that case. The SOP's obligation is met by the escalation, not by prose recitation.
 3. Is the reply factually grounded in the tenant context? Penalise hallucinated details.
 4. Is the tone appropriate for a short-term-rental hospitality conversation (friendly, concise, not overly formal)?
 5. Does the reply avoid exposing access codes (door codes, wifi passwords) when the guest status implies INQUIRY?
+6. If the guest sent a low-quality artefact (blurry image, unreadable document, cropped ID), the reply SHOULD ask for a clearer version. A generic "we'll take a look" on a blurry submission is a miss even when the escalation fires — the operational gap is real.
 
 Scoring guide:
-  0.9-1.0 — Reply is accurate, grounded, cites relevant policy, appropriate tone.
-  0.7-0.89 — Reply is correct but shallow, or slightly off-tone, or misses a minor detail.
-  0.5-0.69 — Reply misses a clearly-applicable SOP/FAQ OR has a tone problem.
+  0.9-1.0 — Turn (reply + action) is accurate, grounded, cites or routes to relevant policy, appropriate tone.
+  0.7-0.89 — Turn is correct but shallow, slightly off-tone, or misses a minor detail. A short acknowledgement + correct escalation lands here by default.
+  0.5-0.69 — Turn misses a clearly-applicable SOP/FAQ in BOTH reply and action, OR has a tone problem.
   0.3-0.49 — Reply contradicts tenant policy OR hallucinates material facts.
-  0-0.29 — Reply is off-topic, unsafe, or entirely irrelevant.
+  0-0.29 — Turn is off-topic, unsafe, or entirely irrelevant.
 
 When you assign a score below 0.7, set "failureCategory" to one of:
-  "missing-sop-reference" | "policy-violation" | "channel-tone" | "hallucination" | "off-topic" | "safety"
+  "missing-sop-reference" | "policy-violation" | "channel-tone" | "hallucination" | "off-topic" | "safety" | "quality-gap"
+(use "quality-gap" for criteria 6 — failed to request clearer input on a low-quality submission).
 Otherwise set "failureCategory" to null.
 
 Return ONLY the JSON object. No code fences, no prose prefix.`;
@@ -151,6 +190,7 @@ export async function runTestJudge(
   const client: Pick<Anthropic, 'messages'> = options?.client ?? new Anthropic();
   const shuffledContext = shuffleTenantContext(input.tenantContext, input.guestMessage);
 
+  const actionBlock = formatPipelineAction(input.pipelineAction);
   const userPrompt = [
     '<tenant_context>',
     shuffledContext,
@@ -164,7 +204,11 @@ export async function runTestJudge(
     input.aiReply,
     '</ai_reply>',
     '',
-    'Grade the <ai_reply> now. Return only the JSON object.',
+    '<pipeline_action>',
+    actionBlock,
+    '</pipeline_action>',
+    '',
+    'Grade the whole turn (reply + action) now. Return only the JSON object.',
   ].join('\n');
 
   // Bugfix (2026-04-23): no explicit timeout used to mean a hung
@@ -215,6 +259,31 @@ export async function runTestJudge(
       judgeModel: JUDGE_MODEL,
     };
   }
+}
+
+/**
+ * Render the structured action block for the judge prompt. Returns a
+ * compact, deterministic string so the prompt-hash version stamp moves
+ * only when the schema changes, not when action values change.
+ */
+export function formatPipelineAction(action: JudgePipelineAction | undefined): string {
+  if (!action) return 'None provided (legacy caller — judge the reply alone).';
+  const lines: string[] = [];
+  if (action.escalation) {
+    lines.push(
+      `escalation: { title: "${action.escalation.title}", urgency: "${action.escalation.urgency}", note: ${JSON.stringify(action.escalation.note)} }`
+    );
+  } else {
+    lines.push('escalation: null');
+  }
+  if (action.scheduledTime) {
+    lines.push(
+      `scheduledTime: { kind: "${action.scheduledTime.kind}", time: "${action.scheduledTime.time}" }`
+    );
+  }
+  if (action.resolveTaskId) lines.push(`resolveTaskId: "${action.resolveTaskId}"`);
+  if (action.updateTaskId) lines.push(`updateTaskId: "${action.updateTaskId}"`);
+  return lines.join('\n');
 }
 
 function clamp01(n: unknown): number {

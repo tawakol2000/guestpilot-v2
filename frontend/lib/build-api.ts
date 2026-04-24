@@ -387,9 +387,28 @@ export interface BuildPlanData {
 
 export type VariantVerdict = 'passed' | 'failed'
 
+export interface PipelineVariantAction {
+  escalation: {
+    title: string
+    note: string
+    urgency: 'immediate' | 'scheduled' | 'info_request'
+  } | null
+  scheduledTime: { kind: 'check_in' | 'check_out'; time: string } | null
+  resolveTaskId: string | null
+  updateTaskId: string | null
+  confidence: number
+}
+
 export interface TestPipelineVariant {
   triggerMessage: string
   pipelineOutput: string
+  /**
+   * 2026-04-24: structured pipeline action alongside the prose reply.
+   * Null for legacy runs captured before the structured-output
+   * upgrade. The verdict card uses this to render "Escalated as X"
+   * under the short ack so operators see both halves of the turn.
+   */
+  pipelineAction?: PipelineVariantAction | null
   verdict: VariantVerdict
   judgeReasoning: string
   judgeScore: number

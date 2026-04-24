@@ -84,6 +84,10 @@ function makeDeps(overrides?: {
           tenantContextSummary:
             '## System prompt\nBe friendly.\n\n## Active SOPs\nLate-checkout.',
           latencyMs: 200 + idx,
+          // 2026-04-24: action surface added so the judge can credit
+          // background escalation. Default fake returns null (no
+          // escalation) — the pipeline's default happy-path state.
+          action: null,
         }
       );
     },
