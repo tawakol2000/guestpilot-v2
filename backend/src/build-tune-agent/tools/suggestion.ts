@@ -168,12 +168,19 @@ export function buildSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolCon
             'studio_suggestion(op=propose): category, subLabel, rationale are required.',
           );
         }
-        // Forward the full propose schema (incl. new diff field) to the
-        // underlying handler. Unknown fields (diff) are tolerated by Zod
-        // when not in the schema — but the underlying schema doesn't yet
-        // accept `diff`, so we strip it here. The frontend rendering
-        // hookup for the absorbed diff lands in commit 8 / 19.
-        const { diff, op: _op, ...proposeArgs } = args;
+        // Sprint 060-D § 4.6 — diff absorption. When the agent passes
+        // `diff: {before, after}`, route those values into the existing
+        // beforeText/proposedText slots so the data-suggested-fix card
+        // renders the diff inline (frontend SuggestedFixCard already
+        // shows before/after as a DiffBlock). The agent can pass either
+        // shape — diff or beforeText+proposedText — but if both are
+        // present `diff` wins as the explicit, structured form.
+        const { diff, op: _op, ...rest } = args;
+        const proposeArgs: Record<string, unknown> = { ...rest };
+        if (diff) {
+          proposeArgs.beforeText = diff.before;
+          proposeArgs.proposedText = diff.after;
+        }
         return proposeTool.handler(proposeArgs as any, extra);
       }
       if (op === 'apply') {
