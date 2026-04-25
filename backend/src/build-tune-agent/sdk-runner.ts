@@ -117,21 +117,21 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
       TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
       // Sprint 046 — BUILD mode was rejecting propose_suggestion +
-      // fetch_evidence_bundle, which broke the "discuss-in-tuning"
-      // flow from the inbox (agent tried to fetch evidence, got
-      // denied, degraded to prose instead of emitting a
-      // data-suggested-fix card for the operator to Accept/Reject).
-      // These two tools are safe to allow in BUILD — suggestion
-      // flow is staged via `data-suggested-fix` and still requires
-      // operator approval to apply.
-      TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
+      // evidence access, which broke the "discuss-in-tuning"
+      // flow from the inbox. The studio_get_evidence_* pair +
+      // studio_suggestion are safe in BUILD — suggestion flow is
+      // staged via `data-suggested-fix` and still requires operator
+      // approval to apply.
+      TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
+      TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
     ];
   }
   return [
     TUNING_AGENT_TOOL_NAMES.studio_get_context,
     TUNING_AGENT_TOOL_NAMES.search_corrections,
-    TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
+    TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
+    TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
     TUNING_AGENT_TOOL_NAMES.studio_suggestion,
     TUNING_AGENT_TOOL_NAMES.studio_memory,
     TUNING_AGENT_TOOL_NAMES.studio_rollback,
