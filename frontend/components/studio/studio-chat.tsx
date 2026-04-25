@@ -117,6 +117,7 @@ function extractToolTarget(toolName: string, input: unknown): string | null {
 }
 import { SuggestedFixCard, type SuggestedFixTarget } from './suggested-fix'
 import { QuestionChoicesCard } from './question-choices'
+import { TransitionProposalCard } from './transition-proposal-card'
 import { AuditReportCard, type AuditReportRowData } from './audit-report'
 import type { StateSnapshotData } from './state-snapshot'
 import { ReasoningLine } from './reasoning-line'
@@ -831,6 +832,7 @@ export function StudioChat({
               onSendText={(text) => sendMessage({ text })}
               onOpenToolDrawer={openToolDrawer}
               onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+              onStateMachineSnapshot={onStateMachineSnapshot}
             />
           ))}
 
@@ -1166,6 +1168,7 @@ function MessageRow({
   onSendText,
   onOpenToolDrawer,
   onOpenVerificationForHistoryId,
+  onStateMachineSnapshot,
 }: {
   message: UIMessage
   isLast: boolean
@@ -1183,6 +1186,7 @@ function MessageRow({
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
   onOpenVerificationForHistoryId?: (historyId: string) => void
+  onStateMachineSnapshot?: (data: StudioStateMachineSnapshot) => void
 }) {
   const isUser = message.role === 'user'
   const parts = ((message as any).parts as Array<Record<string, any>>) ?? []
@@ -1419,6 +1423,7 @@ function MessageRow({
                     onSendText={onSendText}
                     onOpenToolDrawer={onOpenToolDrawer}
                     onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+                    onStateMachineSnapshot={onStateMachineSnapshot}
                   />
                 ))}
               </div>
@@ -1440,6 +1445,7 @@ function MessageRow({
                     onSendText={onSendText}
                     onOpenToolDrawer={onOpenToolDrawer}
                     onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
+                    onStateMachineSnapshot={onStateMachineSnapshot}
                   />
                 ))}
               </div>
@@ -1467,6 +1473,7 @@ function StandalonePart({
   onSendText,
   onOpenToolDrawer,
   onOpenVerificationForHistoryId,
+  onStateMachineSnapshot,
 }: {
   part: Record<string, any>
   conversationId: string
@@ -1483,6 +1490,7 @@ function StandalonePart({
   onSendText?: (text: string) => void
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
   onOpenVerificationForHistoryId?: (historyId: string) => void
+  onStateMachineSnapshot?: (data: StudioStateMachineSnapshot) => void
 }) {
   const rejectionConversationId = conversationId
   if (!part || typeof part !== 'object') return null
@@ -1685,6 +1693,22 @@ function StandalonePart({
 
   if (type === 'data-question-choices') {
     const data = part.data ?? {}
+    // Sprint 060-C — discriminated variant: state-machine transition
+    // proposal. Buttons hit confirm/reject endpoints instead of sending
+    // a chat message.
+    if (data.kind === 'transition_proposal' && typeof data.nonce === 'string') {
+      return (
+        <TransitionProposalCard
+          conversationId={conversationId}
+          currentState={data.current_state}
+          proposedState={data.proposed_state}
+          because={typeof data.because === 'string' ? data.because : ''}
+          nonce={data.nonce}
+          expiresAt={typeof data.expires_at === 'string' ? data.expires_at : null}
+          onResolved={(snapshot) => onStateMachineSnapshot?.(snapshot)}
+        />
+      )
+    }
     return (
       <QuestionChoicesCard
         question={typeof data.question === 'string' ? data.question : ''}
