@@ -126,6 +126,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
       TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
+      TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
     ];
   }
   return [

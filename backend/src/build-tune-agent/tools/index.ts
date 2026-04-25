@@ -25,6 +25,7 @@ import { buildTestPipelineTool } from './test-pipeline';
 import { buildGetTenantIndexTool } from './get-tenant-index';
 import { buildGetArtifactTool } from './get-artifact';
 import { buildGetEditHistoryTool } from './get-edit-history';
+import { buildGetCanonicalTemplateTool } from './get-canonical-template';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('../sdk-loader.cjs') as typeof import('../sdk-loader');
@@ -57,6 +58,7 @@ export async function buildTuningAgentMcpServer(
       buildGetTenantIndexTool(tool, getCtx),
       buildGetArtifactTool(tool, getCtx),
       buildGetEditHistoryTool(tool, getCtx),
+      buildGetCanonicalTemplateTool(tool, getCtx),
     ],
   });
 }

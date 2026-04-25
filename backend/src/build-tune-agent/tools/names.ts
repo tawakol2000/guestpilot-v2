@@ -31,4 +31,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   studio_get_artifact: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_artifact`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
   studio_get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_edit_history`,
+  // Sprint 060-D Phase 8 — canonical hospitality template fetch.
+  studio_get_canonical_template: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_canonical_template`,
 } as const;
