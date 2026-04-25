@@ -244,7 +244,7 @@ async function main() {
         'The tenant just introduced themselves. I should pull current state before proposing anything — no prompt yet, no SOPs beyond defaults, likely brownfield.',
         3_800,
       ),
-      toolCallPart('get_current_state', { scope: 'tenant' }, {
+      toolCallPart('studio_get_tenant_index', {}, {
         tenantState: 'BROWNFIELD',
         interviewProgress: { completedSlots: 2, totalSlots: 9 },
         counts: { sops: 1, faqs: 1, properties: 1 },
@@ -347,7 +347,7 @@ async function main() {
     role: 'assistant',
     parts: [
       toolCallPart(
-        'create_sop',
+        'studio_create_sop',
         {
           category: 'sop-early-check-in',
           status: 'DEFAULT',
@@ -357,7 +357,7 @@ async function main() {
         { ok: true, sopId: sop.id, variantId: sop.variants[0]?.id ?? 'v0' },
       ),
       toolCallPart(
-        'create_faq',
+        'studio_create_faq',
         {
           category: 'early-check-in',
           question: 'Can I check in early?',
@@ -389,7 +389,7 @@ async function main() {
     role: 'assistant',
     parts: [
       toolCallPart(
-        'test_pipeline',
+        'studio_test_pipeline',
         {
           guestMessage: 'Hey, any chance we can come by at 11am?',
           reservationStatus: 'CONFIRMED',
@@ -486,7 +486,7 @@ async function main() {
         context: { lastEditAt: at(4).toISOString(), priorVersion: 1 },
       }),
       toolCallPart(
-        'write_system_prompt',
+        'studio_create_system_prompt',
         {
           variant: 'coordinator',
           append:
@@ -513,11 +513,11 @@ async function main() {
     createdAt: at(38),
   });
 
-  // Turn 8 response — emit_session_summary + session-diff card.
+  // Turn 8 response — runtime auto-emits the session-diff card at
+  // turn boundary (sprint 060-D phase 6); no tool call required.
   msgs.push({
     role: 'assistant',
     parts: [
-      toolCallPart('emit_session_summary', { conversationId: convo.id }, { ok: true }),
       dataPart('data-session-diff-summary', {
         written: { created: 1, edited: 2, reverted: 0 },
         tested: { runs: 1, totalVariants: 1, passed: 1 },
