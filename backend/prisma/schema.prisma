@@ -1067,6 +1067,13 @@ model TuningConversation {
   anchorMessageId String? // The specific main-AI Message the conversation is anchored to, if any.
   sdkSessionId    String? // Claude Agent SDK persist_session id; populated in sprint 04.
   status          String                        @default("OPEN") // Plain string (not enum) to allow future values without migration.
+  // Sprint 060-C — Studio mode restructure. Persisted snapshot of the
+  // narrow hybrid state machine: outer mode (BUILD|TUNE) + inner cognitive
+  // posture (scoping|drafting|verifying) + pending-transition coordination
+  // fields. Fresh-conversation default reflects BUILD/scoping. Existing
+  // rows backfill with the same default — see specs/045-build-mode/
+  // sprint-060-C.spec.md §4.9.
+  stateMachineSnapshot Json @default("{\"outer_mode\":\"BUILD\",\"inner_state\":\"scoping\",\"transition_ack_pending\":false,\"pending_transition\":null,\"last_transition_at\":null,\"last_transition_reason\":null}") @map("state_machine_snapshot")
   createdAt       DateTime                      @default(now())
   updatedAt       DateTime                      @updatedAt
 
