@@ -12,6 +12,13 @@
 import { Response } from 'express';
 import { PrismaClient, TuningConversationTriggerType } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
+import {
+  coerceSnapshot,
+  type InnerState,
+  type OuterMode,
+  type StateMachineSnapshot,
+} from '../build-tune-agent/state-machine';
+import { verifyTransitionNonce } from '../build-tune-agent/tools/lib/transition-nonce';
 
 const VALID_TRIGGERS: readonly TuningConversationTriggerType[] = [
   'MANUAL',
@@ -217,6 +224,10 @@ export function makeTuningConversationController(prisma: PrismaClient) {
           return;
         }
 
+        // Sprint 060-C — return the current state-machine snapshot so the
+        // frontend can paint the state chip + reclassify control on
+        // initial load without waiting for the next turn's SSE event.
+        const stateMachineSnapshot = coerceSnapshot((conv as any).stateMachineSnapshot);
         res.json({
           conversation: {
             id: conv.id,
@@ -228,6 +239,7 @@ export function makeTuningConversationController(prisma: PrismaClient) {
             sdkSessionId: conv.sdkSessionId,
             createdAt: conv.createdAt,
             updatedAt: conv.updatedAt,
+            stateMachineSnapshot,
             messages: conv.messages.map((m) => ({
               id: m.id,
               role: m.role,
@@ -299,6 +311,167 @@ export function makeTuningConversationController(prisma: PrismaClient) {
         });
       } catch (err) {
         console.error('[tuning-conversation] patch failed:', err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+      }
+    },
+
+    // ─── Sprint 060-C — state machine endpoints ─────────────────────────
+    //
+    // Three endpoints handle the agent-proposed / host-confirmed transition
+    // protocol. The DB is the only source of truth for inner_state /
+    // outer_mode; these endpoints are the only path that mutates them.
+
+    async confirmTransition(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id, nonce } = req.params;
+        if (!nonce) {
+          res.status(400).json({ error: 'NONCE_REQUIRED' });
+          return;
+        }
+        const verified = verifyTransitionNonce(nonce);
+        if (!verified.ok) {
+          res.status(400).json({ error: 'INVALID_NONCE', reason: verified.reason });
+          return;
+        }
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id, tenantId },
+          select: { id: true, stateMachineSnapshot: true },
+        });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+        const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+        const pending = snapshot.pending_transition;
+        if (!pending) {
+          res.status(409).json({ error: 'NO_PENDING_TRANSITION' });
+          return;
+        }
+        if (pending.token !== nonce) {
+          res.status(409).json({ error: 'NONCE_MISMATCH' });
+          return;
+        }
+        const expiresAt = new Date(pending.expires_at).getTime();
+        if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+          res.status(410).json({ error: 'NONCE_EXPIRED' });
+          return;
+        }
+        const now = new Date();
+        const next: StateMachineSnapshot = {
+          ...snapshot,
+          inner_state: pending.to,
+          last_transition_at: now.toISOString(),
+          last_transition_reason: pending.because,
+          transition_ack_pending: true,
+          pending_transition: null,
+        };
+        await prisma.tuningConversation.update({
+          where: { id, tenantId },
+          data: { stateMachineSnapshot: next as unknown as object },
+        });
+        res.json({ ok: true, stateMachineSnapshot: next });
+      } catch (err) {
+        console.error('[tuning-conversation] confirmTransition failed:', err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+      }
+    },
+
+    async rejectTransition(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id, nonce } = req.params;
+        if (!nonce) {
+          res.status(400).json({ error: 'NONCE_REQUIRED' });
+          return;
+        }
+        const verified = verifyTransitionNonce(nonce);
+        if (!verified.ok) {
+          res.status(400).json({ error: 'INVALID_NONCE', reason: verified.reason });
+          return;
+        }
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id, tenantId },
+          select: { id: true, stateMachineSnapshot: true },
+        });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+        const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+        const pending = snapshot.pending_transition;
+        // Idempotent: if pending is gone or doesn't match the nonce,
+        // there's nothing to reject. Don't 409 — the client may have
+        // double-clicked or the proposal already expired. Just return ok.
+        if (!pending || pending.token !== nonce) {
+          res.json({ ok: true, stateMachineSnapshot: snapshot, alreadyCleared: true });
+          return;
+        }
+        const next: StateMachineSnapshot = {
+          ...snapshot,
+          pending_transition: null,
+        };
+        await prisma.tuningConversation.update({
+          where: { id, tenantId },
+          data: { stateMachineSnapshot: next as unknown as object },
+        });
+        res.json({ ok: true, stateMachineSnapshot: next });
+      } catch (err) {
+        console.error('[tuning-conversation] rejectTransition failed:', err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+      }
+    },
+
+    async reclassify(req: AuthenticatedRequest, res: Response): Promise<void> {
+      try {
+        const { tenantId } = req;
+        const { id } = req.params;
+        const body = (req.body ?? {}) as { outer_mode?: string };
+        const requested = body.outer_mode;
+        if (requested !== 'BUILD' && requested !== 'TUNE') {
+          res.status(400).json({ error: 'INVALID_OUTER_MODE' });
+          return;
+        }
+        const target: OuterMode = requested;
+        const conv = await prisma.tuningConversation.findFirst({
+          where: { id, tenantId },
+          select: { id: true, stateMachineSnapshot: true },
+        });
+        if (!conv) {
+          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+          return;
+        }
+        const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+        if (snapshot.outer_mode === target && !snapshot.pending_transition) {
+          // No-op — return current snapshot, idempotent.
+          res.json({ ok: true, stateMachineSnapshot: snapshot, noop: true });
+          return;
+        }
+        const cancelledPending = !!snapshot.pending_transition;
+        const now = new Date();
+        const next: StateMachineSnapshot = {
+          ...snapshot,
+          outer_mode: target,
+          // Preserve inner_state — cognitive posture is mode-agnostic.
+          inner_state: snapshot.inner_state as InnerState,
+          pending_transition: null,
+          // Only emit a one-turn ack block if we cancelled an in-flight
+          // proposal (the agent needs to know that). Plain mode flips
+          // don't need an ack block — the next turn's tenant_state
+          // already conveys the new outer mode.
+          transition_ack_pending: cancelledPending ? true : snapshot.transition_ack_pending,
+          last_transition_at: cancelledPending ? now.toISOString() : snapshot.last_transition_at,
+          last_transition_reason: cancelledPending
+            ? `Reclassified to ${target}; in-flight inner transition cancelled.`
+            : snapshot.last_transition_reason,
+        };
+        await prisma.tuningConversation.update({
+          where: { id, tenantId },
+          data: { stateMachineSnapshot: next as unknown as object },
+        });
+        res.json({ ok: true, stateMachineSnapshot: next, cancelledPending });
+      } catch (err) {
+        console.error('[tuning-conversation] reclassify failed:', err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });
       }
     },

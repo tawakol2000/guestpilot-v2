@@ -25,6 +25,15 @@ export function tuningChatRouter(prisma: PrismaClient): Router {
   router.get('/conversations/:id', (req: any, res) => conv.get(req, res));
   router.patch('/conversations/:id', (req: any, res) => conv.patch(req, res));
 
+  // Sprint 060-C — state machine endpoints.
+  router.post('/conversations/:id/transitions/:nonce/confirm', (req: any, res) =>
+    conv.confirmTransition(req, res),
+  );
+  router.post('/conversations/:id/transitions/:nonce/reject', (req: any, res) =>
+    conv.rejectTransition(req, res),
+  );
+  router.post('/conversations/:id/reclassify', (req: any, res) => conv.reclassify(req, res));
+
   router.post('/chat', (req: any, res) => chat.chat(req, res));
 
   return router;
