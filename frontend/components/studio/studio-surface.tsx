@@ -24,6 +24,7 @@ import {
   apiListTuningConversations,
   apiPatchTuningConversation,
   isAuthenticated,
+  type StudioStateMachineSnapshot,
   type TuningConversationAnchor,
   type TuningConversationMessage,
   type TuningConversationSummary,
@@ -48,6 +49,7 @@ import { BuildDisabled } from '@/components/build/build-disabled'
 import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
 import { StudioErrorBoundary } from './studio-error-boundary'
+import { StateChip } from './state-chip'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { WriteLedgerCard, ledgerArtifactType } from './write-ledger'
 import {
@@ -93,6 +95,8 @@ type LoadState =
       conversationId: string
       initialMessages: UIMessage[]
       anchorMessage: TuningConversationAnchor | null
+      // Sprint 060-C — present when GET returned the snapshot field.
+      stateMachineSnapshot: StudioStateMachineSnapshot | null
     }
 
 export function StudioSurface({ conversationId, onConversationChange }: StudioSurfaceProps) {
@@ -201,6 +205,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         let selectedId = conversationId
         let initialMessages: UIMessage[] = []
         let anchorMessage: TuningConversationAnchor | null = null
+        let initialSnapshot: StudioStateMachineSnapshot | null = null
 
         if (selectedId) {
           // Bugfix (2026-04-23, React #185): if this id was created by a
@@ -210,6 +215,8 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           // to ready. Prevents the "fetch fails → create again" loop
           // when replication lag or an ephemeral 5xx makes the row
           // temporarily invisible.
+          // Sprint 060-C — placeholder; the createdIds branch returns
+          // immediately with a default snapshot below.
           if (createdIdsRef.current.has(selectedId)) {
             if (cancelled) return
             setLoad({
@@ -218,6 +225,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
               conversationId: selectedId,
               initialMessages: [],
               anchorMessage: null,
+              stateMachineSnapshot: null,
             })
             return
           }
@@ -225,6 +233,9 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
             const { conversation } = await apiGetTuningConversation(selectedId)
             initialMessages = rehydrate(conversation.messages)
             anchorMessage = conversation.anchorMessage
+            // Sprint 060-C — pull the snapshot so the chip can paint on
+            // initial load without waiting for the next turn's SSE.
+            initialSnapshot = conversation.stateMachineSnapshot ?? null
             // F9f — remember the loaded title so we know whether to
             // auto-rename on first user message. Also treat it as
             // "already named" if it's non-default (operator edited).
@@ -270,6 +281,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           conversationId: selectedId,
           initialMessages,
           anchorMessage,
+          stateMachineSnapshot: initialSnapshot,
         })
 
         // Sprint 058-A F9d — hydrate the session-artifacts rail from the
@@ -570,6 +582,19 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
         <TopBar
           tenantName={'Studio'}
           sessionTitle={currentTitleRef.current ?? 'Studio session'}
+          rightSlot={
+            <StateChip
+              conversationId={load.conversationId}
+              snapshot={load.stateMachineSnapshot}
+              onSnapshotChange={(next) =>
+                setLoad((prev) =>
+                  prev.kind === 'ready'
+                    ? { ...prev, stateMachineSnapshot: next }
+                    : prev,
+                )
+              }
+            />
+          }
         />
       }
       leftRail={
@@ -739,6 +764,11 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           anchorMessage={load.anchorMessage}
           onStateSnapshot={handleStateSnapshot}
           onTestResult={handleTestResult}
+          onStateMachineSnapshot={(next) =>
+            setLoad((prev) =>
+              prev.kind === 'ready' ? { ...prev, stateMachineSnapshot: next } : prev,
+            )
+          }
           onPlanApproved={handlePlanApproved}
           onPlanRolledBack={handlePlanRolledBack}
           onArtifactTouched={handleArtifactTouched}

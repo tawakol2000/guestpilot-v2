@@ -24,7 +24,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
 import { ArrowUp, AlertTriangle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { getToken } from '@/lib/api'
+import { getToken, apiConfirmTransition, apiRejectTransition, type StudioStateMachineSnapshot } from '@/lib/api'
 import {
   apiAcceptSuggestedFix,
   apiEnhancePrompt,
@@ -141,6 +141,13 @@ export interface StudioChatProps {
   initialMessages: UIMessage[]
   onStateSnapshot?: (data: StateSnapshotData) => void
   onTestResult?: (data: TestPipelineResultData) => void
+  /**
+   * Sprint 060-C — every turn's runtime emits a transient
+   * data-state-machine-snapshot SSE part so the parent's StateChip
+   * stays in sync without polling. Forwarded once per part via
+   * the same dedupe scheme as onStateSnapshot.
+   */
+  onStateMachineSnapshot?: (data: StudioStateMachineSnapshot) => void
   onPlanApproved?: (transactionId: string) => void
   onPlanRolledBack?: (transactionId: string) => void
   /**
@@ -287,6 +294,7 @@ export function StudioChat({
   initialMessages,
   onStateSnapshot,
   onTestResult,
+  onStateMachineSnapshot,
   onPlanApproved,
   onPlanRolledBack,
   onArtifactTouched,
@@ -405,7 +413,12 @@ export function StudioChat({
       for (let partIdx = 0; partIdx < parts.length; partIdx++) {
         const p = parts[partIdx]
         const t = typeof p?.type === 'string' ? p.type : ''
-        if (t !== 'data-state-snapshot' && t !== 'data-test-pipeline-result') continue
+        if (
+          t !== 'data-state-snapshot' &&
+          t !== 'data-test-pipeline-result' &&
+          t !== 'data-state-machine-snapshot'
+        )
+          continue
         // Include conversationId in the key so even if the Set clear
         // misses (StrictMode double-invocation etc.) cross-conversation
         // collisions can't happen.
@@ -427,10 +440,14 @@ export function StudioChat({
           // surfaced on the inline chat card and the Tests tab stayed
           // blank forever.
           shellContext.setPreviewLastResult?.(data)
+        } else if (t === 'data-state-machine-snapshot' && p.data) {
+          // Sprint 060-C — keep the parent's StateChip in sync.
+          forwardedIds.current.add(stableKey)
+          onStateMachineSnapshot?.(p.data as StudioStateMachineSnapshot)
         }
       }
     }
-  }, [messages, onStateSnapshot, onTestResult, conversationId])
+  }, [messages, onStateSnapshot, onTestResult, onStateMachineSnapshot, conversationId])
 
   const [draft, setDraft] = useState('')
   const scrollerRef = useRef<HTMLDivElement>(null)

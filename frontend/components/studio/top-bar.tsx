@@ -7,6 +7,7 @@
 // Clarifications Q1). The hamburger toggle for narrow viewports mounts
 // here via T044.
 
+import type { ReactNode } from 'react'
 import { STUDIO_TOKENS_V2 } from './tokens'
 import { ChevronRightIcon, MenuIcon } from './icons'
 import { useIsNarrow } from './hooks/use-is-narrow'
@@ -15,9 +16,16 @@ import { useStudioShell } from './studio-shell-context'
 export interface TopBarProps {
   tenantName: string
   sessionTitle: string
+  /**
+   * Sprint 060-C — optional state-indicator chip slot. When present,
+   * renders to the LEFT of the Draft environment pill in the top bar.
+   * Kept as a slot rather than a typed prop so non-Studio callers don't
+   * need to thread the StateChip dependency.
+   */
+  rightSlot?: ReactNode
 }
 
-export function TopBar({ tenantName, sessionTitle }: TopBarProps) {
+export function TopBar({ tenantName, sessionTitle, rightSlot }: TopBarProps) {
   const { isNarrow } = useIsNarrow()
   const shell = useStudioShell()
   const showMenuButton = isNarrow
@@ -99,6 +107,7 @@ export function TopBar({ tenantName, sessionTitle }: TopBarProps) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        {rightSlot}
         <span
           role="status"
           aria-label="Draft environment"

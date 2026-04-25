@@ -1845,6 +1845,28 @@ export interface TuningConversationMessage {
   createdAt: string
 }
 
+// Sprint 060-C — Studio mode restructure. Mirrors the backend snapshot
+// shape on TuningConversation.stateMachineSnapshot.
+export type StudioOuterMode = 'BUILD' | 'TUNE'
+export type StudioInnerState = 'scoping' | 'drafting' | 'verifying'
+
+export interface StudioPendingTransition {
+  to: StudioInnerState
+  because: string
+  proposed_at: string
+  expires_at: string
+  token: string
+}
+
+export interface StudioStateMachineSnapshot {
+  outer_mode: StudioOuterMode
+  inner_state: StudioInnerState
+  transition_ack_pending: boolean
+  pending_transition: StudioPendingTransition | null
+  last_transition_at: string | null
+  last_transition_reason: string | null
+}
+
 export interface TuningConversationDetail {
   id: string
   title: string | null
@@ -1856,6 +1878,10 @@ export interface TuningConversationDetail {
   createdAt: string
   updatedAt: string
   messages: TuningConversationMessage[]
+  // Sprint 060-C — present on conversations created/migrated post-060-C.
+  // Older legacy detail responses may omit it; consumers default to a
+  // BUILD/scoping snapshot when undefined.
+  stateMachineSnapshot?: StudioStateMachineSnapshot
 }
 
 export async function apiListTuningConversations(
@@ -1900,5 +1926,40 @@ export async function apiPatchTuningConversation(
 /** Absolute URL for the streaming chat endpoint. `useChat` POSTs here directly. */
 export function tuningChatEndpoint(): string {
   return `${BASE_URL}/api/tuning/chat`
+}
+
+// Sprint 060-C — state machine endpoints.
+
+export async function apiConfirmTransition(
+  conversationId: string,
+  nonce: string,
+): Promise<{ ok: boolean; stateMachineSnapshot: StudioStateMachineSnapshot }> {
+  return apiFetch(`/api/tuning/conversations/${conversationId}/transitions/${encodeURIComponent(nonce)}/confirm`, {
+    method: 'POST',
+  })
+}
+
+export async function apiRejectTransition(
+  conversationId: string,
+  nonce: string,
+): Promise<{ ok: boolean; stateMachineSnapshot: StudioStateMachineSnapshot; alreadyCleared?: boolean }> {
+  return apiFetch(`/api/tuning/conversations/${conversationId}/transitions/${encodeURIComponent(nonce)}/reject`, {
+    method: 'POST',
+  })
+}
+
+export async function apiReclassifyConversation(
+  conversationId: string,
+  outerMode: StudioOuterMode,
+): Promise<{
+  ok: boolean
+  stateMachineSnapshot: StudioStateMachineSnapshot
+  cancelledPending?: boolean
+  noop?: boolean
+}> {
+  return apiFetch(`/api/tuning/conversations/${conversationId}/reclassify`, {
+    method: 'POST',
+    body: JSON.stringify({ outer_mode: outerMode }),
+  })
 }
 
