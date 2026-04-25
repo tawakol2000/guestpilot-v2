@@ -127,6 +127,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
       TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
+      // Sprint 060-C — agent-proposed inner-state transition.
+      TUNING_AGENT_TOOL_NAMES.studio_propose_transition,
     ];
   }
   return [
@@ -143,6 +145,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
     TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
+    // Sprint 060-C — agent-proposed inner-state transition (TUNE too).
+    TUNING_AGENT_TOOL_NAMES.studio_propose_transition,
   ];
 }
 
