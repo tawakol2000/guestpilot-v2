@@ -301,42 +301,25 @@ test('"preview_ai_response" is absent from the rendered prompt in both modes (sp
   assert.ok(build.includes('test_pipeline'), 'BUILD-mode prompt must name test_pipeline');
 });
 
-test('054-A F3: BUILD addendum carries <verification_ritual> block stamped with VERIFICATION_RITUAL_VERSION', async () => {
-  // If this test fails because the version string was bumped intentionally,
-  // update the assertion below AND VERIFICATION_RITUAL_VERSION in
-  // lib/ritual-state.ts — they must stay in lockstep.
-  const { VERIFICATION_RITUAL_VERSION } = await import(
-    '../lib/ritual-state'
-  );
-  assert.equal(VERIFICATION_RITUAL_VERSION, '054-a.1');
+test('060-C: <verification_ritual> block is fully retired (replaced by <state_machine> + tool description)', async () => {
+  // The block was removed in sprint 060-C. Its rules absorbed into:
+  //  - <state_machine> in Region A (allowed tools per state, transition
+  //    discipline, the 3-distinct-triggers ceiling).
+  //  - studio_test_pipeline's tool description (unchanged from 054-A;
+  //    already had the direct/implicit/framed guidance).
+  //  - TEST_RITUAL_EXHAUSTED hook (unchanged; ritual window IS now the
+  //    verifying state).
+  // VERIFICATION_RITUAL_VERSION constant in lib/ritual-state.ts stays
+  // (the per-write ritual-state mechanism still tracks which write
+  // opened a verifying ritual window).
   const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
-  assert.ok(
-    build.includes('<verification_ritual version="054-a.1">'),
-    'BUILD addendum must carry <verification_ritual> block with the current version stamp',
-  );
-  assert.ok(
-    build.includes('direct') &&
-      build.includes('implicit') &&
-      build.includes('framed axis'),
-    'verification_ritual block must teach the direct / implicit / framed axis',
-  );
-  assert.ok(
-    build.includes('testMessages: [t1, t2, t3]'),
-    'verification_ritual block must name the testMessages array shape',
-  );
-  assert.ok(
-    build.includes('CEILING, not a floor'),
-    'verification_ritual block must instruct "1/1 and 2/2 honest, not padded to 3"',
-  );
-  assert.ok(
-    build.includes('TEST_RITUAL_EXHAUSTED'),
-    'verification_ritual block must reference the executor-level error on 4th call',
-  );
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
-  assert.ok(
-    !tune.includes('<verification_ritual'),
-    'TUNE addendum must not carry the verification_ritual block',
-  );
+  assert.equal(build.includes('<verification_ritual'), false, 'BUILD addendum must not carry the retired verification_ritual block');
+  assert.equal(tune.includes('<verification_ritual'), false, 'TUNE addendum must not carry the verification_ritual block either');
+  // The semantics it taught now live in <state_machine>:
+  assert.ok(build.includes('<state_machine>'), 'state_machine block lives in Region A');
+  assert.ok(build.includes('verifying'), 'verifying state described in state_machine');
+  assert.ok(build.includes('CEILING, not a floor'), 'three-trigger ceiling rule preserved in state_machine');
 });
 
 test('054-A F1: BUILD addendum carries <write_rationale> block stamped with RATIONALE_PROMPT_VERSION', async () => {
