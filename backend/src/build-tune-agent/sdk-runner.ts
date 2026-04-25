@@ -25,6 +25,11 @@ import {
   makeExtractorState,
   wrapWriterWithExtractor,
 } from './structured-output-extractor';
+import {
+  maybeEmitSessionDiffSummary,
+  maybeEmitInterviewProgress,
+  snapshotSlots,
+} from './auto-emit';
 import { listMemoryByPrefix } from './memory/service';
 import { runForcedFirstTurnCall } from './forced-first-turn';
 import {
@@ -110,20 +115,16 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
       TUNING_AGENT_TOOL_NAMES.get_current_state,
       TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
-      TUNING_AGENT_TOOL_NAMES.emit_session_summary,
       // Sprint 046 — BUILD mode was rejecting propose_suggestion +
       // fetch_evidence_bundle, which broke the "discuss-in-tuning"
       // flow from the inbox (agent tried to fetch evidence, got
       // denied, degraded to prose instead of emitting a
       // data-suggested-fix card for the operator to Accept/Reject).
-      // These three tools are safe to allow in BUILD — suggestion
+      // These two tools are safe to allow in BUILD — suggestion
       // flow is staged via `data-suggested-fix` and still requires
       // operator approval to apply.
       TUNING_AGENT_TOOL_NAMES.fetch_evidence_bundle,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
-      // Sprint 046 — interview progress emitter (slated for runtime auto-emit
-      // in 060-D phase 6).
-      TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
     ];
   }
   return [
@@ -137,10 +138,6 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     TUNING_AGENT_TOOL_NAMES.get_current_state,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
-    TUNING_AGENT_TOOL_NAMES.emit_session_summary,
-    // Sprint 046 — interview progress emitter (slated for runtime auto-emit
-    // in 060-D phase 6).
-    TUNING_AGENT_TOOL_NAMES.emit_interview_progress,
   ];
 }
 
@@ -343,6 +340,13 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const hooks = buildTuningAgentHooks(() => hookCtx);
   const { query } = await loadAgentSdk();
 
+  // ─── Pre-turn slot snapshot (for interview-progress auto-emit) ──────────
+  const preTurnSlotSnapshot = await snapshotSlots(
+    input.prisma,
+    input.tenantId,
+    input.conversationId,
+  ).catch(() => ({} as Record<string, string>));
+
   // ─── Query execution ───────────────────────────────────────────────────
   const state = makeBridgeState(input.assistantMessageId);
   const extractorState = makeExtractorState();
@@ -508,6 +512,30 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     } catch {
       /* swallow — telemetry must never break the main flow */
     }
+  }
+
+  // ─── Runtime auto-emit (sprint 060-D phase 6) ──────────────────────────
+  try {
+    maybeEmitSessionDiffSummary({
+      toolCallsInvoked,
+      emitDataPart,
+      assistantMessageId: input.assistantMessageId,
+    });
+  } catch (err) {
+    console.warn('[tuning-agent] session-summary auto-emit failed:', err);
+  }
+  try {
+    await maybeEmitInterviewProgress({
+      prisma: input.prisma,
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      mode,
+      beforeSnapshot: preTurnSlotSnapshot,
+      emitDataPart,
+      assistantMessageId: input.assistantMessageId,
+    });
+  } catch (err) {
+    console.warn('[tuning-agent] interview-progress auto-emit failed:', err);
   }
 
   // ─── Output-linter pass ────────────────────────────────────────────────

@@ -26,9 +26,4 @@ export const TUNING_AGENT_TOOL_NAMES = {
   get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
   studio_get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_edit_history`,
-  // Sprint 058-A F4 — end-of-turn session-diff summary card emitter.
-  emit_session_summary: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_session_summary`,
-  // Sprint 046 — card emitter for interview progress (kept; will become
-  // runtime auto-emit in 060-D phase 6).
-  emit_interview_progress: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_interview_progress`,
 } as const;

@@ -823,13 +823,11 @@ When the manager asks an audit-style question ("review my setup",
 
 ## End-of-turn summary
 
-At the end of a turn (NOT mid-tool-loop), when work is at a natural
-stopping point, call \`emit_session_summary\` EXACTLY ONCE as your LAST action before the
-final text reply. Tally writes, tests, reverts, and plan-item
-cancellations performed in THIS turn (not cumulative). A second
-call in the same turn returns { ok: false, reason: 'already_emitted_this_turn' }
-and is a no-op. Omit on turns that were pure conversation (no writes,
-tests, or plan changes).
+The runtime auto-emits the session-diff-summary card at the end of
+every turn that had any tool activity (writes, tests, reverts) and
+the interview-progress card at the end of every BUILD turn where
+slot memory changed. You don't call a tool to surface these cards —
+just keep your slot updates in memory so the runtime sees the delta.
 </build_mode>`;
 
 function buildModeAddendum(mode: AgentMode): string {
