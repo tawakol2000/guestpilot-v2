@@ -23,7 +23,7 @@ import { asCallToolResult, asError, type ToolContext } from './types';
 export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'studio_memory',
-    "Durable tenant-scoped memory for the agent. Ops: 'view' reads a key; 'list' lists keys by prefix (preferences/, facts/, decisions/, rejections/); 'create' writes a new key (fails if exists); 'update' upserts; 'delete' removes. Keep values small and structured. Use preferences/ for durable rules, decisions/ for stamped choices, facts/ for learned tenant context.",
+    "Durable tenant-scoped memory for the agent. Ops: 'view' reads a key; 'list' lists keys by prefix (preferences/, facts/, decisions/, rejections/); 'create' writes a new key (fails if exists); 'update' upserts; 'delete' removes. Keep values small and structured. Use preferences/ for durable rules, decisions/ for stamped choices, facts/ for learned tenant context. verbosity: 'concise' (default) on view returns key + truncated value; 'detailed' returns the full value verbatim.",
     {
       op: z.enum(['view', 'list', 'create', 'update', 'delete']),
       key: z.string().min(1).max(200).optional(),
@@ -31,6 +31,7 @@ export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext
       value: z.any().optional(),
       source: z.string().max(200).optional(),
       limit: z.number().int().min(1).max(100).optional(),
+      verbosity: z.enum(['concise', 'detailed']).optional(),
     },
     async (args) => {
       const c = ctx();
@@ -40,8 +41,19 @@ export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext
           case 'view': {
             if (!args.key) return asError('memory.view requires key.');
             const rec = await viewMemory(c.prisma, c.tenantId, args.key);
-            const payload = { key: args.key, record: rec };
-            span.end(payload);
+            const detailed = args.verbosity === 'detailed';
+            const truncated =
+              !detailed && rec && typeof (rec as any).value === 'string'
+                ? {
+                    ...rec,
+                    value:
+                      ((rec as any).value as string).length > 200
+                        ? `${((rec as any).value as string).slice(0, 200)}…`
+                        : (rec as any).value,
+                  }
+                : rec;
+            const payload = { key: args.key, record: truncated };
+            span.end({ key: args.key, detailed });
             return asCallToolResult(payload);
           }
           case 'list': {

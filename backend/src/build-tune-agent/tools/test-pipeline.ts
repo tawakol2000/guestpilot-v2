@@ -121,6 +121,7 @@ export function buildTestPipelineTool(
       testMessage: z.string().min(1).max(1000).optional(),
       testMessages: z.array(z.string().min(1).max(1000)).min(1).max(10).optional(),
       testContext: contextSchema,
+      verbosity: z.enum(['concise', 'detailed']).optional(),
     },
     async (args) => {
       const c = ctx();
