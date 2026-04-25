@@ -67,8 +67,16 @@ export function buildGetEvidenceSectionTool(
         }
         if (section === 'tool_call') {
           const idx = typeof meta.toolIndex === 'number' ? (meta.toolIndex as number) : -1;
-          const calls = bundle?.mainAiTrace?.ragContext?.toolCalls;
-          if (!Array.isArray(calls) || idx < 0 || idx >= calls.length) {
+          const rag = bundle?.mainAiTrace?.ragContext;
+          // Match the field-name fallback used by extractToolCallSummaries
+          // in get-evidence-index.ts — ai.service.ts uses `tools`; legacy
+          // traces may use `toolCalls`.
+          const calls = Array.isArray(rag?.tools)
+            ? rag.tools
+            : Array.isArray(rag?.toolCalls)
+              ? rag.toolCalls
+              : [];
+          if (idx < 0 || idx >= calls.length) {
             span.end({ error: 'tool_index_out_of_range' });
             return asError(`studio_get_evidence_section: tool_call index ${idx} out of range.`);
           }

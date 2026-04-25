@@ -39,7 +39,7 @@ const samplePayload = {
   langfuseTrace: null,
 };
 
-function makePrisma(bundle = samplePayload) {
+function makePrisma(bundle: any = samplePayload) {
   return {
     evidenceBundle: {
       findFirst: async ({ where }: any) =>
@@ -94,6 +94,32 @@ test('studio_get_evidence_section: resolves a specific tool_call pointer', async
   assert.equal(out.section, 'tool_call');
   assert.equal(out.toolIndex, 1);
   assert.equal(out.call.tool, 'get_faq');
+});
+
+test('studio_get_evidence_index: reads ragContext.tools (canonical ai.service.ts shape)', async () => {
+  captured.length = 0;
+  const canonicalPayload = {
+    ...samplePayload,
+    mainAiTrace: {
+      ...samplePayload.mainAiTrace,
+      ragContext: {
+        ...samplePayload.mainAiTrace.ragContext,
+        // ai.service.ts attaches per-call as `tools[]` with name + durationMs.
+        tools: [
+          { name: 'get_sop', input: {}, results: {}, durationMs: 42 },
+          { name: 'get_faq', input: {}, results: {}, durationMs: 71 },
+        ],
+        toolCalls: undefined,
+      },
+    },
+  };
+  const ctx = () => ({ prisma: makePrisma(canonicalPayload), tenantId: 't1', conversationId: 'c1', userId: null }) as any;
+  buildGetEvidenceIndexTool(fakeFactory as any, ctx);
+  const out = JSON.parse((await captured[0].handler({ bundleId: 'evb_a' })).content[0].text);
+  assert.equal(out.tool_calls.length, 2);
+  assert.equal(out.tool_calls[0].name, 'get_sop');
+  assert.equal(out.tool_calls[0].duration_ms, 42);
+  assert.equal(out.tool_calls[1].name, 'get_faq');
 });
 
 test('studio_get_evidence_section: rejects forged/tampered pointer', async () => {

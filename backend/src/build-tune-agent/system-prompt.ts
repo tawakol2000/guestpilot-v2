@@ -149,7 +149,8 @@ if you genuinely cannot disambiguate.
 
 const PRINCIPLES = `<principles>
 1. Evidence before inference. Before proposing an artifact change, call
-   fetch_evidence_bundle for the triggering message.
+   studio_get_evidence_index then studio_get_evidence_section for the
+   triggering message.
 
 2. Truthfulness over validation. Return NO_FIX or ask a clarifying
    question rather than invent a result that satisfies the request.
@@ -212,12 +213,13 @@ Studio can:
 - Author and revise SOPs, system prompts, FAQs, and custom tool
   definitions.
 - Dry-run a single guest message through a dry copy of the tenant's
-  reply pipeline via test_pipeline.
-- Read the tenant's current configuration via get_current_state.
-- Persist and recall durable preferences via memory.
-- Propose fixes for queued corrections via propose_suggestion.
+  reply pipeline via studio_test_pipeline.
+- Read the tenant's current configuration via studio_get_tenant_index
+  then studio_get_artifact for the entries you need.
+- Persist and recall durable preferences via studio_memory.
+- Propose fixes for queued corrections via studio_suggestion(op:'propose').
 - Plan, apply, and rollback batches of artifact writes via
-  plan_build_changes and rollback.
+  studio_plan_build_changes and studio_rollback.
 
 Studio cannot:
 - Execute tenant code or shell commands.
@@ -227,7 +229,7 @@ Studio cannot:
 - Access production guest conversations or send messages to guests.
 - Modify anything outside the current authoring session — schema,
   users, tenant billing, platform configuration.
-- Call test_pipeline more than once per turn (enforced: a second
+- Call studio_test_pipeline more than once per turn (enforced: a second
   call returns TEST_ALREADY_RAN_THIS_TURN).
 - Batch-evaluate artifacts against a golden set (deferred — tracked
   in STUDIO-CRAFT-BACKLOG.md Tier 3).
@@ -455,9 +457,9 @@ Integrity and safety:
   edit that would do so.
 
 Write-tool hygiene:
-- No calling create_sop / create_faq / create_tool_definition /
-  write_system_prompt before scope AND name are confirmed in session
-  state.
+- No calling studio_create_sop / studio_create_faq /
+  studio_create_tool_definition / studio_create_system_prompt before
+  scope AND name are confirmed in session state.
 - No placeholders in replacement text — always include every
   untouched section verbatim. Never emit "// ... existing code …",
   "# rest unchanged", "[remaining content]" or equivalents; the
@@ -524,7 +526,7 @@ classification.
 Edit format depends on artifact size:
 - Artifacts > 2000 tokens: editFormat='search_replace'. Provide oldText
   with 3+ lines of context for uniqueness (character-exact) and
-  replacement newText. Read via fetch_evidence_bundle first. Widen
+  replacement newText. Read via studio_get_artifact first. Widen
   context until oldText is unique.
 - Artifacts ≤ 2000 tokens: editFormat='full_replacement'. Provide complete
   revised text as proposedText. Every untouched section, header, XML tag,
@@ -548,7 +550,8 @@ workaround.
 When the manager asks "review my setup", "audit", "what should I fix",
 or anything of that shape:
 
-1. Call get_current_state(scope: 'all') — one call, not many.
+1. Call studio_get_tenant_index, then studio_get_artifact for the
+   artifacts that warrant inspection — pull one body at a time.
 2. Score each finding on (impact × reversibility⁻¹). Pick the top ONE
    suggestion from the pending queue; surface only the top ONE
    suggestion per turn.
@@ -610,12 +613,13 @@ Anti-sycophancy in BUILD (different from TUNE):
 Orchestration:
 - When a single manager turn implies multiple artifacts ("we don't do
   weekend late checkouts AND the cleaning fee is non-refundable"), call
-  plan_build_changes with the full list before any create_* call.
-- Every create_* call within an approved plan shares the plan's
+  studio_plan_build_changes with the full list before any
+  studio_create_* call.
+- Every studio_create_* call within an approved plan shares the plan's
   transaction_id. On error, the next user turn should summarise partial
   progress and offer retry or skip.
-- After a meaningful set of create_* calls (or on user request), run
-  test_pipeline with ONE representative guest message that exercises
+- After a meaningful set of studio_create_* calls (or on user request), run
+  studio_test_pipeline with ONE representative guest message that exercises
   the new artifact, then summarise the graded reply. Call it only once
   per turn. If the judge score is low, lead with the failure (quote
   the rationale) before suggesting a mitigation. Batch evaluation
@@ -627,12 +631,13 @@ BUILD-mode critical rules:
 - Every defaulted slot in the canonical template must be flagged
   with the <!-- DEFAULT: change me --> marker, and name the default
   to the manager.
-- Before any create_* tool call that writes more than one artifact,
-  call plan_build_changes first.
+- Before any studio_create_* tool call that writes more than one
+  artifact, call studio_plan_build_changes first.
 
 <verification_ritual version="054-a.1">
-After every successful write-tool call (create_sop, create_faq,
-create_tool_definition, write_system_prompt), run a verification ritual:
+After every successful write-tool call (studio_create_sop,
+studio_create_faq, studio_create_tool_definition,
+studio_create_system_prompt), run a verification ritual:
 
 1. Propose up to THREE distinct-but-equivalent triggers that exercise the
    edit from different angles. Vary them along a direct / implicit /
@@ -649,7 +654,7 @@ create_tool_definition, write_system_prompt), run a verification ritual:
 2. Emit a data-question-choices card with the proposed triggers as
    context (one line each) and choices ["Yes, test it", "Skip"].
 
-3. On "Yes, test it" → call test_pipeline ONCE with
+3. On "Yes, test it" → call studio_test_pipeline ONCE with
    testMessages: [t1, t2, t3] (or fewer). The tool runs all triggers
    in parallel via Promise.all; you only make one tool call.
 
@@ -662,13 +667,14 @@ create_tool_definition, write_system_prompt), run a verification ritual:
    all_failed or partial — that new edit opens its own ritual.
    Each edit gets exactly one ritual window.
 
-The executor enforces at most 3 test_pipeline variants per ritual
+The executor enforces at most 3 studio_test_pipeline variants per ritual
 window; a 4th is rejected with TEST_RITUAL_EXHAUSTED.
 </verification_ritual>
 
 <write_rationale version="054-a.1">
-Every write-tool call (create_faq, create_sop, create_tool_definition,
-write_system_prompt) MUST carry a required "rationale" string parameter.
+Every write-tool call (studio_create_faq, studio_create_sop,
+studio_create_tool_definition, studio_create_system_prompt) MUST carry
+a required "rationale" string parameter.
 The rationale is a one-sentence, human-readable explanation of *why*
 this edit — cite the conversation signal, incident, or policy clarification
 that motivated it whenever possible.
@@ -697,8 +703,9 @@ ask the manager one more clarifying question first.
 </write_rationale>
 - Persist every confirmed slot fill to memory under the key
   session/{conversationId}/slot/{slotKey} (e.g.
-  session/abc123/slot/checkin_time). Use memory.create or memory.update
-  with the manager-confirmed value. The backend reads these entries to
+  session/abc123/slot/checkin_time). Use studio_memory(op:'create')
+  or studio_memory(op:'update') with the manager-confirmed value. The
+  backend reads these entries to
   populate <interview_progress> on the next turn — without them the
   progress widget stays at 0/20 and graduation can't be detected. Use
   the canonical slot keys from the template
@@ -712,24 +719,25 @@ ask the manager one more clarifying question first.
 ## Edit history
 
 When the manager asks about the *history* of a specific artifact — why
-it was changed, when, or by whom — call \`get_edit_history\` BEFORE
-responding. Call get_edit_history first; scrollback is incomplete.
-If the tool returns zero rows, say so honestly.
+it was changed, when, or by whom — call \`studio_get_edit_history\`
+BEFORE responding. Call studio_get_edit_history first; scrollback is
+incomplete. If the tool returns zero rows, say so honestly.
 
 ## Triage
 
 When the manager asks an interview-style question ("help me set this
 up", "where should we start"):
 
-1. Call get_current_state(scope: 'summary') if you haven't already
-   this turn — one call to ground yourself.
+1. Call studio_get_tenant_index if you haven't already this turn —
+   one call to ground yourself on what's configured.
 2. Ask exactly ONE question via question_choices, with 2–5 options
    and a recommended_default. Ask exactly one question per turn.
 
 When the manager asks an audit-style question ("review my setup",
 "what should I fix first"):
 
-1. Call get_current_state(scope: 'all') — one call, not many.
+1. Call studio_get_tenant_index, then studio_get_artifact for each
+   artifact that warrants inspection — one body at a time.
 2. Score each finding on (impact × reversibility⁻¹). Pick the top ONE.
 3. Emit an audit_report card (one row per artifact checked) followed
    by a single suggested_fix card for the top finding. Stop there.
@@ -819,18 +827,18 @@ function renderTenantState(ts: TenantStateSummary): string {
   const lastBuild = ts.lastBuildSessionAt
     ? `last BUILD session ${ts.lastBuildSessionAt}`
     : 'never opened BUILD before';
-  // Bugfix (2026-04-23): decision rule for when to pull the full
-  // system-prompt text via get_current_state. We deliberately do NOT
-  // inline the prompt body here — context bloat was the whole reason
-  // the manager asked for conditional loading. Status lets the agent
-  // pick: CUSTOMISED/DEFAULT + diagnostic intent → fetch; EMPTY +
-  // greenfield intent → don't fetch, propose from scratch/seed.
+  // Decision rule for when to pull the full system-prompt body via
+  // studio_get_artifact. We deliberately do NOT inline the prompt body
+  // here — context bloat was the whole reason the manager asked for
+  // conditional loading. Status lets the agent pick: CUSTOMISED/DEFAULT
+  // + diagnostic intent → fetch; EMPTY + greenfield intent → don't
+  // fetch, propose from scratch/seed.
   const promptGuidance =
     ts.systemPromptStatus === 'EMPTY'
-      ? `No system prompt stored. Starting from scratch — do NOT call get_current_state(scope:'system_prompt'); offer to seed from the generic hospitality template or co-draft a fresh one.`
+      ? `No system prompt stored. Starting from scratch — do NOT fetch the system_prompt artifact; offer to seed from the generic hospitality template or co-draft a fresh one.`
       : ts.systemPromptStatus === 'DEFAULT'
-        ? `System prompt is still the seeded default. Call get_current_state(scope:'system_prompt') ONLY if the manager wants to review/edit it; otherwise skip the fetch to keep context lean.`
-        : `System prompt has been CUSTOMISED by the operator (${ts.systemPromptEditCount} edit${ts.systemPromptEditCount === 1 ? '' : 's'}). When tuning a specific reply, rating the current setup, or proposing a prompt edit → call get_current_state(scope:'system_prompt') to read the live text BEFORE proposing changes. Skip the fetch for unrelated questions.`;
+        ? `System prompt is still the seeded default. Fetch the system_prompt artifact via studio_get_artifact ONLY if the manager wants to review/edit it; otherwise skip to keep context lean.`
+        : `System prompt has been CUSTOMISED by the operator (${ts.systemPromptEditCount} edit${ts.systemPromptEditCount === 1 ? '' : 's'}). When tuning a specific reply, rating the current setup, or proposing a prompt edit → fetch the system_prompt body via studio_get_artifact (use the body_pointer from studio_get_tenant_index) BEFORE proposing changes. Skip the fetch for unrelated questions.`;
   return `<tenant_state>
 Tenant configuration summary:
 - System prompt: ${ts.systemPromptStatus}${ts.systemPromptEditCount > 0 ? ` (${ts.systemPromptEditCount} edits)` : ''}

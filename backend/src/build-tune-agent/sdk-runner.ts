@@ -132,7 +132,7 @@ function resolveAllowedTools(mode: AgentMode): string[] {
   return [
     TUNING_AGENT_TOOL_NAMES.studio_get_context,
     TUNING_AGENT_TOOL_NAMES.studio_search_corrections,
-      TUNING_AGENT_TOOL_NAMES.studio_get_correction,
+    TUNING_AGENT_TOOL_NAMES.studio_get_correction,
     TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
     TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
     TUNING_AGENT_TOOL_NAMES.studio_suggestion,

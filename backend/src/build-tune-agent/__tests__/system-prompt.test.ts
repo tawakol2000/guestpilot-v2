@@ -119,7 +119,9 @@ test('shared prefix carries the Response Contract (5 rules post-060-B) plus bann
 test('TUNE addendum carries the Sprint 046 Triage block', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
   assert.ok(tune.includes('## Triage'));
-  assert.ok(tune.includes("get_current_state(scope: 'all')"));
+  // Sprint 060-D: legacy get_current_state references replaced with the
+  // index-then-fetch pair (studio_get_tenant_index → studio_get_artifact).
+  assert.ok(tune.includes('studio_get_tenant_index'));
   assert.ok(tune.includes('impact × reversibility'));
   assert.ok(tune.includes('audit_report'));
 });
@@ -127,9 +129,9 @@ test('TUNE addendum carries the Sprint 046 Triage block', () => {
 test('BUILD addendum carries both interview-style and audit-style Triage branches', () => {
   const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
   assert.ok(build.includes('## Triage'));
-  assert.ok(build.includes("get_current_state(scope: 'summary')"));
+  assert.ok(build.includes('studio_get_tenant_index'));
   assert.ok(build.includes('question_choices'));
-  assert.ok(build.includes("get_current_state(scope: 'all')"));
+  assert.ok(build.includes('studio_get_artifact'));
   assert.ok(build.includes('Pick the top ONE'));
 });
 

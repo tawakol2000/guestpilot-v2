@@ -162,18 +162,32 @@ async function ensureBundleId(
 function extractToolCallSummaries(bundle: any): ToolCallSummary[] {
   const out: ToolCallSummary[] = [];
   const trace = bundle?.mainAiTrace;
-  const calls = trace?.ragContext?.toolCalls;
-  if (!Array.isArray(calls)) return out;
+  // ai.service.ts attaches the per-call log to ragContext.tools as
+  // Array<{name, input, results, durationMs}>. Older traces may also
+  // populate ragContext.toolCalls; fall back for forward-compat.
+  const calls = Array.isArray(trace?.ragContext?.tools)
+    ? trace.ragContext.tools
+    : Array.isArray(trace?.ragContext?.toolCalls)
+      ? trace.ragContext.toolCalls
+      : [];
   calls.forEach((call: any, i: number) => {
+    const name =
+      typeof call?.name === 'string'
+        ? call.name
+        : typeof call?.tool === 'string'
+          ? call.tool
+          : 'unknown';
+    const duration =
+      typeof call?.durationMs === 'number'
+        ? call.durationMs
+        : typeof call?.duration_ms === 'number'
+          ? call.duration_ms
+          : null;
     out.push({
       index: i,
-      name: typeof call?.tool === 'string'
-        ? call.tool
-        : typeof call?.name === 'string'
-          ? call.name
-          : 'unknown',
+      name,
       status: call?.error ? 'error' : 'ok',
-      duration_ms: typeof call?.duration_ms === 'number' ? call.duration_ms : null,
+      duration_ms: duration,
     });
   });
   return out;
