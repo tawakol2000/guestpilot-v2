@@ -37,10 +37,6 @@ import {
 import { TenantStateBanner } from './tenant-state-banner'
 import { SessionDiffCard, type SessionDiffSummaryData } from './session-diff-card'
 import {
-  VersionDiffBrowserCard,
-  type VersionDiffArtifactKind,
-} from './version-diff-browser'
-import {
   InterviewProgressCard,
   type InterviewSlotStatus,
 } from './interview-progress'
@@ -61,12 +57,19 @@ import { FileIcon, FlaskIcon } from './icons'
 // any tool in this list will render in the operator-visible context
 // rail, so restrict to tools that actually fetch artifacts.
 const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
+  // Sprint 060-D Phase 7+10 — index-then-fetch + renamed read tools.
+  'studio_get_context',
+  'studio_get_tenant_index',
+  'studio_get_artifact',
+  'studio_get_evidence_index',
+  'studio_get_evidence_section',
+  'studio_search_corrections',
+  'studio_get_correction',
+  'studio_get_edit_history',
+  'studio_get_canonical_template',
+  // Pipeline tools (still fired inside test_pipeline / runtime dry runs)
   'get_sop',
   'get_faq',
-  'get_context',
-  'get_current_state',
-  'fetch_evidence_bundle',
-  'search_corrections',
   'search_properties',
   'search_available_properties',
   'get_system_prompt',
@@ -76,9 +79,6 @@ const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
   'list_faqs',
   'list_tools',
   'list_properties',
-  'get_edit_history',
-  'get_version_history',
-  'diff_versions',
 ])
 
 /**
@@ -1722,43 +1722,6 @@ function StandalonePart({
     // fields to zero.
     const data = (part.data ?? {}) as SessionDiffSummaryData
     return <SessionDiffCard data={data} />
-  }
-
-  if (type === 'data-version-diff-browser') {
-    // Sprint 046 — side-by-side version-diff browser card. Agent emits
-    // this when it wants to show the operator two historical versions
-    // of an artifact + a rollback CTA.
-    const data = (part.data ?? {}) as Record<string, unknown>
-    const before = data.before as Record<string, unknown> | undefined
-    const after = data.after as Record<string, unknown> | undefined
-    if (!before || !after) return null
-    const kindRaw = typeof data.artifact === 'string' ? data.artifact : ''
-    const kind = (['system_prompt', 'sop', 'faq', 'tool_definition', 'property_override'] as const).includes(
-      kindRaw as VersionDiffArtifactKind,
-    )
-      ? (kindRaw as VersionDiffArtifactKind)
-      : 'sop'
-    return (
-      <VersionDiffBrowserCard
-        artifact={kind}
-        artifactId={typeof data.artifactId === 'string' ? data.artifactId : undefined}
-        artifactTitle={typeof data.artifactTitle === 'string' ? data.artifactTitle : undefined}
-        before={{
-          versionId: String(before.versionId ?? ''),
-          label: String(before.label ?? 'Before'),
-          createdAt: typeof before.createdAt === 'string' ? before.createdAt : undefined,
-          author: typeof before.author === 'string' ? before.author : undefined,
-          body: String(before.body ?? ''),
-        }}
-        after={{
-          versionId: String(after.versionId ?? ''),
-          label: String(after.label ?? 'After'),
-          createdAt: typeof after.createdAt === 'string' ? after.createdAt : undefined,
-          author: typeof after.author === 'string' ? after.author : undefined,
-          body: String(after.body ?? ''),
-        }}
-      />
-    )
   }
 
   if (type === 'data-interview-progress') {

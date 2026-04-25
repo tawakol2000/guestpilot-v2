@@ -1,6 +1,6 @@
 /**
  * Sprint 057-A F1 — Human-readable verb labels for tool calls in the
- * ToolChainSummary chip row.
+ * ToolChainSummary chip row. Updated for sprint 060-D tool surface.
  *
  * The tool names from the AI SDK arrive in the form
  * `mcp__tuning-agent__<name>`. Strip the prefix before map lookup.
@@ -8,33 +8,40 @@
  * dynamic counts (e.g. "Planned 3 writes").
  */
 export const TOOL_VERB_MAP: Record<string, string | ((args: Record<string, unknown>) => string)> = {
-  get_current_state:      'Read state',
-  get_context:            'Read context',
-  get_faq:                'Got FAQ',
-  get_sop:                'Got SOP',
-  get_edit_history:       'Checked history',
-  plan_build_changes:     (args) => {
+  // Index-then-fetch (sprint 060-D phase 7)
+  studio_get_tenant_index:       'Read tenant index',
+  studio_get_artifact:           'Read artifact',
+  studio_get_evidence_index:     'Pulled evidence index',
+  studio_get_evidence_section:   'Read evidence section',
+  studio_search_corrections:     'Searched fixes',
+  studio_get_correction:         'Read correction',
+  // Renamed surface
+  studio_get_context:            'Read context',
+  studio_get_edit_history:       'Checked history',
+  studio_plan_build_changes:     (args) => {
     const n = Array.isArray(args?.items) ? args.items.length : 0
     return n > 0 ? `Planned ${n} writes` : 'Planned writes'
   },
-  create_sop:             'Wrote SOP',
-  create_faq:             'Wrote FAQ',
-  write_system_prompt:    'Rewrote prompt',
-  create_tool_definition: 'Defined tool',
-  test_pipeline:          'Ran test',
-  search_corrections:     'Searched fixes',
-  propose_suggestion:     'Proposed fix',
-  suggestion_action:      'Applied fix',
-  emit_audit:             'Audited',
-  ask_manager:            'Asked you',
-  fetch_evidence_bundle:  'Pulled evidence',
-  memory:                 'Stored memory',
-  get_version_history:    'Checked versions',
-  rollback:               'Rolled back',
-  search_replace:         'Replaced text',
-  emit_session_summary:   'Session recap',
-  diff_versions:          'Compared versions',
-  emit_interview_progress:'Interview progress',
+  studio_create_sop:             'Wrote SOP',
+  studio_create_faq:             'Wrote FAQ',
+  studio_create_system_prompt:   'Rewrote prompt',
+  studio_create_tool_definition: 'Defined tool',
+  studio_test_pipeline:          'Ran test',
+  studio_suggestion:             (args) => {
+    const op = typeof args?.op === 'string' ? args.op : ''
+    if (op === 'propose') return 'Proposed fix'
+    if (op === 'apply') return 'Applied fix'
+    if (op === 'reject') return 'Rejected fix'
+    if (op === 'edit_then_apply') return 'Edited & applied'
+    return 'Suggestion action'
+  },
+  studio_memory:                 'Stored memory',
+  studio_rollback:               'Rolled back',
+  studio_get_canonical_template: 'Loaded template',
+  // Static / non-tuning-agent tools (used inside the dry-run pipeline)
+  get_faq:                       'Got FAQ',
+  get_sop:                       'Got SOP',
+  search_replace:                'Replaced text',
 }
 
 const SERVER_PREFIX = 'mcp__tuning-agent__'

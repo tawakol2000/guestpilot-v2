@@ -70,12 +70,6 @@ export type {
 export { renderInlineCodePills } from './utils/render-code-pills'
 
 // Sprint 046 — new agent-requested cards.
-export { VersionDiffBrowserCard } from './version-diff-browser'
-export type {
-  VersionDiffBrowserCardProps,
-  VersionDiffVersion,
-  VersionDiffArtifactKind,
-} from './version-diff-browser'
 export { InterviewProgressCard } from './interview-progress'
 export type {
   InterviewProgressCardProps,
