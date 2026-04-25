@@ -126,11 +126,11 @@ test('forced first-turn happy path: emits snapshot, pushes tool name, logs row',
   assert.equal(snapshot.summary.faqCounts.global, 74);
 
   assert.equal(toolCallsInvoked.length, 1);
-  assert.equal(toolCallsInvoked[0], TUNING_AGENT_TOOL_NAMES.get_current_state);
+  assert.equal(toolCallsInvoked[0], TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index);
 
   assert.equal(buildToolCallLogRows.length, 1);
   assert.equal(buildToolCallLogRows[0].tenantId, 't1');
-  assert.equal(buildToolCallLogRows[0].tool, TUNING_AGENT_TOOL_NAMES.get_current_state);
+  assert.equal(buildToolCallLogRows[0].tool, TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index);
   assert.equal(buildToolCallLogRows[0].success, true);
 });
 

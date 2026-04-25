@@ -113,7 +113,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_create_system_prompt,
       TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,
       TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
-      TUNING_AGENT_TOOL_NAMES.get_current_state,
+      TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
+      TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
       TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
       // Sprint 046 — BUILD mode was rejecting propose_suggestion +
       // fetch_evidence_bundle, which broke the "discuss-in-tuning"
@@ -136,7 +137,8 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_rollback,
     TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,
     TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
-    TUNING_AGENT_TOOL_NAMES.get_current_state,
+    TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
+    TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
   ];
 }

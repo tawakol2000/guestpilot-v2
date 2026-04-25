@@ -22,8 +22,9 @@ export const TUNING_AGENT_TOOL_NAMES = {
   studio_plan_build_changes: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_plan_build_changes`,
   // Sprint 045, Gate 3 — single-message test tool (callable in both modes).
   studio_test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_test_pipeline`,
-  // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).
-  get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
+  // Sprint 060-D Phase 7 — index-then-fetch split of get_current_state.
+  studio_get_tenant_index: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_tenant_index`,
+  studio_get_artifact: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_artifact`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
   studio_get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_edit_history`,
 } as const;

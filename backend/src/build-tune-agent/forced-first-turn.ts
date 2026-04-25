@@ -50,12 +50,12 @@ export async function runForcedFirstTurnCall(
       id: `state-snapshot:${input.assistantMessageId}`,
       data: payload,
     });
-    input.toolCallsInvoked.push(TUNING_AGENT_TOOL_NAMES.get_current_state);
+    input.toolCallsInvoked.push(TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index);
     void logToolCall(input.prisma, {
       tenantId: input.tenantId,
       conversationId: input.conversationId,
       turn: input.turn,
-      tool: TUNING_AGENT_TOOL_NAMES.get_current_state,
+      tool: TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
       params: { scope: 'summary', forcedFirstTurn: true },
       durationMs: Date.now() - start,
       success: true,
@@ -64,12 +64,12 @@ export async function runForcedFirstTurnCall(
     // Degrade silently (CLAUDE.md rule 2) — a failed forced call must
     // never block the turn. The SDK loop will still run.
     // eslint-disable-next-line no-console
-    console.warn('[tuning-agent] forced first-turn get_current_state failed:', err);
+    console.warn('[tuning-agent] forced first-turn tenant index failed:', err);
     void logToolCall(input.prisma, {
       tenantId: input.tenantId,
       conversationId: input.conversationId,
       turn: input.turn,
-      tool: TUNING_AGENT_TOOL_NAMES.get_current_state,
+      tool: TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
       params: { scope: 'summary', forcedFirstTurn: true },
       durationMs: Date.now() - start,
       success: false,

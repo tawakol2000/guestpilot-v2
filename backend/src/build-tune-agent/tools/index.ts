@@ -20,7 +20,8 @@ import { buildCreateToolDefinitionTool } from './create-tool-definition';
 import { buildWriteSystemPromptTool } from './write-system-prompt';
 import { buildPlanBuildChangesTool } from './plan-build-changes';
 import { buildTestPipelineTool } from './test-pipeline';
-import { buildGetCurrentStateTool } from './get-current-state';
+import { buildGetTenantIndexTool } from './get-tenant-index';
+import { buildGetArtifactTool } from './get-artifact';
 import { buildGetEditHistoryTool } from './get-edit-history';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './names';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -49,7 +50,8 @@ export async function buildTuningAgentMcpServer(
       buildWriteSystemPromptTool(tool, getCtx),
       buildPlanBuildChangesTool(tool, getCtx),
       buildTestPipelineTool(tool, getCtx),
-      buildGetCurrentStateTool(tool, getCtx),
+      buildGetTenantIndexTool(tool, getCtx),
+      buildGetArtifactTool(tool, getCtx),
       buildGetEditHistoryTool(tool, getCtx),
     ],
   });

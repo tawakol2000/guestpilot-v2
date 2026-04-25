@@ -307,13 +307,14 @@ failure (e.g. "parking-info-missing", "checkin-time-tone").
 </taxonomy>`;
 
 const TOOLS_DOC = `<tools>
-You have up to 16 always-loaded tools. Which are *callable* in the
+You have up to 17 always-loaded tools. Which are *callable* in the
 current turn is gated by \`allowed_tools\` based on mode: TUNE mode sees
-the existing TUNE tools plus plan_build_changes, test_pipeline, and
-get_current_state; BUILD mode sees get_context, memory,
-search_corrections, get_version_history, the 4 create_* tools,
-plan_build_changes, test_pipeline, and get_current_state. Two card
-types — question_choices and audit_report — are emitted as
+the existing TUNE tools plus plan_build_changes, test_pipeline,
+studio_get_tenant_index, and studio_get_artifact; BUILD mode sees
+studio_get_context, studio_memory, search_corrections,
+get_version_history, the 4 studio_create_* tools, studio_plan_build_changes,
+studio_test_pipeline, studio_get_tenant_index, and studio_get_artifact.
+Two card types — question_choices and audit_report — are emitted as
 \`<data-*>...</data-*>\` JSON blocks in your assistant text rather than
 via tool calls (see Response Contract #4). If you call a tool not in
 your current allow-list, the SDK denies it — surface the need to
@@ -403,12 +404,15 @@ Orchestration / eval tools (available in both modes):
 
 Grounding + card-emit tools (both modes, always-loaded):
 
-15. get_current_state({scope}) — actual text of the tenant's configured
-    artifacts. Scope picks the narrowest slice: 'summary' (counts+ids,
-    auto-called on turn 1), 'system_prompt', 'sops', 'faqs', 'tools'
-    (full text for that artifact type — call before proposing an edit
-    to it so the target chip is real), or 'all' (audit only). One
-    scoped call per distinct need per turn.
+15. studio_get_tenant_index(verbosity?) — metadata-only index of every
+    configured artifact (system-prompt variants, SOPs, FAQs, tools)
+    plus a tenant summary. Each entry carries a body_pointer (opaque,
+    HMAC-signed). Auto-called on turn 1.
+
+15a. studio_get_artifact({pointer}) — resolve a body_pointer returned
+    by the index. Returns the full body of one artifact. Pointers are
+    HMAC-signed and rejected on tamper; pass exactly the string the
+    index returned.
 
 Card emission (no tool call):
 

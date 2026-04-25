@@ -16,14 +16,11 @@
  * This tool is callable in BOTH BUILD and TUNE modes — the grounding
  * need is mode-agnostic.
  */
-import { z } from 'zod/v4';
-import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
-import { startAiSpan } from '../../services/observability.service';
 import {
   getTenantStateSummary,
   type TenantStateSummary,
 } from '../../services/tenant-state.service';
-import { asCallToolResult, asError, type ToolContext } from './types';
+import type { ToolContext } from './types';
 
 export type CurrentStateScope =
   | 'summary'
@@ -611,33 +608,9 @@ export async function buildCurrentStatePayload(
   return applyTruncationSignal(payload);
 }
 
-export function buildGetCurrentStateTool(
-  tool: typeof ToolFactory,
-  ctx: () => ToolContext
-) {
-  return tool(
-    'get_current_state',
-    DESCRIPTION,
-    {
-      scope: z.enum(['summary', 'system_prompt', 'sops', 'faqs', 'tools', 'all']),
-      query: z
-        .string()
-        .max(200)
-        .optional()
-        .describe('Optional case-insensitive keyword filter. Narrows sops/faqs/tools to entries whose text contains the keyword. Ignored for scope=summary|system_prompt.'),
-    },
-    async (args) => {
-      const c = ctx();
-      const span = startAiSpan('build-tune-agent.get_current_state', args);
-      try {
-        const payload = await buildCurrentStatePayload(c.prisma, c.tenantId, args.scope, args.query ?? null);
-        span.end({ scope: args.scope, query: args.query ?? null });
-        return asCallToolResult(payload);
-      } catch (err: any) {
-        span.end({ error: String(err) });
-        return asError(`get_current_state failed: ${err?.message ?? String(err)}`);
-      }
-    },
-    { annotations: { readOnlyHint: true } },
-  );
-}
+// Sprint 060-D Phase 7 — `get_current_state` tool removed; the helpers
+// above are reused by `studio_get_tenant_index` (metadata-only index)
+// and `studio_get_artifact` (single-artifact body via opaque pointer).
+// `buildCurrentStatePayload` is still exported for the forced-first-turn
+// state-snapshot card — the only caller that needs the legacy payload
+// shape because the frontend snapshot panel reads it.
