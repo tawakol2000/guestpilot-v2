@@ -302,15 +302,17 @@ test('record baseline token counts', () => {
   const toolsOnly = estimateToolsOnly();
   const toolsTokens = estimateTokens('x'.repeat(toolsOnly.chars));
 
-  // Sprint 060-D Phase 11 baseline floor — if Region A drops below
-  // this, one of CAPABILITIES / CONTEXT_HANDLING / NEVER_DO was
-  // likely removed. Actual post-060-D value is ~3809 tokens; floor
-  // is set at 3600 for a comfortable margin.
-  const SPRINT_060D_REGION_A_TOKEN_FLOOR = 3600;
+  // Sprint 060-C re-baseline — adding the <state_machine> block
+  // grew Region A by ~750 tokens (post-060-D ~3809 → post-060-C
+  // ~4554). Floor bumped to 4300 with a comfortable margin: well
+  // above CACHE_MIN_TOKENS (2048), and accidental deletion of a
+  // load-bearing block (CAPABILITIES / CONTEXT_HANDLING / NEVER_DO
+  // / STATE_MACHINE) still trips this assertion.
+  const SPRINT_060C_REGION_A_TOKEN_FLOOR = 4300;
   const sharedTokens = estimateTokens(sharedOnly);
   assert.ok(
-    sharedTokens >= SPRINT_060D_REGION_A_TOKEN_FLOOR,
-    `Region A must be ≥${SPRINT_060D_REGION_A_TOKEN_FLOOR} tokens post-060-D (got ~${sharedTokens})`,
+    sharedTokens >= SPRINT_060C_REGION_A_TOKEN_FLOOR,
+    `Region A must be ≥${SPRINT_060C_REGION_A_TOKEN_FLOOR} tokens post-060-C (got ~${sharedTokens})`,
   );
 
   // Single structured line — easy to grep out of CI logs into PROGRESS.md.

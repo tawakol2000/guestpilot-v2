@@ -38,12 +38,12 @@ function snapshotInState(state: InnerState) {
 }
 
 async function callHook(ctxFn: any, toolName: string) {
-  const hook = buildPreToolUseHook(ctxFn);
+  const hook: any = buildPreToolUseHook(ctxFn);
   return hook({
     hook_event_name: 'PreToolUse',
     tool_name: toolName,
     tool_input: {},
-  } as any);
+  });
 }
 
 test('scoping state: blocks studio_create_sop with descriptive deny + propose-transition hint', async () => {
