@@ -21,6 +21,10 @@ import { buildTuningAgentMcpServer, type ToolContext } from './tools';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './tools/names';
 import { buildTuningAgentHooks, type HookContext } from './hooks';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
+import {
+  makeExtractorState,
+  wrapWriterWithExtractor,
+} from './structured-output-extractor';
 import { listMemoryByPrefix } from './memory/service';
 import { runForcedFirstTurnCall } from './forced-first-turn';
 import {
@@ -105,8 +109,6 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,
       TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
       TUNING_AGENT_TOOL_NAMES.get_current_state,
-      TUNING_AGENT_TOOL_NAMES.ask_manager,
-      TUNING_AGENT_TOOL_NAMES.emit_audit,
       TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
       TUNING_AGENT_TOOL_NAMES.emit_session_summary,
       // Sprint 046 — BUILD mode was rejecting propose_suggestion +
@@ -134,8 +136,6 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_plan_build_changes,
     TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     TUNING_AGENT_TOOL_NAMES.get_current_state,
-    TUNING_AGENT_TOOL_NAMES.ask_manager,
-    TUNING_AGENT_TOOL_NAMES.emit_audit,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
     TUNING_AGENT_TOOL_NAMES.emit_session_summary,
     // Sprint 046 — interview progress emitter (slated for runtime auto-emit
@@ -345,6 +345,18 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
 
   // ─── Query execution ───────────────────────────────────────────────────
   const state = makeBridgeState(input.assistantMessageId);
+  const extractorState = makeExtractorState();
+  const filteredWrite = wrapWriterWithExtractor(
+    (chunk) => {
+      try {
+        input.writer.write(chunk);
+      } catch {
+        /* swallow — stream may be closed */
+      }
+    },
+    emitDataPart,
+    extractorState,
+  );
   let lastUsage: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | null = null;
   input.writer.write({ type: 'start', messageId: input.assistantMessageId });
   input.writer.write({ type: 'start-step' });
@@ -418,13 +430,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
             lastUsage = u;
           }
         }
-        bridgeSDKMessage(message, state, (chunk) => {
-          try {
-            input.writer.write(chunk);
-          } catch {
-            /* swallow — stream may be closed */
-          }
-        });
+        bridgeSDKMessage(message, state, filteredWrite);
       }
       span.end({ toolCalls: toolCallsInvoked.length, length: finalText.length });
     } catch (err: any) {

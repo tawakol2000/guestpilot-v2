@@ -21,8 +21,6 @@ import { buildWriteSystemPromptTool } from './write-system-prompt';
 import { buildPlanBuildChangesTool } from './plan-build-changes';
 import { buildTestPipelineTool } from './test-pipeline';
 import { buildGetCurrentStateTool } from './get-current-state';
-import { buildAskManagerTool } from './ask-manager';
-import { buildEmitAuditTool } from './emit-audit';
 import { buildGetEditHistoryTool } from './get-edit-history';
 import { buildEmitSessionSummaryTool } from './emit-session-summary';
 import { buildEmitInterviewProgressTool } from './emit-interview-progress';
@@ -54,8 +52,6 @@ export async function buildTuningAgentMcpServer(
       buildPlanBuildChangesTool(tool, getCtx),
       buildTestPipelineTool(tool, getCtx),
       buildGetCurrentStateTool(tool, getCtx),
-      buildAskManagerTool(tool, getCtx),
-      buildEmitAuditTool(tool, getCtx),
       buildGetEditHistoryTool(tool, getCtx),
       buildEmitSessionSummaryTool(tool, getCtx),
       buildEmitInterviewProgressTool(tool, getCtx),

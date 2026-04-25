@@ -169,9 +169,30 @@ export async function runDirectTurn(
   const { makeBridgeState, bridgeSDKMessage } = await loadStreamBridge();
   const bridgeState = makeBridgeState(input.assistantMessageId);
 
+  const { makeExtractorState, wrapWriterWithExtractor } = await import(
+    '../structured-output-extractor'
+  );
+  const extractorState = makeExtractorState();
+  const filteredWrite = wrapWriterWithExtractor(
+    write,
+    (part) => {
+      try {
+        write({
+          type: part.type,
+          id: part.id,
+          data: part.data,
+          transient: part.transient ?? false,
+        } as any);
+      } catch {
+        /* stream closed — swallow */
+      }
+    },
+    extractorState,
+  );
+
   const forwardToUi = (msg: BridgedSDKMessage) => {
     try {
-      bridgeSDKMessage(msg as any, bridgeState, write);
+      bridgeSDKMessage(msg as any, bridgeState, filteredWrite);
     } catch {
       /* stream closed — swallow */
     }

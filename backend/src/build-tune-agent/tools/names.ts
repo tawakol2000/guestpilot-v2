@@ -24,9 +24,6 @@ export const TUNING_AGENT_TOOL_NAMES = {
   studio_test_pipeline: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_test_pipeline`,
   // Sprint 046, Session A — full-artifact grounding tool (callable in both modes).
   get_current_state: `mcp__${TUNING_AGENT_SERVER_NAME}__get_current_state`,
-  // Sprint 046, Session B — card-shaped I/O wrappers (callable in both modes).
-  ask_manager: `mcp__${TUNING_AGENT_SERVER_NAME}__ask_manager`,
-  emit_audit: `mcp__${TUNING_AGENT_SERVER_NAME}__emit_audit`,
   // Sprint 056-A F2 — "Ask-the-past" edit-history query (BUILD + TUNE).
   studio_get_edit_history: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_edit_history`,
   // Sprint 058-A F4 — end-of-turn session-diff summary card emitter.
