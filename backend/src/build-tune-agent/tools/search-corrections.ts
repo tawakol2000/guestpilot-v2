@@ -1,20 +1,28 @@
 /**
- * search_corrections — agentic search over prior TuningSuggestion records.
- * Replaces the old get_suggestion_stats + corrections-browser.
+ * studio_search_corrections — sprint 060-D phase 7d.
  *
- * Filters: category, propertyId (inferred via sopPropertyId or anchor
- * message's property), sub-label substring, time range in days. Returns
- * recent first, capped.
+ * Replaces `search_corrections`. Returns metadata + opaque
+ * detail_pointer per row; detail is fetched one row at a time via
+ * studio_get_correction({pointer}).
+ *
+ * `limit` is REQUIRED (default 10, max 50). No truncation cap, no
+ * pagination — index discipline + limit replaces them per spec § 4.7.
  */
 import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
 import { startAiSpan } from '../../services/observability.service';
+import { encodePointer } from './lib/pointer';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
-export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
+const DESCRIPTION = `Search prior TuningSuggestion rows. Returns metadata + detail_pointer per row; the row's full body (rationale, proposed text, target chip) is fetched via studio_get_correction({pointer}). 'limit' is required and capped at 50.`;
+
+export function buildSearchCorrectionsTool(
+  tool: typeof ToolFactory,
+  ctx: () => ToolContext,
+) {
   return tool(
-    'search_corrections',
-    'Search prior TuningSuggestion rows. Use to answer "have we seen this pattern before?" or to decide whether a specific fix has been tried already. Concise returns id/category/subLabel/confidence/status; detailed adds rationale, proposedText excerpt, and timestamps.',
+    'studio_search_corrections',
+    DESCRIPTION,
     {
       category: z
         .enum([
@@ -32,28 +40,18 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
       propertyId: z.string().optional(),
       sinceDays: z.number().int().min(1).max(365).optional(),
       status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'AUTO_SUPPRESSED']).optional(),
-      // Sprint 08 §5 — include AUTO_SUPPRESSED rows (hidden from the default
-      // queue) when the agent needs to explain why a suggestion didn't
-      // surface. Defaults to false to keep existing behavior stable.
       includeSuppressed: z.boolean().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-      verbosity: z.enum(['concise', 'detailed']).optional(),
+      limit: z.number().int().min(1).max(50),
     },
     async (args) => {
       const c = ctx();
-      const span = startAiSpan('tuning-agent.search_corrections', args);
+      const span = startAiSpan('build-tune-agent.studio_search_corrections', args);
       try {
-        const take = args.limit ?? 20;
-        const detailed = args.verbosity === 'detailed';
         const where: any = { tenantId: c.tenantId };
         if (args.category) where.diagnosticCategory = args.category;
         if (args.status) {
-          // An explicit status filter wins — lets the agent ask specifically
-          // for AUTO_SUPPRESSED when explaining why a suggestion didn't surface.
           where.status = args.status;
         } else if (!args.includeSuppressed) {
-          // Hide AUTO_SUPPRESSED by default so the "recent history" view
-          // matches what the manager sees in the queue.
           where.status = { notIn: ['AUTO_SUPPRESSED'] };
         }
         if (args.propertyId) where.sopPropertyId = args.propertyId;
@@ -67,22 +65,15 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
         const rows = await c.prisma.tuningSuggestion.findMany({
           where,
           orderBy: { createdAt: 'desc' },
-          take,
+          take: args.limit,
           select: {
             id: true,
             diagnosticCategory: true,
             diagnosticSubLabel: true,
             confidence: true,
             status: true,
-            actionType: true,
             rationale: true,
-            proposedText: true,
-            beforeText: true,
-            sopCategory: true,
-            sopPropertyId: true,
-            faqEntryId: true,
             createdAt: true,
-            appliedAt: true,
           },
         });
 
@@ -92,34 +83,35 @@ export function buildSearchCorrectionsTool(tool: typeof ToolFactory, ctx: () => 
           subLabel: r.diagnosticSubLabel,
           confidence: r.confidence,
           status: r.status,
-          // Sprint 08 §5 — hint flag so the agent can surface "[suppressed]"
-          // in its rationale when explaining why a suggestion didn't appear.
-          suppressed: r.status === 'AUTO_SUPPRESSED',
-          actionType: r.actionType,
+          summary_one_line: makeSummary(r),
           createdAt: r.createdAt,
-          ...(detailed
-            ? {
-                rationale: r.rationale,
-                proposedTextExcerpt: (r.proposedText ?? '').slice(0, 400),
-                beforeTextExcerpt: (r.beforeText ?? '').slice(0, 200),
-                target: {
-                  sopCategory: r.sopCategory,
-                  sopPropertyId: r.sopPropertyId,
-                  faqEntryId: r.faqEntryId,
-                },
-                appliedAt: r.appliedAt,
-              }
-            : {}),
+          detail_pointer: encodePointer({
+            type: 'correction',
+            id: r.id,
+          }),
         }));
-
         const payload = { count: results.length, results };
-        span.end(payload);
+        span.end({ count: results.length });
         return asCallToolResult(payload);
       } catch (err: any) {
         span.end({ error: String(err) });
-        return asError(`search_corrections failed: ${err?.message ?? String(err)}`);
+        return asError(`studio_search_corrections failed: ${err?.message ?? String(err)}`);
       }
     },
     { annotations: { readOnlyHint: true } },
   );
+}
+
+function makeSummary(r: {
+  diagnosticCategory: string | null;
+  diagnosticSubLabel: string | null;
+  rationale: string | null;
+}): string {
+  const parts: string[] = [];
+  if (r.diagnosticCategory) parts.push(r.diagnosticCategory);
+  if (r.diagnosticSubLabel) parts.push(r.diagnosticSubLabel);
+  const lead = parts.join(' · ');
+  if (!r.rationale) return lead || '(no rationale)';
+  const r1 = r.rationale.split('\n')[0].slice(0, 120);
+  return lead ? `${lead} — ${r1}` : r1;
 }

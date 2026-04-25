@@ -7,7 +7,9 @@ export const TUNING_AGENT_SERVER_NAME = 'tuning-agent';
 
 export const TUNING_AGENT_TOOL_NAMES = {
   studio_get_context: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_context`,
-  search_corrections: `mcp__${TUNING_AGENT_SERVER_NAME}__search_corrections`,
+  // Sprint 060-D Phase 7d — index-then-fetch split.
+  studio_search_corrections: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_search_corrections`,
+  studio_get_correction: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_correction`,
   // Sprint 060-D Phase 7c — index-then-fetch split of fetch_evidence_bundle.
   studio_get_evidence_index: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_evidence_index`,
   studio_get_evidence_section: `mcp__${TUNING_AGENT_SERVER_NAME}__studio_get_evidence_section`,

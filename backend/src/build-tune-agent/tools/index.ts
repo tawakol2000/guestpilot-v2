@@ -10,6 +10,7 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import type { ToolContext } from './types';
 import { buildGetContextTool } from './get-context';
 import { buildSearchCorrectionsTool } from './search-corrections';
+import { buildGetCorrectionTool } from './get-correction';
 import { buildGetEvidenceIndexTool } from './get-evidence-index';
 import { buildGetEvidenceSectionTool } from './get-evidence-section';
 import { buildSuggestionTool } from './suggestion';
@@ -41,6 +42,7 @@ export async function buildTuningAgentMcpServer(
     tools: [
       buildGetContextTool(tool, getCtx),
       buildSearchCorrectionsTool(tool, getCtx),
+      buildGetCorrectionTool(tool, getCtx),
       buildGetEvidenceIndexTool(tool, getCtx),
       buildGetEvidenceSectionTool(tool, getCtx),
       buildSuggestionTool(tool, getCtx),
