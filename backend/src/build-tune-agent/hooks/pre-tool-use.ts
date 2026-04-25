@@ -42,6 +42,13 @@ import {
   type HookContext,
 } from './shared';
 import { DATA_PART_TYPES, type AdvisoryData } from '../data-parts';
+import {
+  ALLOWED_TOOLS_BY_STATE,
+  coerceSnapshot,
+  findStateAllowingTool,
+  shortToolName,
+  type InnerState,
+} from '../state-machine';
 
 /**
  * Sprint 047 Session A — BUILD-mode creator tool names. These write
@@ -147,6 +154,43 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
     }
     const pre = input as PreToolUseHookInput;
     const c = ctx();
+
+    // ─── Sprint 060-C: state-gating ──────────────────────────────────────
+    //
+    // Read the DB snapshot at hook time (not from agent-emitted text).
+    // If the called tool isn't in the allowed set for current inner_state,
+    // deny with a descriptive error pointing the agent at
+    // studio_propose_transition. Skip when there's no conversation
+    // context (test harnesses) or when the tool isn't an MCP tool we
+    // recognise (defensive — only gate registered Studio tools).
+    if (c.conversationId && pre.tool_name.startsWith('mcp__tuning-agent__')) {
+      try {
+        const conv = await c.prisma.tuningConversation.findFirst({
+          where: { id: c.conversationId, tenantId: c.tenantId },
+          select: { stateMachineSnapshot: true },
+        });
+        if (conv) {
+          const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+          const state: InnerState = snapshot.inner_state;
+          const allowed = ALLOWED_TOOLS_BY_STATE[state];
+          if (!allowed.includes(pre.tool_name)) {
+            const target = findStateAllowingTool(pre.tool_name);
+            const allowedNames = allowed.map(shortToolName).join(', ');
+            const targetHint = target
+              ? `To use ${shortToolName(pre.tool_name)}, call studio_propose_transition({to: '${target}', because: ...}) first.`
+              : `Tool ${shortToolName(pre.tool_name)} is not registered in any state's allowlist.`;
+            return denyHook(
+              `Tool ${shortToolName(pre.tool_name)} is blocked in ${state} state. ` +
+                `Available tools in ${state}: ${allowedNames}. ${targetHint}`,
+            );
+          }
+        }
+      } catch (err) {
+        // Defensive: a broken state lookup must never wedge tool calls.
+        // Log + fall through to legacy hook logic.
+        console.warn('[pre-tool-use] state-gating lookup failed:', err);
+      }
+    }
 
     // ─── Sprint 047 Session A: BUILD-creator advisory extension ──────────
     // Non-blocking recent-edit on direct BUILD writes. Runs before the
