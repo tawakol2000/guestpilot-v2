@@ -52,6 +52,12 @@ import {
   buildCacheStatsPayload,
   type CacheStatsPayload,
 } from './prompt-cache-blocks';
+import {
+  coerceSnapshot,
+  computeTurnEndSnapshot,
+  DEFAULT_SNAPSHOT,
+  type StateMachineSnapshot,
+} from './state-machine';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
 
@@ -210,7 +216,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const [conversation, priorMessageCount] = await Promise.all([
     input.prisma.tuningConversation.findFirst({
       where: { id: input.conversationId, tenantId: input.tenantId },
-      select: { id: true, sdkSessionId: true, anchorMessageId: true },
+      select: { id: true, sdkSessionId: true, anchorMessageId: true, stateMachineSnapshot: true },
     }),
     input.prisma.tuningMessage.count({
       where: { conversationId: input.conversationId },
@@ -283,7 +289,12 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     mode,
     tenantState: input.tenantState ?? null,
     interviewProgress: input.interviewProgress ?? null,
+    // Sprint 060-C — DB snapshot drives <current_state> + optional
+    // <state_transition> in Region C. Falls back to default scoping
+    // for any legacy row that somehow missed the migration default.
+    stateMachineSnapshot: coerceSnapshot(conversation.stateMachineSnapshot ?? DEFAULT_SNAPSHOT),
   };
+  const turnStartSnapshot: StateMachineSnapshot = promptCtx.stateMachineSnapshot!;
   const systemPrompt = assembleSystemPrompt(promptCtx);
   logCacheBlockStructure(input.tenantId, systemPrompt);
   const allowedTools = resolveAllowedTools(mode);
@@ -521,6 +532,45 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     } catch {
       /* swallow — telemetry must never break the main flow */
     }
+  }
+
+  // ─── Sprint 060-C — turn-end state-machine lifecycle ─────────────────────
+  //
+  // Two effects, computed by a single pure function:
+  //   1. Verifying auto-exit when test_pipeline ran successfully.
+  //   2. Clear transition_ack_pending after the prompt rendered the
+  //      one-turn <state_transition> announcement.
+  //
+  // Always emit a transient data-state-machine-snapshot SSE part so
+  // the frontend chip stays in sync with the DB without polling.
+  let endSnapshot: StateMachineSnapshot = turnStartSnapshot;
+  try {
+    const testPipelineSucceeded = toolCallsInvoked.includes(
+      TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
+    );
+    const next = computeTurnEndSnapshot({
+      startSnapshot: turnStartSnapshot,
+      testPipelineSucceeded,
+    });
+    if (next) {
+      await input.prisma.tuningConversation.update({
+        where: { id: input.conversationId },
+        data: { stateMachineSnapshot: next as unknown as object },
+      });
+      endSnapshot = next;
+    }
+  } catch (err) {
+    console.warn('[tuning-agent] state-machine turn-end persist failed:', err);
+  }
+  try {
+    emitDataPart({
+      type: 'data-state-machine-snapshot',
+      id: `state-machine:${input.assistantMessageId}`,
+      data: endSnapshot,
+      transient: true,
+    });
+  } catch {
+    /* swallow — telemetry must never break the main flow */
   }
 
   // ─── Runtime auto-emit (sprint 060-D phase 6) ──────────────────────────

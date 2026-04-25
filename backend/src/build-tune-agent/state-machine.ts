@@ -154,3 +154,55 @@ export function findStateAllowingTool(toolName: string): InnerState | null {
 export function shortToolName(toolName: string): string {
   return toolName.replace(/^mcp__[^_]+__/, '');
 }
+
+/**
+ * Pure turn-end transition computer (Sprint 060-C). Given the snapshot
+ * the turn STARTED with and what happened during the turn, returns the
+ * snapshot to PERSIST after the turn (or null when nothing changed).
+ *
+ * Two effects merged into one pure function so the runtime does at most
+ * one DB write per turn:
+ *
+ *  1. **transition_ack_pending clear.** If the turn started with the
+ *     flag set, the prompt rendered <state_transition> exactly once;
+ *     clear the flag so it doesn't re-render on subsequent turns.
+ *
+ *  2. **Verifying auto-exit.** If the turn started in verifying AND
+ *     studio_test_pipeline ran successfully this turn, flip back to
+ *     drafting (with a fresh ack so the agent learns of the auto-exit).
+ *     This dovetails with TEST_RITUAL_EXHAUSTED: verifying is one-shot,
+ *     a fresh edit opens a new verifying state.
+ *
+ * Both effects can fire on the same turn — auto-exit replaces inner_state
+ * AND sets a fresh ack, which together imply the prior ack flag clears
+ * (the new ack carries the auto-exit reason). The single combined branch
+ * below handles that case correctly.
+ */
+export interface TurnEndInput {
+  startSnapshot: StateMachineSnapshot;
+  testPipelineSucceeded: boolean;
+}
+
+export function computeTurnEndSnapshot(input: TurnEndInput): StateMachineSnapshot | null {
+  const { startSnapshot, testPipelineSucceeded } = input;
+
+  if (startSnapshot.inner_state === 'verifying' && testPipelineSucceeded) {
+    return {
+      ...startSnapshot,
+      inner_state: 'drafting',
+      last_transition_at: new Date().toISOString(),
+      last_transition_reason: 'verifying auto-exit after test_pipeline',
+      transition_ack_pending: true,
+      pending_transition: null,
+    };
+  }
+
+  if (startSnapshot.transition_ack_pending) {
+    return {
+      ...startSnapshot,
+      transition_ack_pending: false,
+    };
+  }
+
+  return null;
+}
