@@ -637,7 +637,18 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           previewPanel={<PreviewTab />}
           testsPanel={<TestsTab />}
           suggestionsPanel={
-            <SuggestionsTab onPendingCountChange={setPendingSuggestionsCount} />
+            <SuggestionsTab
+              onPendingCountChange={setPendingSuggestionsCount}
+              onDiscuss={(newConversationId) => {
+                // Hand the new conversation off to the surface's
+                // bootstrap effect — same path the left-rail uses when
+                // the operator picks an existing chat.
+                onConversationChange?.(newConversationId)
+                toast.success('Started a tuning chat about this suggestion', {
+                  description: 'Switched to the new conversation.',
+                })
+              }}
+            />
           }
           suggestionsBadge={pendingSuggestionsCount}
           ledgerPanel={
