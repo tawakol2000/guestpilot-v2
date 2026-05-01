@@ -79,6 +79,7 @@ describe('Studio a11y', () => {
         planPanel={<PlanTab snapshot={snapshot} sessionArtifacts={[]} />}
         previewPanel={<PreviewTab />}
         testsPanel={<TestsTab />}
+        suggestionsPanel={<div>Suggestions</div>}
         ledgerPanel={<div>Ledger</div>}
       />,
     )

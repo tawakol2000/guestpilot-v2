@@ -75,6 +75,7 @@ import { RightPanelTabs } from './right-panel-tabs'
 import { PlanTab } from './tabs/plan-tab'
 import { PreviewTab } from './tabs/preview-tab'
 import { TestsTab } from './tabs/tests-tab'
+import { SuggestionsTab } from './tabs/suggestions-tab'
 import { LedgerTab } from './tabs/ledger-tab'
 import { LeftRailV2 } from './left-rail'
 
@@ -122,6 +123,10 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
   // Sprint 053-A D4 — bumps to force the WriteLedgerCard to re-fetch
   // (after a successful Apply or Revert).
   const [ledgerRefreshKey, setLedgerRefreshKey] = useState(0)
+  // Pending tuning-suggestion count, mirrored from the SuggestionsTab so
+  // the right-panel tab strip can render a discreet accent-blue pill
+  // when the diagnostic pipeline has produced unread fixes.
+  const [pendingSuggestionsCount, setPendingSuggestionsCount] = useState(0)
   // Timestamp used by the drawer's "View changes" lookup — stable per
   // session, refreshed on conversationId change via the same bootstrap
   // reset that clears sessionArtifacts.
@@ -631,6 +636,10 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           }
           previewPanel={<PreviewTab />}
           testsPanel={<TestsTab />}
+          suggestionsPanel={
+            <SuggestionsTab onPendingCountChange={setPendingSuggestionsCount} />
+          }
+          suggestionsBadge={pendingSuggestionsCount}
           ledgerPanel={
             <LedgerTab
               conversationId={load.conversationId}

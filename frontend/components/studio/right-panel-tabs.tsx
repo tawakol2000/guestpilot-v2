@@ -17,6 +17,7 @@ import {
   PanelRightIcon,
   BookIcon,
   FlaskIcon,
+  SparkleIcon,
 } from './icons'
 
 export interface RightPanelTabsProps {
@@ -26,7 +27,16 @@ export interface RightPanelTabsProps {
   planPanel: ReactNode
   previewPanel: ReactNode
   testsPanel: ReactNode
+  suggestionsPanel: ReactNode
   ledgerPanel: ReactNode
+
+  /**
+   * Count of pending tuning suggestions (PROPOSED status). Rendered as a
+   * subtle accent-blue pill next to the Suggestions tab label so the
+   * operator notices new diagnostic output without having to click. Pass
+   * 0 (or omit) to suppress the pill.
+   */
+  suggestionsBadge?: number
 
   /** Utility strip pinned to the bottom of the panel (admin buttons). */
   utilityFooter?: ReactNode
@@ -36,13 +46,8 @@ interface TabDef {
   id: RightPanelTab
   label: string
   icon: (props: { size?: number }) => ReactNode
+  badge?: number
 }
-
-const BASE_TABS: TabDef[] = [
-  { id: 'plan', label: 'Plan', icon: (p) => <PlanIcon {...p} /> },
-  { id: 'preview', label: 'Preview', icon: (p) => <PreviewIcon {...p} /> },
-  { id: 'tests', label: 'Tests', icon: (p) => <FlaskIcon size={p.size ?? 13} /> },
-]
 
 export function RightPanelTabs({
   isAdmin,
@@ -50,16 +55,29 @@ export function RightPanelTabs({
   planPanel,
   previewPanel,
   testsPanel,
+  suggestionsPanel,
   ledgerPanel,
+  suggestionsBadge,
   utilityFooter,
 }: RightPanelTabsProps) {
   const shell = useStudioShell()
   const { activeRightTab, setActiveRightTab, rightCollapsed, setRightCollapsed } = shell
 
   const ledgerVisible = isAdmin && rawPromptEditorEnabled
+  const baseTabs: TabDef[] = [
+    { id: 'plan', label: 'Plan', icon: (p) => <PlanIcon {...p} /> },
+    { id: 'preview', label: 'Preview', icon: (p) => <PreviewIcon {...p} /> },
+    { id: 'tests', label: 'Tests', icon: (p) => <FlaskIcon size={p.size ?? 13} /> },
+    {
+      id: 'suggestions',
+      label: 'Suggestions',
+      icon: (p) => <SparkleIcon size={p.size ?? 13} />,
+      badge: suggestionsBadge && suggestionsBadge > 0 ? suggestionsBadge : undefined,
+    },
+  ]
   const tabs: TabDef[] = ledgerVisible
-    ? [...BASE_TABS, { id: 'ledger', label: 'Ledger', icon: (p) => <BookIcon size={p.size ?? 13} /> }]
-    : BASE_TABS
+    ? [...baseTabs, { id: 'ledger', label: 'Ledger', icon: (p) => <BookIcon size={p.size ?? 13} /> }]
+    : baseTabs
 
   const activeIndex = Math.max(0, tabs.findIndex((t) => t.id === activeRightTab))
 
@@ -107,6 +125,7 @@ export function RightPanelTabs({
   if (activeRightTab === 'plan') body = planPanel
   else if (activeRightTab === 'preview') body = previewPanel
   else if (activeRightTab === 'tests') body = testsPanel
+  else if (activeRightTab === 'suggestions') body = suggestionsPanel
   else if (activeRightTab === 'ledger' && ledgerVisible) body = ledgerPanel
 
   return (
@@ -156,6 +175,29 @@ export function RightPanelTabs({
                   {t.icon({ size: 13 })}
                 </span>
                 {t.label}
+                {t.badge ? (
+                  <span
+                    aria-label={`${t.badge} pending`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 16,
+                      height: 16,
+                      padding: '0 5px',
+                      marginLeft: 2,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      color: active ? '#FFFFFF' : STUDIO_TOKENS_V2.blue,
+                      background: active ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.blueSoft,
+                      borderRadius: 999,
+                      letterSpacing: 0,
+                    }}
+                  >
+                    {t.badge > 99 ? '99+' : t.badge}
+                  </span>
+                ) : null}
               </button>
             )
           })}

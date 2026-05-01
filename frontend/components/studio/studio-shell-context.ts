@@ -12,7 +12,7 @@
 import { createContext, useContext } from 'react'
 import type { TestPipelineResultData } from '@/lib/build-api'
 
-export type RightPanelTab = 'plan' | 'preview' | 'tests' | 'ledger'
+export type RightPanelTab = 'plan' | 'preview' | 'tests' | 'suggestions' | 'ledger'
 
 export interface PreviewInputState {
   text: string
