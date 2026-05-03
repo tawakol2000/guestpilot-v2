@@ -112,7 +112,32 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
             'Tool-config suggestions need a target tool — open the legacy /tuning detail to pick one.',
           )
         }
-        await apiAcceptTuningSuggestion(s.id, {})
+        // Bug fix (2026-05-04): empty body 400'd for SOP_CONTENT /
+        // SOP_ROUTING / PROPERTY_OVERRIDE / FAQ rows whose suggestions
+        // were written by the diagnostic pipeline with sopStatus=null
+        // and (for new FAQs) faqScope=null. The accept controller
+        // hits RequiredFieldsError before reaching the apply path.
+        // Pass sensible defaults so v1 accepts succeed; the operator
+        // can still override via per-category UI later.
+        const acceptBody: Parameters<typeof apiAcceptTuningSuggestion>[1] = {}
+        const isSopFlavor =
+          s.diagnosticCategory === 'SOP_CONTENT' ||
+          s.diagnosticCategory === 'SOP_ROUTING' ||
+          s.diagnosticCategory === 'PROPERTY_OVERRIDE'
+        if (isSopFlavor && !s.sopStatus) {
+          // DEFAULT is the broadest variant — applies to every
+          // reservation status that doesn't have its own override.
+          // Safer than guessing INQUIRY / CONFIRMED / CHECKED_IN.
+          acceptBody.sopStatus = 'DEFAULT'
+        }
+        const isNewFaq = s.diagnosticCategory === 'FAQ' && !s.faqEntryId
+        if (isNewFaq && !s.faqScope) {
+          // GLOBAL is the safer default than PROPERTY-scoped — a
+          // global FAQ applies broadly; mis-targeting to a specific
+          // property would silently miss other listings.
+          acceptBody.faqScope = 'GLOBAL'
+        }
+        await apiAcceptTuningSuggestion(s.id, acceptBody)
         setRowState((m) => ({ ...m, [s.id]: { kind: 'accepted' } }))
         toast.success('Suggestion accepted', {
           description: 'The tuning artifact has been updated.',

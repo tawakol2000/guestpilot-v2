@@ -758,7 +758,13 @@ async function logSampleToAiApiLog(
       tenantId,
       agentName: 'tuning-diagnostic',
       model,
-      temperature: 0.7,
+      // 2026-05-04: was hardcoded 0.7 to match the OpenAI request,
+      // but GPT-5.x reasoning models reject `temperature` when
+      // `reasoning.effort` is set so we no longer pass it (see the
+      // callDiagnosticModel comment for the API contract change).
+      // Logging 0.7 here would leak phantom data into observability
+      // dashboards. null reflects the actual call.
+      temperature: null,
       maxTokens: 4000,
       systemPrompt: DIAGNOSTIC_SYSTEM_PROMPT,
       userContent: systemPlusInput,

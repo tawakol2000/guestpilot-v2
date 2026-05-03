@@ -4405,7 +4405,12 @@ export default function InboxV5() {
                       // intentional — action handlers (discuss in tuning,
                       // rate, thumbs-down, navigation arrows) target the
                       // real Message row. React keys are kept distinct
-                      // via the row's `key={...#ghost}` rule.
+                      // via the row's `key={...#ghost}` rule. Per-bubble
+                      // visual busy state (e.g. discuss-in-tuning's
+                      // "opening…" spinner) is keyed off `${id}#ghost`
+                      // vs `${id}` so clicking discuss on one bubble
+                      // doesn't spin both — see the discuss button's
+                      // myBusyKey computation below.
                       previewState: 'PREVIEW_LOCKED' as const,
                       text: msg.originalAiText as string,
                       // Strip originalAiText on the ghost itself so we
@@ -4943,35 +4948,59 @@ export default function InboxV5() {
                                           },
                                         )
                                       },
-                                      beginBusy: () => setDiscussingMsgId(msg.id),
+                                      // Bug fix (2026-05-04): per-bubble busy
+                                      // key so the ghost row's spinner doesn't
+                                      // mirror onto the real row (and vice
+                                      // versa). Both bubbles share msg.id by
+                                      // design so the action targets the same
+                                      // anchor — but visual feedback should be
+                                      // local to the clicked bubble. isBusy
+                                      // stays a global lock so a double-click
+                                      // can't fire two creates in parallel.
+                                      beginBusy: () =>
+                                        setDiscussingMsgId(
+                                          isSupersededGhost ? `${msg.id}#ghost` : msg.id,
+                                        ),
                                       endBusy: () => setDiscussingMsgId(null),
                                       isBusy: () => discussingMsgId !== null,
                                     })
                                   }}
-                                  disabled={discussingMsgId === msg.id}
+                                  disabled={discussingMsgId !== null}
                                   title="Open a Studio chat anchored to this message"
                                   aria-label="Discuss this message in Studio"
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: discussingMsgId === msg.id ? 'wait' : 'pointer',
-                                    padding: '2px 6px',
-                                    marginLeft: 2,
-                                    color: T.text.tertiary + 'AA',
-                                    fontSize: 10,
-                                    fontFamily: T.font.mono,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.08em',
-                                    opacity: discussingMsgId === msg.id ? 0.6 : 1,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                  }}
+                                  style={(() => {
+                                    const myBusyKey = isSupersededGhost
+                                      ? `${msg.id}#ghost`
+                                      : msg.id
+                                    const isMyTurn = discussingMsgId === myBusyKey
+                                    return {
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: isMyTurn ? 'wait' : 'pointer',
+                                      padding: '2px 6px',
+                                      marginLeft: 2,
+                                      color: T.text.tertiary + 'AA',
+                                      fontSize: 10,
+                                      fontFamily: T.font.mono,
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.08em',
+                                      opacity: isMyTurn ? 0.6 : 1,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                    }
+                                  })()}
                                 >
-                                  {discussingMsgId === msg.id && (
+                                  {discussingMsgId ===
+                                    (isSupersededGhost ? `${msg.id}#ghost` : msg.id) && (
                                     <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} aria-hidden />
                                   )}
-                                  <span>{discussingMsgId === msg.id ? 'opening…' : 'discuss in tuning'}</span>
+                                  <span>
+                                    {discussingMsgId ===
+                                    (isSupersededGhost ? `${msg.id}#ghost` : msg.id)
+                                      ? 'opening…'
+                                      : 'discuss in tuning'}
+                                  </span>
                                 </button>
                               </span>
                             )}

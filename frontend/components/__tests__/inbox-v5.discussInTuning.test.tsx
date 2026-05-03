@@ -34,9 +34,15 @@ describe('handleDiscussInTuning', () => {
       isBusy,
     })
 
+    // 2026-05-04: handler now passes initialOuterMode: 'TUNE' so the
+    // backend lands the new conversation in TUNE mode rather than
+    // BUILD (the old default snapshot). Inbox "discuss in TUNING" is
+    // unambiguous; the button label tells the operator where they're
+    // going.
     expect(createTuningConversation).toHaveBeenCalledWith({
       anchorMessageId: 'msg-1',
       triggerType: 'MANUAL',
+      initialOuterMode: 'TUNE',
     })
     expect(beginBusy).toHaveBeenCalledTimes(1)
     expect(onSuccess).toHaveBeenCalledWith(conversation)
