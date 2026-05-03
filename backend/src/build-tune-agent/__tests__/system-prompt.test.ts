@@ -84,7 +84,11 @@ test('shared prefix ordering (sprint 060-A): principles → response_contract �
   // the <never_do> rules"); the actual block header is the LAST
   // occurrence of the tag in Region A.
   const idxNeverDo = p.lastIndexOf('<never_do>');
-  const idxCritical = p.indexOf('<critical_rules>');
+  // 2026-05-03: critical_rules is now also referenced inside
+  // SELF_REPORT's "Continue to follow <principles>, <response_contract>,
+  // <critical_rules> ..." — the actual block header is the LAST
+  // occurrence, same convention as never_do above.
+  const idxCritical = p.lastIndexOf('<critical_rules>');
   assert.ok(idxPrinciples >= 0, 'principles must appear');
   assert.ok(idxResponseContract > idxPrinciples, 'response_contract must follow principles');
   assert.ok(idxPersona > idxResponseContract, 'persona must follow response_contract');
@@ -116,9 +120,13 @@ test('shared prefix carries the Response Contract (5 rules post-060-B) plus bann
   assert.ok(p.includes('"Recommended Next Steps"'));
 });
 
-test('TUNE addendum carries the Sprint 046 Triage block', () => {
+test('TUNE addendum carries the audit Triage block', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
-  assert.ok(tune.includes('## Triage'));
+  // 2026-05-03: original "## Triage" header was split into
+  // "## Step 1: Edit-type triage" (per-edit reasoning) and
+  // "## Audit triage" (the audit-style flow). Assert the audit
+  // header explicitly so it stays in sync.
+  assert.ok(tune.includes('## Audit triage'));
   // Sprint 060-D: legacy get_current_state references replaced with the
   // index-then-fetch pair (studio_get_tenant_index → studio_get_artifact).
   assert.ok(tune.includes('studio_get_tenant_index'));
@@ -146,9 +154,12 @@ test('shared principles: truthfulness-over-validation retained; NO_FIX-as-defaul
     !p.includes('NO_FIX is the default'),
     'NO_FIX-as-default must NOT appear in shared prefix (moved to TUNE addendum)'
   );
-  // Sprint 060-B: P3 compressed from "Refuse directly without
-  // lecturing." → "Direct refusals."
-  assert.ok(p.includes('Direct refusals.'));
+  // 2026-05-03: P3 reframed from "Direct refusals." (refuse style
+  // tics) to "Wording vs behavior." (the broader triage rule that
+  // wording-only edits are NO_FIX, only behavior changes warrant
+  // artifact edits). Assert the new label so the principle stays
+  // anchored in shared.
+  assert.ok(p.includes('Wording vs behavior.'));
   assert.ok(p.includes('<critical_rules>'), 'terminal critical_rules block must appear');
 });
 
