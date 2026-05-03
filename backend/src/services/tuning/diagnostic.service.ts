@@ -945,16 +945,19 @@ async function callDiagnosticModel(
   llmInput: string,
   tenantId: string
 ): Promise<any> {
-  // Sprint 10 workstream C.4: temperature 0.7 enables sample diversity for
-  // the k=3 self-consistency ensemble. The Responses API on GPT-5.x
-  // accepts the legacy temperature param even with reasoning effort set;
-  // it modulates the final-output sampling stage.
+  // 2026-05-03 fix: GPT-5.x reasoning models now reject `temperature`
+  // when `reasoning.effort` is set — the API returns
+  // `400 Unsupported parameter: 'temperature' is not supported with this model`
+  // and every sample in the k=3 ensemble fails, so the diagnostic
+  // abstains and no TuningSuggestion is ever written. Sample diversity
+  // now relies on the reasoning model's internal stochasticity at
+  // effort=high; if observed samples turn fully deterministic we'll
+  // reduce k to 1 in a follow-up.
   return await (openai as any).responses.create({
     model,
     instructions: DIAGNOSTIC_SYSTEM_PROMPT,
     input: [{ role: 'user', content: llmInput }],
     reasoning: { effort: reasoningEffort },
-    temperature: 0.7,
     // Sprint 05 §1: bumped from 1500 to 4000. The full gpt-5.4 with
     // reasoning effort high spends a meaningful chunk of output tokens on
     // hidden reasoning before producing the structured JSON. 1500 starves
