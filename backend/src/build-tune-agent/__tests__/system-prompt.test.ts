@@ -182,6 +182,35 @@ test('TUNE addendum requires witness, reasons, and memory citation', () => {
   assert.ok(tune.includes('NO_FIX is the default'), 'NO_FIX-as-default phrase preserved');
 });
 
+test('TUNE addendum names its three failure modes up front', () => {
+  // Salience effect: naming the failure modes early primes the agent
+  // to suppress them. Imported pattern from the BUILD addendum
+  // refactor (research synthesis §1; same Sharma et al. 2023
+  // schema-level vs instruction-only mitigation evidence).
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('three failure modes'), 'failure-modes header present');
+  assert.ok(tune.includes('wording-only edits'), 'failure mode 1 named');
+  assert.ok(tune.includes('ignoring memory preferences'), 'failure mode 2 named');
+  assert.ok(tune.includes('piling on existing pending'), 'failure mode 3 named');
+});
+
+test('TUNE addendum requires read-back framing on impact for non-NO_FIX', () => {
+  // Clark & Brennan 1991 grounding-in-communication; AAFP/PMC
+  // teach-back. Converts impact from a marketing headline into a
+  // falsifiable behavioral claim the operator can sanity-test
+  // before clicking Accept.
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('read-back'), 'read-back framing referenced');
+  assert.ok(
+    tune.includes('After this fix, a guest'),
+    'specific impact phrasing template present',
+  );
+  assert.ok(
+    tune.includes('Edge cases the operator should verify'),
+    'impact must enumerate edge cases for falsifiability',
+  );
+});
+
 test('TUNE addendum carries the six IteraTeR-aligned edit_types', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
   for (const editType of [

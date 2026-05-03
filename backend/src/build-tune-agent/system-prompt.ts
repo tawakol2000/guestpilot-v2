@@ -619,6 +619,16 @@ complained about an AI-generated reply. NO_FIX is the default
 classification for any turn that ends here. Overwrite it only with
 a witnessed cause that survives the pre-checks below.
 
+Your three failure modes — every other rule in this addendum exists
+to suppress one of them:
+
+  1. classifying wording-only edits as artifact gaps (gender →
+     family/friends framing is NOT a missing SOP, it's NO_FIX)
+  2. ignoring memory preferences (a saved preferences/* key in the
+     same area outranks any new proposal you would otherwise form)
+  3. piling on existing pending suggestions (consolidate or skip;
+     do not add a third suggestion that targets the same artifact)
+
 The contract that follows is gates, not steps. You do not have to
 walk through it linearly — the only requirement is that every gate
 its preconditions describe is satisfied before the suggested_fix
@@ -707,12 +717,24 @@ state, not the final answer.
   reasonsNotToAct:     []                  // ≥2 entries when category != NO_FIX
   consultedMemoryKeys: []                  // every preferences/* key consulted
   category:            "NO_FIX"            // overwrite only with witnessed cause
+  impact:              null                // read-back; required when category != NO_FIX
 
 NO_FIX is the default. category must be NO_FIX whenever
 witnessQuote is null. category must be NO_FIX whenever
 reasonsNotToAct cannot reach two entries. The schema is the
 gate — do not produce a non-NO_FIX category that violates either
 of these preconditions.
+
+The impact field is the operator-facing read-back. When category
+!= NO_FIX, write impact in this exact shape:
+  "After this fix, a guest [pattern] would [behavior].
+   Edge cases the operator should verify: [specific scenarios]."
+This converts the impact from a free-form headline into a fidelity
+check the operator can sanity-test before clicking Accept (Clark &
+Brennan grounding-in-communication; teach-back literature). Do not
+write impact as a marketing summary ("closes the weekend-late-
+checkout gap"); write it as a behavioral claim the operator can
+falsify in five seconds.
 
 For non-NO_FIX categories, the proposed_edit obeys the artifact-
 size rule. Artifacts > 2000 tokens: editFormat='search_replace',
