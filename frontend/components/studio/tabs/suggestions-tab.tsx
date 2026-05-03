@@ -29,6 +29,7 @@ import {
   getStudioCategoryStyle,
   triggerLabel,
 } from '../tokens'
+import { useStudioShell } from '../studio-shell-context'
 import {
   SparkleIcon,
   CheckIcon,
@@ -63,6 +64,7 @@ export interface SuggestionsTabProps {
 }
 
 export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsTabProps) {
+  const { rightWide, setRightWide } = useStudioShell()
   const [filter, setFilter] = useState<Filter>('PENDING')
   const [items, setItems] = useState<TuningSuggestion[]>([])
   const [loading, setLoading] = useState(true)
@@ -200,25 +202,35 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
         gap: 14,
       }}
     >
-      <header style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span
-          style={{
-            fontSize: 10.5,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: STUDIO_TOKENS_V2.muted2,
-          }}
-        >
-          Suggestions
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 500, color: STUDIO_TOKENS_V2.ink }}>
-          {loading
-            ? 'Loading…'
-            : filter === 'PENDING'
-              ? `${pendingCount} pending`
-              : `${items.length} total`}
-        </span>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 8,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: STUDIO_TOKENS_V2.muted2,
+            }}
+          >
+            Suggestions
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 500, color: STUDIO_TOKENS_V2.ink }}>
+            {loading
+              ? 'Loading…'
+              : filter === 'PENDING'
+                ? `${pendingCount} pending`
+                : `${items.length} total`}
+          </span>
+        </div>
+        <WidthToggle wide={rightWide} onToggle={() => setRightWide(!rightWide)} />
       </header>
 
       <FilterPills
@@ -1193,5 +1205,100 @@ function MessageBubble({
         {text}
       </div>
     </div>
+  )
+}
+
+// ─── Width toggle ──────────────────────────────────────────────────────────
+//
+// Lets the operator widen the right panel from the default 340px rail
+// to roughly half the centre pane, so the diff/message panes get
+// breathing room. State lives in StudioShell so any tab can read it,
+// but only the Suggestions header surfaces the toggle today — the
+// other tabs already fit comfortably at 340px.
+
+function WidthToggle({
+  wide,
+  onToggle,
+}: {
+  wide: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={wide}
+      title={wide ? 'Shrink panel' : 'Expand panel wide'}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 28,
+        height: 28,
+        flexShrink: 0,
+        color: wide ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.muted,
+        background: wide ? STUDIO_TOKENS_V2.blueSoft : 'transparent',
+        border: `1px solid ${wide ? STUDIO_TOKENS_V2.blueSoft : STUDIO_TOKENS_V2.border}`,
+        borderRadius: STUDIO_TOKENS_V2.radiusSm,
+        cursor: 'pointer',
+        transition: 'background 140ms ease, color 140ms ease, border-color 140ms ease',
+      }}
+      onMouseEnter={(e) => {
+        if (!wide) {
+          e.currentTarget.style.background = STUDIO_TOKENS_V2.surface2
+          e.currentTarget.style.color = STUDIO_TOKENS_V2.ink2
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!wide) {
+          e.currentTarget.style.background = 'transparent'
+          e.currentTarget.style.color = STUDIO_TOKENS_V2.muted
+        }
+      }}
+    >
+      {wide ? <ContractIcon size={14} /> : <ExpandIcon size={14} />}
+    </button>
+  )
+}
+
+function ExpandIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 9V5h4" />
+      <path d="M20 9V5h-4" />
+      <path d="M4 15v4h4" />
+      <path d="M20 15v4h-4" />
+    </svg>
+  )
+}
+
+function ContractIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M9 4v4H5" />
+      <path d="M15 4v4h4" />
+      <path d="M9 20v-4H5" />
+      <path d="M15 20v-4h4" />
+    </svg>
   )
 }

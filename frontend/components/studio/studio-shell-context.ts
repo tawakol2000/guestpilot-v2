@@ -45,6 +45,16 @@ export interface StudioShellContextValue {
   setActiveRightTab: (t: RightPanelTab) => void
   rightCollapsed: boolean
   setRightCollapsed: (v: boolean) => void
+  /**
+   * Wide-mode toggle for the right panel. When true the panel claims
+   * ~50% of the available width — useful for the Suggestions tab whose
+   * diff/message panes get cramped in the default 340px rail. The flag
+   * is layout-level (not tab-scoped) so the operator can toggle it from
+   * any tab; the toggle UI itself is currently surfaced from the
+   * Suggestions header.
+   */
+  rightWide: boolean
+  setRightWide: (v: boolean) => void
   leftCollapsed: boolean
   setLeftCollapsed: (v: boolean) => void
 
@@ -79,6 +89,8 @@ const NO_OP_CONTEXT: StudioShellContextValue = {
   setActiveRightTab: () => {},
   rightCollapsed: false,
   setRightCollapsed: () => {},
+  rightWide: false,
+  setRightWide: () => {},
   leftCollapsed: false,
   setLeftCollapsed: () => {},
   previewInput: {

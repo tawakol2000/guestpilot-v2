@@ -82,6 +82,7 @@ export function StudioShell(props: StudioShellProps) {
   // toggles.
   const [activeRightTab, setActiveRightTabRaw] = useState<RightPanelTab>('plan')
   const [rightCollapsed, setRightCollapsed] = useState<boolean>(false)
+  const [rightWide, setRightWide] = useState<boolean>(false)
   const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false)
   const didInitCollapseRef = useRef(false)
   useEffect(() => {
@@ -213,6 +214,8 @@ export function StudioShell(props: StudioShellProps) {
       setActiveRightTab,
       rightCollapsed,
       setRightCollapsed,
+      rightWide,
+      setRightWide,
       leftCollapsed,
       setLeftCollapsed,
       previewInput,
@@ -228,6 +231,7 @@ export function StudioShell(props: StudioShellProps) {
       activeRightTab,
       setActiveRightTab,
       rightCollapsed,
+      rightWide,
       leftCollapsed,
       previewInput,
       setPreviewInputText,
@@ -247,7 +251,15 @@ export function StudioShell(props: StudioShellProps) {
     [onReferencePicked],
   )
 
-  const rightWidth = rightCollapsed ? 40 : 340
+  // Wide mode steals roughly half the centre pane while keeping a
+  // sensible chat-column floor. `min(720px, 46vw)` caps the panel so
+  // the chat isn't squeezed below ~520px on a 1280-wide laptop. Narrow
+  // viewports skip wide entirely — there isn't room for it.
+  const rightWidth: string | number = rightCollapsed
+    ? 40
+    : rightWide && !isNarrow
+      ? 'min(720px, 46vw)'
+      : 340
   const showLeftRail = !isNarrow || !leftCollapsed
 
   return (

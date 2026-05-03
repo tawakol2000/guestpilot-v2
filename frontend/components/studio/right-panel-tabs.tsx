@@ -167,14 +167,30 @@ export function RightPanelTabs({
                   color: active ? STUDIO_TOKENS_V2.ink : STUDIO_TOKENS_V2.muted,
                   background: active ? STUDIO_TOKENS_V2.surface2 : 'transparent',
                   border: 'none',
+                  // Without these, a label like "Suggestions" gets clipped
+                  // mid-character (visible as "Sugges...") when the strip
+                  // runs out of horizontal room. minWidth:0 unlocks the
+                  // shrink-then-ellipsize behavior; the inner span carries
+                  // the actual ellipsis so only the label collapses, not
+                  // the icon or badge.
+                  minWidth: 0,
                   borderRadius: STUDIO_TOKENS_V2.radiusSm,
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
                   {t.icon({ size: 13 })}
                 </span>
-                {t.label}
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                  }}
+                >
+                  {t.label}
+                </span>
                 {t.badge ? (
                   <span
                     aria-label={`${t.badge} pending`}
