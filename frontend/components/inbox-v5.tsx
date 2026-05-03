@@ -4374,6 +4374,48 @@ export default function InboxV5() {
                     )) return false
                     return true
                   })
+                  // Synthesise a "superseded ghost" message in front of any
+                  // AI message that was edited before send (originalAiText
+                  // diverges from the actual content). The ghost rides
+                  // through the SAME bubble render path as a real
+                  // PREVIEW_LOCKED message so its chrome (width, footer,
+                  // confidence pill, sop chips, channel logo) is byte-for-
+                  // byte identical to the locked-preview rows that come
+                  // out of Shadow Mode. Skipped when the message is
+                  // already a live preview (those have their own
+                  // SUPERSEDED bubbles upstream) and when no edit
+                  // happened.
+                  .flatMap(msg => {
+                    const isAi = msg.sender === 'ai'
+                    const isLivePreview =
+                      isAi &&
+                      (msg.previewState === 'PREVIEW_PENDING' ||
+                        msg.previewState === 'PREVIEW_LOCKED' ||
+                        msg.previewState === 'PREVIEW_SENDING')
+                    const hasEdit =
+                      isAi &&
+                      !isLivePreview &&
+                      typeof msg.originalAiText === 'string' &&
+                      msg.originalAiText.length > 0 &&
+                      msg.originalAiText !== msg.text
+                    if (!hasEdit) return [msg]
+                    const ghost = {
+                      ...msg,
+                      // Drive the locked-preview render path. Same id is
+                      // intentional — action handlers (discuss in tuning,
+                      // rate, thumbs-down, navigation arrows) target the
+                      // real Message row. React keys are kept distinct
+                      // via the row's `key={...#ghost}` rule.
+                      previewState: 'PREVIEW_LOCKED' as const,
+                      text: msg.originalAiText as string,
+                      // Strip originalAiText on the ghost itself so we
+                      // don't loop or accidentally render the SUPERSEDED
+                      // chrome twice on the same row.
+                      originalAiText: undefined,
+                      __isSupersededGhost: true,
+                    }
+                    return [ghost as typeof msg, msg]
+                  })
                   .map(msg => {
                     const isGuest = msg.sender === 'guest'
                     const isAI = msg.sender === 'ai'
@@ -4421,139 +4463,16 @@ export default function InboxV5() {
                         ? '/logos/whatsapp.png'
                         : null
 
-                    // Ghost row: when an AI message was edited before send,
-                    // surface the original AI suggestion above the actual
-                    // sent bubble so the operator can see *what changed*
-                    // without leaving the inbox. The Message row carries
-                    // both `originalAiText` (the AI's draft) and `content`
-                    // (what was sent); we only render the ghost when they
-                    // diverge AND this isn't a live shadow-mode preview
-                    // (those already have their own SUPERSEDED states).
-                    const showSupersededOriginal =
-                      isAI &&
-                      !isPreview &&
-                      typeof msg.originalAiText === 'string' &&
-                      msg.originalAiText.length > 0 &&
-                      msg.originalAiText !== msg.text
+                    // Ghost detection: a synthetic message we expanded
+                    // out of the original (see flatMap above). Used only
+                    // for React keying — every other render path treats
+                    // ghosts as locked-preview messages, which is exactly
+                    // the chrome we want.
+                    const isSupersededGhost = (msg as any).__isSupersededGhost === true
 
                     return (
-                      <React.Fragment key={msg.id}>
-                      {showSupersededOriginal && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'row-reverse',
-                            alignItems: 'flex-start',
-                            gap: 8,
-                            padding: '0 16px',
-                            opacity: 0.85,
-                          }}
-                        >
-                          <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                            <div
-                              data-superseded-ghost-for={msg.id}
-                              style={{
-                                padding: '10px 14px',
-                                borderRadius: '14px 14px 4px 14px',
-                                background: T.bg.tertiary,
-                                border: `1px solid ${T.border.default}`,
-                                fontSize: 13,
-                                lineHeight: 1.55,
-                                color: T.text.secondary,
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: 'inline-block',
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: 0.3,
-                                  color: T.status.amber,
-                                  background: T.status.amber + '1F',
-                                  border: `1px solid ${T.status.amber + '60'}`,
-                                  borderRadius: 4,
-                                  padding: '1px 6px',
-                                  marginBottom: 6,
-                                }}
-                              >
-                                Superseded — not sent
-                              </div>
-                              <div>{msg.originalAiText}</div>
-                            </div>
-                            <div
-                              style={{
-                                marginTop: 4,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                fontSize: 10,
-                                color: T.text.tertiary + 'AA',
-                                fontFamily: T.font.mono,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.08em',
-                              }}
-                            >
-                              <span>AI suggested</span>
-                              <span aria-hidden style={{ opacity: 0.6 }}>·</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleDiscussInTuning(msg.id, {
-                                    createTuningConversation: apiCreateTuningConversation,
-                                    onSuccess: (conversation) => {
-                                      updateStudioConversationId(conversation.id)
-                                      setNavTab('studio')
-                                    },
-                                    onError: (err) => {
-                                      const raw = err instanceof Error ? err.message : String(err)
-                                      const isAnchorMissing = /ANCHOR_MESSAGE_NOT_FOUND/i.test(raw)
-                                      toast.error(
-                                        isAnchorMissing
-                                          ? 'Message not saved yet'
-                                          : 'Could not open tuning discussion',
-                                        {
-                                          description: isAnchorMissing
-                                            ? 'This message is still streaming. Try again in a few seconds once it lands.'
-                                            : raw,
-                                        },
-                                      )
-                                    },
-                                    beginBusy: () => setDiscussingMsgId(msg.id),
-                                    endBusy: () => setDiscussingMsgId(null),
-                                    isBusy: () => discussingMsgId !== null,
-                                  })
-                                }}
-                                disabled={discussingMsgId === msg.id}
-                                title="Open a Studio chat anchored to this message"
-                                aria-label="Discuss this AI suggestion in Studio"
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  cursor: discussingMsgId === msg.id ? 'wait' : 'pointer',
-                                  padding: '2px 6px',
-                                  color: T.text.tertiary + 'AA',
-                                  fontSize: 10,
-                                  fontFamily: T.font.mono,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.08em',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                }}
-                              >
-                                {discussingMsgId === msg.id && (
-                                  <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} aria-hidden />
-                                )}
-                                <span>{discussingMsgId === msg.id ? 'opening…' : 'discuss in tuning'}</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                       <div
+                        key={isSupersededGhost ? `${msg.id}#ghost` : msg.id}
                         style={{
                           display: 'flex',
                           flexDirection: isLeft ? 'row' : 'row-reverse',
@@ -5279,7 +5198,6 @@ export default function InboxV5() {
                           )}
                         </div>
                       </div>
-                      </React.Fragment>
                     )
                   })
                   })()
