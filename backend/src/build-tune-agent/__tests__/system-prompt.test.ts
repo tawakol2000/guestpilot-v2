@@ -273,6 +273,108 @@ test('BUILD addendum carries interview posture + defaults-as-markers rule', () =
   );
 });
 
+test('BUILD addendum names the three failure modes up front (research-backed)', () => {
+  // 2026-05-04 research-backed refactor: failure-mode salience effect
+  // — naming the three modes early in the addendum primes the agent
+  // to suppress them. Sharma et al. 2023 (Anthropic) on schema-level
+  // sycophancy suppression beating instruction-only mitigation.
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('leading questions'), 'failure mode 1 named');
+  assert.ok(prompt.includes('premature drafting'), 'failure mode 2 named');
+  assert.ok(prompt.includes('silent defaulting'), 'failure mode 3 named');
+});
+
+test('BUILD addendum carries the slot-quorum precondition (5/6 confirmed)', () => {
+  // Plan-before-write encoded as a state-machine guard. Anthropic
+  // τ-bench result (+54% relative on planning); Yao et al. 2022 ReAct.
+  // The 5/6 quorum is the load-bearing slot discipline from the
+  // dialog-state-tracking literature (Rastogi et al. 2020 SGD;
+  // Heck et al. 2020 TripPy).
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('5 of the 6 load-bearing slots'), 'quorum text present');
+  assert.ok(
+    prompt.includes('hard error'),
+    'quorum violation must be framed as a hard error, not a soft preference',
+  );
+});
+
+test('BUILD addendum carries the read-back rule (teach-back fidelity check)', () => {
+  // Clark & Brennan 1991 grounding-in-communication; AAFP/PMC
+  // teach-back evidence. Cheap fidelity check before any write.
+  // (Substrings chosen to fit on single physical lines after the
+  // 70-char wrap; the assertions tolerate the wrapping inside the
+  // addendum.)
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('Read-back before write'), 'read-back rule heading');
+  assert.ok(
+    prompt.includes('answer correctly with'),
+    'specific read-back phrasing present',
+  );
+});
+
+test('BUILD addendum carries the contradiction-handling tactic ("and also")', () => {
+  // Miller & Rollnick 2013 motivational interviewing — "developing
+  // discrepancy" via labeling, not confrontation. Voss labeling
+  // tactic. The "and also" framing is non-confrontational and
+  // surfaces conflict in the operator's own words.
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('and also'), '"and also" tactic phrasing');
+  assert.ok(
+    prompt.includes('Never silently pick'),
+    'no-silent-pick rule present (counters RLHF reward-hack of dropping a branch)',
+  );
+});
+
+test('BUILD addendum carries effort-allocation guidance + bans "anything else?"', () => {
+  // Anthropic adaptive-thinking docs (Sonnet 4.6) + OpenAI reasoning
+  // guide. Interview turns default terse; reserve depth for synthesis.
+  // "anything else?" is empirically near-useless in qualitative
+  // interview practice (Fisher & Geiselman 1992).
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(prompt.includes('Effort allocation'), 'effort-allocation section');
+  assert.ok(prompt.includes('interview drag'), 'interview-drag named as failure mode');
+  assert.ok(
+    prompt.includes('anything else?'),
+    'addendum mentions the banned closing-turn phrase (it is named to ban it)',
+  );
+  assert.ok(
+    prompt.includes('guest situation') && prompt.includes('surprised you'),
+    'specific replacement probe present (substrings tolerate the line wrap)',
+  );
+});
+
+test('BUILD addendum carries the 4-incident hard cap + recognition ladder ≤3', () => {
+  // Guest, Namey & Chen 2020 base+run+threshold saturation rule.
+  // Cowan 2001 + Iyengar & Lepper 2000 on choice overload.
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  // Substrings split across the 70-char wrap; assert each half.
+  assert.ok(
+    prompt.includes('Hard cap at four') && prompt.includes('incidents per slot'),
+    'four-incident saturation cap present',
+  );
+  // "offer at\n  most 3 corpus-derived options" wraps; assert both sides.
+  assert.ok(
+    prompt.includes('3 corpus-derived options'),
+    'recognition ladder ≤3 present',
+  );
+});
+
+test('BUILD addendum yes/no question stem ban', () => {
+  // Loftus & Palmer 1974 + Fisher & Geiselman 1992 cognitive
+  // interview. open_question discipline forbids yes/no stems.
+  // The addendum enumerates the banned stems explicitly across two
+  // wrapped lines; assert each half so the test tolerates the wrap.
+  const prompt = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(
+    prompt.includes('Do you / Does the'),
+    'first banned stems enumerated',
+  );
+  assert.ok(
+    prompt.includes('Will you / Would you'),
+    'second banned stems enumerated',
+  );
+});
+
 test('terminal recap is mode-selected: TUNE rule 2 is NO_FIX, BUILD rule 2 is default-mark', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
   const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));

@@ -221,6 +221,42 @@ export interface InterviewProgressData {
     answer?: string;
     /** When true, the agent falls back to defaults if the slot is skipped. */
     loadBearing?: boolean;
+    // Build-agent refactor 2026-05-04 (research-backed):
+    // operator-visible "this slot was filled by a corpus default,
+    // not the operator's own words" flag. Maps to the
+    // GDPR/CPRA-style requirement that defaults be marked rather
+    // than silent (Tier 1 in the BUILD research synthesis §1, Q4).
+    /** True when this slot's answer is a corpus default, not operator-stated. */
+    isDefault?: boolean;
+    /**
+     * Where the default came from when isDefault=true (e.g.
+     * "canonical short-stay template", "previous-tenant pattern").
+     * Empty / undefined when the answer is operator-stated.
+     */
+    defaultProvenance?: string;
+  }>;
+  /**
+   * Build-agent refactor 2026-05-04 (research-backed): per-turn
+   * contradictions surface. Each entry pairs two operator quotes that
+   * conflict and proposes a non-confrontational reconciliation. The
+   * field is always present (empty array allowed); empty after a turn
+   * that contained a stated policy is a yellow-flag for the verifier.
+   * Maps to Sharma et al. 2023 (Anthropic) on schema-level sycophancy
+   * suppression and Miller & Rollnick 2013 "developing discrepancy"
+   * tactic. See <build_mode> in system-prompt.ts for the
+   * "It sounds like X, and also Y..." phrasing rule.
+   */
+  contradictions?: Array<{
+    /** First operator quote, verbatim. */
+    quoteA: string;
+    /** Second operator quote that conflicts with the first, verbatim. */
+    quoteB: string;
+    /**
+     * Non-confrontational reconciliation framed as a question, e.g.
+     * "It sounds like the rule is X, and also Y in the Tahoe property —
+     * is the rule property-specific, or did one of these change recently?"
+     */
+    proposedReconciliation: string;
   }>;
 }
 
