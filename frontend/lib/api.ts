@@ -1902,6 +1902,13 @@ export async function apiCreateTuningConversation(body: {
   triggerType?: TuningTriggerType
   initialMessage?: string
   title?: string
+  /**
+   * Force the new conversation's outer mode (BUILD or TUNE). When omitted
+   * the backend infers from triggerType — MANUAL → BUILD, every other
+   * trigger → TUNE. Pass 'TUNE' explicitly from "Discuss in tuning"
+   * affordances so the operator never lands in BUILD by mistake.
+   */
+  initialOuterMode?: 'BUILD' | 'TUNE'
 }): Promise<{ conversation: TuningConversationSummary }> {
   return apiFetch<{ conversation: TuningConversationSummary }>(`/api/tuning/conversations`, {
     method: 'POST',

@@ -171,6 +171,10 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
           triggerType: s.triggerType ?? 'MANUAL',
           initialMessage,
           title: `Discuss: ${cat.label}`,
+          // "Discuss in tuning" is unambiguous — always land in TUNE,
+          // never BUILD. Don't rely on triggerType inference (a MANUAL
+          // trigger on a tuning-suggestion would otherwise pick BUILD).
+          initialOuterMode: 'TUNE',
         })
         if (onDiscuss) {
           onDiscuss(res.conversation.id)

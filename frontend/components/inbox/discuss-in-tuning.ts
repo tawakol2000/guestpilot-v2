@@ -19,6 +19,7 @@ export interface DiscussInTuningDeps {
   createTuningConversation: (args: {
     anchorMessageId: string
     triggerType: 'MANUAL'
+    initialOuterMode?: 'BUILD' | 'TUNE'
   }) => Promise<{ conversation: TuningConversationShape }>
   onSuccess: (conversation: TuningConversationShape) => void
   onError: (err: unknown) => void
@@ -37,6 +38,10 @@ export async function handleDiscussInTuning(
     const { conversation } = await deps.createTuningConversation({
       anchorMessageId: messageId,
       triggerType: 'MANUAL',
+      // "Discuss in TUNING" is unambiguous — always land in TUNE.
+      // The button label tells the operator where they're going;
+      // BUILD is the wrong default for an inbox-anchored discussion.
+      initialOuterMode: 'TUNE',
     })
     deps.onSuccess(conversation)
   } catch (err) {

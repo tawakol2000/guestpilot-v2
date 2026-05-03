@@ -48,11 +48,26 @@ export function makeTuningConversationController(prisma: PrismaClient) {
           triggerType?: string;
           initialMessage?: string;
           title?: string;
+          initialOuterMode?: string;
         };
 
         const trig = body.triggerType && VALID_TRIGGERS.includes(body.triggerType as TuningConversationTriggerType)
           ? (body.triggerType as TuningConversationTriggerType)
           : 'MANUAL';
+
+        // Outer-mode resolution. Caller may pass `initialOuterMode`
+        // explicitly (e.g. inbox "discuss in tuning" buttons + studio
+        // Suggestions tab "Discuss" — these always want TUNE because
+        // the operator is reasoning about an existing
+        // edit/reject/complaint, not building anything new). Otherwise
+        // infer from triggerType: tuning-flavoured triggers default to
+        // TUNE, MANUAL stays BUILD (the default onboarding posture).
+        const explicitMode =
+          body.initialOuterMode === 'TUNE' || body.initialOuterMode === 'BUILD'
+            ? body.initialOuterMode
+            : null;
+        const inferredMode = trig === 'MANUAL' ? 'BUILD' : 'TUNE';
+        const initialOuterMode: 'BUILD' | 'TUNE' = explicitMode ?? inferredMode;
 
         // Validate anchor message belongs to tenant, if provided.
         let anchorMessageId: string | null = null;
@@ -70,6 +85,19 @@ export function makeTuningConversationController(prisma: PrismaClient) {
 
         const title = body.title ?? deriveTitleFromText(body.initialMessage) ?? null;
 
+        // Snapshot mirrors DEFAULT_SNAPSHOT shape but flips outer_mode
+        // when the caller asked for TUNE (or trigger inference said so).
+        // Keeping inner_state at 'scoping' matches the default — the
+        // agent decides whether to propose drafting on its first turn.
+        const initialSnapshot = {
+          outer_mode: initialOuterMode,
+          inner_state: 'scoping',
+          transition_ack_pending: false,
+          pending_transition: null,
+          last_transition_at: null,
+          last_transition_reason: null,
+        };
+
         // Bugfix (2026-04-23): was returning only 5 fields, but the
         // frontend's TuningConversationSummary type (used by the
         // Studio left-rail + startNew flow) also reads `status`,
@@ -84,6 +112,7 @@ export function makeTuningConversationController(prisma: PrismaClient) {
             anchorMessageId,
             title,
             status: 'OPEN',
+            stateMachineSnapshot: initialSnapshot as any,
           },
           select: {
             id: true,
