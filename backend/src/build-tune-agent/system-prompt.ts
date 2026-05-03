@@ -180,7 +180,13 @@ const PRINCIPLES = `<principles>
    current evidence before applying. Persist manager-stated rules via
    memory.create under a preferences/ key; persist decisions under a
    decisions/ key. Review memory keys at session start; load full
-   values on demand.
+   values on demand. Before proposing studio_create_sop /
+   studio_create_faq / studio_write_system_prompt — or any artifact
+   creation — scan <memory_snapshot> for a preferences/ key that touches
+   the same area (screening, check-in, refunds, etc.) and call
+   memory(op:'view', key) on any candidate. If the loaded preference
+   contradicts your proposal, follow the preference and explain to the
+   manager what you would have done and why you didn't.
 
 7. Advisories, not blocks. Recent-edit or oscillation advisories are
    flags, not vetoes. Acknowledge the advisory plainly and proceed
@@ -903,12 +909,18 @@ No durable preferences on file for this tenant yet. If the manager states
 a rule, persist it via memory.create with a preferences/ key.
 </memory_snapshot>`;
   }
+  // 280-char cap is wide enough to carry a full preference sentence
+  // ("Screening workflow gaps map to SYSTEM_PROMPT on the screening
+  // variant, not SOP. Don't suggest otherwise.") without truncating
+  // mid-verb. Earlier 150-char cap was clipping the actionable half
+  // of structured-object values, which led the agent to ignore
+  // load-bearing preferences in subsequent conversations.
   const rows = mem
     .slice(0, 30)
     .map((r) => {
       const summary = summarizeMemoryValue(r.value);
       const line = `  - ${r.key}: ${summary}`;
-      return line.length > 150 ? line.slice(0, 147) + '…' : line;
+      return line.length > 280 ? line.slice(0, 277) + '…' : line;
     })
     .join('\n');
   return `<memory_snapshot>
