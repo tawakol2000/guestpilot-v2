@@ -53,16 +53,30 @@ test('<verification_ritual> block is fully removed from BUILD addendum', () => {
   assert.equal(assembled.includes('</verification_ritual>'), false);
 });
 
-test('Region C renders <current_state> first', () => {
+test('Region C renders <memory_snapshot> first, <current_state> second', () => {
+  // 2026-05-04 (research-backed refactor): <memory_snapshot> moved
+  // to the head of Region C so the operator's saved preferences
+  // sit at the highest-attended dynamic position (Liu et al.,
+  // Lost-in-the-Middle, TACL 2024). <current_state> moves to
+  // second — still rendered every turn, just no longer first.
   const ctx = ctxFor({ stateMachineSnapshot: { ...DEFAULT_SNAPSHOT, inner_state: 'drafting' } });
   const dynamic = buildDynamicSuffix(ctx);
-  assert.match(dynamic, /^<current_state>drafting<\/current_state>/);
+  assert.match(dynamic, /^<memory_snapshot>/);
+  const memEnd = dynamic.indexOf('</memory_snapshot>');
+  assert.ok(memEnd > 0, 'memory_snapshot must close');
+  assert.match(
+    dynamic.slice(memEnd),
+    /<current_state>drafting<\/current_state>/,
+  );
 });
 
 test('Region C falls back to scoping when snapshot omitted (legacy callers)', () => {
+  // memory_snapshot still renders first; current_state defaults to
+  // scoping for legacy callers that don't supply a snapshot.
   const ctx = ctxFor({ stateMachineSnapshot: undefined });
   const dynamic = buildDynamicSuffix(ctx);
-  assert.match(dynamic, /^<current_state>scoping<\/current_state>/);
+  assert.match(dynamic, /^<memory_snapshot>/);
+  assert.match(dynamic, /<current_state>scoping<\/current_state>/);
 });
 
 test('<state_transition> renders only when transition_ack_pending=true', () => {
@@ -95,7 +109,10 @@ test('<current_state> reflects each of the three valid inner states', () => {
   }
 });
 
-test('Region C ordering: current_state → optional state_transition → tenant_state', () => {
+test('Region C ordering: memory_snapshot → current_state → optional state_transition → tenant_state', () => {
+  // 2026-05-04 (research-backed refactor): memory_snapshot leads
+  // Region C; current_state, optional state_transition, and
+  // tenant_state follow in that order.
   const ctx = ctxFor({
     stateMachineSnapshot: {
       ...DEFAULT_SNAPSHOT,
@@ -118,9 +135,11 @@ test('Region C ordering: current_state → optional state_transition → tenant_
     },
   });
   const dynamic = buildDynamicSuffix(ctx);
+  const mem = dynamic.indexOf('<memory_snapshot>');
   const cur = dynamic.indexOf('<current_state>');
   const trans = dynamic.indexOf('<state_transition>');
   const tenant = dynamic.indexOf('<tenant_state>');
-  assert.ok(cur === 0);
-  assert.ok(trans > cur && trans < tenant);
+  assert.ok(mem === 0, 'memory_snapshot must come first');
+  assert.ok(cur > mem, 'current_state must follow memory_snapshot');
+  assert.ok(trans > cur && trans < tenant, 'state_transition between current_state and tenant_state');
 });

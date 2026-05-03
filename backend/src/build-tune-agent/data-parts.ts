@@ -107,6 +107,45 @@ export interface SuggestedFixData {
     | 'NO_FIX';
   /** ISO timestamp — set by the emitter, never by the agent input. */
   createdAt: string;
+  // ─── Edit-triage reasoning surface (research-backed refactor 2026-05-04) ───
+  // Optional fields the TUNE agent populates so we can audit the triage
+  // work that produced the classification. Frontend renderer ignores
+  // unknown fields by default; these ride in the SSE payload for the
+  // eval pipeline and Network-panel inspection. See
+  // backend/src/build-tune-agent/system-prompt.ts <tune_mode_contract>.
+  /**
+   * IteraTeR-aligned edit type. STYLE_WORDING / FRAMING_TONE → NO_FIX
+   * by default; FACTUAL / BEHAVIORAL / OMISSION / REMOVAL warrant a
+   * non-NO_FIX classification only when a witnessQuote backs them.
+   */
+  editType?:
+    | 'STYLE_WORDING'
+    | 'FRAMING_TONE'
+    | 'FACTUAL'
+    | 'BEHAVIORAL'
+    | 'OMISSION'
+    | 'REMOVAL';
+  /**
+   * Verbatim span from the operator's edit that is present in the edit
+   * and absent (or contradicted) in the AI's draft AND that changes
+   * which facts, instructions, or actions the reply conveys. null when
+   * no such witness exists — in that case classification must be
+   * NO_FIX (research synthesis §2 worked example).
+   */
+  witnessQuote?: string | null;
+  /**
+   * At least two reasons this edit might be one-off operator preference
+   * rather than a durable gap. Required on any non-NO_FIX
+   * classification. Empty array is allowed only when category is
+   * NO_FIX (the implicit "many reasons not to act, none to act").
+   */
+  reasonsNotToAct?: string[];
+  /**
+   * Every preferences/* memory key the agent consulted while reaching
+   * this classification. Empty list is allowed and is preferred over
+   * fabricated keys.
+   */
+  consultedMemoryKeys?: string[];
 }
 
 export interface QuestionChoiceOption {

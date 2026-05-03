@@ -102,7 +102,7 @@ test('shared prefix ordering (sprint 060-A): principles → response_contract �
   assert.ok(idxCritical > idxNeverDo, 'critical_rules must come last in the shared prefix');
 });
 
-test('shared prefix carries the Response Contract (5 rules post-060-B) plus banned-pattern anchors in NEVER_DO', () => {
+test('shared prefix carries the Response Contract (5 rules post-060-B) and a compressed NEVER_DO', () => {
   const p = buildSharedPrefix();
   assert.ok(p.includes('<response_contract>'));
   assert.ok(p.includes('## Response contract'));
@@ -110,28 +110,104 @@ test('shared prefix carries the Response Contract (5 rules post-060-B) plus bann
   assert.ok(p.includes('Prose is optional and capped at 120 words'));
   // Sprint 060-B: rule 3 compressed to one sentence, rules 6 (emoji
   // pills) and 7 ("Recommended Next Steps" enumerations) deleted from
-  // RESPONSE_CONTRACT — both still anchored verbatim in NEVER_DO.
+  // RESPONSE_CONTRACT.
   assert.ok(p.includes('rank them and emit'));
   assert.ok(p.includes('question_choices'));
   assert.ok(p.includes('machine-readable target'));
-  // NEVER_DO carries the banned-pattern anchors (lowercase 'emoji'
-  // post-dedup; "Recommended Next Steps" with quotes preserved).
-  assert.ok(p.includes('emoji status pills'));
-  assert.ok(p.includes('"Recommended Next Steps"'));
+  // 2026-05-04 (research-backed refactor): NEVER_DO compressed
+  // from 18 items across 5 categories to 7 prioritised items
+  // expressed as "instead of X, do Y" pairs (negation-priming
+  // research, IFScale 2025). The "emoji status pills" / "Recommended
+  // Next Steps" anchors moved out of NEVER_DO since the response
+  // contract already enforces structured cards over free-form
+  // enumerations. The block-presence + count guard below is the
+  // load-bearing assertion now.
+  assert.ok(p.includes('<never_do>'));
+  assert.ok(p.includes('</never_do>'));
+});
+
+test('NEVER_DO contains at most 7 numbered items (research-backed compression)', () => {
+  // IFScale + ManyIFEval (2025): instruction compliance degrades
+  // monotonically with rule count. Cap at 7 prioritised items per
+  // block; longer-form rules live in their domain blocks
+  // (state_machine, build_mode, tool descriptions).
+  const p = buildSharedPrefix();
+  const start = p.indexOf('<never_do>');
+  const end = p.indexOf('</never_do>');
+  assert.ok(start >= 0 && end > start, 'never_do block must be present');
+  const body = p.slice(start, end);
+  const numberedItems = body.match(/^\d+\./gm) ?? [];
+  assert.ok(
+    numberedItems.length <= 7,
+    `NEVER_DO must carry ≤7 numbered items, found ${numberedItems.length}`,
+  );
 });
 
 test('TUNE addendum carries the audit Triage block', () => {
   const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
-  // 2026-05-03: original "## Triage" header was split into
-  // "## Step 1: Edit-type triage" (per-edit reasoning) and
-  // "## Audit triage" (the audit-style flow). Assert the audit
-  // header explicitly so it stays in sync.
+  // 2026-05-04 (research-backed refactor): TUNE addendum reorganised
+  // around an outcome contract (named sub-blocks) instead of
+  // numbered Step 1/2/3 sections. The audit-style flow keeps its
+  // "## Audit triage" header so the existing assertion still
+  // anchors.
   assert.ok(tune.includes('## Audit triage'));
   // Sprint 060-D: legacy get_current_state references replaced with the
   // index-then-fetch pair (studio_get_tenant_index → studio_get_artifact).
   assert.ok(tune.includes('studio_get_tenant_index'));
   assert.ok(tune.includes('impact × reversibility'));
   assert.ok(tune.includes('audit_report'));
+});
+
+test('TUNE addendum carries the outcome-contract sub-blocks', () => {
+  // 2026-05-04 research-backed refactor: replace numbered Steps
+  // with named sub-blocks (Anthropic Claude 4 Best Practices —
+  // outcome contract beats procedural scaffold on reasoning models).
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('<tune_mode_contract>'), '<tune_mode_contract> wrapper present');
+  assert.ok(tune.includes('<edit_triage>'), 'edit_triage sub-block present');
+  assert.ok(tune.includes('<reasons_not_to_act>'), 'reasons_not_to_act gate present');
+  assert.ok(tune.includes('<memory_use>'), 'memory_use sub-block present');
+  assert.ok(tune.includes('<output_contract>'), 'output_contract sub-block present');
+});
+
+test('TUNE addendum requires witness, reasons, and memory citation', () => {
+  // The contract gates: witnessQuote required for non-NO_FIX,
+  // ≥2 reasonsNotToAct entries, consultedMemoryKeys populated.
+  // Schema-level NO_FIX default per Cole et al. EMNLP 2023 +
+  // Sharma et al. Anthropic 2023 (sycophancy / abstention work).
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('witnessQuote'), 'witnessQuote field referenced');
+  assert.ok(tune.includes('reasonsNotToAct'), 'reasonsNotToAct field referenced');
+  assert.ok(tune.includes('consultedMemoryKeys'), 'consultedMemoryKeys field referenced');
+  assert.ok(tune.includes('NO_FIX is the default'), 'NO_FIX-as-default phrase preserved');
+});
+
+test('TUNE addendum carries the six IteraTeR-aligned edit_types', () => {
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  for (const editType of [
+    'STYLE_WORDING',
+    'FRAMING_TONE',
+    'FACTUAL',
+    'BEHAVIORAL',
+    'OMISSION',
+    'REMOVAL',
+  ]) {
+    assert.ok(tune.includes(editType), `edit_type ${editType} must be enumerated`);
+  }
+});
+
+test('SELF_REPORT structured into three named fields', () => {
+  // Free-form self-critique produces sycophantic rubberstamping
+  // (Sharma et al. 2023 Anthropic; Tan et al. 2025). Three named
+  // fields force specific failure modes.
+  const p = buildSharedPrefix();
+  assert.ok(p.includes('<self_report>'));
+  assert.ok(p.includes('weakest_inference'), 'weakest_inference field present');
+  assert.ok(p.includes('most_fragile_assumption'), 'most_fragile_assumption field present');
+  assert.ok(
+    p.includes('preferred_alternative_classification'),
+    'preferred_alternative_classification field present',
+  );
 });
 
 test('BUILD addendum carries both interview-style and audit-style Triage branches', () => {
