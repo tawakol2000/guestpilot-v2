@@ -4421,9 +4421,139 @@ export default function InboxV5() {
                         ? '/logos/whatsapp.png'
                         : null
 
+                    // Ghost row: when an AI message was edited before send,
+                    // surface the original AI suggestion above the actual
+                    // sent bubble so the operator can see *what changed*
+                    // without leaving the inbox. The Message row carries
+                    // both `originalAiText` (the AI's draft) and `content`
+                    // (what was sent); we only render the ghost when they
+                    // diverge AND this isn't a live shadow-mode preview
+                    // (those already have their own SUPERSEDED states).
+                    const showSupersededOriginal =
+                      isAI &&
+                      !isPreview &&
+                      typeof msg.originalAiText === 'string' &&
+                      msg.originalAiText.length > 0 &&
+                      msg.originalAiText !== msg.text
+
                     return (
+                      <React.Fragment key={msg.id}>
+                      {showSupersededOriginal && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'row-reverse',
+                            alignItems: 'flex-start',
+                            gap: 8,
+                            padding: '0 16px',
+                            opacity: 0.85,
+                          }}
+                        >
+                          <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <div
+                              data-superseded-ghost-for={msg.id}
+                              style={{
+                                padding: '10px 14px',
+                                borderRadius: '14px 14px 4px 14px',
+                                background: T.bg.tertiary,
+                                border: `1px solid ${T.border.default}`,
+                                fontSize: 13,
+                                lineHeight: 1.55,
+                                color: T.text.secondary,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'inline-block',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: 0.3,
+                                  color: T.status.amber,
+                                  background: T.status.amber + '1F',
+                                  border: `1px solid ${T.status.amber + '60'}`,
+                                  borderRadius: 4,
+                                  padding: '1px 6px',
+                                  marginBottom: 6,
+                                }}
+                              >
+                                Superseded — not sent
+                              </div>
+                              <div>{msg.originalAiText}</div>
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 4,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 10,
+                                color: T.text.tertiary + 'AA',
+                                fontFamily: T.font.mono,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                              }}
+                            >
+                              <span>AI suggested</span>
+                              <span aria-hidden style={{ opacity: 0.6 }}>·</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleDiscussInTuning(msg.id, {
+                                    createTuningConversation: apiCreateTuningConversation,
+                                    onSuccess: (conversation) => {
+                                      updateStudioConversationId(conversation.id)
+                                      setNavTab('studio')
+                                    },
+                                    onError: (err) => {
+                                      const raw = err instanceof Error ? err.message : String(err)
+                                      const isAnchorMissing = /ANCHOR_MESSAGE_NOT_FOUND/i.test(raw)
+                                      toast.error(
+                                        isAnchorMissing
+                                          ? 'Message not saved yet'
+                                          : 'Could not open tuning discussion',
+                                        {
+                                          description: isAnchorMissing
+                                            ? 'This message is still streaming. Try again in a few seconds once it lands.'
+                                            : raw,
+                                        },
+                                      )
+                                    },
+                                    beginBusy: () => setDiscussingMsgId(msg.id),
+                                    endBusy: () => setDiscussingMsgId(null),
+                                    isBusy: () => discussingMsgId !== null,
+                                  })
+                                }}
+                                disabled={discussingMsgId === msg.id}
+                                title="Open a Studio chat anchored to this message"
+                                aria-label="Discuss this AI suggestion in Studio"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: discussingMsgId === msg.id ? 'wait' : 'pointer',
+                                  padding: '2px 6px',
+                                  color: T.text.tertiary + 'AA',
+                                  fontSize: 10,
+                                  fontFamily: T.font.mono,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.08em',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                {discussingMsgId === msg.id && (
+                                  <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} aria-hidden />
+                                )}
+                                <span>{discussingMsgId === msg.id ? 'opening…' : 'discuss in tuning'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div
-                        key={msg.id}
                         style={{
                           display: 'flex',
                           flexDirection: isLeft ? 'row' : 'row-reverse',
@@ -5149,6 +5279,7 @@ export default function InboxV5() {
                           )}
                         </div>
                       </div>
+                      </React.Fragment>
                     )
                   })
                   })()
