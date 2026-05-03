@@ -54,6 +54,35 @@ export interface SuggestedFixCardProps {
   onAccept?: (id: string) => void | Promise<void>
   onReject?: (id: string) => void | Promise<void>
   onOpenInEditor?: (target: SuggestedFixTarget) => void
+  // 2026-05-04 (research-backed refactor): triage-reasoning surface
+  // emitted by the TUNE agent. All optional — older rows from before
+  // the TUNE addendum refactor (commit 5f826d4) won't carry them.
+  /** IteraTeR-aligned edit type the agent classified the operator's edit as. */
+  editType?:
+    | 'STYLE_WORDING'
+    | 'FRAMING_TONE'
+    | 'FACTUAL'
+    | 'BEHAVIORAL'
+    | 'OMISSION'
+    | 'REMOVAL'
+  /**
+   * Verbatim span from the operator's edit that drove the classification.
+   * null means "no witness — wording-only edit, NO_FIX." Surfaces below
+   * the rationale as a quoted span when present.
+   */
+  witnessQuote?: string | null
+  /**
+   * ≥2 reasons this edit might be a one-off operator preference rather
+   * than a durable gap. Required on non-NO_FIX classifications. Rendered
+   * collapsed by default so the card stays compact; expanded on click.
+   */
+  reasonsNotToAct?: string[]
+  /**
+   * Every preferences/* memory key the agent consulted while reaching
+   * this classification. Rendered as small pill chips so the operator
+   * can see which preferences influenced the call.
+   */
+  consultedMemoryKeys?: string[]
 }
 
 const TARGET_LABEL: Record<NonNullable<SuggestedFixTarget['artifact']>, string> = {
@@ -144,6 +173,25 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
             {categoryStyle.label}
           </span>
         )}
+        {props.editType && (
+          <span
+            title="IteraTeR-aligned edit type the agent classified the operator's edit as"
+            style={{
+              display: 'inline-block',
+              padding: '2px 8px',
+              background: STUDIO_COLORS.surfaceSunken,
+              color: STUDIO_COLORS.inkMuted,
+              fontSize: 10.5,
+              fontWeight: 600,
+              borderRadius: 4,
+              letterSpacing: 0.4,
+              textTransform: 'uppercase',
+              border: `1px solid ${STUDIO_COLORS.hairline}`,
+            }}
+          >
+            {props.editType.replace('_', ' ')}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => props.onOpenInEditor?.(props.target)}
@@ -165,6 +213,56 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
         >
           {renderTargetChip(props.target)}
         </button>
+        {props.consultedMemoryKeys && props.consultedMemoryKeys.length > 0 && (
+          <span
+            title="preferences/* memory keys the agent consulted while reaching this classification"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                textTransform: 'uppercase',
+                color: STUDIO_COLORS.inkSubtle,
+              }}
+            >
+              consulted
+            </span>
+            {props.consultedMemoryKeys.slice(0, 4).map((key) => (
+              <span
+                key={key}
+                style={{
+                  fontSize: 10.5,
+                  padding: '1px 6px',
+                  background: STUDIO_COLORS.attributionQuoteBg,
+                  color: STUDIO_COLORS.inkMuted,
+                  border: `1px solid ${STUDIO_COLORS.hairlineSoft}`,
+                  borderRadius: 999,
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                }}
+              >
+                {key}
+              </span>
+            ))}
+            {props.consultedMemoryKeys.length > 4 && (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: STUDIO_COLORS.inkSubtle,
+                }}
+              >
+                +{props.consultedMemoryKeys.length - 4}
+              </span>
+            )}
+          </span>
+        )}
       </header>
 
       <DiffBlock
@@ -183,6 +281,45 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
       >
         {props.rationale}
       </p>
+
+      {/* Witness quote: verbatim span from the edit that drove the
+          classification. Only renders when the agent populated it
+          (non-NO_FIX classifications); null/empty means "wording-only
+          edit, no witness". Distinct visual style — left-rule + tinted
+          surface + monospace — so the operator can spot it as cited
+          evidence rather than agent prose. */}
+      {props.witnessQuote && (
+        <blockquote
+          style={{
+            margin: '8px 0 0',
+            padding: '6px 10px',
+            background: STUDIO_COLORS.attributionQuoteBg,
+            borderLeft: `2px solid ${STUDIO_COLORS.attributionQuoteRule}`,
+            color: STUDIO_COLORS.ink,
+            fontSize: 12,
+            lineHeight: 1.55,
+            fontStyle: 'italic',
+            borderRadius: '0 4px 4px 0',
+          }}
+        >
+          <span
+            style={{
+              display: 'block',
+              fontSize: 9.5,
+              fontWeight: 600,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+              color: STUDIO_COLORS.inkSubtle,
+              marginBottom: 2,
+              fontStyle: 'normal',
+            }}
+          >
+            Witness from the edit
+          </span>
+          {props.witnessQuote}
+        </blockquote>
+      )}
+
       {props.impact && (
         <p
           style={{
@@ -190,10 +327,19 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
             ...attributedStyle('ai'),
             fontSize: 12,
             lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
           }}
         >
           {props.impact}
         </p>
+      )}
+
+      {/* Reasons-not-to-act: the ≥2 reasons the agent enumerated
+          before promoting from NO_FIX. Collapsed by default to keep
+          the card compact; expandable for operators who want to
+          audit the triage. */}
+      {props.reasonsNotToAct && props.reasonsNotToAct.length > 0 && (
+        <ReasonsNotToActDetails reasons={props.reasonsNotToAct} />
       )}
 
       <footer
@@ -332,5 +478,54 @@ function DiffBlock({
         {after}
       </pre>
     </div>
+  )
+}
+
+// ─── Reasons-not-to-act expander ────────────────────────────────────────
+//
+// Collapsed by default. <details>/<summary> gives free keyboard
+// support, screen-reader announcement, and operator click-to-expand
+// without a controlled-state dance. The tone (caption-grey, italic)
+// matches the rest of the card's reasoning surface so it doesn't
+// fight the primary actions.
+function ReasonsNotToActDetails({ reasons }: { reasons: string[] }) {
+  return (
+    <details
+      style={{
+        marginTop: 8,
+      }}
+    >
+      <summary
+        style={{
+          cursor: 'pointer',
+          fontSize: 11,
+          fontWeight: 500,
+          color: STUDIO_COLORS.inkSubtle,
+          letterSpacing: 0.2,
+          listStyle: 'none',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          userSelect: 'none',
+        }}
+      >
+        Why not just leave it? — {reasons.length} reason{reasons.length === 1 ? '' : 's'} considered
+      </summary>
+      <ul
+        style={{
+          margin: '6px 0 0 16px',
+          padding: 0,
+          fontSize: 11.5,
+          lineHeight: 1.5,
+          color: STUDIO_COLORS.inkMuted,
+        }}
+      >
+        {reasons.map((r, i) => (
+          <li key={i} style={{ marginBottom: 2 }}>
+            {r}
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

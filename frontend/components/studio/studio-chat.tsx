@@ -1621,6 +1621,49 @@ function StandalonePart({
         impact={typeof data.impact === 'string' ? data.impact : undefined}
         category={typeof data.category === 'string' ? data.category : undefined}
         createdAt={typeof data.createdAt === 'string' ? data.createdAt : undefined}
+        // 2026-05-04 (research-backed refactor): forward the
+        // triage-reasoning fields the TUNE agent now emits. Optional
+        // and defensively unwrapped so older payloads from before the
+        // backend refactor (commit 5f826d4) still render fine.
+        editType={
+          typeof data.editType === 'string' &&
+          [
+            'STYLE_WORDING',
+            'FRAMING_TONE',
+            'FACTUAL',
+            'BEHAVIORAL',
+            'OMISSION',
+            'REMOVAL',
+          ].includes(data.editType)
+            ? (data.editType as
+                | 'STYLE_WORDING'
+                | 'FRAMING_TONE'
+                | 'FACTUAL'
+                | 'BEHAVIORAL'
+                | 'OMISSION'
+                | 'REMOVAL')
+            : undefined
+        }
+        witnessQuote={
+          data.witnessQuote === null ||
+          typeof data.witnessQuote === 'string'
+            ? (data.witnessQuote as string | null)
+            : undefined
+        }
+        reasonsNotToAct={
+          Array.isArray(data.reasonsNotToAct)
+            ? data.reasonsNotToAct.filter(
+                (r: unknown): r is string => typeof r === 'string',
+              )
+            : undefined
+        }
+        consultedMemoryKeys={
+          Array.isArray(data.consultedMemoryKeys)
+            ? data.consultedMemoryKeys.filter(
+                (k: unknown): k is string => typeof k === 'string',
+              )
+            : undefined
+        }
         onAccept={async (id) => {
           const target = (data.target as SuggestedFixTarget | undefined) ?? {}
           // Sprint 050 A3 — emit the session-artifact record before the
@@ -1769,6 +1812,9 @@ function StandalonePart({
     // Sprint 046 — mid-interview slot-fill progress card. Agent emits
     // this during greenfield onboarding / deep audits to show the
     // operator how many load-bearing questions remain.
+    // 2026-05-04 (research-backed refactor): now also forwards
+    // isDefault + defaultProvenance per slot, plus a top-level
+    // contradictions array for cross-statement conflicts.
     const data = (part.data ?? {}) as Record<string, unknown>
     const rawSlots = Array.isArray(data.slots) ? (data.slots as Array<Record<string, unknown>>) : []
     const slots = rawSlots.map((s) => ({
@@ -1777,11 +1823,33 @@ function StandalonePart({
       status: normaliseInterviewSlotStatus(s.status),
       answer: typeof s.answer === 'string' ? s.answer : undefined,
       loadBearing: Boolean(s.loadBearing),
+      isDefault: typeof s.isDefault === 'boolean' ? s.isDefault : undefined,
+      defaultProvenance:
+        typeof s.defaultProvenance === 'string' ? s.defaultProvenance : undefined,
     }))
+    const rawContradictions = Array.isArray(data.contradictions)
+      ? (data.contradictions as Array<Record<string, unknown>>)
+      : []
+    const contradictions = rawContradictions
+      .map((c) => ({
+        quoteA: typeof c.quoteA === 'string' ? c.quoteA : '',
+        quoteB: typeof c.quoteB === 'string' ? c.quoteB : '',
+        proposedReconciliation:
+          typeof c.proposedReconciliation === 'string'
+            ? c.proposedReconciliation
+            : '',
+      }))
+      // Drop empty rows so a malformed payload doesn't render a
+      // half-blank conflict section. Both quotes plus the
+      // reconciliation must be present for the row to be useful.
+      .filter(
+        (c) => c.quoteA.length > 0 && c.quoteB.length > 0 && c.proposedReconciliation.length > 0,
+      )
     return (
       <InterviewProgressCard
         title={String(data.title ?? 'Interview')}
         slots={slots}
+        contradictions={contradictions.length > 0 ? contradictions : undefined}
       />
     )
   }

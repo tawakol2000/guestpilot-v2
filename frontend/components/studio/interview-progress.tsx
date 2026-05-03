@@ -29,6 +29,29 @@ export interface InterviewSlot {
   answer?: string
   /** Load-bearing = agent will fall back to defaults if skipped. */
   loadBearing?: boolean
+  // 2026-05-04 (research-backed refactor): default-marking surface
+  // emitted by the BUILD agent. Maps to the GDPR/CPRA-style "marked
+  // default beats silent default" pattern (research synthesis §1, Q4).
+  /** True when this slot's answer is a corpus default, not operator-stated. */
+  isDefault?: boolean
+  /**
+   * Where the default came from when isDefault=true (e.g. "canonical
+   * short-stay template"). Surfaced in the slot row's hover title.
+   */
+  defaultProvenance?: string
+}
+
+export interface InterviewContradiction {
+  /** First operator quote, verbatim. */
+  quoteA: string
+  /** Second operator quote that conflicts with the first, verbatim. */
+  quoteB: string
+  /**
+   * Non-confrontational reconciliation framed as a question, e.g.
+   * "It sounds like the rule is X, and also Y in the Tahoe property —
+   * is the rule property-specific, or did one of these change recently?"
+   */
+  proposedReconciliation: string
 }
 
 export interface InterviewProgressCardProps {
@@ -37,12 +60,20 @@ export interface InterviewProgressCardProps {
   slots: InterviewSlot[]
   /** Called when the operator clicks a pending slot to jump the agent there. */
   onSlotClick?: (slotId: string) => void
+  /**
+   * 2026-05-04 (research-backed refactor): cross-statement
+   * contradictions the BUILD agent surfaced this turn. Rendered above
+   * the slot list as warning-style rows. Empty / undefined skips the
+   * section entirely.
+   */
+  contradictions?: InterviewContradiction[]
 }
 
 export function InterviewProgressCard({
   title,
   slots,
   onSlotClick,
+  contradictions,
 }: InterviewProgressCardProps) {
   const total = slots.length
   const filled = slots.filter((s) => s.status === 'filled').length
@@ -134,6 +165,10 @@ export function InterviewProgressCard({
         </div>
       </header>
 
+      {contradictions && contradictions.length > 0 ? (
+        <ContradictionsSection contradictions={contradictions} />
+      ) : null}
+
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {slots.map((slot, idx) => (
           <li
@@ -147,6 +182,106 @@ export function InterviewProgressCard({
         ))}
       </ul>
     </article>
+  )
+}
+
+// ─── Contradictions section ────────────────────────────────────────────
+//
+// Renders the cross-statement conflicts the BUILD agent surfaced this
+// turn, framed as the labeling-tactic question pattern from Miller &
+// Rollnick 2013 (motivational interviewing / "developing discrepancy").
+// Each row stacks the two operator quotes verbatim above the agent's
+// proposed reconciliation. The colour palette borrows from warnBg/amber
+// to signal "operator action needed" without screaming danger — the
+// goal is "help me reconcile this," not "you contradicted yourself."
+function ContradictionsSection({
+  contradictions,
+}: {
+  contradictions: InterviewContradiction[]
+}) {
+  return (
+    <section
+      aria-label="Cross-statement conflicts the agent noticed"
+      style={{
+        borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
+        background: STUDIO_TOKENS_V2.warnBg,
+        padding: '10px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: STUDIO_TOKENS_V2.amber,
+        }}
+      >
+        Conflicts to reconcile · {contradictions.length}
+      </span>
+      {contradictions.map((c, i) => (
+        <div
+          key={i}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            padding: '8px 10px',
+            background: STUDIO_TOKENS_V2.bg,
+            border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+          }}
+        >
+          <blockquote
+            style={{
+              margin: 0,
+              padding: 0,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: STUDIO_TOKENS_V2.ink2,
+              fontStyle: 'italic',
+            }}
+          >
+            “{c.quoteA}”
+          </blockquote>
+          <span
+            style={{
+              fontSize: 10,
+              color: STUDIO_TOKENS_V2.muted2,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+            }}
+          >
+            and also
+          </span>
+          <blockquote
+            style={{
+              margin: 0,
+              padding: 0,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: STUDIO_TOKENS_V2.ink2,
+              fontStyle: 'italic',
+            }}
+          >
+            “{c.quoteB}”
+          </blockquote>
+          <p
+            style={{
+              margin: '4px 0 0',
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: STUDIO_TOKENS_V2.ink,
+            }}
+          >
+            {c.proposedReconciliation}
+          </p>
+        </div>
+      ))}
+    </section>
   )
 }
 
@@ -214,6 +349,37 @@ function SlotRow({
           }}
         >
           Load-bearing
+        </span>
+      ) : null}
+      {/* 2026-05-04 (research-backed refactor): default-marker pill.
+          Maps the GDPR/CPRA "marked default beats silent default"
+          pattern into operator-visible UI. Hover surfaces provenance
+          when the agent populated it ("canonical short-stay template",
+          etc.). Stays subdued (muted-grey on surface-sunken) — the
+          purpose is to make the default visible without pulling
+          attention from the operator's own answers. */}
+      {slot.isDefault ? (
+        <span
+          aria-label="Filled with a corpus default"
+          title={
+            slot.defaultProvenance
+              ? `Default — please review (${slot.defaultProvenance})`
+              : 'Default — please review'
+          }
+          style={{
+            flexShrink: 0,
+            padding: '1px 7px',
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: STUDIO_TOKENS_V2.muted,
+            background: STUDIO_TOKENS_V2.surface2,
+            border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+            borderRadius: 99,
+          }}
+        >
+          Default
         </span>
       ) : null}
     </div>
