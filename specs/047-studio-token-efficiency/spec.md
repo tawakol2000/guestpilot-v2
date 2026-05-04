@@ -5,6 +5,16 @@
 **Status**: Draft
 **Input**: User description: "Cut Studio token consumption 30-50% via tool-return verbosity, section drilldown, read-budget rules, and per-round Langfuse measurement"
 
+## Clarifications
+
+### Session 2026-05-04
+
+- Q: Read-budget enforcement (prompt-only vs runtime hook, blocking vs warning)? → A: Prompt rule + PreToolUse hook that warns (logs span tag, increments observability counter) when read count exceeds budget, but does not block the call.
+- Q: SOP section extraction heuristic for `mode:'index'` when SOPs lack formal structure? → A: Markdown headings (`##`/`###`) primary; when none found, return a single-section list with the SOP title as the section name. The agent must rely on the catalog (`studio_get_tenant_index`) title + description as the first filter before drilling into any SOP body — section extraction only matters AFTER the catalog has narrowed the candidate set.
+- Q: Disabled SOPs visibility to the Studio agent? → A: Keep showing disabled SOPs in the catalog with the existing `disabled` status tag (preserves the "we deliberately opted out of this topic" signal that's useful during triage). Add a prompt rule in TUNE's `<edit_triage>` block: "Disabled SOPs are informational only. Do not call `studio_get_artifact` on a disabled SOP, do not propose edits to one, and do not propose re-enabling unless the operator explicitly asks."
+- Q: Per-round Langfuse generation emit cadence (live vs batched)? → A: Live — each round's generation is emitted to Langfuse the moment that round's SDK assistant message arrives with usage, inside the `for await` loop. Each generation carries its own start/end timestamp matching the actual round window. Mid-turn process crashes preserve the partial trace. The Langfuse SDK's internal batching keeps network cost flat; we don't add a final summary generation (audit scripts sum across rounds).
+- Q: How do the four decision-quality eval cases get verified per PR? → A: Codified as automated `node:test` integration tests at `backend/src/build-tune-agent/__tests__/decision-quality.test.ts`. Each test stubs the LLM call with a recorded canonical response and asserts on the agent's output structure (e.g. `category === 'NO_FIX'`, `consultedMemoryKeys` contains a specific preferences/* key, `witness_quote` is a non-empty string). Run in CI on every PR; hard-required to pass before merge. No live LLM calls in CI — tests run in <2s and cost $0. Real-model regressions are caught by post-deploy operator usage, not by these tests.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Per-round measurement so we can see the truth (Priority: P1)
@@ -49,12 +59,14 @@ When the agent decides a system-prompt edit is warranted (e.g., the screening re
 
 **Independent Test**: A TUNE turn that drills `studio_get_tenant_index → studio_get_artifact(mode:'index') → studio_get_artifact(section:'rejection_rules')` returns ≤2K tokens of tool output total for a system prompt the catalog says is 25K tokens.
 
+**Hierarchy (clarified 2026-05-04)**: The catalog (`studio_get_tenant_index`) already carries each SOP/FAQ/system-prompt's **title + description** as metadata; that is the FIRST filter the agent uses to pick relevant artifacts. Section drill-down (`mode:'index'` / `section:'<name>'`) only applies once the agent has selected a specific artifact from the catalog. For SOPs without formal markdown structure, `mode:'index'` falls back to a single-section list with the SOP title (i.e., the agent re-uses the catalog metadata as the section name).
+
 **Acceptance Scenarios**:
 
 1. **Given** a system-prompt variant with 12 named sections, **When** the agent calls `studio_get_artifact(pointer, mode:'index')`, **Then** the return is ≤1500 tokens and lists each section's name, first-line summary, and token count.
 2. **Given** the agent has already received the section list above, **When** it calls `studio_get_artifact(pointer, section:'rejection_rules')`, **Then** the return contains only that one section's body and the names of its previous and next neighbors.
 3. **Given** the agent passes `section:'<unknown_name>'`, **When** the handler validates against the indexed section list, **Then** the return is an error naming the valid section names.
-4. **Given** an SOP with no formal section structure, **When** the agent calls `mode:'index'`, **Then** the return falls back to a single-section list with the SOP's title as the section name.
+4. **Given** an SOP with no formal section structure (no `##`/`###` markdown headings), **When** the agent calls `studio_get_artifact(pointer, mode:'index')`, **Then** the return is a single-section list `[{name: <SOP title from catalog>, summary: <first 80 chars of body>, tokens, hashId}]` — no synthetic section invention. The agent should fall back to `verbosity:'concise'` for SOPs without structure, since drilling into a single fake section provides no additional precision.
 
 ---
 
@@ -71,7 +83,7 @@ The agent currently fires 5-8 internal rounds per turn, often with 4-6 read-tool
 1. **Given** a TUNE turn opens with a clearly wording-only edit (`<workflow>` rewording, no behavior change), **When** the agent triages, **Then** zero artifact bodies are fetched and the response is NO_FIX with witness_quote and reasonsNotToAct populated.
 2. **Given** a BUILD turn in scoping state, **When** the agent has called 4 read tools, **Then** the next agent action is either a response to the operator or a `studio_propose_transition` call — not another read.
 3. **Given** a turn in drafting state, **When** the agent has called 2 read tools, **Then** the next action is a write tool or a transition proposal.
-4. **Given** the agent ignores the budget (model deviation), **When** the response lands, **Then** there is no runtime error — the rule is prompt-level only, not enforced by hook.
+4. **Given** the agent ignores the budget (model deviation), **When** the next read tool fires after the cap is exhausted, **Then** a PreToolUse warning hook logs a Langfuse span tag (`read_budget_exceeded: true`) and increments an observability counter — but the call is NOT blocked and the agent receives the normal tool response.
 
 ---
 
@@ -128,9 +140,11 @@ The agent currently calls `studio_get_context` on most turns to retrieve anchor 
 
 - **What happens when `verbosity:'concise'` truncates mid-section?** The truncation marker explicitly tells the agent to call again with `verbosity:'detailed'`. No ambiguity.
 - **What happens when an SOP has no formal section structure and the agent calls `mode:'index'`?** Fallback returns a single-section list with the SOP title as the section name.
-- **What happens when the read budget is exceeded?** Soft cap — the prompt rule is advisory. No runtime error. If the agent ignores it, we observe the deviation in the audit script and decide whether to harden later.
+- **What happens when the agent calls `studio_get_artifact` on a disabled SOP despite the `<disabled_artifacts>` rule?** The handler still returns the SOP body (no runtime block — same soft-cap pattern as the read budget). The PreToolUse warning hook attaches a `disabled_artifact_fetched: true` Langfuse span tag so the deviation is observable. If post-deploy data shows the rule is routinely ignored, we revisit hardening in a follow-up feature.
+- **What happens when the read budget is exceeded?** Soft cap — the prompt rule is advisory. The PreToolUse warning hook logs a Langfuse span tag (`read_budget_exceeded: true`) and increments an observability counter so we can see the deviation in the audit script, but the call still completes normally. No runtime error to the agent. If post-deploy data shows the rule is routinely ignored, we revisit hardening the hook to a hard block in a future feature.
 - **What happens during a state transition mid-turn under the new allow-list?** State transitions are agent-proposed and host-confirmed across a turn boundary, so the next turn after a transition picks up the new allow-list. No mid-turn reshuffling.
 - **What happens when an existing trace from before the deploy is re-queried?** Old traces show old shape (single rolled-up generation). New traces show per-round breakdown. No retroactive backfill.
+- **What happens when the agent's process crashes mid-turn (after round 3 of 5)?** Rounds 1-3 are already in Langfuse via live emit. Rounds 4-5 never fire. The trace shows three child generations; the parent `tuning-agent.query` span ends with whatever close-mechanism the crash path provides. Audit scripts treat any trace with fewer rounds than the operator's `messages.create` count as evidence of a partial run.
 - **What happens when the SDK and direct-transport paths report different round counts for the same logical turn?** Both should produce the same per-round breakdown by design. Discrepancy means a bug in one bridge — caught by the integration test that exercises both transports against the same fixture.
 - **What happens when a deferred lever (compress old tool returns via PreCompact hook) breaks the agent's reasoning?** Won't ship in this feature; tracked as future work pending an SDK-hook spike.
 
@@ -138,16 +152,17 @@ The agent currently calls `studio_get_context` on most turns to retrieve anchor 
 
 ### Functional Requirements
 
-- **FR-001**: System MUST capture and report per-round token usage to Langfuse for every Studio agent turn, including `roundIndex`, fresh input tokens, output tokens, cache_read tokens, and cache_creation tokens.
+- **FR-001**: System MUST capture and report per-round token usage to Langfuse for every Studio agent turn, including `roundIndex`, fresh input tokens, output tokens, cache_read tokens, and cache_creation tokens. Each round's generation MUST be emitted live — at the moment that round's SDK assistant message arrives with usage, inside the `for await` loop — not batched at end-of-query. Each generation carries its own start/end timestamps matching the actual round window. No top-level rolled-up summary generation is emitted; audit scripts sum across per-round generations.
 - **FR-002**: System MUST honor the `verbosity` parameter in `studio_get_artifact` such that `'concise'` (default) returns a head excerpt + section list and `'detailed'` returns the full body.
 - **FR-003**: System MUST accept a `mode:'index'` parameter in `studio_get_artifact` that returns the artifact's section structure (names, summaries, token counts) without body text.
 - **FR-004**: System MUST accept a `section:'<name>'` parameter in `studio_get_artifact` that returns only the named section's body, validating the name against the artifact's known sections and rejecting unknown names.
-- **FR-005**: System MUST include a `<read_budget>` block in the cached system prompt naming the per-state read caps (scoping=4, drafting=2, verifying=1).
+- **FR-005**: System MUST include a `<read_budget>` block in the cached system prompt naming the per-state read caps (scoping=4, drafting=2, verifying=1) AND MUST register a PreToolUse warning hook that, when a read tool fires after the per-state cap is exhausted, attaches a `read_budget_exceeded: true` tag to the active Langfuse span and increments an observability counter without blocking the call. The hook is observation-only — it never returns an error to the agent.
 - **FR-006**: System MUST include a `<no_speculative_reads>` rule in TUNE mode's edit-triage block forbidding artifact body fetches before triage has produced a target.
+- **FR-006a**: System MUST include a `<disabled_artifacts>` rule in TUNE mode's edit-triage block stating: "Disabled SOPs (catalog `status: 'disabled'`) are informational only. Do not fetch their bodies via `studio_get_artifact`, do not propose edits to them, and do not propose re-enabling them unless the operator explicitly asks." `studio_get_tenant_index` continues to surface disabled SOPs with their existing tag — they remain visible for triage context.
 - **FR-007**: System MUST honor `verbosity` in `studio_get_context` such that the default returns ≤2000 tokens and `'detailed'` preserves the current 7.8K-token shape.
 - **FR-008**: System MUST register only the tools allowed in the current state + outer mode at agent query time, while preserving the PreToolUse hook as a runtime backstop.
 - **FR-009** (stretch): System MUST render anchor message text and last-edit summary as a `<conversation_anchor>` block in Region C when the conversation has an anchor message id.
-- **FR-010**: System MUST not regress on four named decision-quality eval cases: gender→family/friends NO_FIX classification, screening preferences memory recall, witness_quote presence on non-NO_FIX, three-field self_report on critique requests.
+- **FR-010**: System MUST not regress on four named decision-quality eval cases, codified as automated `node:test` integration tests at `backend/src/build-tune-agent/__tests__/decision-quality.test.ts`. The four cases are: (1) gender→family/friends edit → asserts `category === 'NO_FIX'` and `editType === 'FRAMING_TONE'`, (2) screening preferences memory recall → asserts `consultedMemoryKeys` contains the relevant `preferences/no-sop-for-screening` key when present in the memory snapshot, (3) witness_quote presence → asserts `witness_quote` is a non-empty string for every non-NO_FIX category, (4) three-field self_report → asserts the response on a critique-request message contains `weakest_inference`, `most_fragile_assumption`, and `preferred_alternative_classification` named fields. Each test stubs the LLM call with a recorded canonical response. CI runs them on every PR and they are hard-required to pass before merge. No live LLM calls in CI; tests run in <2s and cost $0.
 - **FR-011**: System MUST degrade gracefully when Langfuse is disabled — observability code is no-op and agent runs unaffected.
 - **FR-012**: System MUST emit per-round generations on both the SDK transport (default) and the direct transport (`BUILD_AGENT_DIRECT_TRANSPORT=true`) with byte-equivalent shape.
 
@@ -169,7 +184,7 @@ The agent currently calls `studio_get_context` on most turns to retrieve anchor 
 - **SC-004**: Cache hit rate rises from 57.8% to ≥75%.
 - **SC-005**: Median per-turn cost (Sonnet 4.6) drops from ~$0.08-0.10 to ≤$0.03.
 - **SC-006**: Studio sessions no longer hit the 450K/min Anthropic rate limit during normal triage activity (defined as 0 rate-limit errors in 24h of representative usage).
-- **SC-007**: Decision-quality eval suite (4 named cases in FR-010) passes at 100% before and after each PR merge.
+- **SC-007**: Decision-quality eval suite (the 4 automated tests at `backend/src/build-tune-agent/__tests__/decision-quality.test.ts` per FR-010) passes at 100% in CI on every PR. A PR with any failing eval test cannot merge.
 - **SC-008**: Reverting any single PR via `git revert` returns per-turn behavior to the previous PR's baseline within one deploy cycle, with no DB migration required.
 
 ## Implementation sequencing *(non-mandatory but recommended)*
