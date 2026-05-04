@@ -62,7 +62,9 @@ import {
   coerceSnapshot,
   computeTurnEndSnapshot,
   DEFAULT_SNAPSHOT,
+  ALLOWED_TOOLS_BY_STATE,
   type StateMachineSnapshot,
+  type InnerState,
 } from './state-machine';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadAgentSdk } = require('./sdk-loader.cjs') as typeof import('./sdk-loader');
@@ -110,9 +112,60 @@ export interface RunTurnInput {
 }
 
 /**
- * Sprint 045 per-mode allow-lists.
+ * Sprint 045 per-mode allow-lists, refined in feature 047 PR 6 per-state
+ * compaction.
+ *
+ * Returned ordering is deterministic and stable-prefix-first to preserve
+ * the cached read-tools prefix across state transitions. Anthropic's
+ * prompt cache invalidates from the first byte that differs onward; with
+ * stable-tools-first, scoping↔drafting state changes only invalidate the
+ * trailing 1-2K of the tools block, not the leading 3K of read-tool
+ * descriptions. The cache_control marker on the last tool entry remains
+ * unchanged.
+ *
+ * @param mode - Outer mode (BUILD/TUNE) — the privilege gate.
+ * @param innerState - Inner cognitive state (scoping/drafting/verifying)
+ *   — the tactical filter. When provided, the returned list is the
+ *   intersection of {tools allowed in mode} and {tools allowed in state}.
+ *   When undefined, returns the mode's full set (legacy behavior).
  */
-function resolveAllowedTools(mode: AgentMode): string[] {
+function resolveAllowedTools(mode: AgentMode, innerState?: InnerState): string[] {
+  const modeTools = resolveModeTools(mode);
+  if (!innerState) return modeTools;
+
+  // Per-state filter: keep only tools the inner state allows. The
+  // intersection narrows the outer mode's privilege set by the inner
+  // state's tactical posture.
+  const stateAllowedShortNames = new Set(ALLOWED_TOOLS_BY_STATE[innerState]);
+  const filtered = modeTools.filter((name) => {
+    // ALLOWED_TOOLS_BY_STATE references TUNING_AGENT_TOOL_NAMES values
+    // (mcp__tuning-agent__studio_*) so direct membership works for those.
+    // STUDIO_PROPOSE_TRANSITION_TOOL_NAME is also in the set already.
+    return stateAllowedShortNames.has(name);
+  });
+
+  // Stable-prefix ordering: read tools alphabetical, then state-specific.
+  // The cache_control marker stays on the last entry (handled elsewhere
+  // by withLastToolCacheControl); putting state-variable tools at the
+  // tail isolates cache invalidation to the suffix.
+  const readToolsSet = new Set<string>([
+    TUNING_AGENT_TOOL_NAMES.studio_get_context,
+    TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
+    TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
+    TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
+    TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
+    TUNING_AGENT_TOOL_NAMES.studio_search_corrections,
+    TUNING_AGENT_TOOL_NAMES.studio_get_correction,
+    TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
+    TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
+    TUNING_AGENT_TOOL_NAMES.studio_memory,
+  ]);
+  const readPart = filtered.filter((n) => readToolsSet.has(n)).sort();
+  const variablePart = filtered.filter((n) => !readToolsSet.has(n)).sort();
+  return [...readPart, ...variablePart];
+}
+
+function resolveModeTools(mode: AgentMode): string[] {
   if (mode === 'BUILD') {
     return [
       TUNING_AGENT_TOOL_NAMES.studio_get_context,
@@ -129,17 +182,10 @@ function resolveAllowedTools(mode: AgentMode): string[] {
       TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
       TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
       TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
-      // Sprint 046 — BUILD mode was rejecting propose_suggestion +
-      // evidence access, which broke the "discuss-in-tuning"
-      // flow from the inbox. The studio_get_evidence_* pair +
-      // studio_suggestion are safe in BUILD — suggestion flow is
-      // staged via `data-suggested-fix` and still requires operator
-      // approval to apply.
       TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
       TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
       TUNING_AGENT_TOOL_NAMES.studio_suggestion,
       TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
-      // Sprint 060-C — agent-proposed inner-state transition.
       TUNING_AGENT_TOOL_NAMES.studio_propose_transition,
     ];
   }
@@ -157,10 +203,12 @@ function resolveAllowedTools(mode: AgentMode): string[] {
     TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
     TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
     TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
-    // Sprint 060-C — agent-proposed inner-state transition (TUNE too).
     TUNING_AGENT_TOOL_NAMES.studio_propose_transition,
   ];
 }
+
+// Exported for unit tests (per-state allow-list filtering).
+export const __resolveAllowedToolsForTest = resolveAllowedTools;
 
 export interface RunTurnResult {
   sdkSessionId: string | null;
@@ -303,7 +351,11 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const turnStartSnapshot: StateMachineSnapshot = promptCtx.stateMachineSnapshot!;
   const systemPrompt = assembleSystemPrompt(promptCtx);
   logCacheBlockStructure(input.tenantId, systemPrompt);
-  const allowedTools = resolveAllowedTools(mode);
+  // Feature 047 PR 6 — per-state allow-list compaction. The agent only
+  // sees tools allowed in BOTH the current outer mode AND the current
+  // inner state. PreToolUse hook (pretooluse-state-gate) remains as a
+  // runtime backstop for the rare case where state changes mid-turn.
+  const allowedTools = resolveAllowedTools(mode, turnStartSnapshot.inner_state);
 
   // ─── Wire the hook + tool contexts ─────────────────────────────────────
   const lastUserSnapshot = { text: input.userMessage };

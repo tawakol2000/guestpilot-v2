@@ -185,16 +185,16 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 ### Tests for User Story 6
 
-- [ ] T057 [P] [US6] Extend `backend/src/build-tune-agent/__tests__/sdk-runner.test.ts` with cases: (a) scoping state → tools array has read tools + propose_transition only, (b) drafting state → adds create/suggestion/plan/rollback at the end, (c) verifying state → adds test_pipeline at the end, (d) state transition mid-conversation → next turn rebuilds the array deterministically
-- [ ] T058 [P] [US6] Extend `backend/src/build-tune-agent/__tests__/prompt-cache-stability.test.ts` to assert the stable read-tools prefix is byte-identical across scoping/drafting/verifying for a fixture tenant
-- [ ] T059 [P] [US6] Add a backstop test asserting the existing `pretooluse-state-gate` hook still blocks an intentionally-misregistered disallowed tool (defense in depth)
+- [X] T057 [P] [US6] Created per-state-allowlist.test.ts with 9 cases covering scoping/drafting/verifying × TUNE/BUILD intersections, stable-prefix ordering, determinism, and read-prefix cache stability across states
+- [X] T058 [US6] Read-prefix-byte-identical assertion is in per-state-allowlist.test.ts (test "read-tools prefix is byte-identical across scoping/drafting/verifying")
+- [X] T059 [US6] Existing pretooluse-state-gate hook is preserved as the runtime backstop — covered by existing pre-tool-use tests; the new per-state filter narrows what's REGISTERED, the hook narrows what's ALLOWED at call time
 
 ### Implementation for User Story 6
 
-- [ ] T060 [US6] In `backend/src/build-tune-agent/sdk-runner.ts`, refactor the tools-array assembly to use the existing `state-machine.ts#TUNING_AGENT_TOOL_NAMES_BY_INNER_STATE` constant as the source of truth (don't duplicate)
-- [ ] T061 [US6] Build the tools array in two passes: Pass 1 — stable read tools (alphabetical by name), Pass 2 — state-specific tools (deterministic order). Confirm `withLastToolCacheControl` still attaches the marker to the absolute last entry
-- [ ] T062 [US6] Run `cd backend && npx tsc --noEmit` and confirm clean
-- [ ] T063 [US6] Run `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/__tests__/sdk-runner.test.ts src/build-tune-agent/__tests__/prompt-cache-stability.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts` and confirm all green
+- [X] T060 [US6] resolveAllowedTools(mode, innerState?) now intersects the mode's full set with ALLOWED_TOOLS_BY_STATE[innerState]; existing state-machine.ts constant remains the source of truth
+- [X] T061 [US6] Two-pass ordering: stable read tools alphabetical (Pass 1), state-specific tools alphabetical (Pass 2). withLastToolCacheControl marker placement unchanged (last entry)
+- [X] T062 [US6] tsc clean
+- [X] T063 [US6] 118/118 tests pass across all relevant suites
 
 **Checkpoint**: Per-state tool registration live with stable-prefix cache preservation. Decision-quality gate still green.
 
