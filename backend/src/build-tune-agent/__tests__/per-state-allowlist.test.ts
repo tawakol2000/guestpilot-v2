@@ -118,7 +118,7 @@ test('047 PR6: read-tools prefix is byte-identical across scoping/drafting/verif
   const verify = resolveAllowedTools('TUNE', 'verifying');
 
   // Find the longest common prefix (limited to alphabetical read tools)
-  const READ = new Set([
+  const READ: ReadonlySet<string> = new Set<string>([
     TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
     TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
     TUNING_AGENT_TOOL_NAMES.studio_get_context,

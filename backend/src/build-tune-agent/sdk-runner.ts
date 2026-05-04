@@ -270,7 +270,17 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const [conversation, priorMessageCount] = await Promise.all([
     input.prisma.tuningConversation.findFirst({
       where: { id: input.conversationId, tenantId: input.tenantId },
-      select: { id: true, sdkSessionId: true, anchorMessageId: true, stateMachineSnapshot: true },
+      select: {
+        id: true,
+        sdkSessionId: true,
+        anchorMessageId: true,
+        stateMachineSnapshot: true,
+        // Feature 047 PR 7 — anchor message + last accepted suggestion
+        // pre-loaded for the <conversation_anchor> Region C block.
+        anchorMessage: {
+          select: { id: true, content: true, role: true },
+        },
+      },
     }),
     input.prisma.tuningMessage.count({
       where: { conversationId: input.conversationId },
@@ -298,6 +308,25 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   }
 
   // ─── Assemble prompt context ───────────────────────────────────────────
+  // Feature 047 PR 7 — fetch lastAccepted suggestion summary for the
+  // <conversation_anchor> block. Cheap (LIMIT 1 indexed query); skipped
+  // when there's no anchor message (no anchor → no anchor block).
+  const lastAcceptedForAnchor = conversation.anchorMessageId
+    ? await input.prisma.tuningSuggestion.findFirst({
+        where: { tenantId: input.tenantId, status: 'ACCEPTED' },
+        orderBy: { appliedAt: 'desc' },
+        select: { diagnosticCategory: true, diagnosticSubLabel: true, rationale: true },
+      })
+    : null;
+  const conversationAnchor = conversation.anchorMessage
+    ? {
+        text: conversation.anchorMessage.content ?? '',
+        role: conversation.anchorMessage.role ?? 'AI',
+        lastEditSummary: lastAcceptedForAnchor
+          ? `${lastAcceptedForAnchor.diagnosticCategory ?? 'EDIT'}${lastAcceptedForAnchor.diagnosticSubLabel ? `:${lastAcceptedForAnchor.diagnosticSubLabel}` : ''} — ${(lastAcceptedForAnchor.rationale ?? '').slice(0, 160)}`
+          : null,
+      }
+    : null;
   const [memory, pending, pendingTotal] = await Promise.all([
     listMemoryForSnapshot(input.prisma, input.tenantId, 50),
     input.prisma.tuningSuggestion.findMany({
@@ -343,6 +372,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     mode,
     tenantState: input.tenantState ?? null,
     interviewProgress: input.interviewProgress ?? null,
+    conversationAnchor,
     // Sprint 060-C — DB snapshot drives <current_state> + optional
     // <state_transition> in Region C. Falls back to default scoping
     // for any legacy row that somehow missed the migration default.

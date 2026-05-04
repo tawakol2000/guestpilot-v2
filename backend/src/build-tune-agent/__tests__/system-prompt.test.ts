@@ -716,3 +716,57 @@ test('047 PR4: <disabled_artifacts> block in TUNE addendum names the rule', () =
   assert.ok(tune.includes("status:'disabled'"));
   assert.ok(tune.includes('Do NOT call studio_get_artifact on a disabled SOP'));
 });
+
+// ─── Feature 047 PR 7 — conversation_anchor Region C block ──────────────
+
+test('047 PR7: <conversation_anchor> renders when ctx provides anchor data', () => {
+  const suffix = buildDynamicSuffix(
+    ctx({
+      conversationAnchor: {
+        text: 'Thanks for getting back to us — could you confirm your check-in time?',
+        role: 'AI',
+        lastEditSummary: 'SYSTEM_PROMPT:rejection-gender-mention — operator removed gender language.',
+      },
+    })
+  );
+  assert.ok(suffix.includes('<conversation_anchor>'));
+  assert.ok(suffix.includes('confirm your check-in time'));
+  assert.ok(suffix.includes('Last edit applied:'));
+  assert.ok(suffix.includes('rejection-gender-mention'));
+});
+
+test('047 PR7: <conversation_anchor> omitted when ctx.conversationAnchor is null', () => {
+  const suffix = buildDynamicSuffix(ctx({ conversationAnchor: null }));
+  assert.ok(!suffix.includes('<conversation_anchor>'));
+});
+
+test('047 PR7: <conversation_anchor> handles missing lastEditSummary with friendly default', () => {
+  const suffix = buildDynamicSuffix(
+    ctx({
+      conversationAnchor: {
+        text: 'Hi there!',
+        role: 'GUEST',
+        lastEditSummary: null,
+      },
+    })
+  );
+  assert.ok(suffix.includes('<conversation_anchor>'));
+  assert.ok(suffix.includes('No prior edits applied in this session.'));
+});
+
+test('047 PR7: <conversation_anchor> truncates long anchor text at 800 chars with ellipsis', () => {
+  const longText = 'x'.repeat(2000);
+  const suffix = buildDynamicSuffix(
+    ctx({
+      conversationAnchor: {
+        text: longText,
+        role: 'GUEST',
+        lastEditSummary: null,
+      },
+    })
+  );
+  // Should contain the head excerpt but not the full 2K
+  assert.ok(suffix.includes('x'.repeat(800)));
+  assert.ok(!suffix.includes('x'.repeat(801)));
+  assert.ok(suffix.includes('…'));
+});

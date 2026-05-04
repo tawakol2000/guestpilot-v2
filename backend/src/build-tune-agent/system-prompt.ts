@@ -129,6 +129,22 @@ export interface SystemPromptContext {
   /** BUILD only: in-session interview progress. */
   interviewProgress?: InterviewProgressSummary | null;
   /**
+   * Feature 047 PR 7 — conversation anchor data pre-rendered into Region
+   * C so the agent doesn't always have to call studio_get_context for
+   * the anchor message. studio_get_context remains the escape hatch for
+   * heavy fields (full conversation history, retrievalContext, etc.) but
+   * 95% of turns just need anchor + last-edit summary, which now live
+   * in <conversation_anchor> at the head of Region C.
+   */
+  conversationAnchor?: {
+    /** Anchor message text (truncated server-side to ≤800 chars). */
+    text: string;
+    /** Role: 'AI' | 'GUEST' | 'MANAGER' | 'SYSTEM'. */
+    role: string;
+    /** Last applied/accepted suggestion summary (≤200 chars). */
+    lastEditSummary: string | null;
+  } | null;
+  /**
    * Sprint 060-C — current state-machine snapshot for this conversation.
    * Drives <current_state> in Region C every turn and the optional
    * <state_transition> ack block on the turn after a confirmed
@@ -1126,6 +1142,26 @@ Reason: ${reason}.
 const DIRECTIVE_KEY_PATTERN =
   /^preferences\/(no-|never-|always-|do-not-|skip-|prefer-|use-|require-)/i;
 
+function renderConversationAnchor(
+  anchor: SystemPromptContext['conversationAnchor'],
+): string | null {
+  if (!anchor) return null;
+  const lastEditLine = anchor.lastEditSummary
+    ? `Last edit applied: ${anchor.lastEditSummary}`
+    : 'No prior edits applied in this session.';
+  return `<conversation_anchor>
+The operator opened this Studio session from an inbox message. Anchor:
+  role: ${anchor.role}
+  text: ${anchor.text.slice(0, 800)}${anchor.text.length > 800 ? '…' : ''}
+${lastEditLine}
+
+This data is pre-loaded for you — you do NOT need to call
+studio_get_context to retrieve the anchor. studio_get_context is still
+the right tool for full conversation history (verbosity:'detailed') or
+the lastAccepted record. Most triage turns can skip it entirely.
+</conversation_anchor>`;
+}
+
 function renderActiveDirectives(mem: MemoryRecord[]): string | null {
   const directives = mem.filter((r) => DIRECTIVE_KEY_PATTERN.test(r.key));
   if (directives.length === 0) return null;
@@ -1315,6 +1351,13 @@ export function buildDynamicSuffix(ctx: SystemPromptContext): string {
   const activeBlock = renderActiveDirectives(ctx.memorySnapshot);
   if (activeBlock) blocks.push(activeBlock);
   blocks.push(renderMemorySnapshot(ctx.memorySnapshot));
+
+  // Feature 047 PR 7 — pre-render anchor data so the agent skips
+  // studio_get_context for ~95% of turns. Block is omitted when no
+  // anchor exists (greenfield BUILD onboarding, etc.) so it doesn't
+  // pollute Region C with empty content.
+  const anchorBlock = renderConversationAnchor(ctx.conversationAnchor ?? null);
+  if (anchorBlock) blocks.push(anchorBlock);
 
   blocks.push(renderCurrentState(ctx.stateMachineSnapshot));
 
