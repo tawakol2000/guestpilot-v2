@@ -59,7 +59,13 @@ function flattenPartsToText(parts: unknown, maxChars = 8_000): string {
 export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolContext) {
   return tool(
     'studio_get_context',
-    'Current tuning conversation context: anchor message (if any), selected suggestion (if any), pending queue summary, last accepted suggestion. Call this first when a conversation opens. Verbosity "detailed" expands the recent-activity timeline.',
+    `Current tuning conversation context: anchor message (if any), selected suggestion (if any), pending queue summary, last accepted suggestion.
+
+Verbosity (default 'concise'):
+  'concise' — anchor preview (≤400 chars) + top 3 pending suggestions (≤120-char rationale each) + queue counts. Target ≤2K tokens. Use this for ~95% of turns.
+  'detailed' — anchor (8000-char preview) + top 8 pending (≤400-char rationale) + last accepted suggestion + 30 recent message turns with flattened content. Approximate 7-8K tokens. Use ONLY when you need full conversation history or the lastAccepted record.
+
+Most agent turns just need the anchor and the queue counts — concise covers that. Don't escalate to detailed unless you specifically need recentMessages or lastAccepted.`,
     {
       verbosity: z.enum(['concise', 'detailed']).optional(),
     },
@@ -105,18 +111,23 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
           c.prisma.tuningSuggestion.count({
             where: { tenantId: c.tenantId, status: 'PENDING' },
           }),
-          c.prisma.tuningSuggestion.findFirst({
-            where: { tenantId: c.tenantId, status: 'ACCEPTED' },
-            orderBy: { appliedAt: 'desc' },
-            select: {
-              id: true,
-              diagnosticCategory: true,
-              diagnosticSubLabel: true,
-              actionType: true,
-              appliedAt: true,
-              rationale: true,
-            },
-          }),
+          // Feature 047 PR 5 — lastAccepted only fetched in detailed mode.
+          // Most triage turns don't need it; saves a DB roundtrip + ~200
+          // tokens of payload in the common case.
+          detailed
+            ? c.prisma.tuningSuggestion.findFirst({
+                where: { tenantId: c.tenantId, status: 'ACCEPTED' },
+                orderBy: { appliedAt: 'desc' },
+                select: {
+                  id: true,
+                  diagnosticCategory: true,
+                  diagnosticSubLabel: true,
+                  actionType: true,
+                  appliedAt: true,
+                  rationale: true,
+                },
+              })
+            : Promise.resolve(null),
           detailed && c.conversationId
             ? c.prisma.tuningMessage.findMany({
                 where: { conversationId: c.conversationId },
@@ -152,12 +163,13 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
                 anchorMessage: (conversation as any).anchorMessage
                   ? {
                       id: (conversation as any).anchorMessage.id,
-                      // Concise: 800-char preview (token-cheap first touch).
+                      // Concise: 400-char preview (feature 047 PR 5 —
+                      // tightened from 800 to keep total ≤2K tokens).
                       // Detailed: 8,000 chars so the agent can reason about
                       // a long guest message without silent clipping.
                       content: (conversation as any).anchorMessage.content.slice(
                         0,
-                        detailed ? 8_000 : 800,
+                        detailed ? 8_000 : 400,
                       ),
                       role: (conversation as any).anchorMessage.role,
                       conversationId: (conversation as any).anchorMessage.conversationId,
@@ -174,11 +186,14 @@ export function buildGetContextTool(tool: typeof ToolFactory, ctx: () => ToolCon
               category: s.diagnosticCategory,
               subLabel: s.diagnosticSubLabel,
               confidence: s.confidence,
-              rationale: s.rationale.slice(0, detailed ? 400 : 180),
-              triggerType: s.triggerType,
+              // Feature 047 PR 5 — concise rationale tightened from 180 to
+              // 120 to hit the ≤2K total target.
+              rationale: s.rationale.slice(0, detailed ? 400 : 120),
+              ...(detailed ? { triggerType: s.triggerType } : {}),
             })),
           },
-          lastAccepted,
+          // lastAccepted omitted from concise (null when not detailed).
+          ...(detailed ? { lastAccepted } : {}),
           recentMessages: recentMessages
             ? recentMessages.map((m) => ({
                 id: m.id,
