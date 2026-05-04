@@ -1,18 +1,21 @@
 /**
- * studio_get_artifact — sprint 060-D phase 7, extended in feature 047 PR 2.
+ * studio_get_artifact — sprint 060-D phase 7, extended in feature 047 PR 2/3.
  *
  * Detail tool for the index-then-fetch pair started by
  * studio_get_tenant_index. Decodes the opaque pointer (HMAC-verified)
  * and returns the addressed artifact's body. Reject any pointer
  * the index didn't sign — the agent cannot fabricate one.
  *
- * Feature 047 PR 2 — verbosity honored:
- *   - verbosity:'concise' (default) → head excerpt + structural metadata.
- *     Most triage decisions don't need the full body; this caps per-call
- *     token return at ≤1500 tokens regardless of underlying body size.
- *   - verbosity:'detailed' → full body byte-for-byte (existing v1 shape).
- *
- * Annotation: readOnlyHint: true.
+ * Three modes:
+ *   - mode:'full' (default), verbosity:'concise' (default) → head excerpt
+ *     + structural metadata. Most triage decisions don't need the full
+ *     body; this caps per-call token return at ≤1500 tokens regardless
+ *     of underlying body size.
+ *   - mode:'full', verbosity:'detailed' → full body byte-for-byte.
+ *   - mode:'index' → section list with names/summaries/tokens/hashId.
+ *     No body text. Only meaningful for system_prompt and sop kinds.
+ *   - section:'<name>' → return only that section's body. Validates the
+ *     name against the freshly-extracted section list.
  */
 import { z } from 'zod/v4';
 import type { tool as ToolFactory } from '@anthropic-ai/claude-agent-sdk';
@@ -27,23 +30,42 @@ import {
   type CurrentToolPayload,
 } from './get-current-state';
 import { decodePointer } from './lib/pointer';
+import {
+  extractSections,
+  type Section,
+  type SectionSignContext,
+} from './lib/section-extractor';
 import { asCallToolResult, asError, type ToolContext } from './types';
 
 const DESCRIPTION = `Resolve a body_pointer returned by studio_get_tenant_index. Returns one artifact (system-prompt variant, SOP, FAQ, or custom tool). Pointers are HMAC-signed and rejected on tamper.
 
-verbosity (default 'concise'):
-  'concise' — head excerpt + structural metadata (sections list for system_prompt; variant/override list for SOP). Typically 1-3K tokens. Use for triage and routing decisions where you only need to confirm the artifact exists and see its shape.
-  'detailed' — full body, byte-for-byte. 10-30K tokens for system prompts, 5-15K for SOPs. Use ONLY when you must read or modify the artifact verbatim.
+DRILL-DOWN PATTERN (for system_prompt + sop kinds):
+  1. studio_get_tenant_index            → see catalog (titles + descriptions)
+  2. studio_get_artifact(ptr, mode:'index')   → see section list (names + summaries + tokens), no body
+  3. studio_get_artifact(ptr, section:'<name>')  → fetch one section's body
+  4. studio_get_artifact(ptr, verbosity:'detailed')  → full body (only when modifying)
 
-Default-concise saves 5-25K tokens per call vs detailed; only escalate to detailed when triage has determined the artifact needs editing.`;
+PARAMETERS:
+  verbosity (default 'concise'):
+    'concise' — head excerpt + structural metadata (≤1500 tokens). Use for triage / routing.
+    'detailed' — full body, byte-for-byte (10-30K tokens for system prompts). Use ONLY when modifying verbatim.
+  mode (default 'full'):
+    'full' — return body content per verbosity setting.
+    'index' — return sectionList with names/summaries/token-counts. NO body text. system_prompt + sop only.
+  section (optional, system_prompt + sop only):
+    Name from the sectionList of a prior mode:'index' call. Returns just that section's body + neighbors.
 
-// Concise-mode head excerpt cap. Full bodies are 10-30K tokens for system
-// prompts and ~5-15K for SOPs; replaying that across every internal
-// messages.create round inside a tuning-agent.query is the single biggest
-// driver of per-request token count. Concise returns a head excerpt + the
-// structural metadata so the agent can route to the right section without
-// reading the body verbatim.
+Defaulting to concise saves 5-25K tokens per call. Section drill-down on a 25K system prompt fetches 300-1500 tokens instead of the whole body.`;
+
 const HEAD_EXCERPT_CHARS = 1200;
+
+function getSectionSecret(): string {
+  return (
+    process.env.STUDIO_POINTER_HMAC_KEY ??
+    process.env.JWT_SECRET ??
+    'fallback-test-secret'
+  );
+}
 
 function conciseText(full: string | null | undefined): string {
   if (!full) return '';
@@ -54,20 +76,12 @@ function conciseText(full: string | null | undefined): string {
 
 function conciseSopVariant(v: CurrentSopPayload['variants'][number]) {
   if (v.content.length <= HEAD_EXCERPT_CHARS) return v;
-  return {
-    ...v,
-    content: conciseText(v.content),
-    fullCharLength: v.content.length,
-  };
+  return { ...v, content: conciseText(v.content), fullCharLength: v.content.length };
 }
 
 function conciseSopOverride(o: CurrentSopPayload['propertyOverrides'][number]) {
   if (o.content.length <= HEAD_EXCERPT_CHARS) return o;
-  return {
-    ...o,
-    content: conciseText(o.content),
-    fullCharLength: o.content.length,
-  };
+  return { ...o, content: conciseText(o.content), fullCharLength: o.content.length };
 }
 
 function conciseSop(sop: CurrentSopPayload) {
@@ -80,19 +94,57 @@ function conciseSop(sop: CurrentSopPayload) {
 
 function conciseFaq(faq: CurrentFaqPayload) {
   if (faq.answer.length <= HEAD_EXCERPT_CHARS) return faq;
-  return {
-    ...faq,
-    answer: conciseText(faq.answer),
-    fullCharLength: faq.answer.length,
-  };
+  return { ...faq, answer: conciseText(faq.answer), fullCharLength: faq.answer.length };
 }
 
 function conciseTool(t: CurrentToolPayload) {
   if (t.description.length <= HEAD_EXCERPT_CHARS) return t;
+  return { ...t, description: conciseText(t.description), fullCharLength: t.description.length };
+}
+
+function pickDefaultSopVariant(sop: CurrentSopPayload): { content: string; status: string } {
+  // Prefer DEFAULT, fall back to first enabled variant.
+  const def = sop.variants.find((v) => v.status === 'DEFAULT');
+  if (def) return { content: def.content, status: def.status };
+  const first = sop.variants.find((v) => v.enabled) ?? sop.variants[0];
+  return first ? { content: first.content, status: first.status } : { content: '', status: 'DEFAULT' };
+}
+
+interface IndexEntry {
+  name: string;
+  summary: string;
+  tokens: number;
+  hashId: string;
+}
+
+function indexEntriesFromSections(sections: Section[]): IndexEntry[] {
+  return sections.map(({ name, summary, tokens, hashId }) => ({
+    name,
+    summary,
+    tokens,
+    hashId,
+  }));
+}
+
+function buildSectionsForArtifact(
+  body: string,
+  fallbackTitle: string,
+  signCtx: SectionSignContext,
+): Section[] {
+  return extractSections(body, fallbackTitle, signCtx);
+}
+
+function findSection(sections: Section[], name: string): Section | undefined {
+  return sections.find((s) => s.name === name);
+}
+
+function neighborNames(
+  sections: Section[],
+  index: number,
+): { prev: string | null; next: string | null } {
   return {
-    ...t,
-    description: conciseText(t.description),
-    fullCharLength: t.description.length,
+    prev: index > 0 ? sections[index - 1].name : null,
+    next: index < sections.length - 1 ? sections[index + 1].name : null,
   };
 }
 
@@ -106,6 +158,8 @@ export function buildGetArtifactTool(
     {
       pointer: z.string().min(8).max(2048),
       verbosity: z.enum(['concise', 'detailed']).optional(),
+      mode: z.enum(['full', 'index']).optional(),
+      section: z.string().min(1).max(120).optional(),
     },
     async (args) => {
       const c = ctx();
@@ -119,6 +173,29 @@ export function buildGetArtifactTool(
         const meta = (decoded.payload.metadata ?? {}) as Record<string, unknown>;
         const kind = String(meta.kind ?? '');
         const detailed = args.verbosity === 'detailed';
+        const mode = args.mode ?? 'full';
+        const requestedSection = args.section ?? null;
+        const signCtx: SectionSignContext = {
+          tenantId: c.tenantId,
+          artifactId: decoded.payload.id,
+          secret: getSectionSecret(),
+        };
+
+        // Reject mode:'index' / section drill-down on atomic kinds early.
+        if (
+          (mode === 'index' || requestedSection) &&
+          (kind === 'faq' || kind === 'tool')
+        ) {
+          span.end({ error: `unsupported_mode_for_kind:${kind}` });
+          if (mode === 'index') {
+            return asError(
+              `studio_get_artifact: kind '${kind}' does not support mode:'index'. Use mode:'full' with verbosity:'concise' instead.`,
+            );
+          }
+          return asError(
+            `studio_get_artifact: kind '${kind}' does not support section drill-down. ${kind === 'faq' ? 'FAQ entries are atomic (single Q+A pair).' : 'Tool definitions are atomic.'}`,
+          );
+        }
 
         if (kind === 'system_prompt') {
           const variant = String(meta.variant ?? 'coordinator') as
@@ -126,6 +203,59 @@ export function buildGetArtifactTool(
             | 'screening';
           const sp = await fetchSystemPromptPayload(c.prisma, c.tenantId);
           const v = sp.variants[variant];
+          const sections = buildSectionsForArtifact(v.text, `${variant} system prompt`, signCtx);
+
+          // section:'<name>' — return one section's body
+          if (requestedSection) {
+            const idx = sections.findIndex((s) => s.name === requestedSection);
+            if (idx < 0) {
+              const validNames = sections.map((s) => s.name).join(', ');
+              span.end({ error: 'section_not_found' });
+              return asError(
+                `studio_get_artifact: section '${requestedSection}' not found in ${variant} system prompt. Valid sections: [${validNames}]`,
+              );
+            }
+            const section = sections[idx];
+            const { prev, next } = neighborNames(sections, idx);
+            span.end({
+              kind,
+              variant,
+              mode: 'section',
+              sectionName: section.name,
+              fullCharLength: v.text.length,
+              returnCharLength: section.body.length,
+            });
+            return asCallToolResult({
+              kind: 'system_prompt',
+              variant,
+              version: sp.version,
+              sectionName: section.name,
+              text: section.body,
+              tokens: section.tokens,
+              neighborSections: [prev, next].filter((x): x is string => x !== null),
+            });
+          }
+
+          // mode:'index' — section list, no body text
+          if (mode === 'index') {
+            span.end({
+              kind,
+              variant,
+              mode: 'index',
+              fullCharLength: v.text.length,
+              sectionCount: sections.length,
+            });
+            return asCallToolResult({
+              kind: 'system_prompt',
+              variant,
+              version: sp.version,
+              sectionList: indexEntriesFromSections(sections),
+              fullCharLength: v.text.length,
+              mode: 'index',
+            });
+          }
+
+          // mode:'full' — verbosity-respecting body
           span.end({
             kind,
             variant,
@@ -160,6 +290,73 @@ export function buildGetArtifactTool(
             span.end({ error: 'sop_not_found' });
             return asError(`studio_get_artifact: SOP ${decoded.payload.id} not found`);
           }
+
+          // For SOPs, "the body" we extract sections from is the DEFAULT
+          // variant content. Property overrides and per-status variants
+          // are surfaced via mode:'full' + verbosity:'detailed'.
+          const defaultVariant = pickDefaultSopVariant(sop);
+          const fallbackTitle = sop.toolDescription || sop.category || 'sop';
+          const sections = buildSectionsForArtifact(
+            defaultVariant.content,
+            fallbackTitle,
+            signCtx,
+          );
+
+          if (requestedSection) {
+            const idx = sections.findIndex((s) => s.name === requestedSection);
+            if (idx < 0) {
+              const validNames = sections.map((s) => s.name).join(', ');
+              span.end({ error: 'section_not_found' });
+              return asError(
+                `studio_get_artifact: section '${requestedSection}' not found in SOP '${sop.category}'. Valid sections: [${validNames}]`,
+              );
+            }
+            const section = sections[idx];
+            const { prev, next } = neighborNames(sections, idx);
+            span.end({
+              kind,
+              id: sop.id,
+              mode: 'section',
+              sectionName: section.name,
+              fullCharLength: defaultVariant.content.length,
+              returnCharLength: section.body.length,
+            });
+            return asCallToolResult({
+              kind: 'sop',
+              sopId: sop.id,
+              category: sop.category,
+              defaultVariantStatus: defaultVariant.status,
+              sectionName: section.name,
+              text: section.body,
+              tokens: section.tokens,
+              neighborSections: [prev, next].filter((x): x is string => x !== null),
+            });
+          }
+
+          if (mode === 'index') {
+            const fellBackToSingle = sections.length === 1 && sections[0].name === fallbackTitle;
+            span.end({
+              kind,
+              id: sop.id,
+              mode: 'index',
+              fullCharLength: defaultVariant.content.length,
+              sectionCount: sections.length,
+              fallback: fellBackToSingle,
+            });
+            return asCallToolResult({
+              kind: 'sop',
+              sopId: sop.id,
+              category: sop.category,
+              sectionList: indexEntriesFromSections(sections),
+              fullCharLength: defaultVariant.content.length,
+              mode: 'index',
+              ...(fellBackToSingle
+                ? { fallback: 'single-section (no markdown headings detected)' }
+                : {}),
+            });
+          }
+
+          // mode:'full' — verbosity-respecting full SOP shape
           const totalCharLength =
             sop.variants.reduce((s, v) => s + v.content.length, 0) +
             sop.propertyOverrides.reduce((s, o) => s + o.content.length, 0);
@@ -221,9 +418,7 @@ export function buildGetArtifactTool(
   );
 }
 
-// Exported for unit tests — pure helpers. The handler itself depends on
-// Prisma + the SDK tool registration plumbing, which is awkward to mock.
-// Testing the helpers + a handful of fixture payloads is enough.
+// Exported for unit tests.
 export const __test = {
   HEAD_EXCERPT_CHARS,
   conciseText,

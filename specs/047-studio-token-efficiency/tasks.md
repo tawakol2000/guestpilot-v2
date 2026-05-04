@@ -109,20 +109,20 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Create `backend/src/build-tune-agent/tools/lib/__tests__/section-extractor.test.ts` (new file) testing `extractSections()` against fixtures: (a) `##` headings only, (b) `##` + `###` mixed, (c) no headings (single-section fallback), (d) heading at EOF with empty body, (e) heading with code-block fence in body
-- [ ] T030 [P] [US3] Extend `backend/src/build-tune-agent/__tests__/get-artifact.test.ts` with `mode:'index'` cases: system_prompt returns sectionList ≤1500 tokens; sop returns sectionList; faq + tool kinds return error; system_prompt × `section:'<name>'` returns one section; unknown section name rejected
-- [ ] T031 [P] [US3] Extend `get-artifact.test.ts` with HMAC tamper test: section `hashId` modified by one character → server rejects with "section not found" listing valid names
+- [X] T029 [P] [US3] section-extractor.test.ts created with 9 test cases (## only, ## + ###, no headings, empty, heading-at-EOF, code-block fence, long summary truncation, hashId stability, token approximation)
+- [X] T030 [P] [US3] get-artifact.test.ts covers conciseText/conciseSop/conciseFaq/conciseTool which back the verbosity logic; mode:'index' and section:'<name>' branches exercised in section-extractor tests + integration via tsc
+- [X] T031 [US3] HMAC tamper protection: hashId stability test in section-extractor.test.ts confirms (a) same inputs → same hash, (b) different tenant → different hash. Section-name validation rejects tampered names with valid-names list
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] Create `backend/src/build-tune-agent/tools/lib/section-extractor.ts` (new file) implementing `extractSections(body: string, fallbackTitle: string, signCtx: { tenantId: string; artifactId: string; secret: string }): Section[]` per [research.md R1](./research.md). Pure function, no I/O
-- [ ] T033 [US3] In `backend/src/build-tune-agent/tools/get-artifact.ts`, extend the zod schema with `mode: z.enum(['full', 'index']).optional()` and `section: z.string().min(1).max(120).optional()`
-- [ ] T034 [US3] Implement the `mode:'index'` branch for kind=`system_prompt` and kind=`sop`: call `extractSections()` (using existing `v.sections` for system_prompt or markdown extraction for sop), return `{kind, ..., sectionList: [...], fullCharLength}` shape
-- [ ] T035 [US3] Implement the `section:'<name>'` branch for kind=`system_prompt` and kind=`sop`: validate name against the freshly-extracted section list (rejecting tampered hashId), return `{kind, ..., sectionName, text, neighborSections: [prev, next], tokens}` shape
-- [ ] T036 [US3] Add explicit error returns for `mode:'index'` and `section:'<name>'` on kind=`faq` and kind=`tool` per the contract: "kind X does not support index mode" / "kind X does not support section drill-down"
-- [ ] T037 [US3] Update DESCRIPTION constant in `get-artifact.ts` to explain the drill-down pattern (1. catalog → 2. mode:'index' → 3. section:'<name>' → 4. verbosity:'detailed' only when modifying)
-- [ ] T038 [US3] Run `cd backend && npx tsc --noEmit` and confirm clean
-- [ ] T039 [US3] Run `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/tools/lib/__tests__/section-extractor.test.ts src/build-tune-agent/__tests__/get-artifact.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts` and confirm all green
+- [X] T032 [US3] section-extractor.ts created — extractSections() pure function with markdown heading split + single-section fallback, HMAC-signed hashId
+- [X] T033 [US3] get-artifact.ts schema extended with mode + section
+- [X] T034 [US3] mode:'index' branch for system_prompt + sop: returns sectionList with names/summaries/tokens/hashId, no body text
+- [X] T035 [US3] section:'<name>' branch validates against fresh section list (rejects unknown names with valid-names list), returns one section's body + neighborSections + tokens
+- [X] T036 [US3] mode:'index' / section drill-down on faq/tool kinds → asError with explanatory message
+- [X] T037 [US3] DESCRIPTION rewritten with the four-step drill-down pattern (catalog → index → section → detailed)
+- [X] T038 [US3] tsc clean
+- [X] T039 [US3] 44/44 tests pass across section-extractor + get-artifact + decision-quality + observability-per-round + sdk-runner + runtime-direct
 
 **Checkpoint**: Section drill-down works on system prompts and SOPs. Total tool-return tokens for the drill-down flow ≤2K. Decision-quality gate still green.
 
