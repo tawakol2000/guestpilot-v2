@@ -40,6 +40,14 @@ export interface TransitionProposalCardProps {
   nonce: string
   expiresAt?: string | null
   onResolved?: (snapshot: StudioStateMachineSnapshot) => void
+  // 2026-05-04 — confirm/reject must wake the agent for the next turn.
+  // The backend updates the snapshot but does not auto-fire a turn; the
+  // agent's promised follow-up ("I'll push the edit on confirm") only
+  // lands if the host sends a message after confirm, which is when the
+  // <state_transition> block in Region C is rendered to the agent.
+  // Mirrors how QuestionChoicesCard sends the chosen label as text on
+  // selection.
+  onSendText?: (text: string) => void
 }
 
 export function TransitionProposalCard({
@@ -50,6 +58,7 @@ export function TransitionProposalCard({
   nonce,
   expiresAt,
   onResolved,
+  onSendText,
 }: TransitionProposalCardProps) {
   const [busy, setBusy] = useState<'confirm' | 'reject' | null>(null)
   const [resolved, setResolved] = useState<'confirmed' | 'rejected' | null>(null)
@@ -64,6 +73,13 @@ export function TransitionProposalCard({
       onResolved?.(res.stateMachineSnapshot)
       setResolved('confirmed')
       toast.success(`State transitioned to ${STATE_LABEL[proposedState]}`)
+      // Wake the agent for the follow-up turn. The backend's confirm
+      // endpoint only mutates the snapshot; the <state_transition>
+      // block in Region C is rendered to the agent the next time it
+      // gets a turn, which only happens when the host sends a message.
+      // Without this, the agent's promise of "I'll push the edit on
+      // confirm" never resolves and the user sees nothing happen.
+      onSendText?.(`Confirmed — proceed with ${STATE_LABEL[proposedState]}.`)
     } catch (err) {
       toast.error('Could not confirm transition', {
         description: err instanceof Error ? err.message : String(err),
@@ -81,6 +97,7 @@ export function TransitionProposalCard({
       onResolved?.(res.stateMachineSnapshot)
       setResolved('rejected')
       toast.message('Kept current state', { description: STATE_LABEL[currentState] })
+      onSendText?.(`Keeping ${STATE_LABEL[currentState]}.`)
     } catch (err) {
       toast.error('Could not reject transition', {
         description: err instanceof Error ? err.message : String(err),

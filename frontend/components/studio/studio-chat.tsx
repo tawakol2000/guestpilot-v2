@@ -1749,6 +1749,7 @@ function StandalonePart({
           nonce={data.nonce}
           expiresAt={typeof data.expires_at === 'string' ? data.expires_at : null}
           onResolved={(snapshot) => onStateMachineSnapshot?.(snapshot)}
+          onSendText={onSendText}
         />
       )
     }
