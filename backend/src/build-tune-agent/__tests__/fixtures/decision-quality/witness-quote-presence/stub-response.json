@@ -1,0 +1,23 @@
+{
+  "id": "preview:witness-quote-presence-canonical",
+  "category": "FAQ",
+  "editType": "FACTUAL",
+  "subLabel": "late-checkout-price-correction",
+  "confidence": 0.92,
+  "witnessQuote": "additional 30 EUR per hour",
+  "reasonsNotToAct": [
+    "FAQ entry has stale price; the operator's correction is the canonical figure.",
+    "Memory shows no recent price-volatility preferences; FAQ update is the durable home."
+  ],
+  "consultedMemoryKeys": [],
+  "rationale": "Operator corrected a stated price (50 → 30 EUR/h). Witness span quoted verbatim from the operator's edit; FAQ entry update is the appropriate artifact.",
+  "impact": "After this fix, a guest asking about late checkout would receive 30 EUR/hour. Edge cases the operator should verify: existing reservations with the old quote, multi-hour bookings, weekend pricing if it differs.",
+  "target": {
+    "artifact": "faq",
+    "faqEntryId": null
+  },
+  "diff": {
+    "before": "additional 50 EUR per hour",
+    "after": "additional 30 EUR per hour"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "preview:screening-memory-recall-canonical",
+  "category": "SYSTEM_PROMPT",
+  "editType": "BEHAVIORAL",
+  "subLabel": "screening-rejection-wording-routing",
+  "confidence": 0.9,
+  "witnessQuote": "Unfortunately we cannot accept this booking. Our property is families-only.",
+  "reasonsNotToAct": [
+    "Memory preferences/no-sop-for-screening explicitly states screening rules live in systemPromptScreening, so SOP_CONTENT is wrong even if a screening SOP exists.",
+    "Operator's edit clarifies the rejection wording; this is a system-prompt-variant adjustment, not a missing SOP."
+  ],
+  "consultedMemoryKeys": ["preferences/no-sop-for-screening"],
+  "rationale": "Honored the saved tenant preference: screening edits route to SYSTEM_PROMPT category on the screening variant, never to a new SOP.",
+  "impact": "After this fix, a guest whose stated group composition does not meet the families-only rule would receive a clear, neutral families-only decline. Edge cases the operator should verify: solo travelers, mixed family groups with adult friends, ambiguous group descriptions.",
+  "target": {
+    "artifact": "system_prompt",
+    "systemPromptVariant": "screening"
+  },
+  "diff": {
+    "before": "Unfortunately we cannot accommodate this booking — our property does not allow visitor groups under your composition.",
+    "after": "Unfortunately we cannot accept this booking. Our property is families-only."
+  }
+}

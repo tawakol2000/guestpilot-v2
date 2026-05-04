@@ -1,0 +1,61 @@
+
+Fetching observations since 2026-05-03T19:51:27.330Z (last 24h)…
+Fetched 93 observations.
+  12 have token usage (LLM calls)  |  81 are non-LLM spans
+
+─── ALL SPAN NAMES (count, includes non-LLM) ─────────────────
+  ×  27  [LLM]  tuning-agent.query
+  ×   5  [span]  tuning-agent.hook.mcp__tuning-agent__studio_suggestion
+  ×   5  [span]  tuning-agent.suggestion_action
+  ×   5  [LLM]  Omar
+  ×   4  [span]  tuning-agent.hook.mcp__tuning-agent__studio_get_evidence_section
+  ×   4  [span]  build-tune-agent.studio_get_evidence_section
+  ×   3  [span]  tuning-agent.hook.mcp__tuning-agent__studio_propose_transition
+  ×   3  [span]  build-tune-agent.studio_propose_transition
+  ×   3  [span]  tuning-agent.hook.mcp__tuning-agent__studio_get_artifact
+  ×   3  [span]  build-tune-agent.studio_get_artifact
+  ×   3  [span]  tuning-agent.hook.mcp__tuning-agent__studio_get_tenant_index
+  ×   3  [span]  build-tune-agent.studio_get_tenant_index
+  ×   3  [span]  escalation
+  ×   2  [span]  tuning-agent.hook.mcp__tuning-agent__studio_test_pipeline
+  ×   2  [span]  build-tune-agent.test_pipeline
+  ×   2  [span]  tuning-agent.hook.mcp__tuning-agent__studio_get_correction
+  ×   2  [span]  build-tune-agent.studio_get_correction
+  ×   2  [span]  tuning-agent.hook.mcp__tuning-agent__studio_get_context
+  ×   2  [span]  tuning-agent.get_context
+  ×   1  [span]  tuning-agent.hook.mcp__tuning-agent__studio_search_corrections
+  ×   1  [span]  build-tune-agent.studio_search_corrections
+  ×   1  [span]  build-tune-agent.write_system_prompt
+  ×   1  [span]  tuning-agent.propose_suggestion
+  ×   1  [span]  tool:get_sop
+  ×   1  [span]  tuning-agent.hook.mcp__tuning-agent__studio_memory
+
+─── TOTAL ────────────────────────────────────────────────────
+Cost:   $0.0624
+Tokens: input=25.2K  output=2.3K  total=27.5K
+Calls:  12
+
+─── BY OPERATION / TOOL (sorted by cost) ─────────────────────
+    $0.0567  ×   5  in= 25.1K  cR=     0  cW=     0  out=  2.1K  Omar
+    $0.0057  ×   7  in=    58  cR=     0  cW=     0  out=   180  tuning-agent.query
+
+─── TOP TRACES BY COST (each = one user turn) ────────────────
+    $0.0213  ×  1rounds  in=  7.2K  cR=     0  out=  1.2K  d120e802-7e60-43…
+    $0.0122  ×  1rounds  in=  7.5K  cR=     0  out=   104  b8ab3380-3c16-49…
+    $0.0084  ×  1rounds  in=  4.0K  cR=     0  out=   265  bebce2b2-3762-4d…
+    $0.0080  ×  1rounds  in=  3.8K  cR=     0  out=   255  33797c1d-e34e-4c…
+    $0.0069  ×  1rounds  in=  2.7K  cR=     0  out=   317  d45bfd0c-69ef-4c…
+    $0.0020  ×  1rounds  in=    17  cR=     0  out=    64  25c30eb8-1601-4c…
+    $0.0010  ×  1rounds  in=     8  cR=     0  out=    32  cd2a37b9-01b7-40…
+    $0.0007  ×  1rounds  in=     9  cR=     0  out=    20  96694c97-351c-40…
+    $0.0005  ×  1rounds  in=     6  cR=     0  out=    16  5085ae77-7ea9-48…
+    $0.0005  ×  1rounds  in=     6  cR=     0  out=    16  773c0b50-bd84-42…
+    $0.0005  ×  1rounds  in=     6  cR=     0  out=    16  669d05c3-c813-48…
+    $0.0005  ×  1rounds  in=     6  cR=     0  out=    16  00e2906c-0793-4a…
+
+─── ROUND-TRIPS PER TRACE ────────────────────────────────────
+  traces=12  avg=1.0  median=1  p90=1  max=1
+
+─── CACHE HIT RATIO ──────────────────────────────────────────
+  fresh=100.0%  cache_read=0.0%  cache_write=0.0%  (of all input tokens)
+

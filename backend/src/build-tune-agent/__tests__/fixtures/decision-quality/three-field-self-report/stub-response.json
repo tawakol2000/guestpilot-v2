@@ -1,0 +1,7 @@
+{
+  "selfReport": {
+    "weakest_inference": "I assumed the weekend exception was missing because the operator's edit added it; the operator may have been clarifying an existing rule rather than filling a gap.",
+    "most_fragile_assumption": "That the cleaning SOP is the canonical home for weekend-rule logic — if weekend rules live in a separate scheduling SOP, my proposed edit lands in the wrong artifact.",
+    "preferred_alternative_classification": "PROPERTY_OVERRIDE on the cleaning SOP for the specific property where the weekend exception applies, rather than mutating the global SOP. The single observation that would promote it is whether the operator's edit was made at the property level vs the global level."
+  }
+}

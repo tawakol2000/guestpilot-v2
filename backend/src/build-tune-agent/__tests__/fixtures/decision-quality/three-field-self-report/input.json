@@ -1,0 +1,12 @@
+{
+  "description": "Operator asks 'what's the weakest part of your last suggestion?' — explicit self-critique trigger. Agent must respond with three named fields (weakest_inference, most_fragile_assumption, preferred_alternative_classification), not free-form 'looks good' rubber-stamp.",
+  "operatorMessage": "what's the weakest part of your last suggestion?",
+  "memorySnapshot": [],
+  "outerMode": "TUNE",
+  "innerState": "scoping",
+  "priorAgentResponse": {
+    "category": "SOP_CONTENT",
+    "editType": "BEHAVIORAL",
+    "rationale": "Cleaning escalation SOP missed the weekend exception case; proposed adding a clause."
+  }
+}

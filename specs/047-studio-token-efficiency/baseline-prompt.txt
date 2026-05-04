@@ -1,0 +1,25 @@
+Region A (shared):               21288 chars    5914 tokens
+TUNE addendum (Region B):         7424 chars    2063 tokens
+BUILD addendum (Region B):       13728 chars    3814 tokens
+TUNE full assembled:             29327 chars    8147 tokens
+BUILD full assembled:            33382 chars    9273 tokens
+
+─── Region C (dynamic, UNCACHED — paid every round) ──────────
+TUNE Region C (empty):             549 chars     153 tokens
+TUNE Region C (typical):          2942 chars     818 tokens
+BUILD Region C (empty):            493 chars     137 tokens
+BUILD Region C (typical):         3446 chars     958 tokens
+
+─── Per-round cost @ $3/M Sonnet input (Region C only) ───────
+  TUNE  empty=$0.00046  typical=$0.00245
+  BUILD empty=$0.00041  typical=$0.00287
+
+  At 5 rounds/turn × 1 turn:  tune=$0.0123  build=$0.0144
+  At 5 rounds × 20 turns/day: tune=$0.25  build=$0.29
+
+─── Top Region C blocks (TUNE typical) ───────────────────────
+    2116 chars    588 tok  <memory_snapshot>
+      39 chars     11 tok  <current_state>
+     532 chars    148 tok  <pending_suggestions>
+      49 chars     14 tok  <session_state>
+     198 chars     55 tok  <terminal_recap>

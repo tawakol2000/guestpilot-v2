@@ -1,0 +1,8 @@
+{
+  "description": "Operator edits the AI's screening question from gender-based phrasing to relationship-based phrasing. The semantic ask is identical (group composition); only the framework changed. Expected classification: NO_FIX with editType=FRAMING_TONE.",
+  "agentMessageDraft": "Could you let me know whether your group is both male, both female, or mixed?",
+  "operatorEdited": "Could you let me know whether your group is family or friends?",
+  "memorySnapshot": [],
+  "outerMode": "TUNE",
+  "innerState": "scoping"
+}

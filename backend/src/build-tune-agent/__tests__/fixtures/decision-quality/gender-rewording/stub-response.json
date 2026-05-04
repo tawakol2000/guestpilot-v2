@@ -1,0 +1,17 @@
+{
+  "id": "preview:gender-rewording-canonical",
+  "category": "NO_FIX",
+  "editType": "FRAMING_TONE",
+  "subLabel": "operator-reframed-screening-from-gender-to-relationship",
+  "confidence": 0.95,
+  "witnessQuote": null,
+  "reasonsNotToAct": [
+    "Same data ask (group composition); operator changed framework only — both screen for the same eligibility decision.",
+    "Memory shows no prior preference saved on this framing, but the underlying SOP-routing was correct."
+  ],
+  "consultedMemoryKeys": [],
+  "rationale": "Operator changed how the question is framed but the AI's underlying classification, escalation, and tool-use was correct. Wording-only edit — NO_FIX is the schema default.",
+  "impact": null,
+  "target": null,
+  "diff": null
+}

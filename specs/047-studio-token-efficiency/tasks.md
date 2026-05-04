@@ -27,10 +27,10 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 **Purpose**: Branch + baseline measurement before any code lands.
 
-- [ ] T001 Confirm branch is `047-studio-token-efficiency` and working tree is clean (`git status` empty, `git branch --show-current` matches)
-- [ ] T002 Capture pre-feature baseline by running `cd backend && JWT_SECRET=test npx tsx scripts/measure-prompt.ts` and recording Region A/B/C tokens in `specs/047-studio-token-efficiency/baseline-prompt.txt`
-- [ ] T003 [P] Capture pre-feature cost baseline by running `cd backend && LANGFUSE_PUBLIC_KEY=<pk> LANGFUSE_SECRET_KEY=<sk> npx tsx scripts/langfuse-cost-audit.ts --hours 24 > specs/047-studio-token-efficiency/baseline-cost.txt`
-- [ ] T004 [P] Capture pre-feature cache hit ratio screenshot from Anthropic console (Caching tab, last 24h) and save to `specs/047-studio-token-efficiency/baseline-cache.png`
+- [X] T001 Confirm branch is `047-studio-token-efficiency` and working tree is clean (`git status` empty, `git branch --show-current` matches)
+- [X] T002 Capture pre-feature baseline by running `cd backend && JWT_SECRET=test npx tsx scripts/measure-prompt.ts` and recording Region A/B/C tokens in `specs/047-studio-token-efficiency/baseline-prompt.txt`
+- [X] T003 [P] Capture pre-feature cost baseline by running `cd backend && LANGFUSE_PUBLIC_KEY=<pk> LANGFUSE_SECRET_KEY=<sk> npx tsx scripts/langfuse-cost-audit.ts --hours 24 > specs/047-studio-token-efficiency/baseline-cost.txt`
+- [ ] T004 [P] Capture pre-feature cache hit ratio screenshot from Anthropic console (Caching tab, last 24h) and save to `specs/047-studio-token-efficiency/baseline-cache.png` *(manual — operator must capture from browser; deferred)*
 
 ---
 
@@ -40,12 +40,12 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 **⚠️ CRITICAL**: No user story work can MERGE until this phase is complete (development can start in parallel; the gate fires at merge time).
 
-- [ ] T005 Create test fixtures directory `backend/src/build-tune-agent/__tests__/fixtures/decision-quality/` with four subdirectories: `gender-rewording/`, `screening-memory-recall/`, `witness-quote-presence/`, `three-field-self-report/`
-- [ ] T006 Author canonical stub LLM responses in each fixture subdirectory as `stub-response.json` (recorded once, hand-curated per FR-010 assertion shapes)
-- [ ] T007 Author input fixtures in each subdirectory as `input.json` containing the `SystemPromptContext`, memory snapshot, anchor message, and operator turn that produce the canonical stub response
-- [ ] T008 Create `backend/src/build-tune-agent/__tests__/decision-quality.test.ts` with four `node:test` blocks — one per FR-010 case — that load the fixtures, stub the LLM call, and assert on output structure (`category === 'NO_FIX'`, `consultedMemoryKeys` contains the key, `witness_quote` non-empty, three named self_report fields present)
-- [ ] T009 Wire `decision-quality.test.ts` into the existing test runner script (or whatever Railway/Vercel CI invokes) such that a failing test fails the build
-- [ ] T010 [P] Verify the test file runs locally green against current `main` HEAD (i.e., the assertions pass on the unmodified codebase) — this confirms the tests are correctly capturing existing behavior, not the new behavior we're about to ship
+- [X] T005 Create test fixtures directory `backend/src/build-tune-agent/__tests__/fixtures/decision-quality/` with four subdirectories: `gender-rewording/`, `screening-memory-recall/`, `witness-quote-presence/`, `three-field-self-report/`
+- [X] T006 Author canonical stub LLM responses in each fixture subdirectory as `stub-response.json` (recorded once, hand-curated per FR-010 assertion shapes)
+- [X] T007 Author input fixtures in each subdirectory as `input.json` containing the `SystemPromptContext`, memory snapshot, anchor message, and operator turn that produce the canonical stub response
+- [X] T008 Create `backend/src/build-tune-agent/__tests__/decision-quality.test.ts` with four `node:test` blocks — one per FR-010 case — that load the fixtures, stub the LLM call, and assert on output structure (`category === 'NO_FIX'`, `consultedMemoryKeys` contains the key, `witness_quote` non-empty, three named self_report fields present)
+- [ ] T009 Wire `decision-quality.test.ts` into the existing test runner script (or whatever Railway/Vercel CI invokes) such that a failing test fails the build *(deferred — no centralized CI runner script in repo today; tests are run manually per-PR via the commands in quickstart.md. CI wiring is a one-line addition once a CI config file exists)*
+- [X] T010 [P] Verify the test file runs locally green against current `main` HEAD — 4/4 tests pass
 
 **Checkpoint**: Decision-quality eval suite exists and is green. Every subsequent PR's CI run includes this gate.
 

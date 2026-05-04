@@ -1,0 +1,8 @@
+{
+  "description": "Operator edit changes a factual claim in the AI's reply (a price). Non-NO_FIX category (FAQ). Witness quote MUST be a non-empty verbatim span from the edit. Tests that the agent never produces a non-NO_FIX classification with empty witness_quote.",
+  "agentMessageDraft": "Late checkout is available for an additional 50 EUR per hour after 11am.",
+  "operatorEdited": "Late checkout is available for an additional 30 EUR per hour after 11am.",
+  "memorySnapshot": [],
+  "outerMode": "TUNE",
+  "innerState": "scoping"
+}

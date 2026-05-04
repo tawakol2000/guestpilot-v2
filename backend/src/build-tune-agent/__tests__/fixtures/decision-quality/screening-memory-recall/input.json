@@ -1,0 +1,15 @@
+{
+  "description": "Tenant has a saved preference: screening rules belong in the system prompt, never in SOPs. Operator edit touches a screening rejection wording. Agent must consult the memory key and classify NO_FIX or SYSTEM_PROMPT — never SOP_CONTENT.",
+  "agentMessageDraft": "Unfortunately we cannot accommodate this booking — our property does not allow visitor groups under your composition.",
+  "operatorEdited": "Unfortunately we cannot accept this booking. Our property is families-only.",
+  "memorySnapshot": [
+    {
+      "key": "preferences/no-sop-for-screening",
+      "value": "Screening workflow gaps map to SYSTEM_PROMPT on the screening variant, not SOP. The screening rules live in TenantAiConfig.systemPromptScreening; do NOT propose a new SOP for screening-related edits.",
+      "source": "manager-rule-2026-05-03",
+      "updatedAt": "2026-05-03T00:00:00Z"
+    }
+  ],
+  "outerMode": "TUNE",
+  "innerState": "scoping"
+}
