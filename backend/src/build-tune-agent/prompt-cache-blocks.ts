@@ -231,6 +231,56 @@ export function withLastToolCacheControl<T extends Record<string, unknown>>(
 }
 
 /**
+ * 2026-05-04 — fourth cache breakpoint: mark the last content block of the
+ * last message in a conversation history with cache_control. This caches
+ * the entire prefix-up-to-and-including the last assistant turn, so the
+ * NEXT turn (which appends a new user message) reads the entire prior
+ * conversation at $0.30/M instead of $3/M Sonnet input rate.
+ *
+ * Why this matters: studio_get_artifact / studio_get_evidence_section
+ * tool returns can be 5-30K tokens each. Without a messages-array cache
+ * marker, every turn re-pays full input rate for the cumulative tool-
+ * return history. After 5 read-heavy turns that's 30-60K uncached tokens
+ * costing $0.10-0.18/turn just for re-paying history. With this marker:
+ * ~10x reduction on that cost component.
+ *
+ * Anthropic supports up to 4 cache breakpoints. We're already using 3
+ * (system blocks 0+1, last tool); this adds the 4th.
+ *
+ * Returns the original array unchanged when:
+ *   - messages array is empty (no last message to mark)
+ *   - last message has empty content array (no block to mark)
+ *   - last message content is neither string nor array (defensive)
+ *
+ * Never mutates the input. Never throws.
+ */
+export function withLastMessageCacheControl<
+  M extends { role: 'user' | 'assistant'; content: string | unknown[] },
+>(messages: M[]): M[] {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  let blocks: unknown[];
+  if (typeof last.content === 'string') {
+    if (last.content.length === 0) return messages;
+    blocks = [{ type: 'text', text: last.content }];
+  } else if (Array.isArray(last.content)) {
+    if (last.content.length === 0) return messages;
+    blocks = [...last.content];
+  } else {
+    return messages;
+  }
+  const lastBlock = blocks[blocks.length - 1];
+  if (typeof lastBlock !== 'object' || lastBlock === null) return messages;
+  const markedBlock = {
+    ...(lastBlock as Record<string, unknown>),
+    cache_control: { type: 'ephemeral' },
+  };
+  blocks[blocks.length - 1] = markedBlock;
+  const markedMsg = { ...last, content: blocks } as M;
+  return [...messages.slice(0, -1), markedMsg];
+}
+
+/**
  * Env-flag check for the direct-transport path. Default OFF — the SDK path
  * stays the default until the MCP tool-call loop is reproduced in the
  * direct transport (tracked separately; see runtime-direct.ts header).

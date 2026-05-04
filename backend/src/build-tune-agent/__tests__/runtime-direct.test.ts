@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import {
   buildAnthropicSystemBlocks,
   withLastToolCacheControl,
+  withLastMessageCacheControl,
   isDirectTransportEnabled,
 } from '../prompt-cache-blocks';
 import {
@@ -211,4 +212,96 @@ test('F1 isDirectTransportEnabled respects truthy strings', () => {
   }
   if (prev === undefined) delete process.env.BUILD_AGENT_DIRECT_TRANSPORT;
   else process.env.BUILD_AGENT_DIRECT_TRANSPORT = prev;
+});
+
+// ─── withLastMessageCacheControl (2026-05-04 cost-cut) ───────────────────
+
+test('2026-05-04 withLastMessageCacheControl: string content normalized to block array with cache_control on the lone block', () => {
+  const out = withLastMessageCacheControl([
+    { role: 'user' as const, content: 'first user msg' },
+    { role: 'assistant' as const, content: 'assistant reply text' },
+  ]);
+  assert.equal(out.length, 2);
+  // Earlier message: untouched (still string).
+  assert.equal(out[0].content, 'first user msg');
+  // Last message: content is now a block array with cache_control on the
+  // single text block.
+  const lastContent = out[1].content;
+  assert.ok(Array.isArray(lastContent), 'last content must be a block array');
+  assert.equal(lastContent.length, 1);
+  const block = lastContent[0] as Record<string, unknown>;
+  assert.equal(block.type, 'text');
+  assert.equal(block.text, 'assistant reply text');
+  assert.deepEqual(block.cache_control, { type: 'ephemeral' });
+});
+
+test('2026-05-04 withLastMessageCacheControl: array content marks ONLY the last block', () => {
+  const out = withLastMessageCacheControl([
+    {
+      role: 'assistant' as const,
+      content: [
+        { type: 'text', text: 'reasoning…' },
+        { type: 'tool_use', id: 't1', name: 'studio_get_artifact', input: {} },
+        { type: 'text', text: 'closing prose' },
+      ],
+    },
+  ]);
+  const blocks = out[0].content as unknown as Array<Record<string, unknown>>;
+  assert.equal(blocks.length, 3);
+  assert.equal(blocks[0].cache_control, undefined);
+  assert.equal(blocks[1].cache_control, undefined);
+  assert.deepEqual(blocks[2].cache_control, { type: 'ephemeral' });
+});
+
+test('2026-05-04 withLastMessageCacheControl: empty array unchanged', () => {
+  const empty: Array<{ role: 'user' | 'assistant'; content: string | unknown[] }> = [];
+  const out = withLastMessageCacheControl(empty);
+  assert.equal(out, empty); // referential — short-circuits without copy
+});
+
+test('2026-05-04 withLastMessageCacheControl: empty string content unchanged (no block to mark)', () => {
+  const input = [{ role: 'user' as const, content: '' }];
+  const out = withLastMessageCacheControl(input);
+  assert.equal(out, input);
+});
+
+test('2026-05-04 withLastMessageCacheControl: does not mutate input messages or their content', () => {
+  const original = [
+    { role: 'user' as const, content: 'msg' },
+    { role: 'assistant' as const, content: [{ type: 'text', text: 'reply' }] },
+  ];
+  const beforeAssistant = JSON.stringify(original[1]);
+  const out = withLastMessageCacheControl(original);
+  // Returned array is new
+  assert.notEqual(out, original);
+  // Original entries untouched
+  assert.equal(original[0].content, 'msg');
+  assert.equal(JSON.stringify(original[1]), beforeAssistant);
+  // Returned array's last entry IS marked
+  const lastBlocks = out[1].content as Array<Record<string, unknown>>;
+  assert.deepEqual(lastBlocks[0].cache_control, { type: 'ephemeral' });
+});
+
+test('2026-05-04 buildDirectMessagesCreateParams: last message in conversation gets cache_control (4th breakpoint)', () => {
+  const params = buildDirectMessagesCreateParams({
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
+    assembledSystemPrompt: fakeAssembledPrompt('A'.repeat(30), 'B'.repeat(20), 'C'.repeat(10)),
+    tools: [{ name: 'a', input_schema: { type: 'object' } }],
+    messages: [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'reply' },
+      { role: 'user', content: 'follow-up' },
+    ],
+  });
+  assert.equal(params.messages.length, 3);
+  // Earlier messages still strings.
+  assert.equal(typeof params.messages[0].content, 'string');
+  assert.equal(typeof params.messages[1].content, 'string');
+  // Last message normalized to block array with cache_control.
+  const lastBlocks = params.messages[2].content as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(lastBlocks));
+  assert.deepEqual(lastBlocks[lastBlocks.length - 1].cache_control, {
+    type: 'ephemeral',
+  });
 });

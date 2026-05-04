@@ -49,6 +49,7 @@ import type {
 import {
   buildAnthropicSystemBlocks,
   withLastToolCacheControl,
+  withLastMessageCacheControl,
   isDirectTransportEnabled,
 } from './prompt-cache-blocks';
 
@@ -111,12 +112,19 @@ export function buildDirectMessagesCreateParams(
 ): DirectMessagesCreateParams {
   const system = buildAnthropicSystemBlocks(input.assembledSystemPrompt);
   const tools = withLastToolCacheControl(input.tools);
+  // 2026-05-04 — fourth cache breakpoint on the conversation history.
+  // Without this, the messages array (which holds tool returns from
+  // studio_get_artifact / studio_get_evidence_section, often 5-30K tokens
+  // each) is paid at full $3/M input rate every turn. With it: ~10x
+  // reduction on that cost component on subsequent turns. See
+  // withLastMessageCacheControl docstring for the full rationale.
+  const messages = withLastMessageCacheControl(input.messages);
   const params: DirectMessagesCreateParams = {
     model: input.model,
     max_tokens: input.maxTokens,
     system,
     tools,
-    messages: input.messages,
+    messages,
     stream: true,
   };
   if (input.thinking) {
