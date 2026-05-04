@@ -22,6 +22,17 @@ import { DATA_PART_TYPES } from './data-parts';
 const TAG_TO_PART_TYPE: Record<string, string> = {
   'data-question-choices': DATA_PART_TYPES.question_choices,
   'data-audit-report': DATA_PART_TYPES.audit_report,
+  // 2026-05-04 — defensive fallback: data-suggested-fix is supposed to
+  // come from the propose_suggestion tool (which has rejection-memory
+  // dedup + previewId minting). Sonnet 4.6 sometimes pattern-matches
+  // off the inline-emit examples for question_choices/audit_report and
+  // drops <data-suggested-fix>{...}</data-suggested-fix> straight into
+  // its assistant text. Without this entry the raw tag + JSON renders
+  // verbatim in the chat bubble. Catch it here so the card still
+  // surfaces; the rejection-memory guard is skipped (a one-turn cost
+  // for a much better UX), and the response_contract tightening below
+  // pushes the agent back to the tool path on subsequent turns.
+  'data-suggested-fix': DATA_PART_TYPES.suggested_fix,
 };
 
 const KNOWN_TAGS = Object.keys(TAG_TO_PART_TYPE);

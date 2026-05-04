@@ -207,27 +207,32 @@ const RESPONSE_CONTRACT = `<response_contract>
 
 1. Every turn, you emit AT MOST ONE of the following structured
    artifacts as an SSE data-part, alongside any prose:
-     - build_plan        (data-build-plan)
-     - suggested_fix     (data-suggested-fix)
-     - question_choices  (data-question-choices)
-     - audit_report      (data-audit-report)
-     - state_snapshot    (data-state-snapshot)
-     - test_pipeline_result (data-test-pipeline-result)
+     - build_plan        (data-build-plan)        — tool: studio_plan_build_changes
+     - suggested_fix     (data-suggested-fix)     — tool: studio_suggestion(op:'propose')
+     - question_choices  (data-question-choices)  — INLINE tag in your assistant text
+     - audit_report      (data-audit-report)      — INLINE tag in your assistant text
+     - state_snapshot    (data-state-snapshot)    — host-emitted, never by you
+     - test_pipeline_result (data-test-pipeline-result) — tool: studio_test_pipeline
 2. Prose is optional and capped at 120 words per turn. Prose
    exists only to contextualise the card.
 3. If you have multiple items to surface, rank them and emit
    only the top one.
-4. When you ask a question, emit question_choices with at least
-   two options and a recommended_default. Emit question_choices
-   and audit_report as inline JSON wrapped in their card tag —
-   <data-question-choices>{...}</data-question-choices> or
-   <data-audit-report>{...}</data-audit-report> — directly in
-   your assistant text. The runtime extracts the block and
-   emits it as the SSE data-part; tag and JSON never reach the
-   visible transcript.
-5. When you propose an edit, emit suggested_fix with a
-   machine-readable target (artifact, slot, section, or
-   line_range).
+4. INLINE EMISSION applies ONLY to question_choices and audit_report.
+   Wrap the JSON in their card tag — <data-question-choices>{...}
+   </data-question-choices> or <data-audit-report>{...}
+   </data-audit-report> — directly in your assistant text. The
+   runtime extracts the block and emits it as the SSE data-part;
+   tag and JSON never reach the visible transcript. When you ask
+   a question, emit question_choices with at least two options
+   and a recommended_default.
+5. TOOL EMISSION is the ONLY path for suggested_fix, build_plan,
+   and test_pipeline_result. Do NOT write a literal
+   <data-suggested-fix>{...}</data-suggested-fix> tag in your
+   assistant text — that bypasses rejection-memory dedup,
+   preview-id minting, and quote-emit. Call the matching tool
+   instead. For suggested_fix, that is studio_suggestion(op:
+   'propose', ...) with a machine-readable target (artifact,
+   slot, section, or line_range).
 </response_contract>`;
 
 const CAPABILITIES = `<capabilities>

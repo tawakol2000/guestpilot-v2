@@ -42,6 +42,35 @@ test('extractor: complete audit-report block emitted', () => {
   assert.equal(out.emittedDataParts[0].partType, 'data-audit-report');
 });
 
+test('2026-05-04: inline <data-suggested-fix> is parsed (defensive fallback)', () => {
+  // The propose_suggestion tool is the canonical emit path for
+  // suggested_fix. But Sonnet 4.6 occasionally pattern-matches off the
+  // inline question_choices/audit_report examples and drops the tag
+  // straight into its assistant text. Without this catch the raw tag
+  // and JSON render verbatim in the chat bubble. Failure mode this test
+  // pins: the user reported seeing literal "<data-suggested-fix>{...}"
+  // text in the studio chat after a screening-rejection turn.
+  const s = makeExtractorState();
+  const json = JSON.stringify({
+    id: 'draft-screening-rejection-wording',
+    category: 'SYSTEM_PROMPT',
+    subLabel: 'rejection-gender-mention',
+    confidence: 0.95,
+    target: { artifact: 'system_prompt', systemPromptVariant: 'screening' },
+    diff: { before: 'old', after: 'new' },
+    rationale: 'Rejection message named gender — Airbnb risk.',
+  });
+  const out = feedExtractor(
+    s,
+    `Here's the proposed edit:\n<data-suggested-fix>${json}</data-suggested-fix>`,
+  );
+  assert.equal(out.safeText, "Here's the proposed edit:\n");
+  assert.equal(out.emittedDataParts.length, 1);
+  assert.equal(out.emittedDataParts[0].partType, 'data-suggested-fix');
+  assert.deepEqual(out.emittedDataParts[0].data, JSON.parse(json));
+  assert.deepEqual(out.errors, []);
+});
+
 test('extractor: block split across many small chunks reassembles', () => {
   const s = makeExtractorState();
   const json = '{"question":"Ready?","options":[{"id":"y","label":"Yes"}],"allowCustomInput":false}';
