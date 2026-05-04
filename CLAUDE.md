@@ -191,6 +191,8 @@ Feature branches merge directly to `main`. No long-lived dev branches.
 - PostgreSQL via Prisma. Changes: two new columns on `Tenant` (manager recipient, security recipient, reminder HH:MM, handoff HH:MM, feature on/off) — actually four + bool = five fields. Extend `Reservation.screeningAnswers.documentChecklist` JSON structure with per-slot image refs (backward-compatible JSON extension, no schema migration needed for that). One new table `DocumentHandoffState` (reservation-scoped, holds per-message-type scheduled fire time, status, attempt count, last error, provider message ID). Applied with `npx prisma db push` per constitution §Development Workflow. (044-doc-handoff-whatsapp)
 - TypeScript 5.x on Node 18+ (frontend only) + Next.js 16, React 19, Tailwind 4, shadcn/ui, `ai` (SDK), existing studio/build components, `next/font/google` for Inter Tight + JetBrains Mono (046-studio-redesign)
 - N/A — no backend or schema changes; all data comes from existing endpoints (046-studio-redesign)
+- TypeScript 5.x on Node.js 18+ (backend only — no frontend changes) + `@anthropic-ai/claude-agent-sdk` 0.2.109 (SDK transport), `@anthropic-ai/sdk` (direct transport when `BUILD_AGENT_DIRECT_TRANSPORT=true`), `langfuse` Node SDK (observability), `zod/v4` (tool schemas), Prisma ORM (read-only — no schema changes) (047-studio-token-efficiency)
+- PostgreSQL via Prisma — **no schema changes**. Reads existing `SopDefinition`/`SopVariant`/`FaqEntry`/`TenantAiConfig`/`AgentMemory`/`TuningConversation` tables. (047-studio-token-efficiency)
 
 ## Recent Changes
 - 029-inquiry-accept-reject: Added TypeScript 5.x on Node.js 18+ (backend), Next.js 16 + React 19 (frontend) + Express 4.x, Prisma ORM, axios, Tailwind 4, shadcn/ui
