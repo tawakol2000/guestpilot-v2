@@ -86,16 +86,16 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 ### Tests for User Story 2
 
-- [ ] T022 [P] [US2] Create `backend/src/build-tune-agent/__tests__/get-artifact.test.ts` (new file) with test cases per [contracts/studio_get_artifact.contract.md](./contracts/studio_get_artifact.contract.md): system_prompt × full × concise (≤1500 tokens), system_prompt × full × detailed (byte-for-byte preserved), sop × full × concise (head excerpt + fullCharLength), faq × full × concise (full Q+A when ≤1200 chars)
+- [X] T022 [P] [US2] get-artifact.test.ts created with 7 test cases covering conciseText, conciseSop (variants + property overrides), conciseFaq, conciseTool
 
 ### Implementation for User Story 2
 
-- [ ] T023 [US2] In `backend/src/build-tune-agent/tools/get-artifact.ts`, add `HEAD_EXCERPT_CHARS = 1200` constant and `conciseText(full: string | null): string` helper that returns full unchanged when ≤1200 chars, else first 1200 chars + `\n\n…[truncated — call studio_get_artifact with verbosity:'detailed' to read the full body]`
-- [ ] T024 [US2] In the same file, read `args.verbosity` (default `'concise'`) at the top of the handler. Branch every kind handler (`system_prompt`, `sop`, `faq`, `tool`) to return concise vs detailed shape per the contract
-- [ ] T025 [US2] Update the tool DESCRIPTION constant in `get-artifact.ts` to spell out the new default and reference `verbosity:'detailed'` for full-body fetches per the contract document
-- [ ] T026 [US2] Add span end metadata fields `detailed: boolean`, `returnCharLength: number`, `fullCharLength: number` so the observability layer captures compression ratio
-- [ ] T027 [US2] Run `cd backend && npx tsc --noEmit` and confirm clean
-- [ ] T028 [US2] Run `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/__tests__/get-artifact.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts` and confirm all green
+- [X] T023 [US2] HEAD_EXCERPT_CHARS=1200 + conciseText helper in get-artifact.ts
+- [X] T024 [US2] handler reads `args.verbosity` (default 'concise'), branches per kind for concise vs detailed shape; conciseSop/conciseFaq/conciseTool helpers
+- [X] T025 [US2] DESCRIPTION rewritten to spell out concise default + detailed opt-in
+- [X] T026 [US2] span end metadata adds `detailed`, `returnCharLength`, `fullCharLength`
+- [X] T027 [US2] tsc clean
+- [X] T028 [US2] 11/11 tests pass
 
 **Checkpoint**: Verbosity honored end-to-end. The agent's default tool returns are 5-15× smaller. Decision-quality gate still green.
 
