@@ -829,7 +829,24 @@ export function StudioChat({
               onPlanRolledBack={onPlanRolledBack}
               onArtifactTouched={onArtifactTouched}
               onOpenArtifact={onOpenArtifact}
-              onSendText={(text) => sendMessage({ text })}
+              onSendText={(text) => {
+                // 2026-05-04 — route inline-card wake messages through the
+                // same queue the composer uses. If we call sendMessage
+                // directly while the agent's status is not 'ready' (e.g.
+                // a brief 'streaming'/'submitted' tail right after the
+                // previous turn ended), the AI SDK silently drops the
+                // call and the agent never wakes up. Failure mode this
+                // fixes: clicking Confirm on a transition-proposal card
+                // immediately after the proposal turn ended caused the
+                // wake message to evaporate, so the agent never delivered
+                // the promised follow-up. The queue effect at L672
+                // flushes the next message when status returns to ready.
+                if (status === 'ready') {
+                  sendMessage({ text })
+                } else {
+                  setQueuedMessages((prev) => [...prev, text])
+                }
+              }}
               onOpenToolDrawer={openToolDrawer}
               onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
               onStateMachineSnapshot={onStateMachineSnapshot}

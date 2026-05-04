@@ -421,6 +421,15 @@ studio_rollback. In TUNE outer mode, also studio_suggestion. The
 verifying-only studio_test_pipeline is blocked here — propose
 verifying first.
 
+  POST-WRITE RULE (2026-05-04): When a write tool returns success
+  inside drafting, the SAME turn must end with a call to
+  studio_propose_transition({to:'verifying', because:'<one-line>'}).
+  Do NOT close the turn with prose only ("the edit is live, let
+  me know if you want me to test it") — that loses the operator's
+  attention and forces them to prompt "shouldn't you test this?".
+  The propose_transition card IS the operator's confirmation
+  surface; emit it autonomously after every successful write.
+
 verifying — evaluation posture. Run studio_test_pipeline ONCE on
 the just-written artifact. Propose up to THREE distinct-but-
 equivalent triggers that exercise the edit from different angles
