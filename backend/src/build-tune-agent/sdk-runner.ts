@@ -46,7 +46,11 @@ import {
   buildModeDisabledReason,
   resolveTuningAgentModel,
 } from './config';
-import { runWithAiTrace, startAiSpan } from '../services/observability.service';
+import {
+  runWithAiTrace,
+  startAiSpan,
+  logAgentGeneration,
+} from '../services/observability.service';
 import {
   logCacheBlockStructure,
   buildCacheStatsPayload,
@@ -382,6 +386,19 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     extractorState,
   );
   let lastUsage: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | null = null;
+  // 2026-05-04 — accumulate usage across every SDK assistant message so we
+  // can emit one rolled-up generation to Langfuse at query end. Without
+  // this the cost-audit script sees tuning-agent.query spans with no
+  // tokens attached, and Studio cost is invisible. Each SDK assistant
+  // message corresponds to ONE internal messages.create round; a single
+  // tuning-agent.query typically fires 3-8 of these as tool-use loops.
+  const cumulativeUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheCreate: 0,
+    rounds: 0,
+  };
   input.writer.write({ type: 'start', messageId: input.assistantMessageId });
   input.writer.write({ type: 'start-step' });
 
@@ -446,6 +463,11 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
             const cached = u.cache_read_input_tokens ?? 0;
             const created = u.cache_creation_input_tokens ?? 0;
             const out = u.output_tokens ?? 0;
+            cumulativeUsage.input += inp;
+            cumulativeUsage.cacheRead += cached;
+            cumulativeUsage.cacheCreate += created;
+            cumulativeUsage.output += out;
+            cumulativeUsage.rounds += 1;
             const denom = inp + cached;
             const frac = denom === 0 ? 0 : cached / denom;
             console.log(
@@ -456,7 +478,35 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
         }
         bridgeSDKMessage(message, state, filteredWrite);
       }
-      span.end({ toolCalls: toolCallsInvoked.length, length: finalText.length });
+      span.end({
+        toolCalls: toolCallsInvoked.length,
+        length: finalText.length,
+        rounds: cumulativeUsage.rounds,
+        inputTokens: cumulativeUsage.input,
+        cacheReadTokens: cumulativeUsage.cacheRead,
+        cacheCreationTokens: cumulativeUsage.cacheCreate,
+        outputTokens: cumulativeUsage.output,
+      });
+      // Emit a Langfuse generation with the rolled-up usage so the
+      // cost-audit script and the Langfuse UI can see Studio token spend.
+      // Without this the tuning-agent.query span has no usage attached
+      // and cost is invisible (only the trace tree shows up).
+      if (cumulativeUsage.rounds > 0) {
+        logAgentGeneration({
+          name: 'tuning-agent.query',
+          model,
+          inputTokens: cumulativeUsage.input,
+          outputTokens: cumulativeUsage.output,
+          cacheReadTokens: cumulativeUsage.cacheRead,
+          cacheCreationTokens: cumulativeUsage.cacheCreate,
+          metadata: {
+            rounds: cumulativeUsage.rounds,
+            toolCallsInvoked: toolCallsInvoked.length,
+            tenantId: input.tenantId,
+            conversationId: input.conversationId,
+          },
+        });
+      }
     } catch (err: any) {
       runError = err?.message ?? String(err);
       span.end({ error: runError });

@@ -117,7 +117,37 @@ async function main() {
   const all = await fetchAllObservations({ baseUrl, auth, fromStartTime });
   console.log(`Fetched ${all.length} observations.`);
 
-  let scoped = all.filter((o) => (o.usageDetails && Object.keys(o.usageDetails).length > 0));
+  // 2026-05-04 — show ALL spans first, then split into "with token data"
+  // vs "without". Spans without token data are typically tool/memory spans
+  // that wrap a non-LLM operation; they help count round-trips but don't
+  // contribute to cost.
+  const withUsage = all.filter((o) => o.usageDetails && Object.keys(o.usageDetails).length > 0);
+  const withoutUsage = all.filter(
+    (o) => !o.usageDetails || Object.keys(o.usageDetails).length === 0,
+  );
+  console.log(
+    `  ${withUsage.length} have token usage (LLM calls)  |  ${withoutUsage.length} are non-LLM spans`,
+  );
+
+  // ─── Span name breakdown across ALL spans (helps see what's instrumented)
+  const allByName = new Map<string, number>();
+  for (const o of all) {
+    const name = o.name ?? '<unnamed>';
+    allByName.set(name, (allByName.get(name) ?? 0) + 1);
+  }
+  const allByNameRows = [...allByName.entries()].sort((a, b) => b[1] - a[1]);
+  console.log('\n─── ALL SPAN NAMES (count, includes non-LLM) ─────────────────');
+  for (const [name, count] of allByNameRows.slice(0, 25)) {
+    const hasUsage = all.some(
+      (o) =>
+        (o.name ?? '<unnamed>') === name &&
+        o.usageDetails &&
+        Object.keys(o.usageDetails).length > 0,
+    );
+    console.log(`  ×${String(count).padStart(4)}  ${hasUsage ? '[LLM]' : '[span]'}  ${name}`);
+  }
+
+  let scoped = withUsage;
   if (nameFilter) {
     scoped = scoped.filter((o) => (o.name ?? '').toLowerCase().includes(nameFilter.toLowerCase()));
     console.log(`After --name "${nameFilter}" filter: ${scoped.length} observations.`);

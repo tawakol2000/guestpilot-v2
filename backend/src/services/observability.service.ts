@@ -251,6 +251,50 @@ export function startAiSpan(
   };
 }
 
+/**
+ * 2026-05-04 — emit a Langfuse `generation` node on the current root trace
+ * for an agent SDK query that fired multiple internal messages.create rounds.
+ * The Claude Agent SDK doesn't expose per-round usage as separate spans, so
+ * we accumulate usage from each SDK message (input/output/cache_read/
+ * cache_creation) and emit one rolled-up generation when the query ends.
+ *
+ * Without this, tuning-agent.query spans show in Langfuse but with zero
+ * usage attached — cost is invisible. With this, the cost-audit script
+ * sees Studio token spend the same way it sees the reply pipeline's.
+ *
+ * Safe no-op when Langfuse is disabled or no root trace is active.
+ */
+export function logAgentGeneration(params: {
+  name: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  metadata?: Record<string, unknown>;
+}): void {
+  const trace = getCurrentTrace();
+  if (!trace) return;
+  try {
+    trace.generation({
+      name: params.name,
+      model: params.model,
+      usage: {
+        input: params.inputTokens,
+        output: params.outputTokens,
+        unit: 'TOKENS',
+      },
+      metadata: {
+        cacheReadTokens: params.cacheReadTokens ?? 0,
+        cacheCreationTokens: params.cacheCreationTokens ?? 0,
+        ...(params.metadata ?? {}),
+      },
+    });
+  } catch (err) {
+    console.warn(`[Observability] logAgentGeneration(${params.name}) failed (non-fatal):`, err);
+  }
+}
+
 // ─── Generation tracing (existing call-site: createMessage → traceAiCall) ────
 // When a root trace is active, the generation is nested under it. When no root
 // trace exists (e.g. legacy callers, standalone jobs), fall back to the
