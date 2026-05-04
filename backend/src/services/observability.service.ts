@@ -276,17 +276,22 @@ export function logAgentGeneration(params: {
   const trace = getCurrentTrace();
   if (!trace) return;
   try {
+    // 2026-05-04 — use `usageDetails` (modern Langfuse shape) instead of
+    // the deprecated `usage` field. The model-pricing layer reads cache
+    // tokens via these specific keys (cache_read_input_tokens,
+    // cache_creation_input_tokens) to compute Anthropic cost correctly.
+    // Putting them in metadata, as we did initially, leaves Langfuse
+    // costing the call as if it had only the fresh input tokens visible.
     trace.generation({
       name: params.name,
       model: params.model,
-      usage: {
+      usageDetails: {
         input: params.inputTokens,
         output: params.outputTokens,
-        unit: 'TOKENS',
+        cache_read_input_tokens: params.cacheReadTokens ?? 0,
+        cache_creation_input_tokens: params.cacheCreationTokens ?? 0,
       },
       metadata: {
-        cacheReadTokens: params.cacheReadTokens ?? 0,
-        cacheCreationTokens: params.cacheCreationTokens ?? 0,
         ...(params.metadata ?? {}),
       },
     });
