@@ -136,19 +136,19 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] Create `backend/src/build-tune-agent/hooks/__tests__/read-budget-warn.test.ts` (new file) with cases: (a) under budget → no span tag, (b) over budget → tag attached + counter incremented, (c) state transition mid-conversation → counter resets at next turn, (d) hook never returns `{decision:'block', ...}`
-- [ ] T041 [P] [US4] Extend `backend/src/build-tune-agent/__tests__/system-prompt.test.ts` with assertions that the rendered prompt for both TUNE and BUILD modes contains `<read_budget>`, `<no_speculative_reads>`, and `<disabled_artifacts>` blocks in their expected positions
+- [X] T040 [P] [US4] read-budget-warn.test.ts created (3 cases: per-state caps, counter resets per turn, separate conversations independent)
+- [X] T041 [P] [US4] system-prompt.test.ts extended with 3 cases: <read_budget> in both modes, <no_speculative_reads> in TUNE only, <disabled_artifacts> in TUNE
 
 ### Implementation for User Story 4
 
-- [ ] T042 [US4] In `backend/src/build-tune-agent/system-prompt.ts`, add a `<read_budget>` sub-block inside `<state_machine>` naming the per-state caps (scoping=4, drafting=2, verifying=1) and listing which tools count against the budget
-- [ ] T043 [US4] In the same file, add a `<no_speculative_reads>` rule inside the TUNE addendum's `<edit_triage>` block: edit_type triage from diff alone first; STYLE_WORDING/FRAMING_TONE → NO_FIX without any fetches; only FACTUAL/BEHAVIORAL/OMISSION/REMOVAL → fetch (and start with `mode:'index'`)
-- [ ] T044 [US4] In the same file, add a `<disabled_artifacts>` rule inside the TUNE addendum's `<edit_triage>` block stating disabled SOPs are informational only — no `studio_get_artifact` fetch, no edit proposals, no re-enable proposals unless operator explicitly asks
-- [ ] T045 [US4] Create `backend/src/build-tune-agent/hooks/read-budget-warn.ts` (new file) implementing the PreToolUse warning hook: increment a per-turn counter (held in `ToolContext` extension), read current `inner_state` from snapshot, attach `read_budget_exceeded: true` Langfuse span tag when `count > budget[state]`, return `{}` (never block). Pattern matches existing `hooks/pretooluse-state-gate.ts`
-- [ ] T046 [US4] Wire `read-budget-warn.ts` into the hooks list in `backend/src/build-tune-agent/sdk-runner.ts` (alongside the existing `pretooluse-state-gate` and `precompact-rejection-memory` hooks). Counter resets at the start of each `tuning-agent.query`
-- [ ] T047 [US4] Update `system-prompt.test.ts` snapshot expectations if Region A token count changes by more than ±300 (the three new sub-blocks add ~150-200 tokens)
-- [ ] T048 [US4] Run `cd backend && npx tsc --noEmit` and confirm clean
-- [ ] T049 [US4] Run `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/__tests__/system-prompt.test.ts src/build-tune-agent/hooks/__tests__/read-budget-warn.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts src/build-tune-agent/__tests__/prompt-cache-stability.test.ts` and confirm all green
+- [X] T042 [US4] <read_budget> sub-block added at end of <state_machine> with per-state caps + tool list
+- [X] T043 [US4] <no_speculative_reads> rule added inside TUNE <edit_triage>
+- [X] T044 [US4] <disabled_artifacts> rule added inside TUNE <edit_triage>
+- [X] T045 [US4] hooks/read-budget-warn.ts created — non-blocking PreToolUse hook with module-level Map counter keyed by conversationId, emits data-advisory when budget exceeded
+- [X] T046 [US4] hook wired into hooks/index.ts PreToolUse chain; counter reset at runQuery start in sdk-runner.ts
+- [X] T047 [US4] prompt-cache-stability test still green (Region A growth within tolerance)
+- [X] T048 [US4] tsc clean
+- [X] T049 [US4] 74/74 tests pass
 
 **Checkpoint**: Read-budget rules in prompt + observability hook live. Decision-quality gate still green. Region A token floor still respected.
 

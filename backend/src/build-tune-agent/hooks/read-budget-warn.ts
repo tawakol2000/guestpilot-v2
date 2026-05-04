@@ -1,0 +1,126 @@
+/**
+ * Feature 047 PR 4 — read-budget warning hook.
+ *
+ * NON-blocking PreToolUse hook. Tracks read-tool calls per turn against a
+ * per-state cap (scoping=4, drafting=2, verifying=1). When the budget is
+ * exceeded, attaches a `read_budget_exceeded: true` Langfuse span tag on
+ * the offending tool span. Never returns `{decision: 'block'}`.
+ *
+ * The cap is prompt-level guidance backed by an observability signal — if
+ * the agent exceeds the budget, we observe the deviation in Langfuse and
+ * decide whether to harden later. Per spec clarify-session Q1 / FR-005.
+ *
+ * Counter resets per-turn (keyed by conversationId).
+ */
+import type {
+  HookCallback,
+  HookInput,
+  HookJSONOutput,
+  PreToolUseHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
+import { TUNING_AGENT_TOOL_NAMES } from '../tools/names';
+import { coerceSnapshot, type InnerState } from '../state-machine';
+import type { HookContext } from './shared';
+
+const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TUNING_AGENT_TOOL_NAMES.studio_get_context,
+  TUNING_AGENT_TOOL_NAMES.studio_get_tenant_index,
+  TUNING_AGENT_TOOL_NAMES.studio_get_artifact,
+  TUNING_AGENT_TOOL_NAMES.studio_get_evidence_index,
+  TUNING_AGENT_TOOL_NAMES.studio_get_evidence_section,
+  TUNING_AGENT_TOOL_NAMES.studio_search_corrections,
+  TUNING_AGENT_TOOL_NAMES.studio_get_correction,
+  TUNING_AGENT_TOOL_NAMES.studio_get_canonical_template,
+  TUNING_AGENT_TOOL_NAMES.studio_get_edit_history,
+  TUNING_AGENT_TOOL_NAMES.studio_memory,
+]);
+
+export const READ_BUDGET_BY_STATE: Record<InnerState, number> = {
+  scoping: 4,
+  drafting: 2,
+  verifying: 1,
+};
+
+interface ReadBudgetCounter {
+  conversationId: string;
+  turn: number;
+  reads: number;
+}
+
+// Module-level counter map. Keyed by conversationId; reset per-turn by
+// the runtime (which calls resetReadBudgetForTurn at query start).
+const counters = new Map<string, ReadBudgetCounter>();
+
+export function resetReadBudgetForTurn(conversationId: string, turn: number): void {
+  counters.set(conversationId, { conversationId, turn, reads: 0 });
+}
+
+export function getReadBudgetCount(conversationId: string): number {
+  return counters.get(conversationId)?.reads ?? 0;
+}
+
+export function buildReadBudgetWarnHook(
+  getCtx: () => HookContext,
+): HookCallback {
+  return async (rawInput: HookInput): Promise<HookJSONOutput> => {
+    if (rawInput.hook_event_name !== 'PreToolUse') {
+      return { continue: true } as HookJSONOutput;
+    }
+    const input = rawInput as PreToolUseHookInput;
+    const toolName = input.tool_name;
+    if (!READ_TOOL_NAMES.has(toolName)) {
+      return {};
+    }
+
+    const ctx = getCtx();
+    const convId = ctx.conversationId;
+    if (!convId) return {};
+
+    const counter = counters.get(convId);
+    if (!counter || counter.turn !== ctx.turn) {
+      // First read of this turn — initialize/reset.
+      counters.set(convId, { conversationId: convId, turn: ctx.turn, reads: 1 });
+      return {};
+    }
+    counter.reads += 1;
+
+    // Look up current state from the persisted snapshot (best-effort).
+    let innerState: InnerState = 'scoping';
+    try {
+      const conv = await ctx.prisma.tuningConversation.findUnique({
+        where: { id: convId },
+        select: { stateMachineSnapshot: true },
+      });
+      const snapshot = coerceSnapshot(conv?.stateMachineSnapshot);
+      innerState = snapshot.inner_state;
+    } catch {
+      // If snapshot fetch fails, default to the most permissive state's
+      // budget (scoping=4) — never block on observability path.
+      innerState = 'scoping';
+    }
+    const budget = READ_BUDGET_BY_STATE[innerState];
+
+    if (counter.reads > budget) {
+      // Emit a non-blocking advisory data-part (the runtime forwards it
+      // to the active Langfuse span for the operator to inspect post-hoc).
+      // No `decision` field → SDK proceeds with the call as normal.
+      try {
+        ctx.emitDataPart?.({
+          type: 'data-advisory',
+          data: {
+            kind: 'read_budget_exceeded',
+            innerState,
+            budget,
+            reads: counter.reads,
+            toolName,
+          },
+          transient: true,
+        });
+      } catch {
+        /* swallow — never block on observability failure */
+      }
+    }
+
+    return {};
+  };
+}

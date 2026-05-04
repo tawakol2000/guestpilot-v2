@@ -690,3 +690,29 @@ test('BUILD dynamic suffix renders interview_progress instead of pending_suggest
   assert.ok(suffix.includes('2/6'));
   assert.ok(!suffix.includes('<pending_suggestions>'));
 });
+
+// ─── Feature 047 PR 4 — read budget + speculative-reads + disabled-artifacts ─
+
+test('047 PR4: <read_budget> block names per-state caps in TUNE and BUILD', () => {
+  for (const mode of ['TUNE', 'BUILD'] as const) {
+    const prompt = assembleSystemPrompt(ctx({ mode }));
+    assert.ok(prompt.includes('<read_budget>'), `${mode}: <read_budget> block must render`);
+    assert.ok(prompt.includes('scoping  — up to 4'), `${mode}: scoping cap=4 must be named`);
+    assert.ok(prompt.includes('drafting — up to 2'), `${mode}: drafting cap=2 must be named`);
+    assert.ok(prompt.includes('verifying — 1'), `${mode}: verifying cap=1 must be named`);
+  }
+});
+
+test('047 PR4: <no_speculative_reads> block in TUNE addendum (not in BUILD)', () => {
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  const build = assembleSystemPrompt(ctx({ mode: 'BUILD' }));
+  assert.ok(tune.includes('<no_speculative_reads>'));
+  assert.ok(!build.includes('<no_speculative_reads>'));
+});
+
+test('047 PR4: <disabled_artifacts> block in TUNE addendum names the rule', () => {
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('<disabled_artifacts>'));
+  assert.ok(tune.includes("status:'disabled'"));
+  assert.ok(tune.includes('Do NOT call studio_get_artifact on a disabled SOP'));
+});

@@ -10,13 +10,17 @@ import { buildPostToolUseHook } from './post-tool-use';
 import { buildPreCompactHook } from './pre-compact';
 import { buildStopHook } from './stop';
 import { buildPreToolTraceHook, buildPostToolTraceHook } from './tool-trace';
+import { buildReadBudgetWarnHook } from './read-budget-warn';
 
 export function buildTuningAgentHooks(getCtx: () => HookContext): Options['hooks'] {
   return {
     // Sprint 046 Session A — trace hooks run first so they capture start
     // times before compliance/cooldown denies in the regular hooks.
+    // Feature 047 PR 4 — read-budget warn hook is non-blocking; runs
+    // alongside the existing pre-tool hooks.
     PreToolUse: [
       { hooks: [buildPreToolTraceHook(getCtx)] },
+      { hooks: [buildReadBudgetWarnHook(getCtx)] },
       { hooks: [buildPreToolUseHook(getCtx)] },
     ],
     PostToolUse: [

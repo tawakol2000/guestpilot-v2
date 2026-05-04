@@ -20,6 +20,7 @@ import {
 import { buildTuningAgentMcpServer, type ToolContext } from './tools';
 import { TUNING_AGENT_SERVER_NAME, TUNING_AGENT_TOOL_NAMES } from './tools/names';
 import { buildTuningAgentHooks, type HookContext } from './hooks';
+import { resetReadBudgetForTurn } from './hooks/read-budget-warn';
 import { makeBridgeState, bridgeSDKMessage } from './stream-bridge';
 import {
   makeExtractorState,
@@ -435,6 +436,11 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   }
 
   const runQuery = async (resumeSessionId: string | null): Promise<void> => {
+    // Feature 047 PR 4 — reset the read-budget counter at the start of
+    // each runQuery call (one query == one user turn). Hook reads the
+    // counter on every PreToolUse and emits an advisory when the
+    // per-state budget is exceeded.
+    resetReadBudgetForTurn(input.conversationId, turnNumber);
     const span = startAiSpan('tuning-agent.query', { model, resumed: resumeSessionId !== null });
     try {
       const q = query({

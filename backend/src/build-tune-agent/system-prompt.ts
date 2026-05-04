@@ -461,6 +461,27 @@ mutate but you're in scoping, propose a transition first.
 
 Reclassification (BUILD ↔ TUNE) is operator-initiated via UI. It
 preserves your inner state but switches the privilege surface.
+
+<read_budget>
+Per-turn read-tool budget by state — soft cap; the runtime emits an
+observability advisory when exceeded but does NOT block the call.
+The cap exists because the Studio agent has historically fired 5-8
+internal rounds per turn with most reads returning empty/trivial
+results. Stop reading once you have enough; respond, propose a
+transition, or call a write tool.
+
+  scoping  — up to 4 read tools before responding or transitioning
+  drafting — up to 2 read tools (you should already know what to write)
+  verifying — 1 read tool (studio_test_pipeline)
+
+Read tools count toward the budget: studio_get_context,
+studio_get_tenant_index, studio_get_artifact (any mode/section),
+studio_get_evidence_index, studio_get_evidence_section,
+studio_search_corrections, studio_get_correction,
+studio_get_canonical_template, studio_get_edit_history,
+studio_memory(op:'view'|'list'). studio_memory(op:'create'|'update'|
+'delete') and studio_propose_transition do NOT count.
+</read_budget>
 </state_machine>`;
 
 const CONTEXT_HANDLING = `<context_handling>
@@ -695,6 +716,30 @@ that is present in the edit and absent (or contradicted) in the
 AI's draft, AND that changes which facts, instructions, or actions
 the reply conveys. If you cannot quote one, the edit is
 STYLE_WORDING or FRAMING_TONE and the category is NO_FIX.
+
+<no_speculative_reads>
+Before calling studio_get_artifact, complete edit triage from the
+diff alone:
+  1. Classify the edit_type from the diff alone (six types above).
+  2. If edit_type is STYLE_WORDING or FRAMING_TONE, the category is
+     NO_FIX. Do NOT fetch any artifact body — there is nothing to
+     edit. Witness quote and reasonsNotToAct must be filled before
+     any fetch is even considered.
+  3. Only when edit_type is FACTUAL/BEHAVIORAL/OMISSION/REMOVAL do
+     you fetch — and even then start with mode:'index' to find the
+     target section before pulling its body. Reading the whole
+     artifact "to be safe" wastes the read budget and inflates the
+     messages-array tokens that re-replay every round.
+</no_speculative_reads>
+
+<disabled_artifacts>
+SOPs in the catalog with status:'disabled' (from studio_get_tenant_index)
+are informational only — the operator deliberately opted out of that
+topic. Do NOT call studio_get_artifact on a disabled SOP. Do NOT
+propose edits to one. Do NOT propose re-enabling unless the operator
+explicitly asks. The disabled tag exists to give you context (e.g.,
+"this tenant doesn't handle parking") not to invite changes.
+</disabled_artifacts>
 </edit_triage>
 
 <reasons_not_to_act>
