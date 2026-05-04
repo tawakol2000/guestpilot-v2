@@ -498,6 +498,113 @@ test('empty queue + empty memory produce safe fallbacks (TUNE)', () => {
   const suffix = buildDynamicSuffix(ctx());
   assert.ok(suffix.includes('Queue is empty'));
   assert.ok(suffix.includes('No durable preferences on file'));
+  assert.ok(
+    !suffix.includes('<active_directives>'),
+    'active_directives must not render when there are no constraint-shaped keys'
+  );
+});
+
+test('2026-05-04: constraint-shaped preference keys render in <active_directives> with full values', () => {
+  // The 280-char per-row summary in <memory_snapshot> is right for browsing
+  // the catalogue but wrong for load-bearing rules. Keys whose name encodes
+  // a directive (no-*, never-*, always-*, do-not-*, skip-*, prefer-*,
+  // use-*, require-*) get a dedicated full-value block above the
+  // snapshot. Failure mode this catches: "preferences/no-sop-for-screening"
+  // had its rule body clipped past "Screening workflow gaps map to
+  // SYSTEM_PROMPT" and the agent kept proposing SOPs for screening.
+  const longRule =
+    'Screening workflow gaps map to SYSTEM_PROMPT on the screening variant, ' +
+    'not SOP. The screening rules live in TenantAiConfig.systemPromptScreening; ' +
+    "do NOT propose a new SOP for screening-related edits. Edit the system " +
+    'prompt instead, or classify NO_FIX if the wording is operator preference.';
+  const suffix = buildDynamicSuffix(
+    ctx({
+      memorySnapshot: [
+        {
+          key: 'preferences/no-sop-for-screening',
+          value: longRule,
+          source: 'manager-rule-2026-05-03',
+          updatedAt: '2026-05-03T00:00:00Z',
+        },
+        {
+          key: 'preferences/tone',
+          value: 'concise',
+          source: null,
+          updatedAt: '2026-04-15T00:00:00Z',
+        },
+      ],
+    })
+  );
+  assert.ok(
+    suffix.includes('<active_directives>'),
+    'active_directives block must render when a directive-shaped key exists'
+  );
+  assert.ok(suffix.includes('preferences/no-sop-for-screening'));
+  // Full rule body present — not clipped at 280 chars like the catalogue summary
+  assert.ok(
+    suffix.includes('do NOT propose a new SOP for screening-related edits'),
+    'active_directives must render full value text, not the 280-char summary'
+  );
+  // Block ordering: active_directives must precede memory_snapshot
+  assert.ok(
+    suffix.indexOf('<active_directives>') < suffix.indexOf('<memory_snapshot>'),
+    'active_directives must render before memory_snapshot in Region C'
+  );
+  // Non-directive keys do NOT get rendered in active_directives — they
+  // still appear in the snapshot
+  const directivesBlock = suffix.slice(
+    suffix.indexOf('<active_directives>'),
+    suffix.indexOf('</active_directives>')
+  );
+  assert.ok(
+    !directivesBlock.includes('preferences/tone'),
+    'non-directive keys (preferences/tone) must not appear in active_directives'
+  );
+});
+
+test('2026-05-04: memory snapshot loads keys from preferences/, facts/, decisions/ namespaces', () => {
+  // listMemoryForSnapshot now loads all three namespaces. The renderer is
+  // namespace-agnostic — anything passed in shows up in the snapshot. This
+  // test is the contract from the renderer's side: a facts/ key passed in
+  // is preserved verbatim in the rendered output.
+  const suffix = buildDynamicSuffix(
+    ctx({
+      memorySnapshot: [
+        {
+          key: 'facts/screening-rules-in-system-prompt',
+          value: 'Screening logic lives in systemPromptScreening, not SOPs.',
+          source: null,
+          updatedAt: '2026-05-03T00:00:00Z',
+        },
+        {
+          key: 'decisions/2026-05-03-no-sop-for-gender-screening',
+          value: 'Confirmed with manager: do not author a Screening SOP.',
+          source: null,
+          updatedAt: '2026-05-03T00:00:00Z',
+        },
+      ],
+    })
+  );
+  assert.ok(suffix.includes('facts/screening-rules-in-system-prompt'));
+  assert.ok(suffix.includes('decisions/2026-05-03-no-sop-for-gender-screening'));
+});
+
+test('2026-05-04: <memory_use> block names both active_directives and memory_snapshot', () => {
+  // The TUNE contract's memory_use sub-block must reference the new
+  // active_directives block so the agent knows where directives live vs.
+  // where the catalogue lives. If a future refactor drops the
+  // active_directives block, this assertion catches the orphan reference.
+  const tune = assembleSystemPrompt(ctx({ mode: 'TUNE' }));
+  assert.ok(tune.includes('<active_directives>'));
+  assert.ok(tune.includes('<memory_snapshot>'));
+  // Region A reference (in <memory_use>) — narrow check: both names appear
+  // in the same block. Use a window around <memory_use> to scope.
+  const muStart = tune.indexOf('<memory_use>');
+  const muEnd = tune.indexOf('</memory_use>');
+  assert.ok(muStart >= 0 && muEnd > muStart, '<memory_use> block must exist');
+  const muBody = tune.slice(muStart, muEnd);
+  assert.ok(muBody.includes('active_directives'));
+  assert.ok(muBody.includes('memory_snapshot'));
 });
 
 test('"preview_ai_response" is absent from the rendered prompt in both modes (sprint 045 A1)', () => {

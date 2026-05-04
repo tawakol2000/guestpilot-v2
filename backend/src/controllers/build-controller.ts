@@ -140,7 +140,7 @@ import {
   type AgentMode,
   type SystemPromptContext,
 } from '../build-tune-agent/system-prompt';
-import { listMemoryByPrefix } from '../build-tune-agent/memory/service';
+import { listMemoryForSnapshot } from '../build-tune-agent/memory/service';
 import { composeSpanHandler, type ComposeSpanRateLimiter } from '../build-tune-agent/compose-span';
 import {
   enhancePromptDraft,
@@ -290,7 +290,7 @@ export function makeBuildController(prisma: PrismaClient) {
         // same value. No separate TenantAiConfig read here.
         const [memory, pending, pendingTotal, tenantState, interviewProgress] =
           await Promise.all([
-            listMemoryByPrefix(prisma, req.tenantId, 'preferences/', 30),
+            listMemoryForSnapshot(prisma, req.tenantId, 50),
             prisma.tuningSuggestion.findMany({
               where: { tenantId: req.tenantId, status: 'PENDING' },
               orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],

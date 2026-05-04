@@ -344,3 +344,37 @@ export async function listMemoryByPrefix(
     updatedAt: row.updatedAt.toISOString(),
   }));
 }
+
+/**
+ * 2026-05-04 — load every namespace the agent uses (preferences/, facts/,
+ * decisions/) in one call so the rendered <memory_snapshot> doesn't silently
+ * hide a directive that was filed under the "wrong" prefix. Earlier the
+ * snapshot loaded only `preferences/`; agents that saved a screening rule
+ * under `decisions/` or `facts/` had no way to surface it without an
+ * explicit memory.list call. Combined cap of `limit` rows, ordered by
+ * recency across all three.
+ */
+export async function listMemoryForSnapshot(
+  prisma: PrismaClient,
+  tenantId: string,
+  limit = 50
+): Promise<MemoryRecord[]> {
+  const rows = await prisma.agentMemory.findMany({
+    where: {
+      tenantId,
+      OR: [
+        { key: { startsWith: 'preferences/' } },
+        { key: { startsWith: 'facts/' } },
+        { key: { startsWith: 'decisions/' } },
+      ],
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: limit,
+  });
+  return rows.map((row) => ({
+    key: row.key,
+    value: row.value,
+    source: row.source,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+}

@@ -30,7 +30,7 @@ import {
   maybeEmitInterviewProgress,
   snapshotSlots,
 } from './auto-emit';
-import { listMemoryByPrefix } from './memory/service';
+import { listMemoryForSnapshot } from './memory/service';
 import { runForcedFirstTurnCall } from './forced-first-turn';
 import {
   lintAgentOutput,
@@ -245,7 +245,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
 
   // ─── Assemble prompt context ───────────────────────────────────────────
   const [memory, pending, pendingTotal] = await Promise.all([
-    listMemoryByPrefix(input.prisma, input.tenantId, 'preferences/', 30),
+    listMemoryForSnapshot(input.prisma, input.tenantId, 50),
     input.prisma.tuningSuggestion.findMany({
       where: { tenantId: input.tenantId, status: 'PENDING' },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],

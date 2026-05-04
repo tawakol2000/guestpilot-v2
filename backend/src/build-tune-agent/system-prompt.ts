@@ -697,14 +697,25 @@ valid reasons:
 </reasons_not_to_act>
 
 <memory_use>
-<memory_snapshot> at the head of Region C is authoritative for
-tenant preferences. Populate consultedMemoryKeys with every
-preferences/* key that influenced the classification — empty list
-is allowed and is preferred over fabricated keys. If a preference
-contradicts the category you are forming, follow the preference,
-classify NO_FIX, and tell the operator what you would have done
-and why you didn't. Call memory(op:'view') for the full value when
-the summary is suggestive of a contradiction.
+Two memory blocks live at the head of Region C and you must consult
+both before classifying:
+
+  <active_directives> — constraint-shaped preferences (keys matching
+    no-*, never-*, always-*, do-not-*, skip-*, prefer-*, use-*,
+    require-*) rendered with FULL values. The value text IS the
+    rule. If any directive contradicts the category you are forming,
+    the directive wins; classify NO_FIX, cite the key in
+    consultedMemoryKeys, and read it back to the operator.
+
+  <memory_snapshot> — full catalogue of preferences/, facts/, and
+    decisions/ keys with 280-char summaries. Use it to spot keys the
+    directives block doesn't cover. If a summary is suggestive of a
+    rule but the verb is ambiguous, call memory(op:'view') with
+    verbosity:'detailed' for the full value before classifying.
+
+Populate consultedMemoryKeys with every key from either block that
+influenced the classification — empty list is allowed and is
+preferred over fabricated keys.
 </memory_use>
 
 <output_contract>
@@ -1044,6 +1055,49 @@ Reason: ${reason}.
 </state_transition>`;
 }
 
+// 2026-05-04 — Constraint-shaped preference keys (no-*, never-*, always-*,
+// do-not-*, skip-*, prefer-*, use-*, require-*) get rendered with FULL
+// values, not 280-char summaries, in a dedicated <active_directives> block
+// above <memory_snapshot>. Reason: these keys *are* the rule (the value
+// text is the directive, not metadata about a topic), and a 280-char
+// summary clip can drop the actionable verb. Failure mode this addresses:
+// "preferences/no-sop-for-screening" had its rule body clipped just past
+// "Screening workflow gaps map to SYSTEM_PROMPT" and the agent kept
+// proposing SOPs for screening edits.
+const DIRECTIVE_KEY_PATTERN =
+  /^preferences\/(no-|never-|always-|do-not-|skip-|prefer-|use-|require-)/i;
+
+function renderActiveDirectives(mem: MemoryRecord[]): string | null {
+  const directives = mem.filter((r) => DIRECTIVE_KEY_PATTERN.test(r.key));
+  if (directives.length === 0) return null;
+  const rows = directives
+    .slice(0, 12)
+    .map((r) => {
+      const full = stringifyMemoryValue(r.value);
+      const value = full.length > 800 ? full.slice(0, 797) + '…' : full;
+      return `  - ${r.key}\n    ${value}`;
+    })
+    .join('\n');
+  return `<active_directives>
+Tenant constraint-shaped preferences. The value below IS the rule —
+follow it verbatim. If a directive contradicts a category you are
+forming, the directive wins; classify NO_FIX and read it back to the
+operator. Cite the key in consultedMemoryKeys.
+${rows}
+</active_directives>`;
+}
+
+function stringifyMemoryValue(value: unknown): string {
+  if (value == null) return 'null';
+  if (typeof value === 'string') return value.replace(/\s+/g, ' ').trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value).replace(/\s+/g, ' ').trim();
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 function renderMemorySnapshot(mem: MemoryRecord[]): string {
   if (mem.length === 0) {
     return `<memory_snapshot>
@@ -1192,6 +1246,15 @@ export function buildDynamicSuffix(ctx: SystemPromptContext): string {
   // state-machine snapshot moves to second — it's smaller, less
   // behaviour-critical, and the inner-state hook still fires
   // independently from the prompt position.
+  //
+  // 2026-05-04 (active_directives): constraint-shaped preference keys
+  // get a dedicated full-value block ABOVE memory_snapshot. The
+  // snapshot's 280-char per-row summary is right for browsing the
+  // catalogue but wrong for load-bearing rules; rules with key
+  // patterns like preferences/no-* now sit at the absolute top with
+  // full text, since the value IS the rule.
+  const activeBlock = renderActiveDirectives(ctx.memorySnapshot);
+  if (activeBlock) blocks.push(activeBlock);
   blocks.push(renderMemorySnapshot(ctx.memorySnapshot));
 
   blocks.push(renderCurrentState(ctx.stateMachineSnapshot));
