@@ -195,6 +195,45 @@ async function main() {
       `cache_read=${fmtTokens(totalCacheRead)}  cache_write=${fmtTokens(totalCacheWrite)}`,
   );
 
+  // ─── Per-round breakdown (feature 047 PR 1) ───
+  // After feature 047 PR 1 deploys, each tuning-agent.query span has child
+  // generations tagged with metadata.roundIndex. List them in order so we
+  // can see how token usage evolved across the agent's tool-use loop.
+  const perRoundGenerations = obs
+    .filter(
+      (o) =>
+        (o.type ?? '').toLowerCase() === 'generation' &&
+        typeof (o.metadata as Record<string, unknown> | null)?.['roundIndex'] === 'number',
+    )
+    .sort((a, b) => {
+      const aIdx = (a.metadata as { roundIndex: number }).roundIndex;
+      const bIdx = (b.metadata as { roundIndex: number }).roundIndex;
+      return aIdx - bIdx;
+    });
+  if (perRoundGenerations.length > 0) {
+    console.log('\n─── PER-ROUND BREAKDOWN ───');
+    console.log(
+      'round  fresh    cR      cW      out      tools                                ',
+    );
+    for (const o of perRoundGenerations) {
+      const md = o.metadata as { roundIndex: number; toolCallsInRound?: string[] };
+      const u = o.usageDetails ?? {};
+      const fresh = u.input ?? u.input_tokens ?? 0;
+      const cR = u.cache_read_input_tokens ?? 0;
+      const cW = u.cache_creation_input_tokens ?? 0;
+      const out = u.output ?? u.output_tokens ?? 0;
+      const tools = (md.toolCallsInRound ?? []).join(',') || '—';
+      console.log(
+        `  ${String(md.roundIndex).padStart(3)}  ` +
+          `${fmtTokens(fresh).padStart(6)}  ` +
+          `${fmtTokens(cR).padStart(6)}  ` +
+          `${fmtTokens(cW).padStart(6)}  ` +
+          `${fmtTokens(out).padStart(6)}  ` +
+          `${tools}`,
+      );
+    }
+  }
+
   // ─── Tool-call breakdown with output sizes ───
   console.log('\n─── TOOL CALL DETAIL (tool spans only) ───');
   const toolSpans = obs.filter(

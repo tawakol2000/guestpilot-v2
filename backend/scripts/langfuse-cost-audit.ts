@@ -223,7 +223,9 @@ async function main() {
     );
   }
 
-  // ─── Round-trip distribution ─────────────────────────────────────────────
+  // ─── Round-trip distribution (uses metadata.roundIndex from feature 047 PR 1) ─
+  // Pre-feature-047 traces only have one rolled-up generation, so rounds=1.
+  // Post-feature-047 traces have one generation per messages.create round.
   const roundCounts = byTraceRows.map((r) => r.rounds).sort((a, b) => a - b);
   if (roundCounts.length > 0) {
     const median = roundCounts[Math.floor(roundCounts.length / 2)];
@@ -235,6 +237,34 @@ async function main() {
       `  traces=${roundCounts.length}  avg=${avg.toFixed(1)}  ` +
         `median=${median}  p90=${p90}  max=${max}`,
     );
+
+    // Feature 047 PR 1 — surface per-round metric distribution when
+    // roundIndex metadata is present. This is the post-instrumentation
+    // signal that lets us track p90 per-round input tokens.
+    const observationsWithRoundIndex = scoped.filter(
+      (o) =>
+        typeof (o.metadata as Record<string, unknown> | null)?.['roundIndex'] === 'number',
+    );
+    if (observationsWithRoundIndex.length > 0) {
+      const perRoundInputs = observationsWithRoundIndex
+        .map((o) => {
+          const u = o.usageDetails ?? {};
+          return (
+            (u.input ?? u.input_tokens ?? 0) +
+            (u.cache_read_input_tokens ?? 0) +
+            (u.cache_creation_input_tokens ?? 0)
+          );
+        })
+        .sort((a, b) => a - b);
+      const pmedian = perRoundInputs[Math.floor(perRoundInputs.length / 2)];
+      const pp90 =
+        perRoundInputs[Math.floor(perRoundInputs.length * 0.9)] ??
+        perRoundInputs[perRoundInputs.length - 1];
+      const pmax = perRoundInputs[perRoundInputs.length - 1];
+      console.log(
+        `  per-round input tokens: median=${fmtTokens(pmedian)}  p90=${fmtTokens(pp90)}  max=${fmtTokens(pmax)}  (n=${perRoundInputs.length} rounds)`,
+      );
+    }
   }
 
   // ─── Cache hit ratio ─────────────────────────────────────────────────────

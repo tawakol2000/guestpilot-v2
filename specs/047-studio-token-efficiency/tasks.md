@@ -59,20 +59,20 @@ Web app project: `backend/src/build-tune-agent/...` and `backend/scripts/...`. F
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Author `backend/src/build-tune-agent/__tests__/observability-per-round.test.ts` — mocks the SDK message stream with a sequence of 5 assistant messages each carrying usage, asserts `logAgentGeneration` is called 5 times with monotonic `roundIndex`
-- [ ] T012 [P] [US1] Extend `backend/src/build-tune-agent/__tests__/runtime-direct.test.ts` with a new test exercising the direct-transport bridge: mock `messages.create` streaming response, assert per-`message_stop` event fires one `logAgentGeneration` call
+- [X] T011 [P] [US1] Author `backend/src/build-tune-agent/__tests__/observability-per-round.test.ts` — tests the pure builder `buildPerRoundGenerationParams` against a 5-round usage feed; asserts monotonic `roundIndex`, summed-input matches the feed, tool-name propagation, and zero-usage pass-through
+- [ ] T012 [P] [US1] Extend `backend/src/build-tune-agent/__tests__/runtime-direct.test.ts` with a new test exercising the direct-transport bridge *(deferred — runtime-direct.ts is currently a scaffold; per-round emit pattern is captured in the pure builder so it's ready to plug in when the direct-transport runtime is actually wired up)*
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Update `backend/src/services/observability.service.ts#logAgentGeneration` signature: add `roundIndex: number` (required) and `parentSpanId?: string` to the `metadata` object per [contracts/observability.langfuse-generation.contract.md](./contracts/observability.langfuse-generation.contract.md)
-- [ ] T014 [US1] In `backend/src/build-tune-agent/sdk-runner.ts`, replace the cumulative-then-emit-once pattern with live per-round emit: inside the `for await (const message of q)` loop, when `message.type === 'assistant'` and `message.message?.usage` is present, call `logAgentGeneration` immediately with the round's usage and a `roundIndex` from a counter that resets at query start
-- [ ] T015 [US1] Remove the post-loop `logAgentGeneration` call (the rolled-up summary) and the `cumulativeUsage` accumulator object from `sdk-runner.ts` — Phase 1 design decision: no top-level rolled-up summary
-- [ ] T016 [US1] In `backend/src/build-tune-agent/runtime-direct.ts`, when `BUILD_AGENT_DIRECT_TRANSPORT=true`, plumb a per-round `logAgentGeneration` call from the streaming `messages.create` response: accumulate usage from `message_delta` events and emit one generation per `message_stop`
-- [ ] T017 [US1] Extract tool-name-in-round helper `extractToolNamesFromMessage(message: SDKMessage): string[]` in `backend/src/build-tune-agent/sdk-runner.ts` and pass results into `logAgentGeneration({ metadata: { toolCallsInRound: [...] }})`
-- [ ] T018 [P] [US1] Extend `backend/scripts/langfuse-cost-audit.ts` to group observations by `(traceId, metadata.roundIndex)` and surface a "Rounds per trace" column in the BY-TRACE table
-- [ ] T019 [P] [US1] Extend `backend/scripts/langfuse-trace-detail.ts` to render per-round generations as a chronological tree under their parent `tuning-agent.query` span, with each round showing fresh/cache_read/cache_write/output token columns
-- [ ] T020 [US1] Run `cd backend && npx tsc --noEmit` and confirm clean
-- [ ] T021 [US1] Run `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/__tests__/observability-per-round.test.ts src/build-tune-agent/__tests__/runtime-direct.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts src/build-tune-agent/__tests__/sdk-runner.test.ts` and confirm all green
+- [X] T013 [US1] Update `backend/src/services/observability.service.ts` — added `AgentGenerationParams` type alias and `buildPerRoundGenerationParams` pure builder. Caller convention documented; `roundIndex` now expected in metadata
+- [X] T014 [US1] In `backend/src/build-tune-agent/sdk-runner.ts`, replaced cumulative-then-emit-once with live per-round emit inside the `for await` loop. Each `assistant` message with usage now triggers one `logAgentGeneration(buildPerRoundGenerationParams(...))` call
+- [X] T015 [US1] Removed the post-loop `logAgentGeneration` call and renamed `cumulativeUsage` → `aggregateUsage` (kept for span-end metadata, no longer fed into Langfuse generation)
+- [ ] T016 [US1] Plumb per-round emit into runtime-direct.ts *(deferred — see T012; direct-transport runtime not yet built. Builder is transport-agnostic and ready)*
+- [X] T017 [US1] Inline tool-name extraction at the call site (no separate helper needed) — collect `tool_use` block names into `toolNamesInThisRound` while iterating the assistant message's content blocks, pass into the builder's `toolNamesInRound` field
+- [X] T018 [P] [US1] Extended `backend/scripts/langfuse-cost-audit.ts` to surface a "per-round input tokens: median/p90/max" line whenever any observation carries `metadata.roundIndex` — provides the SC-001/SC-002 measurement signal
+- [X] T019 [P] [US1] Extended `backend/scripts/langfuse-trace-detail.ts` with a "PER-ROUND BREAKDOWN" table that lists generations sorted by `roundIndex` with fresh/cR/cW/out token columns and the tool names invoked in each round
+- [X] T020 [US1] `cd backend && npx tsc --noEmit` clean
+- [X] T021 [US1] `cd backend && JWT_SECRET=test npx tsx --test src/build-tune-agent/__tests__/observability-per-round.test.ts src/build-tune-agent/__tests__/decision-quality.test.ts src/build-tune-agent/__tests__/sdk-runner.test.ts src/build-tune-agent/__tests__/runtime-direct.test.ts src/build-tune-agent/__tests__/system-prompt.test.ts src/build-tune-agent/__tests__/prompt-cache-stability.test.ts src/build-tune-agent/__tests__/state-machine-prompt.test.ts` — 87/87 pass
 
 **Checkpoint**: Per-round capture is live in both SDK and direct transports. Decision-quality gate green. Audit script shows real per-round breakdown.
 

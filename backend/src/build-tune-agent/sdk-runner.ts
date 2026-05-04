@@ -50,6 +50,7 @@ import {
   runWithAiTrace,
   startAiSpan,
   logAgentGeneration,
+  buildPerRoundGenerationParams,
 } from '../services/observability.service';
 import {
   logCacheBlockStructure,
@@ -386,18 +387,26 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     extractorState,
   );
   let lastUsage: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | null = null;
-  // 2026-05-04 — accumulate usage across every SDK assistant message so we
-  // can emit one rolled-up generation to Langfuse at query end. Without
-  // this the cost-audit script sees tuning-agent.query spans with no
-  // tokens attached, and Studio cost is invisible. Each SDK assistant
-  // message corresponds to ONE internal messages.create round; a single
-  // tuning-agent.query typically fires 3-8 of these as tool-use loops.
-  const cumulativeUsage = {
+  // 2026-05-04 (feature 047 PR 1) — per-round Langfuse capture.
+  // Each SDK assistant message corresponds to ONE internal messages.create
+  // round; a tuning-agent.query typically fires 3-8 such rounds. We emit
+  // ONE logAgentGeneration call per round LIVE inside the for-await loop
+  // (not batched at end-of-query) so:
+  //   1. Mid-turn process crashes preserve the partial trace for debugging
+  //   2. Long-running turns surface progress in Langfuse in real-time
+  //   3. Each round's usage is attributable to the round's actual tool-use
+  //      decisions, not averaged across the turn
+  // Counter is held outside the loop so roundIndex is monotonic across
+  // a SINGLE runQuery() invocation. Resets per-runQuery (which equals
+  // per-tuning-agent.query span).
+  let roundsSeen = 0;
+  // Span end metadata still gets aggregate counts for at-a-glance trace
+  // inspection — it doesn't replace the per-round generations.
+  const aggregateUsage = {
     input: 0,
     output: 0,
     cacheRead: 0,
     cacheCreate: 0,
-    rounds: 0,
   };
   input.writer.write({ type: 'start', messageId: input.assistantMessageId });
   input.writer.write({ type: 'start-step' });
@@ -453,9 +462,13 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
           sdkSessionId = message.session_id;
         }
         if (message.type === 'assistant') {
+          const toolNamesInThisRound: string[] = [];
           for (const block of message.message?.content ?? []) {
             if (block.type === 'text') finalText += block.text;
-            if (block.type === 'tool_use') toolCallsInvoked.push(block.name);
+            if (block.type === 'tool_use') {
+              toolCallsInvoked.push(block.name);
+              toolNamesInThisRound.push(block.name);
+            }
           }
           const u: any = (message as any).message?.usage;
           if (u && (u.cache_read_input_tokens !== undefined || u.input_tokens !== undefined)) {
@@ -463,50 +476,46 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
             const cached = u.cache_read_input_tokens ?? 0;
             const created = u.cache_creation_input_tokens ?? 0;
             const out = u.output_tokens ?? 0;
-            cumulativeUsage.input += inp;
-            cumulativeUsage.cacheRead += cached;
-            cumulativeUsage.cacheCreate += created;
-            cumulativeUsage.output += out;
-            cumulativeUsage.rounds += 1;
+            roundsSeen += 1;
+            aggregateUsage.input += inp;
+            aggregateUsage.cacheRead += cached;
+            aggregateUsage.cacheCreate += created;
+            aggregateUsage.output += out;
             const denom = inp + cached;
             const frac = denom === 0 ? 0 : cached / denom;
             console.log(
-              `[TuningAgent] usage tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
+              `[TuningAgent] round=${roundsSeen} tenant=${input.tenantId} input=${inp} cache_read=${cached} cache_created=${created} output=${out} cached_fraction=${frac.toFixed(3)}`
+            );
+            // Per-round LIVE emit — fires inside the for-await loop the
+            // moment this round's assistant message lands. Replaces the
+            // pre-feature-047 cumulative-then-emit-once-at-end pattern.
+            logAgentGeneration(
+              buildPerRoundGenerationParams({
+                model,
+                roundIndex: roundsSeen,
+                usage: u,
+                toolNamesInRound: toolNamesInThisRound,
+                tenantId: input.tenantId,
+                conversationId: input.conversationId,
+              }),
             );
             lastUsage = u;
           }
         }
         bridgeSDKMessage(message, state, filteredWrite);
       }
+      // Span-end metadata carries the AGGREGATE for at-a-glance trace
+      // inspection. The per-round generations above are the source of
+      // truth for cost; this is a convenience.
       span.end({
         toolCalls: toolCallsInvoked.length,
         length: finalText.length,
-        rounds: cumulativeUsage.rounds,
-        inputTokens: cumulativeUsage.input,
-        cacheReadTokens: cumulativeUsage.cacheRead,
-        cacheCreationTokens: cumulativeUsage.cacheCreate,
-        outputTokens: cumulativeUsage.output,
+        rounds: roundsSeen,
+        inputTokens: aggregateUsage.input,
+        cacheReadTokens: aggregateUsage.cacheRead,
+        cacheCreationTokens: aggregateUsage.cacheCreate,
+        outputTokens: aggregateUsage.output,
       });
-      // Emit a Langfuse generation with the rolled-up usage so the
-      // cost-audit script and the Langfuse UI can see Studio token spend.
-      // Without this the tuning-agent.query span has no usage attached
-      // and cost is invisible (only the trace tree shows up).
-      if (cumulativeUsage.rounds > 0) {
-        logAgentGeneration({
-          name: 'tuning-agent.query',
-          model,
-          inputTokens: cumulativeUsage.input,
-          outputTokens: cumulativeUsage.output,
-          cacheReadTokens: cumulativeUsage.cacheRead,
-          cacheCreationTokens: cumulativeUsage.cacheCreate,
-          metadata: {
-            rounds: cumulativeUsage.rounds,
-            toolCallsInvoked: toolCallsInvoked.length,
-            tenantId: input.tenantId,
-            conversationId: input.conversationId,
-          },
-        });
-      }
     } catch (err: any) {
       runError = err?.message ?? String(err);
       span.end({ error: runError });

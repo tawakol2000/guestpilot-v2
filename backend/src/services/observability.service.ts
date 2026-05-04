@@ -253,18 +253,29 @@ export function startAiSpan(
 
 /**
  * 2026-05-04 — emit a Langfuse `generation` node on the current root trace
- * for an agent SDK query that fired multiple internal messages.create rounds.
- * The Claude Agent SDK doesn't expose per-round usage as separate spans, so
- * we accumulate usage from each SDK message (input/output/cache_read/
- * cache_creation) and emit one rolled-up generation when the query ends.
+ * for ONE internal `messages.create` round inside an agent SDK query.
  *
- * Without this, tuning-agent.query spans show in Langfuse but with zero
- * usage attached — cost is invisible. With this, the cost-audit script
- * sees Studio token spend the same way it sees the reply pipeline's.
+ * Caller convention (feature 047 spec FR-001): callers MUST pass
+ * `metadata.roundIndex` (1-based, monotonic within one parent
+ * `tuning-agent.query` span). The function does not enforce this — it just
+ * forwards `metadata` to Langfuse — but downstream audit scripts
+ * (`langfuse-cost-audit.ts`, `langfuse-trace-detail.ts`) rely on
+ * `metadata.roundIndex` being present to group per-round generations under
+ * the parent query span. Optional fields conventionally set in metadata:
+ *   - `roundIndex: number` — required per the contract
+ *   - `parentSpanId?: string` — optional explicit parent
+ *   - `tenantId?: string`
+ *   - `conversationId?: string`
+ *   - `toolCallsInRound?: string[]` — tool names invoked in this round
+ *
+ * Emit cadence: callers fire ONE `logAgentGeneration` call per round, LIVE
+ * (inside the SDK's `for await` loop, at the moment each `assistant`
+ * message arrives with usage), NOT batched at end-of-query. See
+ * `specs/047-studio-token-efficiency/contracts/observability.langfuse-generation.contract.md`.
  *
  * Safe no-op when Langfuse is disabled or no root trace is active.
  */
-export function logAgentGeneration(params: {
+export interface AgentGenerationParams {
   name: string;
   model: string;
   inputTokens: number;
@@ -272,7 +283,51 @@ export function logAgentGeneration(params: {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   metadata?: Record<string, unknown>;
-}): void {
+}
+
+/**
+ * 2026-05-04 (feature 047 PR 1) — pure builder for the per-round emit
+ * envelope. Used by both the SDK-transport runner (sdk-runner.ts) and the
+ * direct-transport bridge (runtime-direct.ts when the MCP loop ports
+ * over). Returns the params that get forwarded to logAgentGeneration —
+ * no I/O, no Langfuse calls. This keeps the per-round emit testable
+ * without mocking the entire Langfuse SDK.
+ *
+ * Convention: `roundIndex` is 1-based and monotonic within a single
+ * tuning-agent.query span. Caller maintains the counter.
+ */
+export function buildPerRoundGenerationParams(input: {
+  model: string;
+  roundIndex: number;
+  usage: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  toolNamesInRound?: string[];
+  tenantId?: string;
+  conversationId?: string;
+}): AgentGenerationParams {
+  return {
+    name: 'tuning-agent.query',
+    model: input.model,
+    inputTokens: input.usage.input_tokens ?? 0,
+    outputTokens: input.usage.output_tokens ?? 0,
+    cacheReadTokens: input.usage.cache_read_input_tokens ?? 0,
+    cacheCreationTokens: input.usage.cache_creation_input_tokens ?? 0,
+    metadata: {
+      roundIndex: input.roundIndex,
+      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.toolNamesInRound !== undefined
+        ? { toolCallsInRound: input.toolNamesInRound }
+        : {}),
+    },
+  };
+}
+
+export function logAgentGeneration(params: AgentGenerationParams): void {
   const trace = getCurrentTrace();
   if (!trace) return;
   try {
