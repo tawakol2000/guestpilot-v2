@@ -1703,6 +1703,12 @@ function StandalonePart({
             },
           })
           toast.success('Fix accepted')
+          // 2026-05-04 — wake the agent. Without this, the agent has no
+          // signal that the manager clicked Accept; its next reply will
+          // tell the manager "still queued — say apply" because the only
+          // sanction surface it knows about is the chat. Mirrors the
+          // transition-card and question-choices wake patterns.
+          onSendText?.('Fix applied via UI — it is live now.')
         }}
         onReject={async (id) => {
           // Sprint 047 Session C — pass `target.artifact` through so the
@@ -1729,6 +1735,7 @@ function StandalonePart({
               : undefined,
           })
           toast.success('Fix rejected')
+          onSendText?.('Fix rejected via UI — do not propose again.')
         }}
       />
     )

@@ -753,7 +753,7 @@ export function makeBuildController(prisma: PrismaClient) {
     /**
      * POST /api/build/suggested-fix/:fixId/accept — (sprint 047 Session A)
      *
-     * Two cases, same endpoint:
+     * Three cases, same endpoint:
      *   - Case A: `fixId` matches a TuningSuggestion row the agent persisted
      *     (legacy TUNE flow). Dispatch into `suggestion_action({action:'apply'})`
      *     directly via the stub-tool pattern — the manager's UI click is
@@ -765,6 +765,16 @@ export function makeBuildController(prisma: PrismaClient) {
      *     after, category, rationale, conversationId). Dispatch into
      *     `applyArtifactChangeFromUi` which persists an ACCEPTED
      *     TuningSuggestion row + executes the artifact write atomically.
+     *   - Case C (2026-05-04): `fixId` is neither — typically the agent
+     *     inline-emitted <data-suggested-fix> with a custom human-readable
+     *     id (e.g. "draft-screening-rejection-wording") instead of going
+     *     through propose_suggestion. The extractor surfaces it as a
+     *     normal SSE part so the card renders, but neither a TuningSuggestion
+     *     row nor a preview:* token was minted. If the body carries the
+     *     apply payload, we route it through Case B's
+     *     applyArtifactChangeFromUi so Accept actually applies — without
+     *     this, the click 404s silently and the agent's next reply
+     *     denies the apply ever happened.
      *
      * Idempotent: re-posting the same fixId after a flaky network
      * returns 200 without double-applying.
@@ -795,6 +805,10 @@ export function makeBuildController(prisma: PrismaClient) {
       };
 
       // Case A — existing TuningSuggestion row.
+      // 2026-05-04: when the row is missing AND the body carries the
+      // full apply payload (after, category), fall through to Case C
+      // (preview-equivalent) instead of 404'ing. Agent inline-emissions
+      // land here.
       if (!isPreviewId) {
         try {
           const hit = await prisma.tuningSuggestion.findFirst({
@@ -802,9 +816,18 @@ export function makeBuildController(prisma: PrismaClient) {
             select: { id: true, status: true, appliedAt: true },
           });
           if (!hit) {
-            res.status(404).json({ error: 'FIX_NOT_FOUND' });
-            return;
-          }
+            const hasApplyPayload =
+              typeof body.after === 'string' &&
+              body.after.length > 0 &&
+              typeof body.category === 'string';
+            if (hasApplyPayload) {
+              // Fall through to the Case B / C dispatcher below.
+              // (No early return.)
+            } else {
+              res.status(404).json({ error: 'FIX_NOT_FOUND' });
+              return;
+            }
+          } else {
           // Idempotent re-click on an already-applied row.
           if (hit.status === 'ACCEPTED') {
             res.json({
@@ -858,6 +881,7 @@ export function makeBuildController(prisma: PrismaClient) {
             target: payload.target,
           });
           return;
+          }
         } catch (err) {
           console.error('[build-controller] acceptSuggestedFix (case A) failed:', err);
           res.status(500).json({ error: 'ACCEPT_FAILED' });
@@ -865,7 +889,9 @@ export function makeBuildController(prisma: PrismaClient) {
         }
       }
 
-      // Case B — ephemeral `preview:*` id. Validate body + dispatch.
+      // Case B — ephemeral `preview:*` id, OR (since 2026-05-04) an
+      // inline-emitted fixId whose persisted row didn't exist but whose
+      // body carries the apply payload. Validate body + dispatch.
       const conversationId = body.conversationId;
       if (!conversationId) {
         res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
