@@ -1524,13 +1524,21 @@ export async function generateAndSendAiReply(
 
     // Current messages = GUEST messages the AI needs to respond to.
     // Both copilot and autopilot: ALL unanswered guest messages since the last AI/HOST reply.
-    // A PREVIEW_PENDING AI row is an unsent draft (Shadow Mode) — it is NOT a reply,
-    // so it must not close the window. Otherwise a follow-up guest message whose
-    // Hostaway sentAt precedes the preview's sentAt (common — webhooks arrive late)
-    // would be filtered out and the AI would skip generating a fresh suggestion.
+    //
+    // 2026-05-10 bugfix: an AI row only counts as a "real reply" when its
+    // previewState is NULL (i.e., it actually reached the guest). The
+    // previous version excluded only PREVIEW_PENDING but treated
+    // PREVIEW_LOCKED (superseded draft) and PREVIEW_SENDING (transitional)
+    // as real replies. In copilot/shadow mode this caused multi-message
+    // guest bursts to get split: the latest guest message in
+    // <current_message> while prior unanswered guest messages drifted
+    // into <conversation_history>, separated by un-sent AI drafts that
+    // the model then assumed it had spoken. Result: AI replied as if
+    // mid-dialog ("you've already said it's 6 female friends...") when
+    // none of those drafts had reached the guest.
     const lastReplyIdx = allMsgs.reduce((idx, m, i) => {
       if (m.role === 'HOST') return i;
-      if (m.role === 'AI' && m.previewState !== 'PREVIEW_PENDING') return i;
+      if (m.role === 'AI' && !m.previewState) return i;
       return idx;
     }, -1);
     const currentMsgs = allMsgs.slice(lastReplyIdx + 1).filter(m => m.role === 'GUEST');
@@ -1709,7 +1717,18 @@ export async function generateAndSendAiReply(
     const historyTimeZone = (tenantConfig as any)?.workingHoursTimezone || 'Africa/Cairo';
     const historyNow = new Date();
     const currentMsgIds = new Set(currentMsgs.map(m => m.id));
-    const historyMsgs = allMsgs.filter(m => !currentMsgIds.has(m.id)).slice(-10);
+    // 2026-05-10 bugfix: an AI row whose `previewState` is non-null
+    // (PREVIEW_PENDING, PREVIEW_LOCKED, or PREVIEW_SENDING) is an UNSENT
+    // draft — the guest never received it. Those rows must NOT appear
+    // in <conversation_history> as if Omar had spoken them. Without this
+    // filter, a copilot-mode session with multiple superseded drafts
+    // produces a prompt where the AI thinks it already said things it
+    // never did, leading to confused follow-ups like "I still need
+    // your nationality" when no nationality was ever requested live.
+    const historyMsgs = allMsgs
+      .filter(m => !currentMsgIds.has(m.id))
+      .filter(m => !(m.role === 'AI' && (m as any).previewState))
+      .slice(-10);
     const historyText = historyMsgs.length > 0
       ? historyMsgs.map(m => {
           const stamp = formatHistoryTimestamp(m.sentAt, historyNow, historyTimeZone);
