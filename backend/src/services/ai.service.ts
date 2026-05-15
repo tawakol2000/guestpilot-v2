@@ -2061,14 +2061,33 @@ export async function generateAndSendAiReply(
           const typedInput = input as { document_type: 'passport' | 'marriage_certificate'; notes: string };
           if (!context.reservationId) return JSON.stringify({ error: 'No reservation linked' });
           try {
-            // Feature 044: capture the image we're reacting to so the doc-handoff handoff message
-            // can forward it to security later. Pick the most recent current-window guest message
-            // that has images attached.
+            // Feature 044: capture the image URLs we're reacting to so the
+            // doc-handoff handoff message can forward them to security later.
+            //
+            // 2026-05-15: aggregate URLs from EVERY image-bearing message in
+            // the current window — not just the latest. Without this, when
+            // the AI fires mark_document_received 2-3 times in one turn
+            // (e.g. 2 passports + 1 marriage cert across 3 messages), every
+            // tool call captured the SAME "latest" message's URLs. All refs
+            // ended up pointing at the same image set, and renderHandoff's
+            // dedupe-by-URL collapsed them to one image. The handoff to
+            // security then sent only 1 photo even though the guest had
+            // delivered 3+ documents.
             const imageBearingMsgs = (currentMsgs as Array<{ id: string; imageUrls?: string[] }>)
               .filter(m => m.imageUrls && m.imageUrls.length > 0);
+            const aggregatedUrls: string[] = [];
+            const seen = new Set<string>();
+            for (const m of imageBearingMsgs) {
+              for (const url of m.imageUrls ?? []) {
+                if (!seen.has(url)) {
+                  seen.add(url);
+                  aggregatedUrls.push(url);
+                }
+              }
+            }
             const latestWithImage = imageBearingMsgs[imageBearingMsgs.length - 1];
             const captureContext = latestWithImage
-              ? { sourceMessageId: latestWithImage.id, imageUrls: latestWithImage.imageUrls ?? [] }
+              ? { sourceMessageId: latestWithImage.id, imageUrls: aggregatedUrls }
               : undefined;
             const updated = await updateChecklist(context.reservationId, {
               documentType: typedInput.document_type,
