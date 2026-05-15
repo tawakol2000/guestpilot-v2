@@ -38,8 +38,17 @@ export function resolveStudioOpenAiModel(): string {
   return STUDIO_OPENAI_DEFAULT_MODEL;
 }
 
-export function isTuningAgentEnabled(): boolean {
-  if (resolveStudioProvider() === 'openai') return Boolean(process.env.OPENAI_API_KEY);
+/**
+ * 2026-05-15 polish: accept an explicit provider so the per-request
+ * frontend toggle (providerOverride) can be checked correctly. Without
+ * this, a request with providerOverride='openai' would still consult
+ * `STUDIO_PROVIDER` env when deciding which API key to require — so a
+ * tenant with only OPENAI_API_KEY set would see "ANTHROPIC_API_KEY
+ * missing" when forcing OpenAI from the UI.
+ */
+export function isTuningAgentEnabled(provider?: 'openai' | 'anthropic'): boolean {
+  const effective = provider ?? resolveStudioProvider();
+  if (effective === 'openai') return Boolean(process.env.OPENAI_API_KEY);
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
@@ -47,8 +56,9 @@ export function isTuningAgentEnabled(): boolean {
  * Reason the agent is disabled, if any. Surfaced to the client as a data part
  * so the UI can show a calm "chat disabled" banner instead of an error.
  */
-export function tuningAgentDisabledReason(): string | null {
-  if (resolveStudioProvider() === 'openai') {
+export function tuningAgentDisabledReason(provider?: 'openai' | 'anthropic'): string | null {
+  const effective = provider ?? resolveStudioProvider();
+  if (effective === 'openai') {
     if (!process.env.OPENAI_API_KEY) return 'OPENAI_API_KEY missing';
     return null;
   }

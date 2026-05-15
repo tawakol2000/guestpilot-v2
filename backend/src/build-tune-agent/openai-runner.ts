@@ -95,8 +95,8 @@ const MAX_TOOL_ROUNDS = 8;
 export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const mode: AgentMode = input.mode ?? 'TUNE';
 
-  if (!isTuningAgentEnabled()) {
-    const reason = tuningAgentDisabledReason();
+  if (!isTuningAgentEnabled('openai')) {
+    const reason = tuningAgentDisabledReason('openai');
     input.writer.write({ type: 'start', messageId: input.assistantMessageId });
     input.writer.write({
       type: 'data-agent-disabled',

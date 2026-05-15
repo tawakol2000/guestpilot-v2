@@ -237,8 +237,8 @@ export interface RunTurnResult {
 export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const mode: AgentMode = input.mode ?? 'TUNE';
 
-  if (!isTuningAgentEnabled()) {
-    const reason = tuningAgentDisabledReason();
+  if (!isTuningAgentEnabled('anthropic')) {
+    const reason = tuningAgentDisabledReason('anthropic');
     input.writer.write({
       type: 'start',
       messageId: input.assistantMessageId,
