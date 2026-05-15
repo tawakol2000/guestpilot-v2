@@ -50,6 +50,7 @@ model Tenant {
   tuningCategoryStats  TuningCategoryStats[] // Feature 041 sprint 02
   sopVariantHistory    SopVariantHistory[] // Feature 041 sprint 05
   faqEntryHistory      FaqEntryHistory[] // Feature 041 sprint 05
+  buildToolCallLogs    BuildToolCallLog[] // 2026-05-15 H12: tenant cascade
 
   // Dashboard connection (platform.hostaway.com internal API)
   dashboardJwt          String?   @db.Text
@@ -152,8 +153,14 @@ model Reservation {
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
   conversations         Conversation[]
-  guest                 Guest             @relation(fields: [guestId], references: [id])
-  property              Property          @relation(fields: [propertyId], references: [id])
+  // 2026-05-15 H11: explicit onDelete: Restrict so a Guest or Property
+  // can't be deleted while reservations still reference it. Previously
+  // Prisma defaulted to Restrict, but the implicit default surfaced as
+  // a silent DB constraint violation with no app-level explanation.
+  // Tenant deletes still cascade, so the only behaviour change is that
+  // direct Guest/Property deletes now fail loudly with a clear constraint.
+  guest                 Guest             @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  property              Property          @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   inquiryActionLogs    InquiryActionLog[]
@@ -187,9 +194,12 @@ model Conversation {
   summaryMessageCount    Int                   @default(0)
   lastSyncedAt           DateTime?
   createdAt              DateTime              @default(now())
-  guest                  Guest                 @relation(fields: [guestId], references: [id])
-  property               Property              @relation(fields: [propertyId], references: [id])
-  reservation            Reservation           @relation(fields: [reservationId], references: [id])
+  // 2026-05-15 H11: explicit Restrict for the Guest/Property/Reservation
+  // parents. Tenant cascade still removes everything when a tenant is
+  // deleted; direct deletes of the parents now fail loudly.
+  guest                  Guest                 @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  property               Property              @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  reservation            Reservation           @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   tenant                 Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   messages               Message[]
   pendingReplies         PendingAiReply[]
@@ -787,6 +797,13 @@ model BuildToolCallLog {
   success        Boolean
   errorMessage   String?
   createdAt      DateTime @default(now())
+  // 2026-05-15 H12: every other tenant-scoped model has an explicit
+  // FK + cascade. Without one, deleting a Tenant left orphan
+  // BuildToolCallLog rows forever and there was no DB-level referential
+  // integrity. Adding the relation + cascade also lets Prisma resolve
+  // tenantId lookups via the relation when callers want a typed
+  // include().
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt])
   @@index([conversationId, turn])

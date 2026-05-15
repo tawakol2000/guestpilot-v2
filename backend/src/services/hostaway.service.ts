@@ -201,17 +201,32 @@ export async function listReservations(
   const client = await getClient(accountId, apiKey);
   const today = new Date().toISOString().slice(0, 10);
 
+  // 2026-05-15 H3+H6: previous version swallowed page errors with
+  // `.catch(() => ({ data: { result: [] } }))`, which made a transient
+  // 429 / 503 / network blip on page 3 indistinguishable from a real
+  // "end of pages" — the loop would terminate with a partial list and
+  // the AI pipeline would proceed with missing reservations. Now: let
+  // page errors propagate (retryWithBackoff at the call site is the
+  // right retry layer), AND cap the loop at MAX_PAGES so a misbehaving
+  // Hostaway cursor (one that always returns exactly `limit` rows)
+  // can't run unbounded.
+  const MAX_PAGES = 50;
   async function fetchAll(url: string): Promise<HostawayReservation[]> {
     const all: HostawayReservation[] = [];
     let offset = 0;
     const limit = 100;
-    while (true) {
-      const res = await client.get(`${url}&limit=${limit}&offset=${offset}`).catch(() => ({ data: { result: [] } }));
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const res = await retryWithBackoff(() =>
+        client.get(`${url}&limit=${limit}&offset=${offset}`),
+      );
       const batch: HostawayReservation[] = res.data.result || [];
       all.push(...batch);
-      if (batch.length < limit) break;
+      if (batch.length < limit) return all;
       offset += limit;
     }
+    console.warn(
+      `[Hostaway] listReservations hit MAX_PAGES=${MAX_PAGES} for ${url} — possible cursor bug, returning truncated result.`,
+    );
     return all;
   }
 

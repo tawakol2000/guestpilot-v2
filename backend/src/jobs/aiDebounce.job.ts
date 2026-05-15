@@ -9,13 +9,26 @@
 import { PrismaClient } from '@prisma/client';
 import { getDuePendingReplies } from '../services/debounce.service';
 import { generateAndSendAiReply } from '../services/ai.service';
+import { addAiReplyJob } from '../services/queue.service';
 
 const POLL_INTERVAL_MS = 30 * 1000; // 30 seconds
 
 export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log('[AiDebounceJob] Starting — polling every 30s');
 
+  // 2026-05-15 H8: overlap guard. Mirrors messageSync.job.ts. A slow
+  // tick (e.g. an OpenAI rate-limit burst) used to stack subsequent
+  // ticks on top, each trying to claim the same rows via updateMany.
+  // The atomic claim prevents duplicate sends, but the overlapping
+  // ticks waste DB connections.
+  let running = false;
+
   const timer = setInterval(async () => {
+    if (running) {
+      console.warn('[AiDebounceJob] previous tick still running — skipping this tick');
+      return;
+    }
+    running = true;
     try {
       const due = await getDuePendingReplies(prisma);
       if (due.length === 0) return;
@@ -122,6 +135,20 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
               console.log(
                 `[AiDebounceJob] Reset fired=false on ${pending.id}; will retry in ~60s.`,
               );
+              // 2026-05-15 H1: also re-enqueue a BullMQ job. Without
+              // this, deployments WITH Redis would never retry: the row
+              // is reset but BullMQ has no job for it, and the poll only
+              // claims rows when REDIS_URL is unset. addAiReplyJob is a
+              // no-op when Redis is absent, so this is safe in both
+              // configurations.
+              try {
+                await addAiReplyJob(conversation.id, tenant.id, 60_000);
+              } catch (enqueueErr) {
+                console.warn(
+                  `[AiDebounceJob] BullMQ re-enqueue failed for ${pending.id} (poll will still pick it up):`,
+                  enqueueErr,
+                );
+              }
             }
           } catch (resetErr) {
             console.error(
@@ -133,6 +160,8 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
       }
     } catch (err) {
       console.error('[AiDebounceJob] Poll error:', err);
+    } finally {
+      running = false;
     }
   }, POLL_INTERVAL_MS);
 

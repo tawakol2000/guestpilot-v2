@@ -1415,11 +1415,38 @@ export interface AiReplyContext {
   screeningAnswers?: Record<string, unknown>;
 }
 
+/**
+ * 2026-05-15 H9: DRY_RUN gate at the entrance.
+ *
+ * The DRY_RUN env var was previously honoured ONLY at the outbound
+ * `sendMessageToConversation` layer, so the full AI pipeline (SOP
+ * classification, tool loop, task manager, summary, AiApiLog persistence)
+ * still ran for every conversation regardless of allow-list. That burned
+ * cost on every staging webhook and could corrupt task state when staging
+ * shared a DB with prod. Now: if DRY_RUN restricts to specific
+ * conversation IDs and this one isn't in the list, skip the pipeline
+ * entirely.
+ */
+function isDryRunAllowed(hostawayConversationId: string | null | undefined): boolean {
+  const raw = process.env.DRY_RUN?.trim();
+  if (!raw || raw.toLowerCase() === 'false') return true;
+  if (!hostawayConversationId) return false;
+  const allowed = raw.split(',').map((id) => id.trim()).filter(Boolean);
+  return allowed.includes(String(hostawayConversationId));
+}
+
 export async function generateAndSendAiReply(
   context: AiReplyContext,
   prisma: PrismaClient
 ): Promise<void> {
   const { tenantId, conversationId, hostawayConversationId, hostawayApiKey, hostawayAccountId } = context;
+
+  if (!isDryRunAllowed(hostawayConversationId)) {
+    console.log(
+      `[AI] [${conversationId}] DRY_RUN gate: conversation not in allow-list — skipping AI pipeline entirely (no OpenAI call, no task/summary writes).`,
+    );
+    return;
+  }
 
   console.log(`[AI] [${conversationId}] Generating AI reply...`);
 

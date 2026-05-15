@@ -582,6 +582,19 @@ export function makeBuildController(prisma: PrismaClient) {
         : null;
 
       const assistantMessageId = `asst:${crypto.randomBytes(8).toString('hex')}`;
+      // 2026-05-15 H5: cancel the agent turn on client disconnect so we
+      // don't keep paying for the OpenAI / Anthropic call after the
+      // operator navigated away. Registered before stream creation so it
+      // fires for both execute and onFinish phases.
+      const turnAbort = new AbortController();
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          console.warn(
+            `[build-controller] client disconnected mid-stream (conversationId=${conversationId}) — aborting agent turn.`,
+          );
+          turnAbort.abort();
+        }
+      });
       const stream = createUIMessageStream({
         execute: async ({ writer }) => {
           await runTuningAgentTurn({
@@ -597,6 +610,7 @@ export function makeBuildController(prisma: PrismaClient) {
             tenantState: runtimeTenantState,
             interviewProgress: runtimeInterviewProgress,
             providerOverride,
+            signal: turnAbort.signal,
           });
         },
         onFinish: async (event) => {

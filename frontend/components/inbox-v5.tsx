@@ -2744,7 +2744,13 @@ export default function InboxV5() {
         50
       )
     } catch (err) {
-      console.error(err)
+      // 2026-05-15 H4: surface failures to the operator. Previously the
+      // textarea was cleared and the error was swallowed to console only —
+      // operators saw a silent "send appears to do nothing" UX.
+      console.error('[Inbox] sendReply failed:', err)
+      const message = err instanceof Error ? err.message : 'Failed to send. Please try again.'
+      toast.error(`Send failed — ${message}`)
+      setReplyText(text)
     } finally {
       setSendingMessage(false)
     }
@@ -2783,8 +2789,13 @@ export default function InboxV5() {
         50
       )
     } catch (err) {
-      console.error(err)
+      // 2026-05-15 H4: same UX fix as sendReply — surface the failure and
+      // restore the operator's text so they can retry or edit.
+      console.error('[Inbox] sendViaAI failed:', err)
       setAiTyping(false)
+      const message = err instanceof Error ? err.message : 'Failed to send via AI. Please try again.'
+      toast.error(`AI send failed — ${message}`)
+      setReplyText(text)
     } finally {
       setSendingViaAI(false)
     }

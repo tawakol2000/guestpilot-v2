@@ -218,8 +218,12 @@ export async function cancelPendingAiReply(
     where: { conversationId, fired: false },
   });
 
+  // 2026-05-15 H2: only flip rows that are NOT yet fired. The earlier
+  // version blanket-overwrote every row for the conversation including
+  // ones the worker had already claimed (fired=true, mid-execution),
+  // nulling out an in-flight suggestion mid-generation.
   await prisma.pendingAiReply.updateMany({
-    where: { conversationId },
+    where: { conversationId, fired: false },
     data: { fired: true, suggestion: null },
   });
 
@@ -233,12 +237,20 @@ export async function cancelPendingAiReply(
   );
 }
 
+// 2026-05-15 H8: cap the per-tick batch so a post-outage backlog can't
+// produce hundreds of rows in one query that would overlap with the next
+// 30s tick. Matches docHandoff's `take: 500` pattern but tighter because
+// each row triggers a multi-second AI pipeline run.
+const DUE_PENDING_TAKE = 50;
+
 export async function getDuePendingReplies(prisma: PrismaClient) {
   return prisma.pendingAiReply.findMany({
     where: {
       fired: false,
       scheduledAt: { lte: new Date() },
     },
+    orderBy: { scheduledAt: 'asc' },
+    take: DUE_PENDING_TAKE,
     include: {
       conversation: {
         include: {

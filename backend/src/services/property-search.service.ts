@@ -157,17 +157,32 @@ async function scorePropertiesWithNano(
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const prompt = buildScoringPrompt(requirements, profiles);
 
-  const response = await openai.responses.create({
-    model: SCORING_MODEL,
-    input: [{ role: 'user', content: prompt }],
-    text: {
-      format: {
-        type: 'json_schema',
-        ...SCORING_SCHEMA,
+  // 2026-05-15 H7: enforce SCORING_TIMEOUT_MS. Without this, the nano
+  // scoring call inherits the OpenAI SDK's default timeout (~600s) and
+  // a slow / hung response stalls the entire AI tool-use loop for the
+  // affected conversation. Use an AbortController so we abort cleanly
+  // instead of letting the SDK retry on its own clock.
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), SCORING_TIMEOUT_MS);
+  let response: any;
+  try {
+    response = await openai.responses.create(
+      {
+        model: SCORING_MODEL,
+        input: [{ role: 'user', content: prompt }],
+        text: {
+          format: {
+            type: 'json_schema',
+            ...SCORING_SCHEMA,
+          },
+        },
+        max_output_tokens: 4000,
       },
-    },
-    max_output_tokens: 4000,
-  });
+      { signal: controller.signal },
+    );
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 
   const text = (response as any).output_text || '';
   const parsed = JSON.parse(text);

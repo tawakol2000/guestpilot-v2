@@ -125,6 +125,20 @@ export function makeTuningChatController(prisma: PrismaClient) {
 
       const assistantMessageId = `asst:${crypto.randomBytes(8).toString('hex')}`;
 
+      // 2026-05-15 H5: AbortController fired on client disconnect so the
+      // in-flight agent call (OpenAI Responses API for now) is cancelled
+      // server-side instead of running to completion and burning tokens
+      // after the operator already navigated away.
+      const turnAbort = new AbortController();
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          console.warn(
+            `[tuning-chat] client disconnected mid-stream (conversationId=${conversationId}) — aborting agent turn.`,
+          );
+          turnAbort.abort();
+        }
+      });
+
       // Build UIMessageStream. `execute` is where we run the agent and emit
       // chunks into the writer. `onFinish` persists the assistant message.
       const stream = createUIMessageStream({
@@ -139,6 +153,7 @@ export function makeTuningChatController(prisma: PrismaClient) {
             assistantMessageId,
             writer,
             providerOverride,
+            signal: turnAbort.signal,
           });
         },
         onFinish: async (event) => {
@@ -198,17 +213,8 @@ export function makeTuningChatController(prisma: PrismaClient) {
         },
       });
 
-      // Sprint 09 follow-up: log client disconnect so deployment dashboards
-      // can see when streams were aborted mid-turn. We can't cleanly cancel
-      // the in-flight agent query without plumbing an AbortSignal through
-      // runTuningAgentTurn (future sprint), but at least flag the event.
-      req.on('close', () => {
-        if (!res.writableEnded) {
-          console.warn(
-            `[tuning-chat] client disconnected mid-stream (conversationId=${conversationId}). Agent turn will complete but stream is dead.`
-          );
-        }
-      });
+      // (The disconnect handler is registered up-front so the abort fires
+      // for both `execute` and `onFinish` phases.)
 
       pipeUIMessageStreamToResponse({
         response: res,

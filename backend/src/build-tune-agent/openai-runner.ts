@@ -595,8 +595,15 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       // for the follow-up round; OpenAI handles the rest.
     }
 
+    // 2026-05-15 H5: forward the controller's AbortSignal so a client
+    // disconnect mid-turn cancels the in-flight OpenAI call instead of
+    // burning tokens to completion. OpenAI SDK accepts this as a per-
+    // request option (not inside the body).
+    const createOptions: Record<string, unknown> = {};
+    if (args.input.signal) createOptions.signal = args.input.signal;
+
     const response: any = await withRetry(() =>
-      (client.responses as any).create(requestPayload),
+      (client.responses as any).create(requestPayload, createOptions),
     );
 
     if (response?.id) {

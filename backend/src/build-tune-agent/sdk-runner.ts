@@ -110,6 +110,15 @@ export interface RunTurnInput {
    * env-resolved provider in `resolveStudioProvider()`.
    */
   providerOverride?: 'anthropic' | 'openai' | null;
+  /**
+   * Cancellation signal — fired by the controller's `req.on('close')`
+   * when the client disconnects. The OpenAI runner forwards this to
+   * `responses.create({signal})` so an in-flight long turn doesn't keep
+   * burning tokens after the operator refreshed/closed the panel. The
+   * SDK runner cannot forward an arbitrary AbortSignal into the Claude
+   * Agent SDK at this surface, so for now it only logs the abort.
+   */
+  signal?: AbortSignal;
 }
 
 /**

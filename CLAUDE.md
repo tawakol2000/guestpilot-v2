@@ -153,6 +153,19 @@ BUILD_AGENT_DIRECT_TRANSPORT  # Sprint 058-A F1 — when "true"/"1"/"yes"/"on",
                               # the MCP tool-call loop is reproduced in the
                               # direct path (tracked separately). See
                               # backend/src/build-tune-agent/runtime-direct.ts.
+ANTHROPIC_API_KEY      # Studio Anthropic provider key. Required when
+                       # STUDIO_PROVIDER=anthropic OR ENABLE_BUILD_MODE=true.
+ENABLE_BUILD_MODE      # Gates POST /api/build/* routes. Default OFF.
+ENABLE_BUILD_TRACE_VIEW   # Admin-only tool-call trace viewer. Default OFF.
+ENABLE_RAW_PROMPT_EDITOR  # Admin-only raw system-prompt drawer. Default OFF.
+STUDIO_POINTER_HMAC_KEY   # HMAC for index/section pointers + state-machine
+                       # transition nonces. Falls back to JWT_SECRET when
+                       # unset — set distinct value in production.
+STUDIO_TRANSITION_HMAC_KEY # Optional; falls back to STUDIO_POINTER_HMAC_KEY.
+WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
+                       # doc-handoff feature is silently disabled.
+WASENDER_BASE_URL      # Default: https://wasenderapi.com
+WASENDER_TIMEOUT_MS    # Default: 20000
 ```
 
 ## Critical Rules

@@ -43,9 +43,18 @@ function writeStudioProvider(choice: StudioProviderChoice): void {
 
 /** React hook for components that want to observe + change the choice. */
 export function useStudioProvider(): [StudioProviderChoice, (c: StudioProviderChoice) => void] {
-  const [choice, setChoice] = useState<StudioProviderChoice>('anthropic')
+  // 2026-05-15 H10: lazy init reads localStorage synchronously when the
+  // component is rendered on the client. The previous version always
+  // started at 'anthropic' on SSR and then flipped on first effect,
+  // producing a hydration mismatch + visible flicker when the stored
+  // value was 'openai'. `typeof window` keeps the SSR pass safe.
+  const [choice, setChoice] = useState<StudioProviderChoice>(() =>
+    typeof window === 'undefined' ? 'anthropic' : readStudioProvider(),
+  )
 
   useEffect(() => {
+    // Re-sync once on mount in case the lazy init ran on a server pass
+    // (e.g. components rendered before hydration in the App Router).
     setChoice(readStudioProvider())
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent).detail as StudioProviderChoice | undefined
