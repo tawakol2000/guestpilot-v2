@@ -593,8 +593,12 @@ export function makeConversationsController(prisma: PrismaClient) {
           res.status(404).json({ error: 'Conversation not found' });
           return;
         }
-        await prisma.reservation.update({
-          where: { id: conversation.reservationId },
+        // 2026-05-15 M6: defence-in-depth — scope the reservation write by
+        // tenantId so the update fails (count=0) if reservationId ever
+        // straddles tenants. The conversation is already tenant-validated
+        // above, but updateMany lets us apply the constraint at the DB.
+        await prisma.reservation.updateMany({
+          where: { id: conversation.reservationId, tenantId },
           data: { aiMode },
         });
         broadcastToTenant(tenantId, 'ai_mode_changed', { conversationId: id, aiMode });
@@ -620,8 +624,12 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
+        // 2026-05-15 M7: match the tenant-scoped pattern peers in this
+        // controller use (see getSuggestion at L782). The conversation is
+        // already tenant-validated above; the index includes tenantId so
+        // the compound (tenantId, conversationId) index is used.
         const pendingReply = await prisma.pendingAiReply.findFirst({
-          where: { conversationId: id, suggestion: { not: null } },
+          where: { conversationId: id, tenantId, suggestion: { not: null } },
           orderBy: { createdAt: 'desc' },
         });
         if (!pendingReply?.suggestion && !editedText) {
@@ -878,8 +886,10 @@ export function makeConversationsController(prisma: PrismaClient) {
           return;
         }
 
-        await prisma.reservation.update({
-          where: { id: conversation.reservationId },
+        // 2026-05-15 M6: defence-in-depth — tenantId-scoped reservation
+        // write (see setAiMode comment above for rationale).
+        await prisma.reservation.updateMany({
+          where: { id: conversation.reservationId, tenantId },
           data: { aiEnabled: parsed.data.aiEnabled },
         });
 

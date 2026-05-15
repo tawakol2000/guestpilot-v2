@@ -245,51 +245,11 @@ const SCREENING_SCHEMA = {
   },
 };
 
-async function classifyMessageSop(
-  systemPrompt: string,
-  inputMessages: Array<{ role: string; content: string }>,
-  options: { model?: string; tenantId?: string; conversationId?: string; agentType?: string },
-  sopToolDef?: any,
-): Promise<SopClassificationResult> {
-  const start = Date.now();
-  try {
-    const response = await withRetry(() => (openai.responses as any).create({
-      model: options.model || 'gpt-5.4-mini-2026-03-17',
-      instructions: systemPrompt,
-      input: inputMessages,
-      tools: [sopToolDef],
-      tool_choice: 'auto',
-      reasoning: { effort: 'none' },
-      max_output_tokens: 200,
-      prompt_cache_key: options.tenantId ? `tenant-${options.tenantId}-${options.agentType || 'default'}` : undefined,
-      prompt_cache_retention: '24h',
-      store: true,
-    }));
-
-    const durationMs = Date.now() - start;
-    const fnCall = (response as any).output?.find((i: any) => i.type === 'function_call');
-
-    if (fnCall) {
-      const args = JSON.parse(fnCall.arguments) as { categories: string[]; confidence: string; reasoning: string };
-      console.log(`[AI] SOP classification: [${args.categories.join(', ')}] confidence=${args.confidence} (${durationMs}ms) — ${args.reasoning}`);
-      return {
-        categories: args.categories,
-        confidence: args.confidence as 'high' | 'medium' | 'low',
-        reasoning: args.reasoning,
-        inputTokens: (response as any).usage?.input_tokens || 0,
-        outputTokens: (response as any).usage?.output_tokens || 0,
-        durationMs,
-      };
-    }
-
-    console.warn(`[AI] SOP classification returned no function_call — defaulting to none`);
-    return { categories: ['none'], confidence: 'low', reasoning: 'Classification returned no function_call', inputTokens: (response as any).usage?.input_tokens || 0, outputTokens: (response as any).usage?.output_tokens || 0, durationMs };
-  } catch (err) {
-    const durationMs = Date.now() - start;
-    console.error(`[AI] SOP classification failed (non-fatal):`, err);
-    return { categories: ['none'], confidence: 'low', reasoning: 'Classification API call failed', inputTokens: 0, outputTokens: 0, durationMs };
-  }
-}
+// 2026-05-15 M1: removed dead `classifyMessageSop` — zero callers since the
+// SOP classification was folded into the main tool loop via the get_sop
+// forced-tool-call pattern. Leaving it around invited future code paths to
+// double the OpenAI cost with a parallel classifier that wouldn't share
+// state with the main loop.
 
 async function createMessage(
   systemPrompt: string,
@@ -1812,7 +1772,15 @@ export async function generateAndSendAiReply(
     try {
       const ciDate = context.checkIn ? new Date(context.checkIn + 'T00:00:00Z') : null;
       const coDate = context.checkOut ? new Date(context.checkOut + 'T00:00:00Z') : null;
-      const nowUtc = new Date(); nowUtc.setHours(0, 0, 0, 0);
+      // 2026-05-15 M2: lock the "today" anchor to UTC midnight. Previous
+      // version used `setHours(0,0,0,0)` which resolves to LOCAL server
+      // midnight — when the server is in UTC and the property is in a
+      // +/- offset zone (Egypt UTC+3, etc.), a late-night request would
+      // already be in the NEXT UTC day, producing daysUntil = -1 for a
+      // checkout request that's actually today. ciDate is already UTC-
+      // midnight via the 'T00:00:00Z' suffix, so anchoring nowUtc to
+      // UTC midnight keeps both sides on the same axis.
+      const nowUtc = new Date(); nowUtc.setUTCHours(0, 0, 0, 0);
       const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
 
       // Helper: check Hostaway calendar for back-to-back bookings

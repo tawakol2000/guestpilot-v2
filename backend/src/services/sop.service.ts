@@ -296,6 +296,20 @@ function applyTemplates(content: string, category: string, propertyAmenities?: s
     result = result.replace('{PROPERTY_AMENITIES}', fallback);
   }
 
+  // 2026-05-15 M3: any remaining `{TOKEN}` placeholders must NOT leak to the
+  // guest. They reach here when a caller forgets to pass variableDataMap
+  // (BUILD test_pipeline before sprint 045 occasionally did this) or when
+  // a new SOP placeholder is added in content before the AI pipeline
+  // populates it. Strip them rather than ship raw template tokens to a
+  // guest's WhatsApp / Airbnb thread.
+  const leftover = result.match(/\{[A-Z_]+\}/g);
+  if (leftover && leftover.length > 0) {
+    console.warn(
+      `[SOP] applyTemplates left ${leftover.length} unresolved placeholders for category=${category}: ${leftover.slice(0, 6).join(', ')} — stripping before return.`,
+    );
+    result = result.replace(/\{[A-Z_]+\}/g, '');
+  }
+
   return result;
 }
 

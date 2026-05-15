@@ -604,8 +604,12 @@ export function sandboxRouter(prisma: PrismaClient) {
         },
       });
     } catch (err: any) {
+      // 2026-05-15 M5: do not echo `err.message` to the caller — it can
+      // contain OpenAI key prefixes, Prisma error structure, internal
+      // IPs, etc. Log server-side and return a generic 500. Matches the
+      // policy errorMiddleware applies to non-bypassed 500s.
       console.error('[Sandbox] Chat error:', err);
-      res.status(500).json({ error: err.message || 'Sandbox chat failed' });
+      res.status(500).json({ error: 'Sandbox chat failed' });
     }
   });
 

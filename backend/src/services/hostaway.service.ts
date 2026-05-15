@@ -122,8 +122,10 @@ export async function listListings(
   apiKey: string
 ): Promise<{ result: HostawayListing[] }> {
   const client = await getClient(accountId, apiKey);
-  // No fields filter — fetch all listing data including amenities, bedTypes, etc.
-  const res = await client.get('/v1/listings?limit=100');
+  // 2026-05-15 M11: wrap in retryWithBackoff — transient 429/503/timeouts
+  // were previously throwing into the caller's bare try-block, breaking
+  // listings imports on the first blip. Sibling fns already use this.
+  const res = await retryWithBackoff(() => client.get('/v1/listings?limit=100'));
   return res.data;
 }
 
@@ -133,7 +135,7 @@ export async function getListing(
   listingId: number | string
 ): Promise<{ result: HostawayListing }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get(`/v1/listings/${listingId}`);
+  const res = await retryWithBackoff(() => client.get(`/v1/listings/${listingId}`));
   return res.data;
 }
 
@@ -280,7 +282,10 @@ export async function getConversationByReservation(
   reservationId: number | string
 ): Promise<{ result: HostawayConversation[] }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get(`/v1/conversations?reservationId=${reservationId}&limit=1`);
+  // 2026-05-15 M11: retry on transient errors.
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/conversations?reservationId=${reservationId}&limit=1`),
+  );
   return res.data;
 }
 
@@ -290,7 +295,10 @@ export async function getConversation(
   conversationId: number | string
 ): Promise<{ result: HostawayConversation }> {
   const client = await getClient(accountId, apiKey);
-  const res = await client.get(`/v1/conversations/${conversationId}`);
+  // 2026-05-15 M11: retry on transient errors.
+  const res = await retryWithBackoff(() =>
+    client.get(`/v1/conversations/${conversationId}`),
+  );
   return res.data;
 }
 
@@ -351,7 +359,11 @@ export async function updateReservationStatus(
 ): Promise<unknown> {
   console.log(`[Hostaway] Updating reservation ${reservationId} status → ${status}`);
   const client = await getClient(accountId, apiKey);
-  const res = await client.put(`/v1/reservations/${reservationId}`, { status });
+  // 2026-05-15 M11: retry on transient errors. The previous bare call
+  // dropped reservation-status mutations on the first network blip.
+  const res = await retryWithBackoff(() =>
+    client.put(`/v1/reservations/${reservationId}`, { status }),
+  );
   console.log(`[Hostaway] Reservation update status: ${res.status}`);
   return res.data;
 }

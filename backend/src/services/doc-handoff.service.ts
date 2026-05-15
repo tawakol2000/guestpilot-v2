@@ -35,6 +35,8 @@ import {
   sendImage,
   WasenderDisabledError,
   WasenderRequestError,
+  WasenderServerError,
+  WasenderTimeoutError,
 } from './wasender.service';
 import { broadcastToTenant } from './socket.service';
 import { assertPublicHttpsUrl } from '../lib/url-safety';
@@ -551,6 +553,52 @@ async function handleSendFailure(
   }
   const row = await prisma.documentHandoffState.findUnique({ where: { id: rowId } });
   if (!row) return 'failed';
+
+  // 2026-05-15 M12: transient errors (WAsender 5xx / timeouts) shouldn't
+  // burn the 3-attempt cap. Previously a 20-minute 5xx storm would
+  // permanently FAIL the row in 3 retries with no chance for the
+  // operator to ever deliver the docs once WAsender recovered. Now:
+  // on a transient error, bump scheduledFireAt with a longer backoff
+  // (30 min) but DO NOT increment attemptCount. Cap on wall-clock age:
+  // if the row's createdAt is more than 24h old, give up.
+  const isTransient = err instanceof WasenderServerError || err instanceof WasenderTimeoutError;
+  if (isTransient) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const ageMs = Date.now() - row.createdAt.getTime();
+    const TRANSIENT_AGE_CAP_MS = 24 * 60 * 60 * 1000;
+    if (ageMs > TRANSIENT_AGE_CAP_MS) {
+      console.warn(
+        `[DocHandoff] row=${rowId} exceeded transient age cap (${ageMs}ms) — marking FAILED.`,
+      );
+      await prisma.documentHandoffState.update({
+        where: { id: rowId },
+        data: {
+          status: STATUS_FAILED,
+          attemptCount: row.attemptCount,
+          lastError: `transient-aged-out: ${errMsg}`,
+          recipientUsed: recipient,
+          messageBodyUsed: text,
+          imageUrlsUsed: imageUrls,
+        },
+      });
+      emitStateUpdate(rowId, prisma);
+      return 'failed';
+    }
+    const TRANSIENT_BACKOFF_MS = 30 * 60 * 1000;
+    await prisma.documentHandoffState.update({
+      where: { id: rowId },
+      data: {
+        scheduledFireAt: new Date(Date.now() + TRANSIENT_BACKOFF_MS),
+        lastError: `transient: ${errMsg}`,
+        recipientUsed: recipient,
+        messageBodyUsed: text,
+        imageUrlsUsed: imageUrls,
+      },
+    });
+    emitStateUpdate(rowId, prisma);
+    return 'failed';
+  }
+
   const newAttempt = row.attemptCount + 1;
   const errMsg = err instanceof Error ? err.message : String(err);
   if (newAttempt >= MAX_ATTEMPTS) {

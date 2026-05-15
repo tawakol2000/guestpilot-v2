@@ -10,14 +10,27 @@ import { DOC_HANDOFF_TICK_MS } from '../config/doc-handoff-defaults';
 export function startDocHandoffJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log(`[DocHandoff] Polling job started (interval: ${DOC_HANDOFF_TICK_MS / 1000}s)`);
 
-  // Run once ~30s after boot to clear any backlog without competing with other startup tasks.
-  setTimeout(() => {
-    runTick(prisma);
-  }, 30_000);
+  // 2026-05-15 M8: overlap guard — mirror messageSync.job.ts. A slow tick
+  // (WAsender timeout across many due rows) used to stack subsequent
+  // ticks on top, holding DB connections and inflating claimRaces.
+  let running = false;
+  const guarded = async () => {
+    if (running) {
+      console.warn('[DocHandoff] previous tick still running — skipping this tick');
+      return;
+    }
+    running = true;
+    try {
+      await runTick(prisma);
+    } finally {
+      running = false;
+    }
+  };
 
-  return setInterval(() => {
-    runTick(prisma);
-  }, DOC_HANDOFF_TICK_MS);
+  // Run once ~30s after boot to clear any backlog without competing with other startup tasks.
+  setTimeout(guarded, 30_000);
+
+  return setInterval(guarded, DOC_HANDOFF_TICK_MS);
 }
 
 async function runTick(prisma: PrismaClient): Promise<void> {

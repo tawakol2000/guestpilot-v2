@@ -757,7 +757,15 @@ function TasksBox({ conversationId, dragHandle }: { conversationId: string; drag
   const [tasks, setTasks] = useState<ApiTask[]>([])
 
   useEffect(() => {
-    apiGetConversationTasks(conversationId).then(setTasks).catch(err => console.error('[Tasks] Failed to load tasks:', err))
+    // 2026-05-15 M17: cancel-on-unmount guard. Without it, switching
+    // conversations before this fetch resolves fires setTasks on an
+    // unmounted instance (React warns) or stale data overwrites the
+    // newly-mounted instance's tasks for a different conversation.
+    let cancelled = false
+    apiGetConversationTasks(conversationId)
+      .then(t => { if (!cancelled) setTasks(t) })
+      .catch(err => console.error('[Tasks] Failed to load tasks:', err))
+    return () => { cancelled = true }
   }, [conversationId])
 
   async function markComplete(id: string) {
@@ -2838,7 +2846,21 @@ export default function InboxV5() {
         )
       )
     } catch (e) {
+      // 2026-05-15 M16: rollback the optimistic bubble + restore the text
+      // so the operator can retry. Previously the temp bubble stayed
+      // forever, indistinguishable from a real persisted note, and the
+      // text was already cleared from the textarea.
       console.error('[Note] Failed to persist private note:', e)
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === selectedConv.id
+            ? { ...c, messages: c.messages.filter(m => m.id !== tempId) }
+            : c
+        )
+      )
+      const message = e instanceof Error ? e.message : 'Failed to save note. Please try again.'
+      toast.error(`Note not saved — ${message}`)
+      setReplyText(text)
     }
   }
 
@@ -6168,20 +6190,13 @@ export default function InboxV5() {
         </ErrorBoundary>
       )}
       {/* Sprint 046 Session C — legacy 'tuning' navTab forwards to Studio.
-          The separate /tuning/build routes ship as 302 stubs this sprint
-          (deleted next sprint); the in-app tab simply renders Studio. */}
-      {navTab === 'tuning' && (
-        <ErrorBoundary>
-          <StudioSurface
-            conversationId={studioConversationId}
-            onConversationChange={updateStudioConversationId}
-          />
-        </ErrorBoundary>
-      )}
-
-      {/* Sprint 046 Session C — Studio tab. Hash-state (plan §3.4), no
-          router push, three-pane surface mounted inline. */}
-      {navTab === 'studio' && (
+          2026-05-15 M15: previously this rendered as a SEPARATE branch
+          from navTab === 'studio'. If session-storage state and the URL
+          ever disagreed, BOTH branches would render concurrent StudioSurface
+          trees, each calling apiCreateTuningConversation on bootstrap
+          and producing two new conversations — one would orphan. Merged
+          into a single mount that covers both tab values. */}
+      {(navTab === 'tuning' || navTab === 'studio') && (
         <ErrorBoundary>
           <StudioSurface
             conversationId={studioConversationId}

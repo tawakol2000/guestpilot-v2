@@ -73,6 +73,25 @@ export class GoogleFreeTranslationProvider implements TranslationProvider {
   }
 }
 
-// Default export — controllers depend on the interface via this singleton, not
-// on the concrete class. Swap the right-hand side to change providers.
-export const translationService: TranslationProvider = new GoogleFreeTranslationProvider();
+// 2026-05-15 M14: env-driven provider selection. The TranslationProvider
+// interface was always swappable, but the singleton was hardcoded to the
+// concrete Google class — operators had no way to flip providers during
+// a Google rate-limit outage without redeploying. `TRANSLATION_PROVIDER`
+// is the runtime switch. Defaults to 'google' (current behaviour). New
+// providers slot into the switch when they're implemented.
+function resolveTranslationProvider(): TranslationProvider {
+  const choice = (process.env.TRANSLATION_PROVIDER ?? 'google').trim().toLowerCase();
+  switch (choice) {
+    case 'google':
+      return new GoogleFreeTranslationProvider();
+    default:
+      console.warn(
+        `[Translation] unknown TRANSLATION_PROVIDER='${choice}' — falling back to google.`,
+      );
+      return new GoogleFreeTranslationProvider();
+  }
+}
+
+// Controllers depend on the interface via this singleton, not on the
+// concrete class.
+export const translationService: TranslationProvider = resolveTranslationProvider();

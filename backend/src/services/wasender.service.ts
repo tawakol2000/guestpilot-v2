@@ -110,7 +110,20 @@ async function postSendMessage(body: Record<string, unknown>): Promise<SendResul
       console.warn(`[WAsender] server error status=${status}`);
       throw new WasenderServerError(axiosErr.message, status);
     }
-    console.warn(`[WAsender] request error status=${status} body=${JSON.stringify(responseBody)}`);
+    // 2026-05-15 M13: WAsender 4xx error bodies often echo back the
+    // `to` field (recipient phone number) plus other request fields. We
+    // were logging the full body to application logs, leaking the
+    // security desk's phone number on every failed send. Log only the
+    // status + a trimmed error string the way the rest of the service
+    // does, and keep the full body inside the thrown error for the
+    // caller to inspect under controlled conditions.
+    const trimmedError =
+      typeof (responseBody as any)?.error === 'string'
+        ? String((responseBody as any).error).slice(0, 200)
+        : typeof (responseBody as any)?.message === 'string'
+          ? String((responseBody as any).message).slice(0, 200)
+          : 'unknown';
+    console.warn(`[WAsender] request error status=${status} error=${trimmedError}`);
     throw new WasenderRequestError(axiosErr.message, status, responseBody);
   }
 }

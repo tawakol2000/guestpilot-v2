@@ -824,7 +824,9 @@ export function makeTuningSuggestionController(prisma: PrismaClient) {
           return;
         }
         console.error(`[tuning-suggestion] [${id}] accept failed:`, err);
-        res.status(500).json({ error: 'INTERNAL_ERROR', detail: err instanceof Error ? err.message : String(err) });
+        // 2026-05-15 M5: don't leak raw err.message in the response body.
+        // Log server-side, return generic 500.
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
       }
     },
 

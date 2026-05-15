@@ -7,7 +7,7 @@
     "build": "prisma generate && tsc && cp -r src/config dist/ && mkdir -p dist/build-tune-agent dist/build-tune-agent/templates && cp src/build-tune-agent/sdk-loader.cjs dist/build-tune-agent/sdk-loader.cjs && cp src/build-tune-agent/templates/*.md dist/build-tune-agent/templates/",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "echo 'STOP: prisma/migrations is stale (see prisma/migrations/README.md). Use db:push instead, or run prisma migrate deploy explicitly if you really know what you are doing.' && exit 1",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
@@ -23,7 +23,6 @@
     "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.71.0",
-    "cohere-ai": "^7.20.0",
     "cors": "^2.8.5",
     "diff": "^9.0.0",
     "dotenv": "^16.4.5",
@@ -37,7 +36,7 @@
     "rate-limit-redis": "^4.3.1",
     "socket.io": "^4.8.3",
     "web-push": "^3.6.7",
-    "zod": "^3.23.8"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -482,18 +482,27 @@ export function StudioChat({
   // "Preview runner not yet wired up". Sending through the real chat
   // pipeline means the agent receives the formatted message and can
   // invoke test_pipeline as expected.
+  // 2026-05-15 M18: stash sendMessage in a ref so the studio:send-message
+  // listener always calls the current SDK reference. The AI SDK's
+  // DefaultChatTransport surfaced new sendMessage identities when transport
+  // props change (provider toggle flip, conversation switch, etc.) — a
+  // single mount-time listener would capture a stale closure and silently
+  // route Preview / Tests "re-run" dispatches into a dead function.
+  const sendMessageRef = useRef(sendMessage)
+  useEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const onSend = (e: Event) => {
       const ce = e as CustomEvent<{ text: string }>
       const text = ce.detail?.text
       if (!text || !text.trim()) return
-      sendMessage({ text: text.trim() })
+      sendMessageRef.current({ text: text.trim() })
     }
     window.addEventListener('studio:send-message', onSend)
     return () => window.removeEventListener('studio:send-message', onSend)
-    // sendMessage identity is stable per useChat contract
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Sprint 046 bug follow-up — feed the shell's derivedContext from the

@@ -7,10 +7,16 @@ import { markStaleFaqEntries, expireStaleSuggestions } from '../services/faq.ser
 export function startFaqMaintenanceJob(prisma: PrismaClient): NodeJS.Timeout {
   console.log('[FAQ] Maintenance job started (interval: 24h)');
 
-  // Run once on startup (after 60s delay to let everything initialize)
-  setTimeout(async () => {
+  // 2026-05-15 M9: track + clear the startup setTimeout on shutdown.
+  // Previously: a SIGTERM in the first 60s after boot (rapid Railway
+  // deploys) would let the setTimeout fire after Prisma had been
+  // disconnected, producing an unhandled rejection from inside
+  // runMaintenance. `unref()` lets the process exit while waiting on
+  // this timer; the matching interval below is what server.ts clears.
+  const startupHandle = setTimeout(async () => {
     await runMaintenance(prisma);
   }, 60_000);
+  if (typeof startupHandle.unref === 'function') startupHandle.unref();
 
   // Then every 24 hours
   return setInterval(async () => {

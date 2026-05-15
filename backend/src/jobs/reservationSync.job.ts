@@ -89,6 +89,20 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
             })).map(r => r.hostawayReservationId)
           );
 
+          // 2026-05-15 M10: preload tenant's property map once per sync
+          // pass. Previously the loop fired `property.findFirst` per new
+          // reservation — N+1 sequential round-trips during a campaign
+          // burst. The @@unique([tenantId, hostawayListingId]) index keeps
+          // each lookup fast but the serial pattern still dominates wall
+          // clock during a backlog.
+          const propertiesById = new Map<string, { id: string }>();
+          for (const prop of await prisma.property.findMany({
+            where: { tenantId: tenant.id },
+            select: { id: true, hostawayListingId: true },
+          })) {
+            propertiesById.set(prop.hostawayListingId, { id: prop.id });
+          }
+
           let newCount = 0;
           let updatedCount = 0;
 
@@ -98,9 +112,7 @@ export function startReservationSyncJob(prisma: PrismaClient): NodeJS.Timeout {
 
             if (!existingIds.has(hwResId)) {
               // NEW reservation — create it
-              const property = await prisma.property.findFirst({
-                where: { tenantId: tenant.id, hostawayListingId: String(res.listingMapId) },
-              });
+              const property = propertiesById.get(String(res.listingMapId));
               if (!property) continue;
 
               const guestName = res.guestName || [res.guestFirstName, res.guestLastName].filter(Boolean).join(' ') || 'Unknown Guest';
