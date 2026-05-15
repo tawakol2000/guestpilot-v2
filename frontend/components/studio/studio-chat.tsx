@@ -782,6 +782,19 @@ export function StudioChat({
       // F8 — clear the undo slot so a later ⌘Z doesn't resurrect a
       // draft that has already been sent.
       clearEnhanceUndoSlot()
+      // 2026-05-15 polish: pin to bottom on user-initiated send. The
+      // auto-scroll effect only follows new messages when isAtBottom
+      // is true; if the operator was reading higher up in the chat and
+      // then sent a message, their reply + the incoming agent stream
+      // would land off-screen. Treat the send as an explicit "I'm
+      // driving the conversation now" cue.
+      setIsAtBottom(true)
+      requestAnimationFrame(() => {
+        scrollerRef.current?.scrollTo({
+          top: scrollerRef.current.scrollHeight,
+          behavior: 'smooth',
+        })
+      })
       sendMessage({ text })
     },
     [draft, isBusy, queuedMessages.length, sendMessage, onUserMessageSent, clearEnhanceUndoSlot],
