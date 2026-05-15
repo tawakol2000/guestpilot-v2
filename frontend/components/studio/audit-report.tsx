@@ -41,6 +41,28 @@ const STATUS_LABEL: Record<StudioStatus, string> = {
 // (`tool_definition`, `system_prompt`) in monospace, which reads as
 // engineering slang to an operator scanning a report. Human-friendly
 // labels aligned with the session-artifacts rail + the artifact-drawer.
+/** Replace kebab/snake slugs in audit-report labels with spaced words.
+ *  "SOP: early-check-in"                       → "SOP: Early check-in"
+ *  "Tool: check_paid_early_checkin_slot"       → "Tool: Check paid early checkin slot"
+ *  "System prompt (coordinator)"               → "System prompt (coordinator)" (no change) */
+function prettifyAuditLabel(raw: string): string {
+  if (!raw) return raw
+  // Split on the first ":" so we only rewrite the slug part (after the type).
+  const colon = raw.indexOf(':')
+  if (colon < 0) return raw
+  const head = raw.slice(0, colon + 1)
+  const tail = raw.slice(colon + 1).trim()
+  if (!tail) return raw
+  // Replace snake_case with spaces but preserve kebab-case in single words
+  // like "check-in" (only convert dashes between letters; keep dashes
+  // wrapped by digits/single-letter "in"-style suffixes if they look like
+  // compound words). For simplicity: snake → space; kebab stays.
+  const pretty = tail.replace(/_+/g, ' ')
+  // Sentence-case the first letter only.
+  const cased = pretty.length > 0 ? pretty.charAt(0).toUpperCase() + pretty.slice(1) : pretty
+  return `${head} ${cased}`
+}
+
 const ARTIFACT_LABEL: Record<AuditReportRowData['artifact'], string> = {
   system_prompt: 'System prompt',
   sop: 'SOP',
@@ -150,8 +172,14 @@ export function AuditReportCard(props: AuditReportCardProps) {
                       fontWeight: 600,
                       letterSpacing: '-0.005em',
                     }}
+                    title={row.label}
                   >
-                    {row.label}
+                    {/* 2026-05-15 polish: prettify "Type: kebab-slug"
+                       labels at render time so kebab/snake slugs
+                       (early-check-in / check_paid_early_checkin_slot)
+                       read as natural-language. Raw label stays in the
+                       title tooltip. */}
+                    {prettifyAuditLabel(row.label)}
                   </span>
                   <span
                     title={row.artifact}
