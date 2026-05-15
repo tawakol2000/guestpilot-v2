@@ -861,6 +861,23 @@ export async function listTodayCheckIns(
 
   if (reservations.length === 0) return [];
 
+  // Lazy backfill: any upcoming reservation without scheduled rows (e.g.
+  // synced before the doc-handoff feature was deployed) gets them now.
+  // scheduleOnReservationUpsert is idempotent — terminal rows are not
+  // resurrected, active rows have their fire time refreshed only when
+  // appropriate. Fire-and-forget so a single bad reservation can't break
+  // the listing.
+  await Promise.all(
+    reservations.map((r) =>
+      scheduleOnReservationUpsert(r.id, prisma).catch((err) => {
+        console.warn(
+          `[DocHandoff] backfill schedule failed for ${r.id} (non-fatal):`,
+          err?.message ?? err,
+        );
+      }),
+    ),
+  );
+
   const handoffRows = await prisma.documentHandoffState.findMany({
     where: { reservationId: { in: reservations.map((r) => r.id) } },
     select: {
