@@ -599,6 +599,10 @@ function PlanRow({
   }
 
   return (
+    // 2026-05-16 a11y: previously the <li> handled onClick to open the
+    // artifact drawer but had no role / tabIndex / keyboard handler —
+    // keyboard users couldn't navigate or activate plan rows. Make the
+    // row a button-like element when clickable.
     <li
       className="flex flex-col gap-1 rounded-md border px-2.5 py-2"
       style={{
@@ -606,9 +610,23 @@ function PlanRow({
         background: STUDIO_COLORS.canvas,
         cursor: onRowClick ? 'pointer' : undefined,
       }}
+      role={onRowClick ? 'button' : undefined}
+      tabIndex={onRowClick ? 0 : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       onClick={onRowClick}
+      onKeyDown={
+        onRowClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onRowClick()
+              }
+            }
+          : undefined
+      }
     >
       <div className="flex items-start gap-2">
         {/* State glyph */}
@@ -693,8 +711,10 @@ function PlanRow({
               <Plus size={12} strokeWidth={2.25} />
             </button>
           )}
-          {/* Sprint 058-A F2 — cancel pending plan row */}
-          {hovered && onCancelItem && rowState === 'pending' && (
+          {/* Sprint 058-A F2 — cancel pending plan row.
+             2026-05-16 a11y: also show on keyboard focus, not just
+             mouse hover, so keyboard users can cancel. */}
+          {(hovered || focused) && onCancelItem && rowState === 'pending' && (
             <button
               type="button"
               data-testid={`plan-row-cancel-${item.type}-${item.name}`}
@@ -702,6 +722,8 @@ function PlanRow({
               title="Skip this item"
               className="inline-flex h-6 w-6 items-center justify-center rounded"
               style={{ color: STUDIO_COLORS.inkSubtle }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
               onClick={onCancelItem}
             >
               <X size={12} strokeWidth={2.25} />

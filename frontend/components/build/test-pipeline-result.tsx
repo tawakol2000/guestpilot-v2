@@ -283,8 +283,14 @@ function SourceWriteChip({
       type="button"
       data-testid="test-pipeline-result-source-chip"
       onClick={() => onClick && onClick(historyId)}
+      // 2026-05-16 a11y: focus-visible ring (was `all: 'unset'` which
+      // stripped the default ring + left keyboard users blind to focus).
+      className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       style={{
-        all: 'unset',
+        background: TUNING_COLORS.surfaceSunken,
+        border: 'none',
+        font: 'inherit',
+        textAlign: 'left',
         cursor: onClick ? 'pointer' : 'default',
         display: 'flex',
         alignItems: 'center',
@@ -293,7 +299,6 @@ function SourceWriteChip({
         fontSize: 11,
         color: TUNING_COLORS.inkMuted,
         borderBottom: `1px solid ${TUNING_COLORS.hairlineSoft}`,
-        background: TUNING_COLORS.surfaceSunken,
       }}
     >
       <span
@@ -327,8 +332,13 @@ function VariantRow({ variant }: { variant: TestPipelineVariant }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-500"
         style={{
-          all: 'unset',
+          background: 'transparent',
+          border: 'none',
+          font: 'inherit',
+          color: 'inherit',
+          textAlign: 'left',
           display: 'flex',
           alignItems: 'center',
           gap: 6,

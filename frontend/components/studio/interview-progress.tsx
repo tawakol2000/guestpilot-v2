@@ -76,6 +76,12 @@ export function InterviewProgressCard({
   contradictions,
 }: InterviewProgressCardProps) {
   const total = slots.length
+  // 2026-05-16: hide the card entirely when there are no slots — the
+  // header would read "0 of 0 answered" with a 0% bar, which an
+  // operator reads as "interview broken" rather than "no slots
+  // tracked yet". The agent emits interview-progress only when slots
+  // delta, so an empty render is upstream noise.
+  if (total === 0) return null
   const filled = slots.filter((s) => s.status === 'filled').length
   const skipped = slots.filter((s) => s.status === 'skipped').length
   const remaining = total - filled - skipped
@@ -385,7 +391,25 @@ function SlotRow({
     </div>
   )
   return clickable ? (
-    <button type="button" onClick={onClick} style={{ all: 'unset', display: 'block', width: '100%' }}>
+    <button
+      type="button"
+      onClick={onClick}
+      // 2026-05-16 a11y: drop `all: 'unset'` — it wipes the focus-visible
+      // outline so keyboard users tabbing through the interview slots
+      // see no focus ring. Restore via inset focus ring on :focus-visible.
+      className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-500"
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        font: 'inherit',
+        color: 'inherit',
+        cursor: 'pointer',
+      }}
+    >
       {content}
     </button>
   ) : (
