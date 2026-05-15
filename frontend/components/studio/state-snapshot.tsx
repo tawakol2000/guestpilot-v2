@@ -49,7 +49,26 @@ function formatRelativeDay(iso: string | null): string {
 
 export function StateSnapshotCard(props: StateSnapshotCardProps) {
   const s = props.data.summary
-  const faqTotal = s.faqsGlobal + s.faqsPropertyScoped
+  // 2026-05-15 polish: defensive coercion so a partially-populated
+  // summary (the persisted card on older conversations was emitted
+  // before the snapshot adapter started populating these fields)
+  // doesn't render "undefined" / "NaN" rows on the live surface.
+  // Empty/missing values fall through to "—".
+  const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  const numStr = (v: unknown): string => {
+    const x = n(v)
+    return x === null ? '—' : String(x)
+  }
+  const sopsDefined = n(s.sopsDefined)
+  const sopsDefaulted = n(s.sopsDefaulted)
+  const faqsGlobal = n(s.faqsGlobal)
+  const faqsPropertyScoped = n(s.faqsPropertyScoped)
+  const faqTotalNum = faqsGlobal !== null && faqsPropertyScoped !== null
+    ? faqsGlobal + faqsPropertyScoped
+    : null
+  const faqSubParts: string[] = []
+  if (faqsGlobal !== null) faqSubParts.push(`${faqsGlobal} global`)
+  if (faqsPropertyScoped !== null) faqSubParts.push(`${faqsPropertyScoped} property-scoped`)
   const promptBadge =
     s.systemPromptStatus === 'CUSTOMISED'
       ? { label: 'Customised', fg: STUDIO_COLORS.successFg }
@@ -106,20 +125,20 @@ export function StateSnapshotCard(props: StateSnapshotCardProps) {
         label="System prompt"
         value={promptBadge.label}
         valueColor={promptBadge.fg}
-        sub={s.systemPromptEditCount > 0 ? `${s.systemPromptEditCount} edits` : undefined}
+        sub={n(s.systemPromptEditCount) && n(s.systemPromptEditCount)! > 0 ? `${s.systemPromptEditCount} edits` : undefined}
       />
       <Row
         label="SOPs"
-        value={String(s.sopsDefined)}
-        sub={s.sopsDefaulted > 0 ? `${s.sopsDefaulted} defaulted` : undefined}
+        value={numStr(s.sopsDefined)}
+        sub={sopsDefaulted !== null && sopsDefaulted > 0 ? `${sopsDefaulted} defaulted` : undefined}
       />
       <Row
         label="FAQs"
-        value={String(faqTotal)}
-        sub={`${s.faqsGlobal} global, ${s.faqsPropertyScoped} property-scoped`}
+        value={faqTotalNum !== null ? String(faqTotalNum) : '—'}
+        sub={faqSubParts.length ? faqSubParts.join(', ') : undefined}
       />
-      <Row label="Custom tools" value={String(s.customToolsDefined)} />
-      <Row label="Properties" value={String(s.propertiesImported)} />
+      <Row label="Custom tools" value={numStr(s.customToolsDefined)} />
+      <Row label="Properties" value={numStr(s.propertiesImported)} />
       <Row label="Last session" value={formatRelativeDay(s.lastBuildSessionAt)} />
 
       {props.onOpenPending && (

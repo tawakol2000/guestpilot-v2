@@ -88,6 +88,14 @@ export function TenantStateBanner({
       <span
         data-testid="tenant-state-pill"
         data-mode={mode}
+        // 2026-05-15 polish: hover-tooltip so operators know what LIVE /
+        // SETUP mean — the internal enum (BROWNFIELD / GREENFIELD)
+        // stays in data-mode for tests + analytics.
+        title={
+          state.isGreenfield
+            ? 'Setup mode — no AI configuration yet. Ask the agent to seed your first SOPs and prompt.'
+            : 'Live — your AI is already configured and answering guests. Edits stay as drafts until published.'
+        }
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -100,6 +108,7 @@ export function TenantStateBanner({
           color: pillStyle.fg,
           textTransform: 'uppercase',
           flexShrink: 0,
+          cursor: 'help',
         }}
       >
         {modeLabel}

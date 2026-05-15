@@ -507,7 +507,14 @@ function SessionRow({
             color: STUDIO_TOKENS_V2.muted2,
           }}
         >
-          {tenantName} · {relativeTime(item.updatedAt)}
+          {/* 2026-05-15 polish: drop the redundant "Workspace · "
+             prefix on every row. Operators only ever see their own
+             workspace; the prefix was noise. If the tenant name is
+             explicitly set (and not the hardcoded fallback), keep it
+             as context; otherwise show just the timestamp. */}
+          {tenantName && tenantName !== 'Workspace' && tenantName !== 'Studio'
+            ? `${tenantName} · ${relativeTime(item.updatedAt)}`
+            : relativeTime(item.updatedAt)}
         </span>
       </button>
     </li>
