@@ -75,10 +75,14 @@ describe('StudioChat auto-opener (anchor-driven)', () => {
     // The transport body factory should mark the NEXT request as an
     // opener — and only the next request. Reading once flips the ref.
     expect(_capturedBodyFactory).not.toBeNull()
+    // 2026-05-16: body now also carries `provider` (anthropic/openai) so
+    // use toMatchObject to assert just the conversation + isOpener
+    // contract — additional payload fields don't fail the test.
     const first = _capturedBodyFactory!()
-    expect(first).toEqual({ conversationId: 'c1', isOpener: true })
+    expect(first).toMatchObject({ conversationId: 'c1', isOpener: true })
     const second = _capturedBodyFactory!()
-    expect(second).toEqual({ conversationId: 'c1' })
+    expect(second).toMatchObject({ conversationId: 'c1' })
+    expect(second.isOpener).toBeUndefined()
   })
 
   it('does not fire when anchorMessage is null (operator-initiated New session)', () => {
@@ -93,7 +97,9 @@ describe('StudioChat auto-opener (anchor-driven)', () => {
 
     expect(_sendMessage).not.toHaveBeenCalled()
     expect(_capturedBodyFactory).not.toBeNull()
-    expect(_capturedBodyFactory!()).toEqual({ conversationId: 'c1' })
+    const payload = _capturedBodyFactory!()
+    expect(payload).toMatchObject({ conversationId: 'c1' })
+    expect(payload.isOpener).toBeUndefined()
   })
 
   it('does not fire when the transcript already has messages (rehydrated mid-thread)', () => {
@@ -113,7 +119,55 @@ describe('StudioChat auto-opener (anchor-driven)', () => {
     )
 
     expect(_sendMessage).not.toHaveBeenCalled()
-    expect(_capturedBodyFactory!()).toEqual({ conversationId: 'c1' })
+    const payload = _capturedBodyFactory!()
+    expect(payload).toMatchObject({ conversationId: 'c1' })
+    expect(payload.isOpener).toBeUndefined()
+  })
+
+  it('after the opener fires, a subsequent user send has isOpener=false in the body', () => {
+    // 2026-05-16 regression: a user-initiated send after the auto-opener
+    // had `isOpener: true` leak across conversations because openerRef
+    // wasn't reset until body() was called once. Verify here: read the
+    // body factory twice — the first call (the opener send) carries
+    // isOpener: true; the second call (operator's typed reply) does not.
+    render(
+      <StudioChat
+        conversationId="c-after"
+        greenfield={false}
+        initialMessages={[]}
+        anchorMessage={{ id: 'msg-anchor-x' }}
+      />,
+    )
+    expect(_capturedBodyFactory).toBeTruthy()
+    const first = _capturedBodyFactory!()
+    expect(first.isOpener).toBe(true)
+    // Subsequent send (operator typed something) should not be tagged.
+    const second = _capturedBodyFactory!()
+    expect(second.isOpener).toBeUndefined()
+    // And a third send confirms the flag stays off.
+    const third = _capturedBodyFactory!()
+    expect(third.isOpener).toBeUndefined()
+  })
+
+  it('on a non-anchored conversation, no send is ever tagged as opener', () => {
+    // 2026-05-16 regression: when the operator clicks "+ New chat" we
+    // create a TuningConversation with anchorMessageId=null. The
+    // opener-effect must NOT mark any subsequent body() call as
+    // isOpener=true. Without the per-conversation remount (key=), refs
+    // could leak from a previously-anchored conversation.
+    render(
+      <StudioChat
+        conversationId="c-new"
+        greenfield={false}
+        initialMessages={[]}
+        anchorMessage={null}
+      />,
+    )
+    expect(_capturedBodyFactory).toBeTruthy()
+    const payload1 = _capturedBodyFactory!()
+    expect(payload1.isOpener).toBeUndefined()
+    const payload2 = _capturedBodyFactory!()
+    expect(payload2.isOpener).toBeUndefined()
   })
 
   it('does not fire twice even if the component re-renders before the agent replies', () => {
