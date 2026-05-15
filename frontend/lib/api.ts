@@ -1076,6 +1076,7 @@ export interface DocHandoffTodayItem {
   checkIn: string
   checkOut: string
   status: string
+  isToday: boolean
   checklist: {
     passportsNeeded: number
     passportsReceived: number

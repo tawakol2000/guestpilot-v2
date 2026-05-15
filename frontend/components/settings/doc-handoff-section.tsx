@@ -435,16 +435,16 @@ export default function DocHandoffSection(): React.ReactElement {
 
       <div className="pt-4 border-t border-neutral-100 space-y-3">
         <div>
-          <h3 className="text-sm font-semibold">Today&apos;s check-ins</h3>
+          <h3 className="text-sm font-semibold">Upcoming check-ins (next 14 days)</h3>
           <p className="text-xs text-neutral-500 mt-1">
-            Fire the real reminder or handoff for today&apos;s reservations right now —
+            Fire the real reminder or handoff for any upcoming reservation right now —
             renders the actual message body and uploads passport images from the checklist.
             Skips the scheduled fire time but still runs all the same gates.
           </p>
         </div>
 
         {today.length === 0 ? (
-          <p className="text-xs text-neutral-500">No reservations checking in today (Africa/Cairo).</p>
+          <p className="text-xs text-neutral-500">No reservations in the next 14 days (Africa/Cairo).</p>
         ) : (
           <div className="space-y-3">
             {today.map((r) => {
@@ -460,9 +460,14 @@ export default function DocHandoffSection(): React.ReactElement {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">
-                        {r.propertyName || 'Unknown property'}
-                        {r.guestName ? <span className="text-neutral-500 font-normal"> · {r.guestName}</span> : null}
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <span>{r.propertyName || 'Unknown property'}</span>
+                        {r.guestName ? <span className="text-neutral-500 font-normal">· {r.guestName}</span> : null}
+                        {r.isToday ? (
+                          <span className="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                            today
+                          </span>
+                        ) : null}
                       </div>
                       <div className="text-xs text-neutral-500 font-mono mt-0.5">
                         {formatTs(r.checkIn)} → {formatTs(r.checkOut)} · {r.status}

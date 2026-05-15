@@ -809,9 +809,9 @@ export async function forceFireDocHandoff(
 }
 
 /**
- * Operator-driven listing of reservations whose check-in falls today in
- * the doc-handoff timezone (Africa/Cairo). Used by the settings page to
- * offer a "fire now" button per reservation.
+ * Operator-driven listing of upcoming reservations (today through ~14 days
+ * out, plus today's check-ins regardless of past check-in time). Used by
+ * the settings page to offer "fire now" buttons per reservation.
  */
 export async function listTodayCheckIns(
   tenantId: string,
@@ -825,6 +825,7 @@ export async function listTodayCheckIns(
     checkIn: string;
     checkOut: string;
     status: string;
+    isToday: boolean;
     checklist: DocumentChecklist | null;
     checklistComplete: boolean;
     reminderRow: { status: string; sentAt: string | null; lastError: string | null } | null;
@@ -839,16 +840,15 @@ export async function listTodayCheckIns(
   });
   const todayStr = tzFmt.format(new Date());
 
-  // Pull a 60-hour window around now to comfortably cover today's check-ins
-  // in Cairo regardless of how the UTC timestamps drift.
+  // Pull from ~12h ago through 14 days out so today + upcoming all surface.
   const now = Date.now();
   const reservations = await prisma.reservation.findMany({
     where: {
       tenantId,
       status: { not: 'CANCELLED' },
       checkIn: {
-        gte: new Date(now - 36 * 60 * 60 * 1000),
-        lte: new Date(now + 36 * 60 * 60 * 1000),
+        gte: new Date(now - 12 * 60 * 60 * 1000),
+        lte: new Date(now + 14 * 24 * 60 * 60 * 1000),
       },
     },
     include: {
@@ -859,11 +859,10 @@ export async function listTodayCheckIns(
     take: 50,
   });
 
-  const todayRes = reservations.filter((r) => tzFmt.format(r.checkIn) === todayStr);
-  if (todayRes.length === 0) return [];
+  if (reservations.length === 0) return [];
 
   const handoffRows = await prisma.documentHandoffState.findMany({
-    where: { reservationId: { in: todayRes.map((r) => r.id) } },
+    where: { reservationId: { in: reservations.map((r) => r.id) } },
     select: {
       reservationId: true,
       messageType: true,
@@ -880,7 +879,7 @@ export async function listTodayCheckIns(
     byRes.set(row.reservationId, bucket);
   }
 
-  return todayRes.map((r) => {
+  return reservations.map((r) => {
     const checklist = getChecklistFromReservation(r);
     const rows = byRes.get(r.id);
     return {
@@ -891,6 +890,7 @@ export async function listTodayCheckIns(
       checkIn: r.checkIn.toISOString(),
       checkOut: r.checkOut.toISOString(),
       status: r.status,
+      isToday: tzFmt.format(r.checkIn) === todayStr,
       checklist,
       checklistComplete: isChecklistComplete(checklist),
       reminderRow: rows?.reminder
