@@ -181,6 +181,14 @@ export interface TestJudgeOptions {
    * the network. If omitted, we construct one via the ANTHROPIC_API_KEY env.
    */
   client?: Pick<Anthropic, 'messages'>;
+  /**
+   * 2026-05-16: forward the controller's AbortSignal so a client disconnect
+   * mid-test_pipeline cancels in-flight judge calls. Without this, an
+   * operator who closes their tab while a 3-variant test is running still
+   * burns 3 × 30s of Anthropic tokens. Wired by test-pipeline.ts which
+   * receives ctx.abortSignal from runTuningAgentTurn.
+   */
+  signal?: AbortSignal;
 }
 
 export async function runTestJudge(
@@ -220,20 +228,33 @@ export async function runTestJudge(
   // verdict so the UI renders a visible failure row instead of
   // staying indefinitely pending.
   const JUDGE_TIMEOUT_MS = 30_000;
+  // 2026-05-16: combine the per-call timeout with the caller's
+  // abort signal (if any). The Anthropic SDK honours `signal` on
+  // messages.create and aborts the underlying socket immediately,
+  // so we stop spending tokens on a disconnected client.
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(new Error(`Judge call timed out after ${JUDGE_TIMEOUT_MS}ms`)), JUDGE_TIMEOUT_MS);
+  const externalSignal = options?.signal;
+  if (externalSignal?.aborted) {
+    clearTimeout(timeoutId);
+    throw new Error('Aborted before judge call started');
+  }
+  const onExternalAbort = () => timeoutController.abort(externalSignal!.reason);
+  externalSignal?.addEventListener('abort', onExternalAbort);
   try {
-    const apiCall = client.messages.create({
-      model: JUDGE_MODEL,
-      max_tokens: 512,
-      system: JUDGE_SYSTEM,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
-    const timer = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Judge call timed out after ${JUDGE_TIMEOUT_MS}ms`)),
-        JUDGE_TIMEOUT_MS,
-      ),
+    const apiCall = client.messages.create(
+      {
+        model: JUDGE_MODEL,
+        max_tokens: 512,
+        system: JUDGE_SYSTEM,
+        messages: [{ role: 'user', content: userPrompt }],
+      },
+      { signal: timeoutController.signal } as unknown as Record<string, unknown>,
     );
-    const resp = await Promise.race([apiCall, timer]);
+    // Timeout is now owned by timeoutController above (which also
+    // honours an external abort signal). Just await the call; the SDK
+    // will reject with AbortError when the controller fires.
+    const resp = await apiCall;
     const text =
       resp.content
         .map((b) => (b.type === 'text' ? b.text : ''))
@@ -258,6 +279,9 @@ export async function runTestJudge(
       promptVersion: JUDGE_PROMPT_VERSION,
       judgeModel: JUDGE_MODEL,
     };
+  } finally {
+    clearTimeout(timeoutId);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
 }
 

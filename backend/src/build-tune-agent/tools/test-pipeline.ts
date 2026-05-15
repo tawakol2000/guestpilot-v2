@@ -55,14 +55,16 @@ import {
  */
 export interface TestPipelineDeps {
   runPipelineDry?: (input: RunPipelineDryInput) => Promise<RunPipelineDryResult>;
-  runTestJudge?: (input: TestJudgeInput) => Promise<TestJudgeResult>;
+  // 2026-05-16: judge now accepts an AbortSignal so an aborted turn
+  // doesn't keep burning tokens on in-flight Anthropic calls.
+  runTestJudge?: (input: TestJudgeInput, options?: { signal?: AbortSignal }) => Promise<TestJudgeResult>;
 }
 
 let _defaultRunPipelineDry:
   | ((input: RunPipelineDryInput) => Promise<RunPipelineDryResult>)
   | undefined;
 let _defaultRunTestJudge:
-  | ((input: TestJudgeInput) => Promise<TestJudgeResult>)
+  | ((input: TestJudgeInput, options?: { signal?: AbortSignal }) => Promise<TestJudgeResult>)
   | undefined;
 
 function loadDefaultRunPipelineDry() {
@@ -113,7 +115,8 @@ export function buildTestPipelineTool(
     ((input: RunPipelineDryInput) => loadDefaultRunPipelineDry()(input));
   const runTestJudge =
     deps?.runTestJudge ??
-    ((input: TestJudgeInput) => loadDefaultRunTestJudge()(input));
+    ((input: TestJudgeInput, options?: { signal?: AbortSignal }) =>
+      loadDefaultRunTestJudge()(input, options));
   return tool(
     'studio_test_pipeline',
     DESCRIPTION,
@@ -167,29 +170,42 @@ export function buildTestPipelineTool(
         // back to sequential (per spec amendment).
         const results = await Promise.all(
           triggers.map(async (trigger) => {
+            if (c.abortSignal?.aborted) {
+              throw new Error('Aborted before dry-run');
+            }
             const dry = await runPipelineDry({
               tenantId: c.tenantId,
               testMessage: trigger,
               context: args.testContext as TestPipelineContext | undefined,
               prisma: c.prisma,
+              signal: c.abortSignal,
             });
             let judge: TestJudgeResult;
             try {
-              judge = await runTestJudge({
-                tenantContext: dry.tenantContextSummary,
-                guestMessage: trigger,
-                aiReply: dry.reply,
-                // 2026-04-24: pass the structured pipeline action so
-                // the judge credits escalation/scheduledTime signals
-                // the SOP intended — fixes the passport-verification
-                // false-negative where "Thanks for sending the
-                // passport." + escalation was graded 'missing-sop-
-                // reference'. `action` is null only when the dry
-                // runner couldn't honour the schema; the judge
-                // falls back to legacy reply-only grading in that
-                // case (see JudgePipelineAction header).
-                pipelineAction: dry.action ?? undefined,
-              });
+              // 2026-05-16: propagate abort signal so a client
+              // disconnect cancels the in-flight judge call instead
+              // of burning the full 30s + token budget.
+              if (c.abortSignal?.aborted) {
+                throw new Error('Aborted before judge call');
+              }
+              judge = await runTestJudge(
+                {
+                  tenantContext: dry.tenantContextSummary,
+                  guestMessage: trigger,
+                  aiReply: dry.reply,
+                  // 2026-04-24: pass the structured pipeline action so
+                  // the judge credits escalation/scheduledTime signals
+                  // the SOP intended — fixes the passport-verification
+                  // false-negative where "Thanks for sending the
+                  // passport." + escalation was graded 'missing-sop-
+                  // reference'. `action` is null only when the dry
+                  // runner couldn't honour the schema; the judge
+                  // falls back to legacy reply-only grading in that
+                  // case (see JudgePipelineAction header).
+                  pipelineAction: dry.action ?? undefined,
+                },
+                { signal: c.abortSignal },
+              );
             } catch (jerr: any) {
               // Empty/malformed judge output → test result still
               // persists with verdict:failed and judgeReasoning carrying

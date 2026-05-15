@@ -56,6 +56,13 @@ export interface RunPipelineDryInput {
   prisma: PrismaClient;
   /** Injected OpenAI client for tests. Falls back to a default instance. */
   openai?: Pick<OpenAI, 'responses'>;
+  /**
+   * 2026-05-16: optional abort signal. When the studio turn that
+   * invoked test_pipeline is cancelled (client disconnect, manager
+   * cancel), the in-flight OpenAI call is aborted instead of running
+   * to completion and burning tokens.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -172,18 +179,45 @@ export async function runPipelineDry(
   // (resolveTaskId, updateTaskId stay for fidelity) and is still
   // strict-mode-compliant.
   const schema = isInquiry ? DRY_SCREENING_SCHEMA : DRY_COORDINATOR_SCHEMA;
-  const response = await (client.responses as any).create({
-    model: normalisedModel,
-    instructions: systemPrompt,
-    input: [
+
+  // 2026-05-16: own a local timeout (60s) that chains with the
+  // caller's signal so a hung OpenAI socket can't outlast the studio
+  // turn. The OpenAI SDK honours `signal` on the request options.
+  const dryController = new AbortController();
+  const dryTimeoutId = setTimeout(
+    () => dryController.abort(new Error('test_pipeline: dry-run exceeded 60s timeout')),
+    60_000,
+  );
+  const externalSignal = input.signal;
+  if (externalSignal?.aborted) {
+    clearTimeout(dryTimeoutId);
+    throw new Error('test_pipeline: aborted before OpenAI call');
+  }
+  const onExternalAbort = () =>
+    dryController.abort(externalSignal?.reason ?? new Error('Aborted by caller'));
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+  let response: unknown;
+  try {
+    response = await (client.responses as any).create(
       {
-        role: 'user',
-        content: [{ type: 'input_text', text: input.testMessage }],
+        model: normalisedModel,
+        instructions: systemPrompt,
+        input: [
+          {
+            role: 'user',
+            content: [{ type: 'input_text', text: input.testMessage }],
+          },
+        ],
+        max_output_tokens: 600,
+        text: { format: schema },
       },
-    ],
-    max_output_tokens: 600,
-    text: { format: schema },
-  });
+      { signal: dryController.signal },
+    );
+  } finally {
+    clearTimeout(dryTimeoutId);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
+  }
 
   const parsed = extractStructuredResponse(response, isInquiry);
   if (!parsed.reply) {
