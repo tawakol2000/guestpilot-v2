@@ -184,6 +184,39 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
     async (args) => {
       const c = ctx();
       const editFormat = args.editFormat ?? 'full_replacement';
+      // 2026-05-15 polish (harness-discovered): validate format-shape BEFORE
+      // emitting the data-suggested-fix card. The agent (under both
+      // providers) sometimes passes editFormat='search_replace' with
+      // beforeText/proposedText (the full_replacement shape), or vice-
+      // versa. The post-tool validator catches this, but only AFTER the
+      // card has emitted — so the frontend would render a card with
+      // empty before/after. Reject up-front and let the agent retry with
+      // a valid shape on the next round.
+      const isNoFixCategory =
+        args.category === 'NO_FIX' || args.category === 'MISSING_CAPABILITY';
+      if (!isNoFixCategory) {
+        if (editFormat === 'search_replace') {
+          if (!args.oldText || !args.newText) {
+            return asError(
+              `propose_suggestion: editFormat='search_replace' requires non-empty oldText AND newText. ` +
+                `Received: oldText=${args.oldText ? 'set' : 'missing'}, newText=${args.newText ? 'set' : 'missing'}. ` +
+                `Either set both, or switch editFormat to 'full_replacement' and use beforeText + proposedText.`,
+            );
+          }
+          if (args.oldText === args.newText) {
+            return asError(
+              `propose_suggestion: editFormat='search_replace' requires oldText !== newText (no-op edit rejected).`,
+            );
+          }
+        } else {
+          if (!args.proposedText || args.proposedText.length === 0) {
+            return asError(
+              `propose_suggestion: editFormat='full_replacement' requires non-empty proposedText. ` +
+                `If you meant a targeted search-and-replace edit, set editFormat='search_replace' and provide oldText + newText.`,
+            );
+          }
+        }
+      }
       const span = startAiSpan('tuning-agent.propose_suggestion', {
         category: args.category,
         confidence: args.confidence,
