@@ -133,6 +133,8 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         // Read existing definition so we can include the would-be sopId
         // in the preview when the category already exists. We deliberately
         // do not upsert in dry-run; an absent definition surfaces as null.
+        // 2026-05-15: harness dry-run override.
+        if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') args.dryRun = true;
         if (args.dryRun) {
           const existingDef = await c.prisma.sopDefinition.findUnique({
             where: { tenantId_category: { tenantId: c.tenantId, category: args.sopCategory } },

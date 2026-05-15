@@ -215,6 +215,30 @@ export function buildSuggestionActionTool(
             span.end({ error: 'DRAFT_VALIDATION_FAILED' });
             return asError(`suggestion_action draft validation failed: ${draftValidationError}`);
           }
+          // 2026-05-15: harness dry-run gate. When STUDIO_HARNESS_DRY_RUN
+          // is set, short-circuit BEFORE any DB write so harness-driven
+          // scenarios don't mutate live artifacts (system prompts, SOPs,
+          // FAQs, tool definitions). The agent still sees a successful
+          // apply payload so its downstream flow (verifyNudge etc.)
+          // exercises end-to-end.
+          if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') {
+            const dryPayload = {
+              suggestionId: 'harness-dry-run',
+              status: 'ACCEPTED',
+              target: {
+                artifact: args.draft.category === 'SYSTEM_PROMPT' ? 'system_prompt' : 'unknown',
+                systemPromptVariant: args.draft.systemPromptVariant ?? null,
+                sopCategory: args.draft.sopCategory ?? null,
+              },
+              dryRun: true,
+              dryRunReason: 'STUDIO_HARNESS_DRY_RUN env var set — no DB write performed',
+              next_action_recommended: 'verify',
+              next_action_hint:
+                'Dry-run apply succeeded. In a real session this would proceed to verifying; the harness blocks the underlying write so live artifacts stay untouched.',
+            };
+            span.end({ ...dryPayload });
+            return asCallToolResult(dryPayload);
+          }
           const actionType = CATEGORY_TO_ACTION_TYPE[args.draft.category] ?? 'EDIT_SYSTEM_PROMPT';
           const created = await c.prisma.tuningSuggestion.create({
             data: {
@@ -339,6 +363,25 @@ export function buildSuggestionActionTool(
           );
         }
         const finalText = args.editedText ?? suggestion.proposedText;
+        // 2026-05-15: harness dry-run gate (existing-suggestion path).
+        // Skip the CAS flip + artifact write when STUDIO_HARNESS_DRY_RUN
+        // is set so the underlying suggestion row stays PENDING and the
+        // live artifact stays untouched. Return a synthetic ACCEPTED
+        // payload so the agent's flow continues end-to-end.
+        if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') {
+          const dryPayload = {
+            suggestionId: suggestion.id,
+            status: 'ACCEPTED',
+            target: { artifact: 'system_prompt', systemPromptVariant: suggestion.systemPromptVariant ?? null },
+            dryRun: true,
+            dryRunReason: 'STUDIO_HARNESS_DRY_RUN env var set — no CAS flip or artifact write performed',
+            next_action_recommended: 'verify',
+            next_action_hint:
+              'Dry-run apply succeeded. The PENDING row is untouched; no artifact write happened. Proceed to verifying to exercise the rest of the flow.',
+          };
+          span.end({ ...dryPayload });
+          return asCallToolResult(dryPayload);
+        }
         const claim = await c.prisma.tuningSuggestion.updateMany({
           where: {
             id: suggestion.id,

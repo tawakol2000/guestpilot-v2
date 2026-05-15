@@ -39,6 +39,19 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
     async (args) => {
       const c = ctx();
       const span = startAiSpan('tuning-agent.rollback', args);
+      // 2026-05-15: harness dry-run gate. Block rollback writes when
+      // STUDIO_HARNESS_DRY_RUN is set so harness-driven sessions can't
+      // accidentally revert live artifacts.
+      if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') {
+        const dryPayload = {
+          ok: true,
+          dryRun: true,
+          dryRunReason: 'STUDIO_HARNESS_DRY_RUN env var set — no rollback write performed',
+          rolledBack: [],
+        };
+        span.end(dryPayload);
+        return asCallToolResult(dryPayload);
+      }
       try {
         // Mode validation — exactly one of the two rollback modes.
         const hasArtifactMode = Boolean(args.artifactType && args.versionId);

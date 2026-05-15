@@ -166,6 +166,8 @@ export function buildCreateToolDefinitionTool(
         // D1 dry-run seam — return SANITISED preview without writing.
         // Sanitiser parity: same function backs D2 history storage so a
         // secret hidden in the preview is hidden in the persisted row too.
+        // 2026-05-15: harness dry-run override.
+        if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') args.dryRun = true;
         if (args.dryRun) {
           const rawPreview = {
             tenantId: c.tenantId,

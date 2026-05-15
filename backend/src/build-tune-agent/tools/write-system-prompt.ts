@@ -175,6 +175,8 @@ export function buildWriteSystemPromptTool(
 
         // D1 dry-run seam — return the would-be payload without persisting.
         // Validation (coverage + load-bearing + tx) has already run above.
+        // 2026-05-15: harness dry-run override.
+        if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') args.dryRun = true;
         if (args.dryRun) {
           const previewPayload = {
             tenantId: c.tenantId,

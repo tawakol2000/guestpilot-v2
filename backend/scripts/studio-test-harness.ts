@@ -25,6 +25,15 @@ import * as dotenv from 'dotenv';
 // Force override so a stale empty ANTHROPIC_API_KEY=/OPENAI_API_KEY= in
 // the parent shell doesn't shadow the real values in .env.
 dotenv.config({ override: true });
+// 2026-05-15: harness dry-run mode. Block any write tool from mutating
+// live artifacts (system prompts, SOPs, FAQs, tool definitions). The
+// agent still sees a successful apply payload so its downstream flow
+// exercises end-to-end, but the underlying state stays untouched.
+// Set STUDIO_HARNESS_DRY_RUN=false to opt out (e.g. to capture a real
+// before/after for a regression test).
+if (process.env.STUDIO_HARNESS_DRY_RUN !== 'false') {
+  process.env.STUDIO_HARNESS_DRY_RUN = 'true';
+}
 import { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { runTuningAgentTurn } from '../src/build-tune-agent/runtime';
