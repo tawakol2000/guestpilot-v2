@@ -1040,8 +1040,8 @@ export function StudioChat({
               data-testid="composer-enhance-button"
               disabled={enhancing}
               onClick={handleEnhanceClick}
-              aria-label="Enhance draft with AI"
-              title="Enhance draft (AI)"
+              aria-label="Rewrite draft with AI to make it tighter and clearer"
+              title={enhancing ? 'Rewriting…' : 'Rewrite this draft with AI (⌘Z to undo within 15s)'}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md disabled:opacity-60"
               style={{
                 background: STUDIO_COLORS.surfaceSunken,
@@ -1078,6 +1078,7 @@ export function StudioChat({
               type="submit"
               disabled={!canSend}
               aria-label="Send message"
+              title="Send (Enter) — Shift+Enter for a new line"
               className="flex shrink-0 items-center justify-center disabled:opacity-60"
               style={{
                 width: 30,
@@ -2405,6 +2406,7 @@ function ComposerChips({ draft }: { draft: string }) {
         type="button"
         data-chip="reference"
         aria-label="Insert reference to an SOP, FAQ, prompt, tool, or property override"
+        title="Reference an SOP, FAQ, prompt, tool, or property override in your message"
         onClick={(e) => shell.openReferencePicker(e.currentTarget as HTMLElement)}
         className="inline-flex items-center gap-1.5"
         style={{
@@ -2432,6 +2434,11 @@ function ComposerChips({ draft }: { draft: string }) {
         type="button"
         data-chip="test"
         aria-label="Test the current draft against the draft reply-pipeline"
+        title={
+          draft.trim()
+            ? 'Run this message through the draft reply-pipeline and see what the AI would reply'
+            : 'Type a guest message above first, then click Test to see what the AI would reply'
+        }
         disabled={!draft.trim()}
         onClick={() => {
           if (!draft.trim()) return
