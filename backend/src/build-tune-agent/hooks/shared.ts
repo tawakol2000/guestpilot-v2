@@ -108,13 +108,20 @@ const APPLY_SANCTION_PATTERNS = [
  * accept "apply" as a greenlight for a rollback, which is wrong — the
  * manager should be acknowledging the rollback specifically.
  */
+// 2026-05-15 polish: removed the bare `go ahead` / `do it` patterns —
+// those phrases on their own express a generic affirmative, not a
+// rollback specifically. If the manager said "go ahead" intending an
+// apply but the model picked `studio_rollback` (hallucination or wrong
+// tool routing), the gate would accept it as sanctioned rollback. Now
+// rollback requires the rollback verb explicitly in the manager's
+// turn. `roll [it/that/this] back` is still covered.
 const ROLLBACK_SANCTION_PATTERNS = [
   /\broll(\s|-)?back\b/i,
+  // "roll it back" / "roll that back" / "roll this back" / "roll them back"
+  /\broll\s+(?:it|this|that|them)\s+back\b/i,
   /\brevert\b/i,
   /\bundo\s+(it|that|this|the\s+(change|edit|update))\b/i,
   /\byes[,.!\s]+(roll(\s|-)?back|revert|undo)/i,
-  /\bgo\s+ahead\b/i,
-  /\bdo\s+it(\s+now)?\b/i,
 ];
 
 export function detectApplySanction(lastUserMessage: string): boolean {

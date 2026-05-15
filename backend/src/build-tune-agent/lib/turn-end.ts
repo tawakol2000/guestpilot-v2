@@ -39,6 +39,8 @@ export interface TurnEndInput {
   assistantMessageId: string;
   mode: AgentMode;
   toolCallsInvoked: string[];
+  /** Subset of toolCallsInvoked whose handler reported success. Used for accurate session rollup. */
+  toolCallsSucceeded?: string[];
   /** Slot snapshot captured BEFORE the turn ran. Used to detect deltas. */
   preTurnSlotSnapshot: Record<string, string>;
   /** Post-turn state-machine snapshot (after computeTurnEndSnapshot). */
@@ -85,6 +87,7 @@ export async function emitTurnEndArtifacts(input: TurnEndInput): Promise<void> {
   try {
     maybeEmitSessionDiffSummary({
       toolCallsInvoked: input.toolCallsInvoked,
+      toolCallsSucceeded: input.toolCallsSucceeded,
       emitDataPart: input.emitDataPart,
       assistantMessageId: input.assistantMessageId,
     });

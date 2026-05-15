@@ -28,7 +28,7 @@ import {
   markBuildTransactionPartial,
   validateBuildTransaction,
 } from './build-transaction';
-import { asCallToolResult, asError, type ToolContext } from './types';
+import { asCallToolResult, asError, verifyNudge, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
 import { openRitualWindow } from '../lib/ritual-state';
@@ -299,7 +299,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
             });
           }
           span.end(payload);
-          return asCallToolResult(payload);
+          return asCallToolResult({ ...payload, ...verifyNudge() });
         }
 
         // Global SopVariant path.
@@ -383,7 +383,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
           });
         }
         span.end(payload);
-        return asCallToolResult(payload);
+        return asCallToolResult({ ...payload, ...verifyNudge() });
       } catch (err: any) {
         const msg = err?.message ?? String(err);
         // Bugfix (2026-04-22): handle benign P2002 BEFORE marking the

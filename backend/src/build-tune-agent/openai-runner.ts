@@ -505,6 +505,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     assistantMessageId: input.assistantMessageId,
     mode,
     toolCallsInvoked,
+    toolCallsSucceeded,
     preTurnSlotSnapshot,
     endSnapshot,
     lastUsage,

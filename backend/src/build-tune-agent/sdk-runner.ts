@@ -758,6 +758,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     assistantMessageId: input.assistantMessageId,
     mode,
     toolCallsInvoked,
+    toolCallsSucceeded,
     preTurnSlotSnapshot,
     endSnapshot,
     lastUsage,

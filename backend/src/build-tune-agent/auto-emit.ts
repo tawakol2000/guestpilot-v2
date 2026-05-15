@@ -44,12 +44,20 @@ export interface SessionDiffSummaryData {
  */
 export function buildSessionDiffSummary(
   toolCallsInvoked: string[],
+  toolCallsSucceeded?: string[],
 ): SessionDiffSummaryData {
   let created = 0;
   let edited = 0;
   let reverted = 0;
   let testRuns = 0;
-  for (const raw of toolCallsInvoked) {
+  // 2026-05-15 polish: count write actions (created/edited/reverted)
+  // from the SUCCEEDED list when supplied. A failed studio_create_sop /
+  // studio_suggestion(apply) shouldn't show up as "1 edited" in the
+  // session rollup — that mis-leads the operator into thinking the
+  // change landed. Fall back to invoked when succeeded isn't supplied
+  // (legacy callers + tests).
+  const writeSource = toolCallsSucceeded ?? toolCallsInvoked;
+  for (const raw of writeSource) {
     const name = stripMcpPrefix(raw);
     if (
       name === 'studio_create_sop' ||
@@ -62,9 +70,13 @@ export function buildSessionDiffSummary(
       edited += 1;
     } else if (name === 'studio_rollback') {
       reverted += 1;
-    } else if (name === 'studio_test_pipeline') {
-      testRuns += 1;
     }
+  }
+  // test_pipeline runs count as INVOKED (the manager wants to know we
+  // tried; pass/fail count is tracked separately via judge data-parts).
+  for (const raw of toolCallsInvoked) {
+    const name = stripMcpPrefix(raw);
+    if (name === 'studio_test_pipeline') testRuns += 1;
   }
   return {
     written: { created, edited, reverted },
@@ -92,10 +104,11 @@ export function hasTurnActivity(summary: SessionDiffSummaryData): boolean {
  */
 export function maybeEmitSessionDiffSummary(args: {
   toolCallsInvoked: string[];
+  toolCallsSucceeded?: string[];
   emitDataPart: (part: { type: string; id?: string; data: unknown; transient?: boolean }) => void;
   assistantMessageId: string;
 }): SessionDiffSummaryData | null {
-  const summary = buildSessionDiffSummary(args.toolCallsInvoked);
+  const summary = buildSessionDiffSummary(args.toolCallsInvoked, args.toolCallsSucceeded);
   if (!hasTurnActivity(summary)) return null;
   args.emitDataPart({
     type: SESSION_DIFF_SUMMARY_PART_TYPE,

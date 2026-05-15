@@ -36,7 +36,7 @@ import {
   markBuildTransactionPartial,
   validateBuildTransaction,
 } from './build-transaction';
-import { asCallToolResult, asError, type ToolContext } from './types';
+import { asCallToolResult, asError, verifyNudge, type ToolContext } from './types';
 import { emitArtifactHistory } from '../lib/artifact-history';
 import { validateRationale } from '../lib/rationale-validator';
 import { openRitualWindow } from '../lib/ritual-state';
@@ -371,7 +371,7 @@ export function buildWriteSystemPromptTool(
           });
         }
         span.end(payload);
-        return asCallToolResult(payload);
+        return asCallToolResult({ ...payload, ...verifyNudge() });
       } catch (err: any) {
         const msg = err?.message ?? String(err);
         await markBuildTransactionPartial(c.prisma, c.tenantId, args.transactionId, {

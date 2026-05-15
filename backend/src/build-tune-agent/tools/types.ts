@@ -62,3 +62,26 @@ export function asError(message: string): {
     isError: true,
   };
 }
+
+/**
+ * 2026-05-15 polish: nudge the model toward auto-verify after any write
+ * to a live artifact (SOP, FAQ, system prompt, tool definition,
+ * suggestion-apply). The current state machine permits the agent to
+ * close a turn immediately after applying — most managers expect a
+ * verify step but the agent often skips it. Inject this hint into the
+ * tool's return payload so the next round's reasoning is biased toward
+ * calling studio_propose_transition({to:'verifying'}) + studio_test_pipeline.
+ *
+ * Callers spread it into their existing payload:
+ *   return asCallToolResult({ ...payload, ...verifyNudge() });
+ */
+export function verifyNudge(): {
+  next_action_recommended: 'verify';
+  next_action_hint: string;
+} {
+  return {
+    next_action_recommended: 'verify',
+    next_action_hint:
+      'Artifact written. Recommended next step: propose transition to verifying state and run studio_test_pipeline with 1–3 trigger variants to confirm the change behaves as intended without regressing related flows. Roll back via studio_rollback if the judge flags a regression.',
+  };
+}

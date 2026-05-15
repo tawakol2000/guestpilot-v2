@@ -395,10 +395,20 @@ export function buildSuggestionActionTool(
           }).catch((err) => console.warn('[suggestion_action] preference-pair write failed:', err));
         }
 
+        // 2026-05-15 polish: include a strong nudge to verify next. The
+        // tool's return shape is what the model reads as
+        // function_call_output — surfacing this hint here is the most
+        // reliable way to push the model toward calling
+        // studio_test_pipeline on its next round rather than ending the
+        // turn with just a summary. Verifies should be the default close
+        // for any apply that touches a SOP / FAQ / system prompt.
         const payload = {
           suggestionId: suggestion.id,
           status: 'ACCEPTED',
           target: outcome.target,
+          next_action_recommended: 'verify',
+          next_action_hint:
+            'Edit applied. Recommended next step: call studio_propose_transition({to: "verifying"}) and run studio_test_pipeline with 1–3 trigger variants to confirm the change handles the original correction without regressing other flows. If verify passes, summarise; if it fails, roll back via studio_rollback.',
         };
         acceptedClaimForId = null; // payload stamp + artifact write both succeeded
         // Broadcast so the frontend tuning dashboard + any other open tab

@@ -288,7 +288,17 @@ export function buildTestPipelineTool(
           variants: results.length,
           inRitual: Boolean(historyId),
         });
-        return asCallToolResult(payload);
+        // 2026-05-15 polish: append a close-of-turn hint so the model
+        // wraps the session with a concrete pass/fail summary instead of
+        // a generic "I ran the test" close. all_passed → ok to close;
+        // partial / all_failed → suggest rollback or another iteration.
+        const closeHint =
+          aggregateVerdict === 'all_passed'
+            ? 'All variants passed the cross-family judge. Safe to close the turn with a one-line summary.'
+            : aggregateVerdict === 'partial'
+              ? 'Some variants regressed under the judge. Surface which variant failed and ask the manager whether to roll back, accept partial improvement, or iterate.'
+              : 'All variants failed the judge. Recommend studio_rollback unless the manager explicitly wants to keep the change.';
+        return asCallToolResult({ ...payload, close_of_turn_hint: closeHint });
       } catch (err: any) {
         span.end({ error: String(err) });
         return asError(
