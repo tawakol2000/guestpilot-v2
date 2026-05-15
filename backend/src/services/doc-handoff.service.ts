@@ -515,7 +515,14 @@ async function doSendHandoff(
     const first = await sendImage({ to: recipient, text, imageUrl: firstUrl });
     const deliveredUrls: string[] = [firstUrl];
     let partialErr: Error | null = null;
+    // 2026-05-15: throttle consecutive image sends. WAsender's per-account
+    // rate limit kicks in around 1 send / 1.5s on standard plans; sending
+    // 2-4 passport images back-to-back in a tight loop was reliably
+    // tripping HTTP 429 on the second image. Pause briefly between sends
+    // so the per-second bucket can refill.
+    const INTER_IMAGE_DELAY_MS = 2_000;
     for (const url of restUrls) {
+      await new Promise<void>((resolve) => setTimeout(resolve, INTER_IMAGE_DELAY_MS));
       try {
         await sendImage({ to: recipient, imageUrl: url });
         deliveredUrls.push(url);
@@ -587,14 +594,17 @@ async function handleSendFailure(
   const row = await prisma.documentHandoffState.findUnique({ where: { id: rowId } });
   if (!row) return 'failed';
 
-  // 2026-05-15 M12: transient errors (WAsender 5xx / timeouts) shouldn't
-  // burn the 3-attempt cap. Previously a 20-minute 5xx storm would
+  // 2026-05-15 M12: transient errors (WAsender 5xx / timeouts / 429
+  // rate-limit) shouldn't burn the 3-attempt cap. Previously a 20-min
+  // 5xx storm or a busy minute against WAsender's per-second cap would
   // permanently FAIL the row in 3 retries with no chance for the
   // operator to ever deliver the docs once WAsender recovered. Now:
   // on a transient error, bump scheduledFireAt with a longer backoff
   // (30 min) but DO NOT increment attemptCount. Cap on wall-clock age:
   // if the row's createdAt is more than 24h old, give up.
-  const isTransient = err instanceof WasenderServerError || err instanceof WasenderTimeoutError;
+  const is429 = err instanceof WasenderRequestError && err.status === 429;
+  const isTransient =
+    err instanceof WasenderServerError || err instanceof WasenderTimeoutError || is429;
   if (isTransient) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const ageMs = Date.now() - row.createdAt.getTime();
