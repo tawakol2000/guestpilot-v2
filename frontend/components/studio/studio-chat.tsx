@@ -96,26 +96,70 @@ function normalizeToolName(raw: string): string {
 }
 
 /** Best-effort extraction of a short human-readable target from a tool
- *  call's input payload. Returns null when we can't infer one. */
+ *  call's input payload. Returns null when we can't infer one.
+ *
+ *  2026-05-15 polish: previously surfaced raw cuid-style ids ("SOP ·
+ *  cnoaayppu0041jxyxrfo…") which read as engineering jargon. Prefer
+ *  friendly fields (category, variant, slug, name) over opaque ids,
+ *  and strip the studio-internal "sop-" / "system-prompt-" prefixes
+ *  from slug-looking values. */
 function extractToolTarget(toolName: string, input: unknown): string | null {
   if (!input || typeof input !== 'object') return null
   const obj = input as Record<string, unknown>
+  const prettify = (raw: string): string => {
+    // For artifact pointers like `ref://artifact/system_prompt%3Ascreening/...`,
+    // pull out the type:variant chunk for display.
+    if (raw.startsWith('ref://')) {
+      const m = raw.match(/^ref:\/\/[^/]+\/([^/]+)/)
+      if (m) {
+        const decoded = decodeURIComponent(m[1])
+        return prettifySlug(decoded)
+      }
+    }
+    return prettifySlug(raw)
+  }
   const candidates: Array<string | undefined> = [
     typeof obj.category === 'string' ? obj.category : undefined,
+    typeof obj.variant === 'string' ? obj.variant : undefined,
+    typeof obj.slot === 'string' ? obj.slot : undefined,
+    typeof obj.section === 'string' ? obj.section : undefined,
+    typeof obj.sopCategory === 'string' ? obj.sopCategory : undefined,
+    typeof obj.name === 'string' ? obj.name : undefined,
+    typeof obj.title === 'string' ? obj.title : undefined,
+    typeof obj.query === 'string' ? obj.query : undefined,
+    typeof obj.pointer === 'string' ? obj.pointer : undefined,
+    typeof obj.subLabelQuery === 'string' ? obj.subLabelQuery : undefined,
+    // Fall through to ids only as a last resort.
+    typeof obj.artifactId === 'string' ? obj.artifactId : undefined,
     typeof obj.sopId === 'string' ? obj.sopId : undefined,
     typeof obj.faqId === 'string' ? obj.faqId : undefined,
     typeof obj.id === 'string' ? obj.id : undefined,
-    typeof obj.name === 'string' ? obj.name : undefined,
-    typeof obj.query === 'string' ? obj.query : undefined,
     typeof obj.propertyId === 'string' ? obj.propertyId : undefined,
     typeof obj.path === 'string' ? obj.path : undefined,
   ]
   for (const c of candidates) {
     if (c && c.trim().length > 0) {
-      return c.length > 48 ? `${c.slice(0, 46)}…` : c
+      const pretty = prettify(c)
+      return pretty.length > 48 ? `${pretty.slice(0, 46)}…` : pretty
     }
   }
   return null
+}
+
+/** Convert a slug or compound ref-id into a manager-friendly label. */
+function prettifySlug(raw: string): string {
+  // Looks like a cuid (starts with 'c', 24+ alnum chars) — hide it entirely.
+  if (/^c[a-z0-9]{20,}$/i.test(raw)) return raw.slice(0, 10) + '…'
+  // Strip studio-internal prefixes.
+  let s = raw
+    .replace(/^system_prompt:/i, '')
+    .replace(/^system-prompt-/i, '')
+    .replace(/^sop[_:-]/i, '')
+    .replace(/^faq[_:-]/i, '')
+  // Replace dashes/underscores with spaces.
+  s = s.replace(/[_-]+/g, ' ').trim()
+  if (!s) return raw
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 import { SuggestedFixCard, type SuggestedFixTarget } from './suggested-fix'
 import { QuestionChoicesCard } from './question-choices'

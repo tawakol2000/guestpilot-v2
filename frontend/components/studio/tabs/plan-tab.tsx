@@ -22,6 +22,41 @@ import type { SessionArtifact } from '../session-artifacts'
 import { useStudioShell } from '../studio-shell-context'
 import { toolVerb } from '../tool-verbs'
 
+const TYPE_FALLBACK_LABEL: Record<SessionArtifact['artifact'], string> = {
+  sop: 'SOP',
+  faq: 'FAQ',
+  system_prompt: 'System prompt',
+  tool: 'Custom tool',
+  property_override: 'Property override',
+}
+
+/** Render-time prettify so the CONTEXT IN USE list doesn't surface raw
+ *  cuids ("cnoaayppu0041jxyxrf…") or kebab-prefixed slugs
+ *  ("system-prompt-coordinator"). Falls back to the artifact-type label
+ *  when the title is purely id-like. */
+function prettifyArtifactTitle(raw: string, kind: SessionArtifact['artifact']): string {
+  const trimmed = (raw || '').trim()
+  if (!trimmed) return TYPE_FALLBACK_LABEL[kind]
+  // Strip a leading "Type · " prefix (upstream callers sometimes embed the
+  // artifact kind in the title — e.g. "SOP · cmoa…", "Prompt · system-
+  // prompt-coordinator"). The Plan tab already renders the kind via the
+  // KindPill on the right, so duplicating it in the title is noise.
+  let s = trimmed.replace(/^(SOP|FAQ|Prompt|Tool|Property)\s*[·:-]\s*/i, '')
+  // cuid-like (starts with c followed by 20+ alnum) — replace entirely
+  if (/^c[a-z0-9]{20,}/i.test(s)) return TYPE_FALLBACK_LABEL[kind]
+  // strip type prefixes embedded in the slug body
+  s = s
+    .replace(/^system_prompt:/i, '')
+    .replace(/^system-prompt-/i, '')
+    .replace(/^sop[_:-]/i, '')
+    .replace(/^faq[_:-]/i, '')
+    .replace(/^tool[_:-]/i, '')
+  // kebab/snake to space
+  s = s.replace(/[_-]+/g, ' ').trim()
+  if (!s) return TYPE_FALLBACK_LABEL[kind]
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 export interface PlanTabProps {
   snapshot: StateSnapshotData
   sessionArtifacts: SessionArtifact[]
@@ -133,9 +168,16 @@ export function PlanTab({ snapshot, sessionArtifacts, onOpenArtifact }: PlanTabP
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      fontFamily: 'var(--font-sans, Inter Tight, sans-serif)',
                     }}
+                    title={a.title}
                   >
-                    {a.title}
+                    {/* 2026-05-15 polish: prettify title at render time so
+                       a cuid-like artifactId ("cnoaayppu0041jxyxrf…") or
+                       a kebab slug ("system-prompt-coordinator") doesn't
+                       leak into the CONTEXT IN USE list. Raw title stays
+                       in the title tooltip for power users + debugging. */}
+                    {prettifyArtifactTitle(a.title, a.artifact)}
                   </span>
                   <KindPill kind={a.artifact} />
                 </button>
