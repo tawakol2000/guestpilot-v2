@@ -2007,7 +2007,16 @@ export default function InboxV5() {
               prev.map(c => (c.id === selectedId ? mergeDetail(c, detail) : c))
             )
           } catch (mergeErr) {
-            console.error('[Inbox] mergeDetail crashed:', mergeErr, 'detail:', JSON.stringify(detail).slice(0, 500))
+            // SECURITY: never log `detail` verbatim — `detail.property.customKnowledgeBase`
+            // carries doorCode / wifiPassword / wifiName, and a console.error here
+            // would write them to browser DevTools + any logging integration.
+            const safeMeta = {
+              id: detail?.id,
+              status: (detail as any)?.status,
+              messageCount: Array.isArray((detail as any)?.messages) ? (detail as any).messages.length : null,
+              hasReservation: Boolean((detail as any)?.reservation),
+            }
+            console.error('[Inbox] mergeDetail crashed:', mergeErr, 'meta:', safeMeta)
           }
           // Fetch pending copilot suggestion if in copilot mode
           if (detail?.reservation?.aiMode === 'copilot') {

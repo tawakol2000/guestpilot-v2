@@ -74,7 +74,7 @@ async function getAccessToken(accountId: string, apiKey: string): Promise<string
 
 async function getClient(accountId: string, apiKey: string): Promise<AxiosInstance> {
   const token = await getAccessToken(accountId, apiKey);
-  return axios.create({
+  const client = axios.create({
     baseURL: HOSTAWAY_BASE_URL,
     timeout: 20000,
     headers: {
@@ -83,6 +83,36 @@ async function getClient(accountId: string, apiKey: string): Promise<AxiosInstan
       Accept: 'application/json',
     },
   });
+  // 2026-05-15: when Hostaway returns 401 (token revoked / rotated on
+  // their side mid-cache-TTL), invalidate our cached token so the next
+  // call refetches a fresh one. Without this, every Hostaway call fails
+  // for up to 24h after a server-side rotation, and the only fix is a
+  // backend restart or manual `invalidateTokenCache` call. Retry the
+  // original request once with the new token.
+  client.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const status = error?.response?.status;
+      const config = error?.config;
+      if (status === 401 && config && !config.__retriedAfter401) {
+        console.warn(
+          `[Hostaway] 401 on ${config.method?.toUpperCase()} ${config.url} — invalidating token cache and retrying once.`,
+        );
+        invalidateTokenCache(accountId);
+        try {
+          const freshToken = await getAccessToken(accountId, apiKey);
+          config.headers = config.headers ?? {};
+          config.headers.Authorization = `Bearer ${freshToken}`;
+          config.__retriedAfter401 = true;
+          return await axios.request(config);
+        } catch (retryErr) {
+          return Promise.reject(retryErr);
+        }
+      }
+      return Promise.reject(error);
+    },
+  );
+  return client;
 }
 
 // ─── Listings ────────────────────────────────────────────────────────────────

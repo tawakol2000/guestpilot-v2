@@ -25,15 +25,28 @@ const aiToggleSchema = z.object({
 /**
  * Delete an orphan reservation and all its related data (conversation, messages, tasks).
  * Used when a reservation doesn't exist in Hostaway (test/fake data).
+ *
+ * 2026-05-15: tenantId threaded through every deleteMany / delete so any
+ * future caller passing an unvalidated id can't silently delete another
+ * tenant's data. The single existing caller (syncConversation) validates
+ * tenant ownership before calling — so this is defence-in-depth, not a
+ * behaviour change.
  */
-async function deleteOrphanReservation(prisma: PrismaClient, reservationId: string, conversationId: string) {
+async function deleteOrphanReservation(
+  prisma: PrismaClient,
+  tenantId: string,
+  reservationId: string,
+  conversationId: string,
+) {
   // Delete in dependency order: Tasks → PendingAiReply → Messages → Conversation → Reservation
-  await prisma.task.deleteMany({ where: { conversationId } });
-  await prisma.pendingAiReply.deleteMany({ where: { conversationId } });
-  await prisma.message.deleteMany({ where: { conversationId } });
-  await prisma.conversation.deleteMany({ where: { reservationId } });
-  await prisma.reservation.delete({ where: { id: reservationId } });
-  console.log(`[Cleanup] Deleted orphan reservation=${reservationId} conversation=${conversationId}`);
+  await prisma.task.deleteMany({ where: { tenantId, conversationId } });
+  await prisma.pendingAiReply.deleteMany({ where: { tenantId, conversationId } });
+  await prisma.message.deleteMany({ where: { tenantId, conversationId } });
+  await prisma.conversation.deleteMany({ where: { tenantId, reservationId } });
+  // reservation.delete only accepts unique-key where input; use deleteMany
+  // so the tenantId filter is enforced at the DB level.
+  await prisma.reservation.deleteMany({ where: { id: reservationId, tenantId } });
+  console.log(`[Cleanup] Deleted orphan tenant=${tenantId} reservation=${reservationId} conversation=${conversationId}`);
 }
 
 export function makeConversationsController(prisma: PrismaClient) {
@@ -911,7 +924,7 @@ export function makeConversationsController(prisma: PrismaClient) {
           // Hostaway returned 404 or error — this reservation doesn't exist in Hostaway
           if (hwErr?.response?.status === 404 || hwErr?.message?.includes('404')) {
             console.log(`[Conversations] Orphan detected: reservation ${conv.reservation.hostawayReservationId} not found in Hostaway — deleting local data`);
-            await deleteOrphanReservation(prisma, conv.reservation.id, conversationId);
+            await deleteOrphanReservation(prisma, tenantId, conv.reservation.id, conversationId);
             res.json({ ok: true, deleted: true, reason: 'Reservation not found in Hostaway — orphan cleaned up' });
             return;
           }

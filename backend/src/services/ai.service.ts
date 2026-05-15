@@ -1260,8 +1260,10 @@ async function handleEscalation(
       }
     } else if (title) {
       // Task Manager: check if this escalation duplicates an existing open task
+      // (2026-05-15) tenantId added so the compound (tenantId, conversationId)
+      // index is used and any cuid collision risk is eliminated.
       const openTasks = await prisma.task.findMany({
-        where: { conversationId, status: 'open' },
+        where: { tenantId, conversationId, status: 'open' },
         orderBy: { createdAt: 'desc' },
         take: 10,
       });
@@ -1510,9 +1512,11 @@ export async function generateAndSendAiReply(
     }
 
     // Fetch recent message history (last 100 — only last 10 used for context + current batch)
+    // (2026-05-15) tenantId added so the (tenantId, conversationId) index is used
+    // and any cross-tenant data leak via a future cuid collision is prevented.
     const aiCfg = getAiConfig();
     const dbMessagesDesc = await prisma.message.findMany({
-      where: { conversationId },
+      where: { tenantId, conversationId },
       orderBy: { sentAt: 'desc' },
       take: 100,
     });
@@ -1552,8 +1556,9 @@ export async function generateAndSendAiReply(
     }
 
     // Fetch open tasks for context injection
+    // (2026-05-15) tenantId added — same reasoning as the message.findMany above.
     const openTasks = await prisma.task.findMany({
-      where: { conversationId, status: 'open' },
+      where: { tenantId, conversationId, status: 'open' },
       orderBy: { createdAt: 'asc' },
       take: 10,
     });

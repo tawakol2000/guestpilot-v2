@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Playfair_Display } from 'next/font/google'
+import { Toaster } from 'sonner'
 import { fontInterTight, fontJetbrainsMono } from './fonts'
 import './globals.css'
 
@@ -23,6 +24,7 @@ export default function RootLayout({
         className={`${plusJakarta.variable} ${playfair.variable} ${fontInterTight.variable} ${fontJetbrainsMono.variable} font-sans antialiased`}
       >
         {children}
+        <Toaster richColors closeButton position="bottom-right" />
       </body>
     </html>
   )

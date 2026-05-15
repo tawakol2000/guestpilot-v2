@@ -122,6 +122,15 @@ export function startAiReplyWorker(prisma: PrismaClient): Worker | null {
     {
       connection,
       concurrency: 5,
+      // 2026-05-15: BullMQ's default lockDuration is 30s, but
+      // generateAndSendAiReply can legitimately run several minutes
+      // (up to 5 tool rounds × withRetry's 6-attempt exponential backoff
+      // capped at 60s each). Past 30s BullMQ would re-classify the live
+      // job as "stalled" and re-queue it — a second concurrent execution
+      // would send two AI messages to the same guest. Bump the lock to
+      // 5 min and renew at 1 min to be safe.
+      lockDuration: 5 * 60 * 1000,
+      lockRenewTime: 60 * 1000,
     }
   );
 

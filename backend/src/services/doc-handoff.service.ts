@@ -37,6 +37,7 @@ import {
   WasenderRequestError,
 } from './wasender.service';
 import { broadcastToTenant } from './socket.service';
+import { assertPublicHttpsUrl } from '../lib/url-safety';
 
 // ── Timezone helpers ────────────────────────────────────────────────────────
 
@@ -430,7 +431,15 @@ async function doSendHandoff(
   recipient: string,
   prisma: PrismaClient
 ): Promise<'sent' | 'failed'> {
-  const { text, imageUrls } = renderHandoff(reservation, property, checklist);
+  const rendered = renderHandoff(reservation, property, checklist);
+  const { text } = rendered;
+  // SECURITY (2026-05-15): screen image URLs for SSRF before passing to
+  // WAsender. Attachments originate as guest-uploaded URLs and WAsender's
+  // server-side fetch would otherwise proxy requests at internal IPs /
+  // cloud metadata endpoints on our behalf. Rejected URLs are dropped
+  // silently; a sustained drop pattern would land in the partial-delivery
+  // path below as if those images had failed to send.
+  const imageUrls = await filterSafeImageUrls(rendered.imageUrls);
   try {
     // Text-only first. If we have images, this carries the caption.
     if (imageUrls.length === 0) {
@@ -643,6 +652,30 @@ export function renderHandoff(
     }
   }
   return { text, imageUrls };
+}
+
+/**
+ * SSRF guard for image URLs handed to WAsender.
+ *
+ * WAsender's server-side image fetch makes it a usable SSRF proxy if a
+ * guest-uploaded attachment URL ever points at an internal IP / cloud
+ * metadata endpoint. Resolve + screen each URL before passing to the
+ * provider. Returns the subset of URLs that resolve to public HTTPS IPs;
+ * rejected URLs are logged and dropped silently from the send.
+ */
+export async function filterSafeImageUrls(urls: string[]): Promise<string[]> {
+  const safe: string[] = [];
+  for (const url of urls) {
+    try {
+      await assertPublicHttpsUrl(url);
+      safe.push(url);
+    } catch (err) {
+      console.warn(
+        `[DocHandoff] dropping image URL (failed SSRF check): ${url.slice(0, 120)} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return safe;
 }
 
 // ── Hot exports for tests ──────────────────────────────────────────────────
