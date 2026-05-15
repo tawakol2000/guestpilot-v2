@@ -665,8 +665,15 @@ function emitStateUpdate(rowId: string, prisma: PrismaClient): void {
         status: row.status,
         updatedAt: row.updatedAt.toISOString(),
       });
-    } catch {
-      // ignore
+    } catch (err) {
+      // 2026-05-15 (auto-review F5): log silent broadcast failures so a
+      // DB connection blip is debuggable. Still non-fatal — the row
+      // state is already persisted by the time we reach this fire-and-
+      // forget broadcast.
+      console.warn(
+        `[DocHandoff] state-update broadcast failed (non-fatal):`,
+        err instanceof Error ? err.message : err,
+      );
     }
   })();
 }

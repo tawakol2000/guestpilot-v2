@@ -337,11 +337,17 @@ async function createMessage(
 
     // T042: Log rate limit headers and request ID from initial call
     const initialOpsHeaders = extractOpsHeaders(response);
-    if (initialOpsHeaders.openaiRequestId) {
-      console.log(`[AI-OPS] Request ID: ${initialOpsHeaders.openaiRequestId}`);
-    }
-    if (initialOpsHeaders.rateLimitRemaining) {
-      console.log(`[AI-OPS] Rate limit remaining — requests: ${initialOpsHeaders.rateLimitRemaining.requests}, tokens: ${initialOpsHeaders.rateLimitRemaining.tokens}`);
+    // 2026-05-15 (auto-review F1): gate the per-request ops log behind
+    // DEBUG=ai-ops. Previously fired twice per AI call on every guest
+    // message — useful for diagnosing rate-limit issues, but pure noise
+    // in steady-state operation.
+    if (process.env.DEBUG?.includes('ai-ops') || process.env.NODE_DEBUG?.includes('ai-ops')) {
+      if (initialOpsHeaders.openaiRequestId) {
+        console.log(`[AI-OPS] Request ID: ${initialOpsHeaders.openaiRequestId}`);
+      }
+      if (initialOpsHeaders.rateLimitRemaining) {
+        console.log(`[AI-OPS] Rate limit remaining — requests: ${initialOpsHeaders.rateLimitRemaining.requests}, tokens: ${initialOpsHeaders.rateLimitRemaining.tokens}`);
+      }
     }
 
     // ─── Tool use loop: process ALL tool calls, send results back, repeat if model calls more ───
@@ -1721,8 +1727,12 @@ export async function generateAndSendAiReply(
 
     // Build conversation history text — last 10 messages as labeled lines
     // Each line is prefixed with a `[MMM DD, h:mm A]` timestamp (short `[h:mm A]` for same-day)
-    // using the tenant's workingHoursTimezone, falling back to Africa/Cairo.
-    const historyTimeZone = (tenantConfig as any)?.workingHoursTimezone || 'Africa/Cairo';
+    // using the tenant's workingHoursTimezone, falling back to UTC.
+    // 2026-05-15 (auto-review F6): the previous fallback hard-coded
+    // 'Africa/Cairo' which silently shifted timestamps by +3h for every
+    // tenant outside Egypt. UTC is the only sensible default; tenants
+    // that care set workingHoursTimezone in their TenantAiConfig row.
+    const historyTimeZone = (tenantConfig as any)?.workingHoursTimezone || 'UTC';
     const historyNow = new Date();
     const currentMsgIds = new Set(currentMsgs.map(m => m.id));
     // 2026-05-10 bugfix: an AI row whose `previewState` is non-null
@@ -1755,7 +1765,17 @@ export async function generateAndSendAiReply(
       try {
         const prop = await prisma.property.findUnique({ where: { id: context.propertyId }, select: { hostawayListingId: true } });
         hostawayListingId = prop?.hostawayListingId || '';
-      } catch { /* fallback: empty */ }
+      } catch (err) {
+        // 2026-05-15 (auto-review F7): log the silent fallback so a
+        // pool-exhausted or DB-error path is debuggable. Downstream
+        // tools (extend-stay, situation injection) silently get '' and
+        // skip their availability checks; previously there was no
+        // signal in logs explaining why.
+        console.warn(
+          `[AI] [${conversationId}] hostawayListingId lookup failed for propertyId=${context.propertyId} (continuing with empty):`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     // Build the template variable data map — all dynamic content as named entries
@@ -2192,7 +2212,12 @@ export async function generateAndSendAiReply(
         outputSchema: isInquiry ? SCREENING_SCHEMA : COORDINATOR_SCHEMA,
       });
 
-      console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
+      // 2026-05-15 (auto-review F2): gate the raw-response peek behind
+      // DEBUG. Useful when diagnosing parse failures (the parse catch
+      // block at L2399 also logs it), but otherwise per-turn noise.
+      if (process.env.DEBUG?.includes('ai-raw') || process.env.NODE_DEBUG?.includes('ai-raw')) {
+        console.log(`[AI] [${conversationId}] Raw response: ${rawResponse.substring(0, 200)}`);
+      }
 
       // Confidence score parsed from the structured JSON (0-1). Used to gate
       // autopilot sends below and surfaced to the inbox UI via ragContext.
