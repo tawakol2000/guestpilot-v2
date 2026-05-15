@@ -103,6 +103,7 @@ export function RawPromptDrawer(props: RawPromptDrawerProps) {
       />
       <aside
         role="dialog"
+        aria-modal="true"
         aria-label="Raw prompt editor (admin)"
         style={{
           position: 'fixed',

@@ -571,6 +571,7 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
         ref={panelRef}
         tabIndex={-1}
         role="dialog"
+        aria-modal="true"
         aria-label={`${typeLabel} · ${headerTitle}`}
         style={{
           position: 'fixed',

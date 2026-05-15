@@ -13,7 +13,7 @@
  * side-panel if it prefers — the public API is just
  * `ReasoningLine({durationMs, content})`.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { STUDIO_COLORS } from './tokens'
 
 export interface ReasoningLineProps {
@@ -25,9 +25,12 @@ export interface ReasoningLineProps {
 
 export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
   const [open, setOpen] = useState(false)
-  // Bugfix (2026-04-23): the drawer only closed on click-outside — the
-  // Esc key did nothing. Keyboard users couldn't dismiss it. Artifact-
-  // drawer already does this; mirror the same pattern here.
+  // 2026-05-16 a11y: focus management. Save the element that opened the
+  // drawer so we can restore focus on close (otherwise keyboard users
+  // get dropped onto <body> after dismissing). Auto-focus the panel
+  // when it opens so SR users land inside the dialog content.
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
@@ -37,7 +40,15 @@ export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
       }
     }
     window.addEventListener('keydown', onKey)
+    panelRef.current?.focus()
     return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+  // Restore focus to the trigger when the drawer closes.
+  useEffect(() => {
+    if (!open && triggerRef.current) {
+      triggerRef.current.focus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   const label =
     typeof durationMs === 'number' && durationMs > 0
@@ -47,10 +58,16 @@ export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="focus-visible:underline"
         style={{
-          all: 'unset',
+          background: 'transparent',
+          border: 'none',
+          font: 'inherit',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 4,
@@ -85,7 +102,10 @@ export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
             }}
           />
           <aside
+            ref={panelRef}
+            tabIndex={-1}
             role="dialog"
+            aria-modal="true"
             aria-label="Agent reasoning"
             style={{
               position: 'fixed',
@@ -98,6 +118,7 @@ export function ReasoningLine({ durationMs, content }: ReasoningLineProps) {
               zIndex: 51,
               display: 'flex',
               flexDirection: 'column',
+              outline: 'none',
             }}
           >
             <header
