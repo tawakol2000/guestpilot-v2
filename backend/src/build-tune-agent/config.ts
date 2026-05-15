@@ -72,7 +72,11 @@ export function isBuildModeEnabled(): boolean {
 }
 
 export function buildModeDisabledReason(): string | null {
-  if (!isTuningAgentEnabled()) return 'ANTHROPIC_API_KEY missing';
+  // Delegate to the provider-aware tuningAgentDisabledReason() so the
+  // OpenAI path surfaces "OPENAI_API_KEY missing" rather than the
+  // Anthropic key name.
+  const agentReason = tuningAgentDisabledReason();
+  if (agentReason) return agentReason;
   if (!isBuildModeEnabled()) return 'ENABLE_BUILD_MODE not set';
   return null;
 }

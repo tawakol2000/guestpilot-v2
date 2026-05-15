@@ -422,6 +422,11 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     } catch {
       /* stream may already be closed */
     }
+    // The catch block already wrote the terminal `finish` chunk directly
+    // to the writer; mark the bridge as finished so the fallback
+    // finalizeOpenAiBridge() below doesn't emit a SECOND `finish` (which
+    // the Vercel AI SDK consumer treats as a stream protocol error).
+    bridgeState.finished = true;
   }
 
   if (!bridgeState.finished) {
