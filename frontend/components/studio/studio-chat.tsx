@@ -1787,6 +1787,10 @@ function StandalonePart({
     // Render inline too (parent right rail already has a copy via
     // onTestResult hoisting; showing the card inline makes it easy to
     // reference while reading the conversation).
+    // 2026-05-16: guard against undefined payload (re-mounted SSE shell
+    // can land without data attached); TestPipelineResult dereferences
+    // data.variants / data.ritualVersion and throws on null.
+    if (!part.data || typeof part.data !== 'object') return null
     const testData = part.data as TestPipelineResultData
     return (
       <div style={{ maxWidth: 720 }}>

@@ -177,6 +177,14 @@ export function PlanChecklist({
   onSeedComposer?: (text: string) => void
   onOpenArtifact?: (type: BuildArtifactType, artifactId: string) => void
 }) {
+  // 2026-05-16: defensive guard so a partial part with `data: {}` or
+  // missing `items` doesn't throw at the first `data.items.length` read.
+  // The caller (studio-chat StandalonePart) doesn't validate the SSE
+  // payload shape; if the agent emits a malformed plan, render nothing
+  // instead of crashing the chat surface inside an error boundary.
+  if (!data || !Array.isArray((data as any).items) || (data as any).items.length === 0) {
+    return null
+  }
   // Legacy graceful degradation: if transactionId is missing or the data
   // already carries an approvedAt, treat as already approved.
   const isLegacy = !data.transactionId

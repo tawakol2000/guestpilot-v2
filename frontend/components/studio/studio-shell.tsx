@@ -84,14 +84,24 @@ export function StudioShell(props: StudioShellProps) {
   const [rightCollapsed, setRightCollapsed] = useState<boolean>(false)
   const [rightWide, setRightWide] = useState<boolean>(false)
   const [leftCollapsed, setLeftCollapsed] = useState<boolean>(false)
+  // 2026-05-16 polish: the previous gate flipped didInit on the first
+  // effect run regardless of whether isNarrow was the SSR-default
+  // `false` or a real measurement. On viewports that started narrow,
+  // didInit flipped to true before isNarrow updated to its real value,
+  // so the auto-collapse never fired. Track the SEEN-narrow signal
+  // separately so we collapse exactly once after we observe the real
+  // viewport state. Also re-collapse when the viewport CROSSES into
+  // narrow (e.g. orientation flip / window resize) but never when the
+  // operator has explicitly toggled a rail.
   const didInitCollapseRef = useRef(false)
+  const wasNarrowRef = useRef(false)
   useEffect(() => {
-    if (didInitCollapseRef.current) return
-    didInitCollapseRef.current = true
-    if (isNarrow) {
+    if (isNarrow && !wasNarrowRef.current) {
       setRightCollapsed(true)
       setLeftCollapsed(true)
     }
+    wasNarrowRef.current = isNarrow
+    didInitCollapseRef.current = true
   }, [isNarrow])
 
   // Ledger tab is admin-gated; if capabilities flip mid-session the
@@ -336,20 +346,63 @@ export function StudioShell(props: StudioShellProps) {
           <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
         </main>
 
-        <aside
-          aria-label="Studio plan, preview, and tests"
-          style={{
-            width: rightWidth,
-            minWidth: rightWidth,
-            borderLeft: `1px solid ${STUDIO_TOKENS_V2.border}`,
-            background: STUDIO_TOKENS_V2.surface,
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 200ms ease-out, min-width 200ms ease-out',
-          }}
-        >
-          {rightPanel}
-        </aside>
+        {/* 2026-05-16 polish: on narrow viewports, render the right
+            rail as an off-canvas drawer just like the left. The
+            previous layout kept the right rail inline, which on a
+            375px viewport left the chat squeezed to ~35px when the
+            rail was expanded. Off-canvas with a backdrop matches the
+            left-rail mobile pattern and gives the chat the full width. */}
+        {isNarrow && !rightCollapsed ? (
+          <>
+            <button
+              type="button"
+              aria-label="Close plan / preview panel"
+              onClick={() => setRightCollapsed(true)}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(10, 12, 20, 0.35)',
+                zIndex: 40,
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            />
+            <aside
+              aria-label="Studio plan, preview, and tests"
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: 'min(360px, 90vw)',
+                borderLeft: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                background: STUDIO_TOKENS_V2.surface,
+                zIndex: 50,
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: STUDIO_TOKENS_V2.shadowMd,
+              }}
+            >
+              {rightPanel}
+            </aside>
+          </>
+        ) : (
+          <aside
+            aria-label="Studio plan, preview, and tests"
+            style={{
+              width: isNarrow ? 40 : rightWidth,
+              minWidth: isNarrow ? 40 : rightWidth,
+              borderLeft: `1px solid ${STUDIO_TOKENS_V2.border}`,
+              background: STUDIO_TOKENS_V2.surface,
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'width 200ms ease-out, min-width 200ms ease-out',
+            }}
+          >
+            {rightPanel}
+          </aside>
+        )}
 
         {drawers}
         <ReferencePicker

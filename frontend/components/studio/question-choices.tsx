@@ -84,9 +84,14 @@ export function QuestionChoicesCard(props: QuestionChoicesCardProps) {
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (chosen) return
+    // 2026-05-16: clamp arrow navigation when options is empty. The
+    // previous formula computed Math.min(-1, i+1) = -1 and ArrowDown
+    // landed `activeIdx` at -1, which made rowRefs.current[-1]
+    // undefined + Enter no-op silently.
+    const maxIdx = Math.max(0, options.length - 1 + (allowCustomInput ? 1 : 0))
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActiveIdx((i) => Math.min(options.length - 1 + (allowCustomInput ? 1 : 0), i + 1))
+      setActiveIdx((i) => Math.min(maxIdx, i + 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setActiveIdx((i) => Math.max(0, i - 1))
