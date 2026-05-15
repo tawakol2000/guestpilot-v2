@@ -811,7 +811,16 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           whole Studio surface never blanks out. The boundary's recovery
           card is itself a graceful-degradation surface (spec §1). */}
       <StudioErrorBoundary>
+        {/* 2026-05-15 polish: key by conversationId so a + New chat
+            triggers a clean StudioChat remount. Without this, useRef
+            state (proactiveRequestedRef, openerRef) carries over from
+            the previous conversation — symptom was a freshly-created
+            conversation sometimes receiving an `isOpener: true` send
+            because the previous conv's opener-effect state leaked. The
+            transport useMemo is keyed on conversationId too, but refs
+            aren't — remount is the safe reset. */}
         <StudioChat
+          key={load.conversationId}
           conversationId={load.conversationId}
           greenfield={tenantState.isGreenfield}
           initialMessages={load.initialMessages}
