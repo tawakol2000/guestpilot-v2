@@ -24,5 +24,10 @@ export {
   isTuningAgentEnabled,
   tuningAgentDisabledReason,
   resolveTuningAgentModel,
+  resolveStudioProvider,
+  resolveStudioOpenAiModel,
   DYNAMIC_BOUNDARY_MARKER,
 } from './config';
+export type { StudioProvider } from './config';
+
+export { runOpenAiTurn } from './openai-runner';

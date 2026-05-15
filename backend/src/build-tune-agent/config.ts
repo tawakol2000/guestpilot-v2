@@ -16,7 +16,30 @@ export function resolveTuningAgentModel(): string {
   return TUNING_AGENT_DEFAULT_MODEL;
 }
 
+export type StudioProvider = 'anthropic' | 'openai';
+
+export const STUDIO_OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini-2026-03-17';
+
+/**
+ * Provider toggle for the Studio agent. Default is `anthropic` (the Claude
+ * Agent SDK path). Set `STUDIO_PROVIDER=openai` to run the OpenAI Responses
+ * API path against gpt-5.4-mini. Both paths share Region A/B prefix and
+ * produce byte-identical SSE data-parts so the frontend works either way.
+ */
+export function resolveStudioProvider(): StudioProvider {
+  const raw = (process.env.STUDIO_PROVIDER ?? '').trim().toLowerCase();
+  if (raw === 'openai') return 'openai';
+  return 'anthropic';
+}
+
+export function resolveStudioOpenAiModel(): string {
+  const override = process.env.STUDIO_OPENAI_MODEL;
+  if (override && typeof override === 'string') return override;
+  return STUDIO_OPENAI_DEFAULT_MODEL;
+}
+
 export function isTuningAgentEnabled(): boolean {
+  if (resolveStudioProvider() === 'openai') return Boolean(process.env.OPENAI_API_KEY);
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
@@ -25,6 +48,10 @@ export function isTuningAgentEnabled(): boolean {
  * so the UI can show a calm "chat disabled" banner instead of an error.
  */
 export function tuningAgentDisabledReason(): string | null {
+  if (resolveStudioProvider() === 'openai') {
+    if (!process.env.OPENAI_API_KEY) return 'OPENAI_API_KEY missing';
+    return null;
+  }
   if (!process.env.ANTHROPIC_API_KEY) return 'ANTHROPIC_API_KEY missing';
   return null;
 }

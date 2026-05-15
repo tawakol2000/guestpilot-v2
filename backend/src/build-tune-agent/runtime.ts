@@ -1,40 +1,48 @@
 /**
- * Tuning-agent runtime — thin dispatcher.
+ * Tuning-agent runtime — provider-aware dispatcher.
  *
- * Sprint 059-A F1.5 split the original monolithic `runTuningAgentTurn()`
- * into three modules:
+ * Three execution paths exist:
  *
- *   - `./sdk-runner.ts`  — the Claude Agent SDK path (pure rename, zero
- *                          behavioural delta from pre-059).
- *   - `./direct/runner.ts` — the direct `@anthropic-ai/sdk` path, wired
- *                          with the MCP router (F1.1), hook dispatcher
- *                          (F1.2), history replay (F1.3), and raw-stream
- *                          bridge (F1.4).
- *   - This file — branches on `isDirectTransportEnabled()`. If the direct
- *                 path returns `{ status: 'fallback' }` (spec §3 F1.5) we
- *                 run the SDK path for the same turn. The external API
- *                 (`runTuningAgentTurn(input)`) is unchanged — all three
- *                 controllers that call it are untouched.
+ *   1. **OpenAI Responses API** (`./openai-runner.ts`) — gated by
+ *      `STUDIO_PROVIDER=openai`. Runs gpt-5.4-mini against the same
+ *      tool registry + system prompt; produces byte-identical SSE
+ *      data-parts so the frontend works either way.
  *
- * Flag default is OFF (see prompt-cache-blocks.ts::isDirectTransportEnabled).
- * Flip on in staging only after canary validation (see PROGRESS.md).
+ *   2. **Anthropic direct transport** (`./direct/wire-direct.ts`) — gated
+ *      by `BUILD_AGENT_DIRECT_TRANSPORT=true`. Bypasses the Claude Agent
+ *      SDK and calls `@anthropic-ai/sdk.messages.create` directly with
+ *      explicit `cache_control` markers. May fall back to the SDK path on
+ *      error.
+ *
+ *   3. **Claude Agent SDK** (`./sdk-runner.ts`) — default path. Used when
+ *      provider=anthropic and direct transport is off, OR as a fallback
+ *      when the direct path returns `{status:'fallback'}`.
+ *
+ * The external API (`runTuningAgentTurn(input)`) is unchanged.
  */
 import { runSdkTurn, type RunTurnInput, type RunTurnResult } from './sdk-runner';
 import { isDirectTransportEnabled } from './prompt-cache-blocks';
 import { runDirectTurnWithFullSetup } from './direct/wire-direct';
+import { runOpenAiTurn } from './openai-runner';
+import { resolveStudioProvider } from './config';
 
 export type { RunTurnInput, RunTurnResult } from './sdk-runner';
 
 export async function runTuningAgentTurn(input: RunTurnInput): Promise<RunTurnResult> {
+  // Per-request override (from the frontend's ProviderToggle) wins over
+  // the env-resolved default so an operator can A/B providers without a
+  // redeploy. When unset, fall back to STUDIO_PROVIDER env.
+  const provider = input.providerOverride ?? resolveStudioProvider();
+  if (provider === 'openai') {
+    return runOpenAiTurn(input);
+  }
+
   if (isDirectTransportEnabled()) {
     try {
       const direct = await runDirectTurnWithFullSetup(input);
       if (direct.status === 'success') {
         return direct.sdkResult;
       }
-      // 'fallback' | 'error' — fall through to the SDK path with the same
-      // input. The user still gets a working reply; telemetry in the
-      // direct runner already logged the reason.
       console.warn(
         `[TuningAgent] direct fell back: ${direct.fallbackReason ?? 'unknown'} — running SDK path`,
       );

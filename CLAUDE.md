@@ -133,6 +133,16 @@ DRY_RUN                # Restrict to specific conversation IDs
 VAPID_PUBLIC_KEY       # Web Push (optional — push disabled without)
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT          # mailto:support@guestpilot.com
+STUDIO_PROVIDER        # "anthropic" (default) | "openai" — selects the
+                       # Studio agent runtime. anthropic = Claude Agent SDK
+                       # (Sonnet 4.6); openai = OpenAI Responses API
+                       # (gpt-5.4-mini). Both paths share the system prompt,
+                       # the 18-tool registry, state-machine enforcement,
+                       # and SSE wire contract; flip at deploy time for A/B.
+                       # When openai, requires OPENAI_API_KEY (already set
+                       # for the main guest-reply pipeline).
+STUDIO_OPENAI_MODEL    # Optional override for the OpenAI Studio model.
+                       # Default: gpt-5.4-mini-2026-03-17.
 BUILD_AGENT_DIRECT_TRANSPORT  # Sprint 058-A F1 — when "true"/"1"/"yes"/"on",
                               # the BUILD tuning-agent bypasses the Claude
                               # Agent SDK's string-only systemPrompt surface

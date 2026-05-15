@@ -25,6 +25,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai'
 import { ArrowUp, AlertTriangle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getToken, apiConfirmTransition, apiRejectTransition, type StudioStateMachineSnapshot } from '@/lib/api'
+import { readStudioProvider } from './provider-toggle'
 import {
   apiAcceptSuggestedFix,
   apiEnhancePrompt,
@@ -329,6 +330,10 @@ export function StudioChat({
             payload.isOpener = true
             openerRef.current = false
           }
+          // Provider toggle (set via the top-bar ProviderToggle). Read on
+          // every send so the very next turn picks up a flip with no
+          // remount.
+          payload.provider = readStudioProvider()
           return payload
         },
       }),

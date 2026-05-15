@@ -59,7 +59,8 @@ export function makeTuningChatController(prisma: PrismaClient) {
         id?: string;
         conversationId?: string;
         suggestionId?: string;
-        body?: { conversationId?: string; suggestionId?: string };
+        provider?: string;
+        body?: { conversationId?: string; suggestionId?: string; provider?: string };
       };
 
       const conversationId: string | undefined =
@@ -68,6 +69,13 @@ export function makeTuningChatController(prisma: PrismaClient) {
       const isOpener: boolean = Boolean(
         (body as any).isOpener ?? (body as any).body?.isOpener
       );
+      const rawProvider = body.provider ?? body.body?.provider;
+      const providerOverride: 'anthropic' | 'openai' | null =
+        rawProvider === 'openai'
+          ? 'openai'
+          : rawProvider === 'anthropic'
+            ? 'anthropic'
+            : null;
 
       if (!conversationId) {
         res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
@@ -130,6 +138,7 @@ export function makeTuningChatController(prisma: PrismaClient) {
             selectedSuggestionId: suggestionId ?? null,
             assistantMessageId,
             writer,
+            providerOverride,
           });
         },
         onFinish: async (event) => {

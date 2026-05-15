@@ -469,10 +469,18 @@ export function makeBuildController(prisma: PrismaClient) {
         messages?: UIMessage[];
         conversationId?: string;
         isOpener?: boolean;
-        body?: { conversationId?: string; isOpener?: boolean };
+        provider?: string;
+        body?: { conversationId?: string; isOpener?: boolean; provider?: string };
       };
       const conversationId =
         body.conversationId ?? body.body?.conversationId;
+      const rawProvider = body.provider ?? body.body?.provider;
+      const providerOverride: 'anthropic' | 'openai' | null =
+        rawProvider === 'openai'
+          ? 'openai'
+          : rawProvider === 'anthropic'
+            ? 'anthropic'
+            : null;
       if (!conversationId) {
         res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
         return;
@@ -588,6 +596,7 @@ export function makeBuildController(prisma: PrismaClient) {
             mode: 'BUILD',
             tenantState: runtimeTenantState,
             interviewProgress: runtimeInterviewProgress,
+            providerOverride,
           });
         },
         onFinish: async (event) => {

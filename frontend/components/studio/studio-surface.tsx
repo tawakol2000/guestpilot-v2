@@ -50,6 +50,7 @@ import { PropagationBanner } from '@/components/build/propagation-banner'
 import { StudioChat } from './studio-chat'
 import { StudioErrorBoundary } from './studio-error-boundary'
 import { StateChip } from './state-chip'
+import { ProviderToggle } from './provider-toggle'
 import { StateSnapshotCard, type StateSnapshotData, type StateSnapshotSummary } from './state-snapshot'
 import { WriteLedgerCard, ledgerArtifactType } from './write-ledger'
 import {
@@ -588,17 +589,20 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
           tenantName={'Studio'}
           sessionTitle={currentTitleRef.current ?? 'Studio session'}
           rightSlot={
-            <StateChip
-              conversationId={load.conversationId}
-              snapshot={load.stateMachineSnapshot}
-              onSnapshotChange={(next) =>
-                setLoad((prev) =>
-                  prev.kind === 'ready'
-                    ? { ...prev, stateMachineSnapshot: next }
-                    : prev,
-                )
-              }
-            />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <ProviderToggle />
+              <StateChip
+                conversationId={load.conversationId}
+                snapshot={load.stateMachineSnapshot}
+                onSnapshotChange={(next) =>
+                  setLoad((prev) =>
+                    prev.kind === 'ready'
+                      ? { ...prev, stateMachineSnapshot: next }
+                      : prev,
+                  )
+                }
+              />
+            </div>
           }
         />
       }

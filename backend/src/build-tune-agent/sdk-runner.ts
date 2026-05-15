@@ -26,11 +26,8 @@ import {
   makeExtractorState,
   wrapWriterWithExtractor,
 } from './structured-output-extractor';
-import {
-  maybeEmitSessionDiffSummary,
-  maybeEmitInterviewProgress,
-  snapshotSlots,
-} from './auto-emit';
+import { snapshotSlots } from './auto-emit';
+import { emitTurnEndArtifacts } from './lib/turn-end';
 import { listMemoryForSnapshot } from './memory/service';
 import { runForcedFirstTurnCall } from './forced-first-turn';
 import {
@@ -53,11 +50,7 @@ import {
   logAgentGeneration,
   buildPerRoundGenerationParams,
 } from '../services/observability.service';
-import {
-  logCacheBlockStructure,
-  buildCacheStatsPayload,
-  type CacheStatsPayload,
-} from './prompt-cache-blocks';
+import { logCacheBlockStructure } from './prompt-cache-blocks';
 import {
   coerceSnapshot,
   computeTurnEndSnapshot,
@@ -109,6 +102,14 @@ export interface RunTurnInput {
   tenantState?: TenantStateSummary | null;
   /** BUILD only: in-session interview progress. */
   interviewProgress?: InterviewProgressSummary | null;
+  /**
+   * Per-request provider toggle from the frontend. When set, overrides
+   * `STUDIO_PROVIDER` env for this single turn so an operator can A/B
+   * Claude vs gpt-5.4-mini from the UI without redeploying. Accepted
+   * values: 'anthropic' | 'openai'. When omitted, falls back to the
+   * env-resolved provider in `resolveStudioProvider()`.
+   */
+  providerOverride?: 'anthropic' | 'openai' | null;
 }
 
 /**
@@ -667,29 +668,12 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
       .catch((err) => console.warn('[tuning-agent] sdkSessionId persist failed:', err));
   }
 
-  if (lastUsage) {
-    try {
-      const cacheStats: CacheStatsPayload = buildCacheStatsPayload(lastUsage);
-      emitDataPart({
-        type: 'data-cache-stats',
-        id: `cache-stats:${input.assistantMessageId}`,
-        data: cacheStats,
-        transient: true,
-      });
-    } catch {
-      /* swallow — telemetry must never break the main flow */
-    }
-  }
-
   // ─── Sprint 060-C — turn-end state-machine lifecycle ─────────────────────
   //
   // Two effects, computed by a single pure function:
   //   1. Verifying auto-exit when test_pipeline ran successfully.
   //   2. Clear transition_ack_pending after the prompt rendered the
   //      one-turn <state_transition> announcement.
-  //
-  // Always emit a transient data-state-machine-snapshot SSE part so
-  // the frontend chip stays in sync with the DB without polling.
   let endSnapshot: StateMachineSnapshot = turnStartSnapshot;
   try {
     const testPipelineSucceeded = toolCallsInvoked.includes(
@@ -709,40 +693,22 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   } catch (err) {
     console.warn('[tuning-agent] state-machine turn-end persist failed:', err);
   }
-  try {
-    emitDataPart({
-      type: 'data-state-machine-snapshot',
-      id: `state-machine:${input.assistantMessageId}`,
-      data: endSnapshot,
-      transient: true,
-    });
-  } catch {
-    /* swallow — telemetry must never break the main flow */
-  }
 
-  // ─── Runtime auto-emit (sprint 060-D phase 6) ──────────────────────────
-  try {
-    maybeEmitSessionDiffSummary({
-      toolCallsInvoked,
-      emitDataPart,
-      assistantMessageId: input.assistantMessageId,
-    });
-  } catch (err) {
-    console.warn('[tuning-agent] session-summary auto-emit failed:', err);
-  }
-  try {
-    await maybeEmitInterviewProgress({
-      prisma: input.prisma,
-      tenantId: input.tenantId,
-      conversationId: input.conversationId,
-      mode,
-      beforeSnapshot: preTurnSlotSnapshot,
-      emitDataPart,
-      assistantMessageId: input.assistantMessageId,
-    });
-  } catch (err) {
-    console.warn('[tuning-agent] interview-progress auto-emit failed:', err);
-  }
+  // Shared turn-end emit (data-cache-stats → data-state-machine-snapshot →
+  // data-session-diff-summary → data-interview-progress). Identical between
+  // SDK and OpenAI runners — see lib/turn-end.ts.
+  await emitTurnEndArtifacts({
+    prisma: input.prisma,
+    tenantId: input.tenantId,
+    conversationId: input.conversationId,
+    assistantMessageId: input.assistantMessageId,
+    mode,
+    toolCallsInvoked,
+    preTurnSlotSnapshot,
+    endSnapshot,
+    lastUsage,
+    emitDataPart,
+  });
 
   // ─── Output-linter pass ────────────────────────────────────────────────
   try {
