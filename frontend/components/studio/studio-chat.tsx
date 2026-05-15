@@ -1909,13 +1909,38 @@ function StandalonePart({
         />
       )
     }
+    // 2026-05-15 polish: normalise options. The backend sometimes emits
+    // `options: ["First label", "Second label"]` (plain strings) instead
+    // of the `{id, label}` shape the card expects — discovered live when
+    // the second BUILD-greenfield question card rendered as a 4-row list
+    // of numbers with no labels. Coerce strings to {id: text, label: text}
+    // so both shapes render correctly + the recommended_default fallback
+    // string is honoured.
+    const rawOptions: any[] = Array.isArray(data.options) ? data.options : []
+    const recommendedRaw: string | null =
+      typeof data.recommended_default === 'string' ? data.recommended_default : null
+    const normalisedOptions = rawOptions.map((o, i) => {
+      if (typeof o === 'string') {
+        return {
+          id: o,
+          label: o,
+          recommended: recommendedRaw !== null && o === recommendedRaw,
+        }
+      }
+      if (o && typeof o === 'object') {
+        const id = typeof o.id === 'string' && o.id ? o.id : (typeof o.label === 'string' ? o.label : `opt-${i}`)
+        const label = typeof o.label === 'string' && o.label ? o.label : (typeof o.id === 'string' ? o.id : `Option ${i + 1}`)
+        return { ...o, id, label }
+      }
+      return { id: `opt-${i}`, label: `Option ${i + 1}` }
+    })
     return (
       <QuestionChoicesCard
         question={typeof data.question === 'string' ? data.question : ''}
-        options={Array.isArray(data.options) ? data.options : []}
+        options={normalisedOptions}
         allowCustomInput={data.allowCustomInput === true}
         onChoose={(optionId) => {
-          const opt = (data.options ?? []).find((o: any) => o.id === optionId)
+          const opt = normalisedOptions.find((o) => o.id === optionId)
           const label = opt?.label ?? optionId
           onSendText?.(label)
         }}
