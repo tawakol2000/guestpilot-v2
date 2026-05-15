@@ -45,6 +45,7 @@ async function main() {
   const message = process.argv[3];
   let conversationId: string | undefined = process.argv[4];
   const provider = (process.argv[5] ?? 'openai') as 'openai' | 'anthropic';
+  const mode = ((process.argv[6] ?? 'TUNE').toUpperCase() === 'BUILD' ? 'BUILD' : 'TUNE') as 'BUILD' | 'TUNE';
 
   if (!tenantId || !message) {
     console.error(
@@ -122,7 +123,7 @@ async function main() {
       assistantMessageId,
       writer,
       providerOverride: provider,
-      mode: 'TUNE',
+      mode,
     } as any);
   } catch (err: any) {
     console.error(`\n[harness] runTuningAgentTurn threw:`, err?.message ?? err);

@@ -47,9 +47,17 @@ PARAMETERS:
   artifactId   (optional) — the artifact's stable cuid
   limit        (optional) — max rows (default 10, max 100)
   detail       (optional) — 'summary' | 'full' (default 'summary')
-RETURNS:
-  • Single-artifact: { rows: [{ appliedAt, operation, rationale, ... }] }
-  • Broad: { count, entries: [{ artifactType, artifactId, versionId, timestamp, note?, rollbackSupported? }] }`;
+NOTES:
+  • For system_prompt edits, pass artifactType='system_prompt' and
+    artifactId='screening' or 'coordinator' (the variant). System
+    prompts use TenantAiConfig snapshot history rather than the
+    per-artifact ledger; the tool handles the routing automatically.
+RETURNS (uniform shape across both modes):
+  { count, entries: [{
+      artifactType, artifactId, versionId, timestamp,
+      operation?, rationale?, appliedByUserId?, note?, rollbackSupported?,
+      ...(detail==='full' ? { prevBody, newBody } : {})
+  }] }`;
 
 type SingleArtifactType = 'sop' | 'faq' | 'system_prompt' | 'tool_definition' | 'property_override';
 
@@ -251,14 +259,48 @@ export function buildGetEditHistoryTool(tool: typeof ToolFactory, ctx: () => Too
       const limit = Math.min(args.limit ?? 10, 100);
       const detail = args.detail ?? 'summary';
 
+      // 2026-05-15 polish (harness-observed):
+      //   1. Unify the response shape across both modes — agents kept
+      //      probing alternatively-shaped responses ({rows} vs {entries})
+      //      and looping. Both paths now return { count, entries }.
+      //   2. system_prompt edits are NOT stored in BuildArtifactHistory.
+      //      They live in TenantAiConfig.systemPromptHistory (queried by
+      //      the broad path). When the agent passes
+      //      `artifactType='system_prompt'` with an `artifactId` like
+      //      'screening' / 'coordinator', route through the broad path
+      //      and post-filter by variant rather than returning empty.
       try {
+        if (args.artifactId && args.artifactType === 'system_prompt') {
+          const broad = await queryBroad(c, 'system_prompt', limit, detail);
+          const filtered = broad.entries.filter((e: any) => e.artifactId === args.artifactId);
+          span.end({ mode: 'broad-system-prompt-filtered', count: filtered.length });
+          return asCallToolResult({ count: filtered.length, entries: filtered });
+        }
         if (args.artifactId) {
           if (!args.artifactType) {
-            return asCallToolResult({ rows: [], error: 'artifactType is required when artifactId is supplied' });
+            return asCallToolResult({
+              count: 0,
+              entries: [],
+              error: 'artifactType is required when artifactId is supplied',
+            });
           }
           const result = await querySingleArtifact(c, args.artifactType, args.artifactId, limit, detail);
-          span.end({ mode: 'single', count: result.rows.length });
-          return asCallToolResult(result);
+          // Adapt the single-artifact shape into { count, entries } so
+          // both paths look identical to the caller.
+          const entries = result.rows.map((r: any) => ({
+            artifactType: (args.artifactType ?? '').toUpperCase(),
+            artifactId: args.artifactId,
+            versionId: r.versionId,
+            timestamp: r.appliedAt,
+            operation: r.operation,
+            rationale: r.rationale,
+            operatorRationale: r.operatorRationale,
+            rationalePrefix: r.rationalePrefix,
+            appliedByUserId: r.appliedByUserId,
+            ...(detail === 'full' ? { prevBody: r.prevBody, newBody: r.newBody } : {}),
+          }));
+          span.end({ mode: 'single', count: entries.length });
+          return asCallToolResult({ count: entries.length, entries });
         }
         const result = await queryBroad(c, args.artifactType, limit, detail);
         span.end({ mode: 'broad', count: result.count });
@@ -267,7 +309,7 @@ export function buildGetEditHistoryTool(tool: typeof ToolFactory, ctx: () => Too
         span.end({ error: String(err) });
         // Best-effort: degrade gracefully so the agent can still respond.
         console.error('[studio_get_edit_history] query failed:', err?.message ?? err);
-        return asCallToolResult(args.artifactId ? { rows: [] } : { count: 0, entries: [] });
+        return asCallToolResult({ count: 0, entries: [] });
       }
     },
     { annotations: { readOnlyHint: true } },

@@ -26,6 +26,11 @@ const DEFAULT_MARKER = '<!-- DEFAULT: change me -->';
 
 export interface SessionDiffSummaryData {
   written: { created: number; edited: number; reverted: number };
+  // 2026-05-15 polish: totalVariants/passed are not derivable from
+  // toolCallsInvoked alone (the runner doesn't track per-variant
+  // outcomes). Kept on the type for backward-compat; populated with 0.
+  // Frontend should read data-test-pipeline-result directly for
+  // per-variant pass/fail when the manager opens a verify card.
   tested: { runs: number; totalVariants: number; passed: number };
   plans: { cancelled: number };
   note: string | null;
