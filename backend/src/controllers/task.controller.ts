@@ -57,6 +57,10 @@ export function taskController(prisma: PrismaClient) {
         const tenantId = (req as any).tenantId;
         const { conversationId } = req.params;
         const { title, note, urgency, type } = req.body;
+        // 2026-05-15 (auto-review): mirror createGlobal's guard. Without
+        // this a POST with no `title` flowed through to Prisma and
+        // surfaced as a 500 instead of a 400.
+        if (!title) { res.status(400).json({ error: 'title is required' }); return; }
         const task = await taskService.createTask(prisma, {
           tenantId, conversationId, title, note, urgency: urgency || 'info_request', type, source: 'manual',
         });

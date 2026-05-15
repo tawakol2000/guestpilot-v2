@@ -79,26 +79,41 @@ export function makeConversationsController(prisma: PrismaClient) {
           },
         });
 
-        res.json(conversations.map(conv => ({
-          id: conv.id,
-          guestName: conv.guest.name,
-          propertyName: conv.property.name,
-          channel: conv.channel,
-          aiEnabled: conv.reservation.aiEnabled,
-          aiMode: conv.reservation.aiMode,
-          unreadCount: conv.unreadCount,
-          starred: conv.starred,
-          status: conv.status,
-          lastMessage: conv.messages[0]?.content || '',
-          lastMessageRole: conv.messages[0]?.role || null,
-          lastMessageAt: conv.lastMessageAt,
-          reservationStatus: conv.reservation.status,
-          reservationId: conv.reservation.id,
-          checkIn: conv.reservation.checkIn,
-          checkOut: conv.reservation.checkOut,
-          reservationCreatedAt: conv.reservation.createdAt,
-          hostawayConversationId: conv.hostawayConversationId,
-        })));
+        // 2026-05-15 (auto-review F5): guard each relation. In theory all
+        // three are non-null FKs, but an orphan / cascade-deleted row
+        // returned a null relation here would previously crash the
+        // entire endpoint (TypeError) and the operator's inbox would
+        // 500 on every page load until the row was cleaned up. Filter
+        // such rows out and continue.
+        const mapped = conversations
+          .filter((conv) => conv.guest && conv.property && conv.reservation)
+          .map((conv) => ({
+            id: conv.id,
+            guestName: conv.guest!.name ?? '',
+            propertyName: conv.property!.name ?? '',
+            channel: conv.channel,
+            aiEnabled: conv.reservation!.aiEnabled,
+            aiMode: conv.reservation!.aiMode,
+            unreadCount: conv.unreadCount,
+            starred: conv.starred,
+            status: conv.status,
+            lastMessage: conv.messages[0]?.content || '',
+            lastMessageRole: conv.messages[0]?.role || null,
+            lastMessageAt: conv.lastMessageAt,
+            reservationStatus: conv.reservation!.status,
+            reservationId: conv.reservation!.id,
+            checkIn: conv.reservation!.checkIn,
+            checkOut: conv.reservation!.checkOut,
+            reservationCreatedAt: conv.reservation!.createdAt,
+            hostawayConversationId: conv.hostawayConversationId,
+          }));
+        const dropped = conversations.length - mapped.length;
+        if (dropped > 0) {
+          console.warn(
+            `[Conversations] list — dropped ${dropped} conversation row(s) with missing relations for tenant=${tenantId}`,
+          );
+        }
+        res.json(mapped);
       } catch (err) {
         console.error('[Conversations] list error:', err);
         res.status(500).json({ error: 'Internal server error' });

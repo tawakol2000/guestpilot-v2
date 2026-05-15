@@ -53,12 +53,21 @@ export function makeImportController(prisma: PrismaClient) {
     // GET /api/import/progress — poll for current status
     async progress(req: AuthenticatedRequest, res: Response): Promise<void> {
       const { tenantId } = req;
-      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { lastSyncedAt: true } });
-      const progress = getProgress(tenantId);
-      res.json({
-        ...progress,
-        lastSyncedAt: tenant?.lastSyncedAt?.toISOString() ?? null,
-      });
+      // 2026-05-15 (auto-review): wrap in try/catch. The previous bare
+      // `await` produced an unhandled promise rejection that bypassed the
+      // error middleware on transient DB blips, leaving the client socket
+      // hanging until idle timeout.
+      try {
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { lastSyncedAt: true } });
+        const progress = getProgress(tenantId);
+        res.json({
+          ...progress,
+          lastSyncedAt: tenant?.lastSyncedAt?.toISOString() ?? null,
+        });
+      } catch (err) {
+        console.error('[Import] progress error:', err);
+        res.status(500).json({ error: 'Failed to load import progress' });
+      }
     },
 
     // DELETE /api/import — wipe all data for this tenant

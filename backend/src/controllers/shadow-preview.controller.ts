@@ -241,13 +241,15 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
           });
         } catch (sendErr) {
           console.error(`[ShadowPreview] [${messageId}] Hostaway send failed:`, sendErr);
-          // Roll back to PREVIEW_PENDING so the admin can retry
+          // Roll back to PREVIEW_PENDING so the admin can retry.
+          // 2026-05-15 (auto-review F6): scope the update by (id, tenantId)
+          // — the happy-path commit elsewhere in this controller already
+          // uses that pair; the rollback path was the lone exception.
           await prisma.message
-            .update({ where: { id: messageId }, data: { previewState: 'PREVIEW_PENDING' } })
+            .updateMany({ where: { id: messageId, tenantId }, data: { previewState: 'PREVIEW_PENDING' } })
             .catch(() => {});
           res.status(502).json({
             error: 'HOSTAWAY_DELIVERY_FAILED',
-            detail: sendErr instanceof Error ? sendErr.message : String(sendErr),
           });
         }
       } catch (err) {

@@ -1,8 +1,48 @@
 import { Response } from 'express';
 import crypto from 'crypto';
+import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../types';
 import { getAiConfig, updateAiConfig } from '../services/ai-config.service';
+
+// 2026-05-15 (auto-review F4): validate update payload shape before
+// writing to the on-disk config file. The previous code did
+// `updateAiConfig(req.body)` which shallow-merged arbitrary input and
+// then `fs.writeFileSync` the result — a malformed PATCH (string in a
+// number slot) permanently corrupted the persisted config. Only known
+// fields with sensible types pass.
+const aiPersonaConfigSchema = z
+  .object({
+    model: z.string().min(1).max(120).optional(),
+    maxTokens: z.number().int().min(1).max(32000).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    topK: z.number().int().min(0).max(500).optional(),
+    topP: z.number().min(0).max(1).optional(),
+    stopSequences: z.array(z.string()).max(20).optional(),
+    systemPrompt: z.string().max(64000).optional(),
+    responseSchema: z.string().max(8000).optional(),
+    contentBlockTemplate: z.string().max(64000).optional(),
+  })
+  .strict();
+const aiConfigUpdateSchema = z
+  .object({
+    debounceDelayMs: z.number().int().min(0).max(10 * 60 * 1000).optional(),
+    messageHistoryCount: z.number().int().min(0).max(500).optional(),
+    guestCoordinator: aiPersonaConfigSchema.optional(),
+    screeningAI: aiPersonaConfigSchema.optional(),
+    managerTranslator: aiPersonaConfigSchema.optional(),
+    guardrails: z.array(z.string()).max(200).optional(),
+    escalation: z
+      .object({
+        confidenceThreshold: z.number().min(0).max(1),
+        triggerKeywords: z.array(z.string()).max(500),
+        maxConsecutiveAiReplies: z.number().int().min(0).max(50),
+      })
+      .strict()
+      .optional(),
+    _versionNote: z.string().max(500).optional(),
+  })
+  .strict();
 import {
   SEED_COORDINATOR_PROMPT,
   SEED_SCREENING_PROMPT,
@@ -60,8 +100,21 @@ export function makeAiConfigController(prisma: PrismaClient) {
 
     async update(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
+        const parsed = aiConfigUpdateSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({
+            error: 'INVALID_AI_CONFIG',
+            details: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+          });
+          return;
+        }
+        // The version-note field is metadata, not part of the persisted config.
+        const { _versionNote, ...patch } = parsed.data;
         invalidateConfigCache();
-        const updated = updateAiConfig(req.body);
+        // Cast: Zod nested optionals don't satisfy AiPersonaConfig's
+        // required fields at the type level, but the service deep-merges
+        // with current values via spreads — missing fields fall through.
+        const updated = updateAiConfig(patch as Parameters<typeof updateAiConfig>[0]);
 
         // Save a version snapshot
         try {
@@ -76,7 +129,7 @@ export function makeAiConfigController(prisma: PrismaClient) {
               tenantId,
               version: nextVersion,
               config: updated as any,
-              note: req.body._versionNote || null,
+              note: _versionNote || null,
             },
           });
         } catch (vErr) {
