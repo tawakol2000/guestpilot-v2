@@ -163,6 +163,15 @@ export async function scheduleOnReservationUpsert(
       await markCancelled(reservationId, prisma);
       return;
     }
+    // Only schedule for bookings that are confirmed (or already checked in,
+    // for late-arrival handoffs). INQUIRY/PENDING are tentative and should
+    // not consume a recipient quota or be visible in the operator panel
+    // until the reservation is actually confirmed. If status later flips to
+    // CONFIRMED, scheduleOnReservationUpsert is called again via webhook /
+    // reservation-sync and rows are created at that point.
+    if (reservation.status !== 'CONFIRMED' && reservation.status !== 'CHECKED_IN') {
+      return;
+    }
 
     const now = new Date();
     if (isCheckinInPast(reservation.checkIn, now)) {
@@ -367,6 +376,17 @@ async function evaluateSingleRow(
   if (reservation.status === 'CANCELLED') {
     await finalize(rowId, STATUS_SKIPPED_CANCELLED, prisma);
     return 'skipped';
+  }
+  // Non-confirmed (INQUIRY/PENDING) rows shouldn't fire. Push the fire time
+  // forward 1h so the poller doesn't re-process the same row every tick,
+  // but leave it active so it can fire if/when the reservation is later
+  // confirmed (the scheduling pass will re-set the fire time on confirm).
+  if (reservation.status !== 'CONFIRMED' && reservation.status !== 'CHECKED_IN') {
+    await prisma.documentHandoffState.update({
+      where: { id: rowId },
+      data: { scheduledFireAt: new Date(Date.now() + 60 * 60 * 1000) },
+    });
+    return 'deferred';
   }
   const tenant = reservation.tenant;
   if (!tenant.docHandoffEnabled) {
@@ -845,7 +865,7 @@ export async function listTodayCheckIns(
   const reservations = await prisma.reservation.findMany({
     where: {
       tenantId,
-      status: { not: 'CANCELLED' },
+      status: 'CONFIRMED',
       checkIn: {
         gte: new Date(now - 12 * 60 * 60 * 1000),
         lte: new Date(now + 14 * 24 * 60 * 60 * 1000),
