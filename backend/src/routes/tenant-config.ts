@@ -29,6 +29,7 @@ export function tenantConfigRouter(prisma: PrismaClient): Router {
   router.get('/doc-handoff', ((req, res) => docHandoffCtrl.getSettings(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.put('/doc-handoff', ((req, res) => docHandoffCtrl.putSettings(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
   router.get('/doc-handoff/recent-sends', ((req, res) => docHandoffCtrl.listRecentSends(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+  router.post('/doc-handoff/test-send', ((req, res) => docHandoffCtrl.testSend(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
   // GET /api/tenant-config
   router.get('/', async (req: any, res) => {

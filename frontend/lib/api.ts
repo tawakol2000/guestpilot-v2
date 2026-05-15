@@ -1034,6 +1034,40 @@ export async function apiListDocHandoffSends(limit = 20): Promise<{ items: DocHa
   return apiFetch(`/api/tenant-config/doc-handoff/recent-sends?limit=${limit}`)
 }
 
+export interface DocHandoffTestSendDiagnostics {
+  envEnabled: boolean
+  baseUrl: string
+  timeoutMs: number
+  recipientResolved: string | null
+  recipientSource: 'manager' | 'security' | 'custom' | null
+  recipientValid: boolean
+  attempted: boolean
+  ok: boolean
+  providerMessageId: string | null
+  errorKind: string | null
+  errorStatus: number | null
+  errorMessage: string | null
+  responseBody: unknown
+  durationMs: number
+}
+
+export interface DocHandoffTestSendResult {
+  ok: boolean
+  error?: string
+  diagnostics: DocHandoffTestSendDiagnostics
+}
+
+export async function apiTestSendDocHandoff(input: {
+  to?: string
+  recipient?: 'manager' | 'security' | 'custom'
+  text?: string
+}): Promise<DocHandoffTestSendResult> {
+  return apiFetch('/api/tenant-config/doc-handoff/test-send', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 // ─── AI Logs ─────────────────────────────────────────────────────────────────
 export interface AiApiLogEntry {
   id: string
