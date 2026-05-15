@@ -769,11 +769,19 @@ function TasksBox({ conversationId, dragHandle }: { conversationId: string; drag
   }, [conversationId])
 
   async function markComplete(id: string) {
+    // 2026-05-15 (auto-review F2): optimistic update + revert on failure.
+    // Previously the catch swallowed everything; if the PATCH failed
+    // the task stayed in the list locally and the operator had no idea
+    // their click had no server effect.
+    const before = tasks
+    setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: 'completed' } : t)))
     try {
       const updated = await apiUpdateTask(id, { status: 'completed' })
       setTasks(prev => prev.map(t => (t.id === id ? updated : t)))
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[Tasks] markComplete failed:', err)
+      toast.error(`Could not mark task complete — ${err instanceof Error ? err.message : 'please retry'}`)
+      setTasks(before)
     }
   }
 
@@ -2864,6 +2872,10 @@ export default function InboxV5() {
     }
   }
 
+  // 2026-05-15 (auto-review F1): optimistic-toggle helpers now surface a
+  // toast and log the error before reverting state — previously the UI
+  // would just snap back with no explanation, leaving the operator
+  // confused about whether anything actually happened.
   async function toggleAI() {
     if (!selectedConv) return
     const newVal = !selectedConv.aiOn
@@ -2872,7 +2884,9 @@ export default function InboxV5() {
     )
     try {
       await apiToggleAI(selectedConv.id, newVal)
-    } catch {
+    } catch (err) {
+      console.error('[Inbox] toggleAI failed:', err)
+      toast.error(`AI toggle failed — ${err instanceof Error ? err.message : 'please retry'}`)
       setConversations(prev =>
         prev.map(c => (c.id === selectedConv.id ? { ...c, aiOn: !newVal } : c))
       )
@@ -2892,11 +2906,15 @@ export default function InboxV5() {
       )
     )
     try {
-      await Promise.all([
-        apiSetAiMode(selectedConv.id, mode),
-        apiToggleAI(selectedConv.id, newAiOn),
-      ])
-    } catch {
+      // 2026-05-15 (auto-review F7): sequence the two mutations so a
+      // partial failure surfaces cleanly. Promise.all could previously
+      // leave one mutation applied on the server while the local UI
+      // reverted both — an invisible drift.
+      await apiSetAiMode(selectedConv.id, mode)
+      await apiToggleAI(selectedConv.id, newAiOn)
+    } catch (err) {
+      console.error('[Inbox] changeAiMode failed:', err)
+      toast.error(`AI mode change failed — ${err instanceof Error ? err.message : 'please retry'}`)
       setConversations(prev =>
         prev.map(c => (c.id === selectedConv.id ? { ...c, aiMode: prevMode, aiOn: prevAiOn } : c))
       )
@@ -2912,7 +2930,9 @@ export default function InboxV5() {
     )
     try {
       await apiToggleStar(convId, newVal)
-    } catch {
+    } catch (err) {
+      console.error('[Inbox] toggleStar failed:', err)
+      toast.error('Could not update star — please retry')
       setConversations(prev =>
         prev.map(c => (c.id === convId ? { ...c, starred: !newVal } : c))
       )
@@ -2927,7 +2947,9 @@ export default function InboxV5() {
     )
     try {
       await apiResolveConversation(selectedConv.id, newStatus)
-    } catch {
+    } catch (err) {
+      console.error('[Inbox] resolveConversation failed:', err)
+      toast.error(`Could not update status — ${err instanceof Error ? err.message : 'please retry'}`)
       const revertStatus = newStatus === 'RESOLVED' ? 'OPEN' : 'RESOLVED'
       setConversations(prev =>
         prev.map(c => (c.id === selectedConv.id ? { ...c, status: revertStatus } : c))
