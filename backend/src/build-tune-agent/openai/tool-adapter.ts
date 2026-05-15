@@ -126,6 +126,13 @@ function zodShapeToJsonSchema(shape: Record<string, z.ZodType<unknown>>): Record
     delete out.$schema;
     if (!out.type) out.type = 'object';
     if (!out.properties) out.properties = {};
+    // 2026-05-15: normalise tuple schemas. Zod's `z.tuple([...])` emits
+    // `{ type: 'array', prefixItems: [...] }` per JSON Schema 2020-12,
+    // but OpenAI Responses API rejects arrays whose `items` field is
+    // missing ("In context=...lineRange, array schema missing items").
+    // Walk the tree and convert each `array` node with `prefixItems`
+    // into the legacy `items` form so both providers accept it.
+    normaliseSchemaInPlace(out);
     return out;
   } catch (err) {
     console.warn(`[openai-tool-adapter] failed to convert schema, falling back to empty:`, err);
@@ -133,6 +140,69 @@ function zodShapeToJsonSchema(shape: Record<string, z.ZodType<unknown>>): Record
       type: 'object',
       properties: {},
     };
+  }
+}
+
+/**
+ * Walk a JSON Schema and rewrite tuple-style arrays
+ * (`prefixItems: [s1, s2, …]`) into the legacy item-list form
+ * (`items: oneOf-of-prefix-items, minItems, maxItems`) that the OpenAI
+ * Responses API accepts. Also fills in `items: {}` on any array node that
+ * somehow has neither `items` nor `prefixItems`, so we never ship an
+ * `array` without an items definition.
+ */
+function normaliseSchemaInPlace(node: unknown): void {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const el of node) normaliseSchemaInPlace(el);
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+
+  if (obj.type === 'array') {
+    const prefix = obj.prefixItems;
+    if (Array.isArray(prefix) && prefix.length > 0) {
+      // Collapse the tuple into a single items schema. If every prefix
+      // entry is structurally identical we can emit it directly;
+      // otherwise wrap in anyOf so the model can still pick any of the
+      // valid shapes per position.
+      const first = prefix[0];
+      const allSame = prefix.every((p) => JSON.stringify(p) === JSON.stringify(first));
+      obj.items = allSame ? first : { anyOf: prefix };
+      if (obj.minItems === undefined) obj.minItems = prefix.length;
+      if (obj.maxItems === undefined) obj.maxItems = prefix.length;
+      delete obj.prefixItems;
+    } else if (obj.items === undefined) {
+      // array with neither items nor prefixItems — emit a permissive
+      // empty schema so OpenAI's validator stops rejecting the tool.
+      obj.items = {};
+    }
+  }
+
+  // Recurse into common composite keywords. `properties` /
+  // `patternProperties` are dicts of {name: schema}, so recurse into
+  // each value. `items` may be a single schema or (legacy) an array of
+  // schemas. `additionalProperties` may be a schema or a boolean.
+  for (const k of ['properties', 'patternProperties']) {
+    const v = obj[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const inner of Object.values(v as Record<string, unknown>)) {
+        normaliseSchemaInPlace(inner);
+      }
+    }
+  }
+  if (Array.isArray(obj.items)) {
+    for (const el of obj.items as unknown[]) normaliseSchemaInPlace(el);
+  } else if (obj.items && typeof obj.items === 'object') {
+    normaliseSchemaInPlace(obj.items);
+  }
+  if (obj.additionalProperties && typeof obj.additionalProperties === 'object') {
+    normaliseSchemaInPlace(obj.additionalProperties);
+  }
+  for (const k of ['anyOf', 'oneOf', 'allOf']) {
+    if (Array.isArray(obj[k])) {
+      for (const el of obj[k] as unknown[]) normaliseSchemaInPlace(el);
+    }
   }
 }
 

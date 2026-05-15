@@ -97,3 +97,60 @@ test('tool-adapter: studio_suggestion schema includes op enum', async () => {
   assert.ok(opSchema.enum.includes('apply'));
   assert.ok(opSchema.enum.includes('reject'));
 });
+
+/**
+ * 2026-05-15 regression guard. OpenAI Responses API rejects any `array`
+ * schema whose `items` field is missing — Zod's `z.tuple` produces
+ * `prefixItems` instead of `items` under JSON Schema 2020-12, and the
+ * legacy adapter shipped that straight through, surfacing as a 400 to
+ * the user mid-Drafting. Walk every tool's parameters tree and assert
+ * the normalisation pass has rewritten tuples into legacy form.
+ */
+test('tool-adapter: every array schema has items (no raw prefixItems leak)', async () => {
+  const reg = buildOpenAiToolRegistry(ctxStub());
+  const offenders: string[] = [];
+  for (const tool of reg.tools) {
+    walkAndCheckArrays(tool.parameters, [tool.name], offenders);
+  }
+  assert.deepEqual(offenders, [], `arrays without items found: ${offenders.join(', ')}`);
+});
+
+test('tool-adapter: studio_suggestion target.lineRange becomes a legacy array of numbers', async () => {
+  const reg = buildOpenAiToolRegistry(ctxStub());
+  const t = reg.tools.find((t) => t.name === 'studio_suggestion');
+  const target = (t!.parameters as any)?.properties?.target;
+  // target is an optional object — find the lineRange schema inside it.
+  // The shape varies depending on how zod renders optional unions, so
+  // probe a few likely paths.
+  const candidates: any[] = [target?.properties?.lineRange, target?.anyOf, target?.oneOf]
+    .flat()
+    .filter(Boolean);
+  let lineRange: any = null;
+  for (const c of candidates) {
+    if (c?.properties?.lineRange) lineRange = c.properties.lineRange;
+    else if (c?.type === 'array') lineRange = c;
+  }
+  if (lineRange) {
+    assert.equal(lineRange.type, 'array', 'lineRange must be array');
+    assert.ok(lineRange.items, 'lineRange.items must be present (no prefixItems leak)');
+    assert.ok(!('prefixItems' in lineRange), 'lineRange.prefixItems must be normalised away');
+  }
+});
+
+function walkAndCheckArrays(node: unknown, path: string[], offenders: string[]): void {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    node.forEach((el, i) => walkAndCheckArrays(el, [...path, String(i)], offenders));
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+  if (obj.type === 'array' && obj.items === undefined) {
+    offenders.push(path.join('.'));
+  }
+  if ('prefixItems' in obj) {
+    offenders.push(`${path.join('.')}:prefixItems-leak`);
+  }
+  for (const k of Object.keys(obj)) {
+    walkAndCheckArrays(obj[k], [...path, k], offenders);
+  }
+}
