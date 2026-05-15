@@ -190,9 +190,12 @@ export function propertiesRouter(prisma: PrismaClient): Router {
 
       res.json({ summary: result.summary });
     } catch (err) {
+      // 2026-05-15 (auto-review F6): keep `err.message` server-side only.
+      // OpenAI errors can carry API key prefixes / internal model
+      // constraints; previously echoed verbatim in the 502 body.
       const detail = err instanceof Error ? err.message : String(err);
       console.error('[Properties] Summarize failed:', detail, err);
-      res.status(502).json({ error: 'SUMMARIZATION_FAILED', detail });
+      res.status(502).json({ error: 'SUMMARIZATION_FAILED' });
     }
   }) as RequestHandler);
 

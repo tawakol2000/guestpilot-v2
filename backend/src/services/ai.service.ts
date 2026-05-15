@@ -7,6 +7,7 @@
 import OpenAI from 'openai';
 import axios from 'axios';
 import { PrismaClient, MessageRole, Channel } from '@prisma/client';
+import { assertPublicHttpsUrl } from '../lib/url-safety';
 import * as hostawayService from './hostaway.service';
 import { getAiConfig } from './ai-config.service';
 import { createTask } from './task.service';
@@ -2120,6 +2121,12 @@ export async function generateAndSendAiReply(
         if (allImageUrls.length > 0) {
           await Promise.all(allImageUrls.slice(0, 5).map(async (url) => {
             try {
+              // 2026-05-15 (auto-review F3 SSRF): screen guest-uploaded
+              // attachment URLs through the same DNS-resolving guard the
+              // webhook-tool path uses. A crafted URL pointing at an
+              // internal IP would otherwise be fetched server-side and
+              // forwarded to OpenAI vision.
+              await assertPublicHttpsUrl(url);
               const imgRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000, headers: { 'User-Agent': 'GuestPilot/2.0' } });
               const b64 = Buffer.from(imgRes.data as ArrayBuffer).toString('base64');
               const ct = (imgRes.headers['content-type'] || 'image/jpeg') as string;

@@ -116,11 +116,29 @@ export function makeWebhooksController(prisma: PrismaClient) {
 
       // Auth handled by webhook-auth middleware (FR-001)
 
+      // 2026-05-15 (auto-review F2): validate the top-level shape of the
+      // incoming webhook before trusting the TypeScript cast. Hostaway's
+      // schema is too sprawling to fully validate here, but the basic
+      // shape check rejects garbage early instead of letting the
+      // downstream handler crash on `payload.data.xxx` access.
+      const body = req.body as { event?: unknown; data?: unknown };
+      if (
+        !body ||
+        typeof body.event !== 'string' ||
+        !body.data ||
+        typeof body.data !== 'object' ||
+        Array.isArray(body.data)
+      ) {
+        console.warn(`[Webhook] [${tenantId}] rejected — malformed payload (event/data shape)`);
+        res.status(400).json({ error: 'INVALID_WEBHOOK_PAYLOAD' });
+        return;
+      }
+
       // Return 200 immediately
       res.status(200).json({ ok: true });
 
       // Process async
-      const payload = req.body as HostawayWebhookPayload;
+      const payload = body as unknown as HostawayWebhookPayload;
       processWebhook(tenantId, payload, prisma).catch(err => {
         console.error(`[Webhook] [${tenantId}] Error processing event "${payload.event}":`, err);
       });
@@ -176,9 +194,23 @@ async function processWebhook(
   const { event: eventType, data } = payload;
   const webhookStartMs = Date.now();
   console.log(`[Webhook] [${tenantId}] Event: ${eventType} | res=${data.reservationId || data.id} status=${data.status} arrival=${data.arrivalDate} departure=${data.departureDate} guests=${data.numberOfGuests} channel=${data.channelName} listing=${data.listingMapId}`);
-  // Debug: log full payload for reservation events to diagnose status mapping
+  // 2026-05-15 (auto-review F1): log only safe fields. The previous
+  // version dumped JSON.stringify(data).substring(0,500) which routinely
+  // captured guest email + phone PII for every reservation event.
   if (eventType.startsWith('reservation.')) {
-    console.log(`[Webhook] [${tenantId}] Full reservation payload:`, JSON.stringify(data).substring(0, 500));
+    console.log(
+      `[Webhook] [${tenantId}] reservation payload (safe fields):`,
+      JSON.stringify({
+        event: eventType,
+        reservationId: (data as any).reservationId ?? (data as any).id,
+        status: (data as any).status,
+        arrivalDate: (data as any).arrivalDate,
+        departureDate: (data as any).departureDate,
+        numberOfGuests: (data as any).numberOfGuests,
+        channelName: (data as any).channelName,
+        listingMapId: (data as any).listingMapId,
+      }),
+    );
   }
 
   try {

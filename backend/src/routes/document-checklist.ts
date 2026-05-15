@@ -59,8 +59,16 @@ export function documentChecklistRouter(prisma: PrismaClient): Router {
       );
       res.json({ checklist: updated });
     } catch (err: any) {
+      // 2026-05-15 (auto-review F7): don't echo raw err.message to the
+      // client. Detect the "not found" sentinel for a clean 404, generic
+      // 500 for everything else.
       console.error('[DocChecklist] PUT error:', err);
-      res.status(err.message?.includes('not found') ? 404 : 500).json({ error: err.message || 'Failed to update checklist' });
+      const isNotFound = typeof err?.message === 'string' && /not found/i.test(err.message);
+      if (isNotFound) {
+        res.status(404).json({ error: 'Checklist target not found' });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to update checklist' });
     }
   });
 

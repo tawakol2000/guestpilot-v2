@@ -8,6 +8,7 @@
 import OpenAI from 'openai';
 import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
+import { assertPublicHttpsUrl } from '../lib/url-safety';
 
 const CAPTION_MODEL = 'gpt-5-nano';
 
@@ -36,6 +37,12 @@ export async function captionMessageImages(
     let base64: string;
     let mimeType = 'image/jpeg';
     try {
+      // 2026-05-15 (auto-review F3): guest-uploaded image URLs flow
+      // through here as-is. Without this guard a crafted attachment
+      // pointing at an internal IP / cloud metadata endpoint would be
+      // fetched server-side and surfaced to OpenAI vision. Re-using the
+      // existing SSRF guard already protecting webhook-tool / WAsender.
+      await assertPublicHttpsUrl(url);
       const imgRes = await axios.get(url, {
         responseType: 'arraybuffer',
         timeout: 10000,

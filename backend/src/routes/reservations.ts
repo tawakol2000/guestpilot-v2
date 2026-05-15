@@ -367,7 +367,10 @@ export function reservationsRouter(prisma: PrismaClient) {
 
   // ── POST /api/reservations/:reservationId/cancel ──────────────────
 
-  router.post('/:reservationId/cancel', async (req: any, res) => {
+  // 2026-05-15 (auto-review F4): match approve/reject — without a rate
+  // limiter an authenticated client could hammer the Hostaway cancel
+  // endpoint in an unbounded loop.
+  router.post('/:reservationId/cancel', reservationActionLimiter as any, async (req: any, res) => {
     try {
       const { tenantId } = req as AuthenticatedRequest;
       const { reservationId } = req.params;
