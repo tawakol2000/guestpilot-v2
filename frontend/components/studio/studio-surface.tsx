@@ -23,6 +23,7 @@ import {
   apiGetTuningConversation,
   apiListTuningConversations,
   apiPatchTuningConversation,
+  getTenantMeta,
   isAuthenticated,
   type StudioStateMachineSnapshot,
   type TuningConversationAnchor,
@@ -608,7 +609,7 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
       }
       leftRail={
         <LeftRailV2
-          tenantName={tenantState.isGreenfield ? 'Studio' : 'Workspace'}
+          tenantName={resolveWorkspaceLabel(tenantState.isGreenfield)}
           propertyCount={tenantState.propertyCount}
           selectedId={load.conversationId}
           onSelect={(id) => onConversationChange?.(id)}
@@ -854,6 +855,25 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
 
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * Derive a human-friendly label for the workspace row in the left rail.
+ * Tries the user's email local-part first (e.g. "ab.tawakol" from
+ * "ab.tawakol@gmail.com"), then falls back to a generic label tied to
+ * the tenant's posture. Avoids the previous hardcoded "Workspace" / "Studio"
+ * which read as filler.
+ */
+function resolveWorkspaceLabel(isGreenfield: boolean): string {
+  const meta = getTenantMeta()
+  if (meta?.email) {
+    const local = meta.email.split('@')[0]
+    if (local && local.length > 0) {
+      // Trim absurdly long locals so the rail doesn't break layout.
+      return local.length > 22 ? `${local.slice(0, 21)}…` : local
+    }
+  }
+  return isGreenfield ? 'New workspace' : 'Workspace'
+}
 
 function rehydrate(rows: TuningConversationMessage[]): UIMessage[] {
   return rows
