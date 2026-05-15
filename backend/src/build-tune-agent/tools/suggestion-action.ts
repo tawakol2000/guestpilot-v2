@@ -306,13 +306,21 @@ export function buildSuggestionActionTool(
           // QUEUE = persist the edit-with-QUEUED applyMode on the row; artifact
           // write deferred to manager-confirmed apply later (V1 behavior is
           // identical to IMMEDIATE at write time, but we record the intent).
-          await c.prisma.tuningSuggestion.update({
-            where: { id: suggestion.id },
+          // 2026-05-15 (auto-review F4): match the CAS pattern apply/reject
+          // use — updateMany scoped by both id AND tenantId so the write
+          // can't escape tenant ownership even if the upstream findFirst
+          // is somehow served a wrong-tenant row by a session context bug.
+          const queueWrite = await c.prisma.tuningSuggestion.updateMany({
+            where: { id: suggestion.id, tenantId: c.tenantId },
             data: {
               applyMode: 'QUEUED',
               conversationId: c.conversationId ?? suggestion.conversationId,
             },
           });
+          if (queueWrite.count === 0) {
+            span.end({ error: 'QUEUE_FAILED_TENANT_MISMATCH' });
+            return asError('suggestion not found for current tenant');
+          }
           const payload = { suggestionId: suggestion.id, status: 'PENDING', applyMode: 'QUEUED' };
           span.end(payload);
           return asCallToolResult(payload);

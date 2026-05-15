@@ -125,10 +125,18 @@ async function applySop(prisma: PrismaClient, input: ApplyInput): Promise<ApplyR
       diff: { kind: 'update', field: 'content', length: content.length },
     };
   }
-  await prisma.sopVariant.update({
-    where: { id: input.id },
+  // 2026-05-15 (auto-review F2): scope the write by tenantId via the
+  // sopDefinition relation. The findFirst above already validated
+  // ownership; this is defence-in-depth at the DB level. Use
+  // updateMany so the tenant filter is honoured by Prisma — `.update`
+  // only accepts unique-key where input.
+  const sopWrite = await prisma.sopVariant.updateMany({
+    where: { id: input.id, sopDefinition: { tenantId: input.tenantId } },
     data: { content },
   });
+  if (sopWrite.count === 0) {
+    return error(input, 'sop variant not found or wrong tenant');
+  }
   invalidateSopCache(input.tenantId);
   await emitArtifactHistory(prisma, {
     tenantId: input.tenantId,
@@ -174,13 +182,18 @@ async function applyFaq(prisma: PrismaClient, input: ApplyInput): Promise<ApplyR
       diff: { kind: 'update' },
     };
   }
-  await prisma.faqEntry.update({
-    where: { id: input.id },
+  // 2026-05-15 (auto-review F2): defence-in-depth tenant scoping on
+  // the write itself. `faqEntry` has a direct tenantId column.
+  const faqWrite = await prisma.faqEntry.updateMany({
+    where: { id: input.id, tenantId: input.tenantId },
     data: {
       ...(question != null ? { question: nextQuestion } : {}),
       ...(answer != null ? { answer: nextAnswer } : {}),
     },
   });
+  if (faqWrite.count === 0) {
+    return error(input, 'faq entry not found or wrong tenant');
+  }
   // 2026-04-23: symmetric with sibling apply paths. No-op today (FAQ
   // service has no cache); load-bearing the moment FAQ caching lands.
   invalidateFaqCache(input.tenantId);
@@ -332,8 +345,9 @@ async function applyTool(prisma: PrismaClient, input: ApplyInput): Promise<Apply
       diff: { kind: 'update' },
     };
   }
-  await prisma.toolDefinition.update({
-    where: { id: input.id },
+  // 2026-05-15 (auto-review F2): tenant-scoped write via updateMany.
+  const toolWrite = await prisma.toolDefinition.updateMany({
+    where: { id: input.id, tenantId: input.tenantId },
     data: {
       ...(description != null ? { description } : {}),
       ...(parameters != null ? { parameters } : {}),
@@ -342,6 +356,9 @@ async function applyTool(prisma: PrismaClient, input: ApplyInput): Promise<Apply
       ...(enabled != null ? { enabled } : {}),
     },
   });
+  if (toolWrite.count === 0) {
+    return error(input, 'tool definition not found or wrong tenant');
+  }
   invalidateToolCache(input.tenantId);
   await emitArtifactHistory(prisma, {
     tenantId: input.tenantId,
@@ -388,10 +405,14 @@ async function applyPropertyOverride(
       diff: { kind: 'update', field: 'content', length: content.length },
     };
   }
-  await prisma.sopPropertyOverride.update({
-    where: { id: input.id },
+  // 2026-05-15 (auto-review F2): tenant-scoped via sopDefinition relation.
+  const overrideWrite = await prisma.sopPropertyOverride.updateMany({
+    where: { id: input.id, sopDefinition: { tenantId: input.tenantId } },
     data: { content },
   });
+  if (overrideWrite.count === 0) {
+    return error(input, 'property_override not found or wrong tenant');
+  }
   invalidateSopCache(input.tenantId);
   await emitArtifactHistory(prisma, {
     tenantId: input.tenantId,

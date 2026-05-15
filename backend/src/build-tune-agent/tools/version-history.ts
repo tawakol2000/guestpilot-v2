@@ -149,12 +149,19 @@ export function buildRollbackTool(tool: typeof ToolFactory, ctx: () => ToolConte
             reverted.faqEntries = faqDels.count;
 
             // 4. SOP variants + property overrides
+            // 2026-05-15 (auto-review F1): scope by tenantId via the
+            // sopDefinition relation. The FAQ delete above already does
+            // this through a direct tenantId column; SOP variants only
+            // reach tenantId through their sopDefinition relation.
+            // Without this nesting, a buildTransactionId collision
+            // (astronomically unlikely UUID collision) could delete SOP
+            // rows for the wrong tenant.
             const sopVarDels = await db.sopVariant.deleteMany({
-              where: { buildTransactionId: txId },
+              where: { buildTransactionId: txId, sopDefinition: { tenantId: c.tenantId } },
             });
             reverted.sopVariants = sopVarDels.count;
             const sopOverrideDels = await db.sopPropertyOverride.deleteMany({
-              where: { buildTransactionId: txId },
+              where: { buildTransactionId: txId, sopDefinition: { tenantId: c.tenantId } },
             });
             reverted.sopPropertyOverrides = sopOverrideDels.count;
             if (sopVarDels.count > 0 || sopOverrideDels.count > 0) {
