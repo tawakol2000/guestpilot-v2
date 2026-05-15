@@ -27,6 +27,14 @@ export interface ToolContext {
    * per turn; tool handlers set and check their own keys.
    */
   turnFlags?: Record<string, boolean>;
+  /**
+   * 2026-05-15 (H7) — per-turn AbortSignal. Aborted when the client
+   * disconnects mid-stream. Long-running tool handlers (test_pipeline,
+   * evidence bundle assembly, etc.) should observe this and bail early
+   * via `signal.aborted` or by passing through to fetch / axios.
+   * Optional so tools that ignore it remain compatible.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export type Verbosity = 'concise' | 'detailed';

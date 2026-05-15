@@ -80,6 +80,24 @@ export async function loadConversationHistoryAsResponsesInput(
     if (hasMatchingOutput) break;
     tail.shift();
   }
+  // 2026-05-15 (M11): symmetric trim at the TAIL. A turn that was
+  // interrupted before its tool dispatched (network abort, server kill)
+  // can leave a TuningMessage row whose parts include a function_call
+  // whose state is not yet 'output-available' — replay emits the
+  // function_call item but no matching function_call_output. OpenAI 400s
+  // the next request: "no tool output for function call call_xxx". Walk
+  // backward and trim any trailing function_call that has no later
+  // function_call_output with the same call_id.
+  while (tail.length > 0) {
+    const last = tail[tail.length - 1];
+    if (last.type !== 'function_call') break;
+    const callId = last.call_id;
+    const hasOutput = tail.some(
+      (item) => item.type === 'function_call_output' && item.call_id === callId,
+    );
+    if (hasOutput) break;
+    tail.pop();
+  }
   console.warn(
     `[openai-history-replay] conversation=${conversationId} truncated to last ${tail.length} items.`,
   );

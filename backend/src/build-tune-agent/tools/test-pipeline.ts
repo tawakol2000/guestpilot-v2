@@ -119,7 +119,7 @@ export function buildTestPipelineTool(
     DESCRIPTION,
     {
       testMessage: z.string().min(1).max(1000).optional(),
-      testMessages: z.array(z.string().min(1).max(1000)).min(1).max(10).optional(),
+      testMessages: z.array(z.string().min(1).max(1000)).min(1).max(3).optional(),
       testContext: contextSchema,
       verbosity: z.enum(['concise', 'detailed']).optional(),
     },

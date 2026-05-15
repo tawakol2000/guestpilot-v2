@@ -318,7 +318,26 @@ export function serialiseToolOutput(output: unknown): string {
   try {
     return JSON.stringify(output);
   } catch {
-    return String(output);
+    // 2026-05-15 (L4): JSON.stringify throws on circular refs and on
+    // BigInt. The previous `String(output)` fallback turned every such
+    // object into "[object Object]" — the model then had no way to
+    // parse it. Retry with a circular-safe stringifier that replaces
+    // cycles with the marker [Circular]; if that still fails, return a
+    // useful description rather than the useless toString form.
+    try {
+      const seen = new WeakSet<object>();
+      return JSON.stringify(output, (_k, v) => {
+        if (typeof v === 'bigint') return v.toString();
+        if (v && typeof v === 'object') {
+          if (seen.has(v as object)) return '[Circular]';
+          seen.add(v as object);
+        }
+        return v;
+      });
+    } catch (err) {
+      const ctor = (output as { constructor?: { name?: string } })?.constructor?.name ?? 'object';
+      return `[unserialisable ${ctor}: ${(err as Error).message}]`;
+    }
   }
 }
 

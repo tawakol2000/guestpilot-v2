@@ -6,15 +6,25 @@
  * prefix ≥1024 tokens — which is exactly what our Region A+B prefix is
  * (~20k tokens, byte-identical across turns of the same mode).
  *
- * We pass the assembled system prompt as a single string in
- * `instructions`, and tag the request with `prompt_cache_key` so OpenAI
- * tracks cache attribution per (tenant, mode) tuple.
+ * 2026-05-15 (C4 + C5): the static prefix (Region A + B = sharedPrefix +
+ * modeAddendum) goes into `instructions` where OpenAI's prefix cache
+ * attaches it to `prompt_cache_key`. The per-turn dynamic suffix
+ * (Region C — pending snapshot, memory, state, conversation anchor) is
+ * emitted as a separate system role input item so it doesn't break the
+ * cacheable prefix. The cache key is now scoped by `conversationId` too
+ * — two conversations of the same tenant share the underlying prefix
+ * cache but get distinct attribution rows.
  */
-import { splitSystemPromptIntoBlocks } from '../prompt-cache-blocks';
 
 export interface OpenAiSystemBundle {
-  /** Single concatenated instructions string for the Responses API. */
+  /** Cacheable Region A + B prefix. Always sent verbatim in `instructions`. */
   instructions: string;
+  /**
+   * Per-turn Region C suffix (pending snapshot, memory, state, conversation
+   * anchor). Sent as a `system` role input item ahead of the replayed
+   * history, so it does not invalidate the cached prefix.
+   */
+  dynamicSuffix: string;
   /** Cache attribution key — same prefix → same key → same cached prefix. */
   promptCacheKey: string;
   /** 24-hour retention is OpenAI's longest available window. */
@@ -24,24 +34,24 @@ export interface OpenAiSystemBundle {
 }
 
 export interface BuildOpenAiSystemBundleInput {
-  assembledSystemPrompt: string;
+  cacheablePrefix: string;
+  dynamicSuffix: string;
   tenantId: string;
+  conversationId: string;
   mode: 'BUILD' | 'TUNE';
 }
 
 export function buildOpenAiSystemBundle(
   input: BuildOpenAiSystemBundleInput,
 ): OpenAiSystemBundle {
-  // Splitting is purely diagnostic for the OpenAI path — the blocks are
-  // joined right back into a single string. We keep the call so future
-  // sprints (e.g. moving the dynamic suffix into a separate `input` item)
-  // can wire it without re-walking the assembled string.
-  const blocks = splitSystemPromptIntoBlocks(input.assembledSystemPrompt);
-  const instructions = blocks.map((b) => b.text).join('\n\n');
-
   return {
-    instructions,
-    promptCacheKey: `studio-${input.tenantId}-${input.mode.toLowerCase()}`,
+    instructions: input.cacheablePrefix,
+    dynamicSuffix: input.dynamicSuffix,
+    // 2026-05-15 (C4): include conversationId so cache attribution doesn't
+    // bucket every conversation of a tenant under the same row. The
+    // underlying prefix cache still shares storage across conversations
+    // because the bytes are identical; the key is for analytics/routing.
+    promptCacheKey: `studio-${input.tenantId}-${input.conversationId}-${input.mode.toLowerCase()}`,
     promptCacheRetention: '24h',
     store: true,
   };

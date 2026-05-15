@@ -30,7 +30,7 @@ export function buildGetEvidenceSectionTool(
       const c = ctx();
       const span = startAiSpan('build-tune-agent.studio_get_evidence_section', {});
       try {
-        const decoded = decodePointer(args.pointer, 'evidence');
+        const decoded = decodePointer(args.pointer, 'evidence', c.tenantId);
         if (!decoded.ok) {
           span.end({ error: `bad_pointer:${decoded.reason}` });
           return asError(`studio_get_evidence_section: invalid pointer (${decoded.reason})`);

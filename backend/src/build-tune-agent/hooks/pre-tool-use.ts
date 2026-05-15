@@ -186,9 +186,17 @@ export function buildPreToolUseHook(ctx: () => HookContext): HookCallback {
           }
         }
       } catch (err) {
-        // Defensive: a broken state lookup must never wedge tool calls.
-        // Log + fall through to legacy hook logic.
-        console.warn('[pre-tool-use] state-gating lookup failed:', err);
+        // 2026-05-15: previously this fell through (`continue: true`) on a
+        // DB lookup error so a transient blip wouldn't wedge tool calls.
+        // That made the gate fail OPEN — exactly when state drift would
+        // be exploitable, an attacker could time a tool call to a moment
+        // the DB is flaky and skip enforcement. Fail closed instead and
+        // ask the agent to retry; the operator can manually rerun if the
+        // outage is sustained.
+        console.warn('[pre-tool-use] state-gating lookup failed (failing closed):', err);
+        return denyHook(
+          `State-machine lookup failed (transient DB error). Retry the same tool call in a moment.`,
+        );
       }
     }
 

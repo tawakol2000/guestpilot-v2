@@ -20,10 +20,11 @@
  * `anthropic`, which dispatches to `runSdkTurn`.
  */
 import type { PrismaClient } from '@prisma/client';
-import type { UIMessageStreamWriter } from 'ai';
+import type { UIMessageStreamWriter, UIMessageChunk } from 'ai';
 
 import {
   assembleSystemPrompt,
+  assembleSystemPromptRegions,
   type AgentMode,
   type SystemPromptContext,
   type TenantStateSummary,
@@ -44,11 +45,13 @@ import {
   emitFunctionCall,
   emitToolOutput,
   finalizeOpenAiBridge,
+  closeOpenTextBlockBeforeError,
 } from './openai/stream-bridge';
 import {
   gateToolByCompliance,
   gateToolByState,
   recordReadBudget,
+  validateSuggestionOutput,
   refreshInnerState,
   traceToolCall,
   type MiddlewareState,
@@ -234,10 +237,20 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     conversationAnchor,
     stateMachineSnapshot: turnStartSnapshot,
   };
-  const assembledSystemPrompt = assembleSystemPrompt(promptCtx);
+  // 2026-05-15 (C4 + C5): split the prompt into a cacheable static
+  // prefix (Region A + B = sharedPrefix + modeAddendum) and a
+  // per-turn dynamic suffix (Region C — pending snapshot, memory,
+  // state, conversation anchor). The cacheable prefix goes into
+  // `instructions`, where OpenAI's auto-prefix cache attaches it to
+  // `prompt_cache_key`. The dynamic suffix is sent as a system role
+  // input item per turn so it doesn't pollute the cached prefix.
+  const regions = assembleSystemPromptRegions(promptCtx);
+  const assembledSystemPrompt = regions.assembled;
   const systemBundle = buildOpenAiSystemBundle({
-    assembledSystemPrompt,
+    cacheablePrefix: [regions.sharedPrefix, regions.modeAddendum].join('\n\n'),
+    dynamicSuffix: regions.dynamicSuffix,
     tenantId: input.tenantId,
+    conversationId: input.conversationId,
     mode,
   });
 
@@ -249,6 +262,12 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
   };
   const persistedDataParts: Array<{ type: string; id?: string; data: unknown }> = [];
   const toolCallsInvoked: string[] = [];
+  // 2026-05-15 (H2): track which tool calls actually succeeded (handler
+  // returned without isError). The verifying-state auto-exit must fire
+  // ONLY on a successful test_pipeline, not on every invocation — a
+  // failing test should leave state in verifying so the manager can
+  // retry.
+  const toolCallsSucceeded: string[] = [];
 
   let suggestedFixEmitted = 0;
   let suggestedFixDropped = 0;
@@ -289,6 +308,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     lastUserSanctionedApply: false,
     emitDataPart,
     turnFlags,
+    abortSignal: input.signal,
   };
 
   // Build the tool registry once; refresh allow-list each round to honour
@@ -360,7 +380,13 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     input.conversationId,
   );
   type RawInputItem = Record<string, unknown>;
+  // 2026-05-15 (C5): emit the per-turn dynamic suffix (Region C) as a
+  // system role input item BEFORE the replayed history + user message.
+  // This keeps the cacheable Region A+B prefix in `instructions` static
+  // across turns, while still letting the model see the up-to-date
+  // pending/memory/state context.
   let pendingInput: RawInputItem[] = [
+    { type: 'message', role: 'system', content: systemBundle.dynamicSuffix },
     ...priorInput,
     { type: 'message', role: 'user', content: input.userMessage },
   ];
@@ -401,6 +427,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
           filteredWrite,
           emitDataPart,
           toolCallsInvoked,
+          toolCallsSucceeded,
           onUsage: (u) => {
             lastUsage = u;
           },
@@ -417,6 +444,19 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     const msg = err?.message ?? String(err);
     runError = msg;
     try {
+      // 2026-05-15 (H6): if a text block is currently open when the
+      // run errors out, we MUST emit its `text-end` before the
+      // terminal `error` / `finish` chunks. Otherwise the Vercel AI
+      // SDK consumer sees an open block and renders a malformed
+      // UIMessage. Previously this only happened in the happy path
+      // via finalizeOpenAiBridge → closeText; the error path skipped
+      // it because we set `state.finished = true` BEFORE the fallback
+      // finaliser could run.
+      // Use a bare chunk-writer adapter — input.writer is a
+      // UIMessageStreamWriter (Vercel AI SDK shape), our bridge takes a
+      // (chunk) => void function.
+      const bareWrite = (chunk: UIMessageChunk) => input.writer.write(chunk);
+      closeOpenTextBlockBeforeError(bridgeState, bareWrite);
       input.writer.write({ type: 'error', errorText: msg });
       input.writer.write({ type: 'finish', finishReason: 'error' });
     } catch {
@@ -436,7 +476,11 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
   // ─── State-machine turn-end ─────────────────────────────────────────────
   let endSnapshot: StateMachineSnapshot = turnStartSnapshot;
   try {
-    const testPipelineSucceeded = toolCallsInvoked.some((n) =>
+    // 2026-05-15 (H2): test_pipeline-success flag must reflect actual
+    // handler success, not just "tool was invoked". A failing test
+    // (throw, isError:true) should keep the state in verifying so the
+    // manager can rerun rather than silently auto-exiting to drafting.
+    const testPipelineSucceeded = toolCallsSucceeded.some((n) =>
       n.endsWith('studio_test_pipeline'),
     );
     const next = computeTurnEndSnapshot({
@@ -550,6 +594,7 @@ interface ResponsesLoopArgs {
     transient?: boolean;
   }) => void;
   toolCallsInvoked: string[];
+  toolCallsSucceeded: string[];
   onUsage: (u: {
     input_tokens?: number;
     cache_read_input_tokens?: number;
@@ -602,8 +647,9 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
     const createOptions: Record<string, unknown> = {};
     if (args.input.signal) createOptions.signal = args.input.signal;
 
-    const response: any = await withRetry(() =>
-      (client.responses as any).create(requestPayload, createOptions),
+    const response: any = await withRetry(
+      () => (client.responses as any).create(requestPayload, createOptions),
+      { signal: args.input.signal },
     );
 
     if (response?.id) {
@@ -727,10 +773,22 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       let errorMessage: string | null = null;
       try {
         result = await handler(parsedArgs);
+        // Treat handler-returned {isError:true} payloads as failures even
+        // when no exception was thrown. The MCP shape asError(...) sets
+        // this flag for SOP/FAQ validation errors etc., and those must
+        // not flip state-machine flags like test_pipeline-succeeded.
+        const r = result as { isError?: boolean } | null;
+        if (r && r.isError) {
+          success = false;
+          errorMessage = 'tool returned isError:true';
+        }
       } catch (err) {
         success = false;
         errorMessage = err instanceof Error ? err.message : String(err);
         result = { isError: true, content: [{ type: 'text', text: `ERROR: ${errorMessage}` }] };
+      }
+      if (success) {
+        args.toolCallsSucceeded.push(prefixedName);
       }
       const durationMs = Date.now() - start;
       const outputString = serialiseToolOutput(result);
@@ -749,6 +807,23 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
         success,
         errorMessage,
       });
+
+      // PostToolUse validator (mirrors Anthropic path's
+      // hooks/post-tool-use.ts) — flag structurally bad
+      // studio_suggestion(op='propose') output so the model can
+      // self-correct on the next round. Append the validation message
+      // as an additional function_call_output so it lands as model
+      // context without polluting the original tool's result.
+      if (success) {
+        const validationError = validateSuggestionOutput(prefixedName, parsedArgs);
+        if (validationError) {
+          toolOutputs.push({
+            type: 'function_call_output',
+            call_id: callId,
+            output: `[Validation error: ${validationError}. Please re-examine the current artifact text and regenerate the suggestion.]`,
+          });
+        }
+      }
     }
 
     // Next round — only the function_call_output items go in.
@@ -790,22 +865,49 @@ function normaliseUsage(usage: any): {
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
   output_tokens?: number;
+  reasoning_tokens?: number;
 } {
   // OpenAI Responses API exposes:
-  //   input_tokens, output_tokens, input_tokens_details: { cached_tokens }
-  // We map into the Anthropic-style shape so the shared cache-stats
-  // payload math is uniform across providers.
+  //   input_tokens (TOTAL prompt tokens, cached + uncached)
+  //   output_tokens (TOTAL output tokens, including reasoning)
+  //   input_tokens_details: { cached_tokens }
+  //   output_tokens_details: { reasoning_tokens }
+  //
+  // The shared cache-stats payload (buildCacheStatsPayload) computes
+  // `denom = input + cached` then `cachedFraction = cached / denom`.
+  // For that math to work when our `input` is uncached-only (Anthropic
+  // convention), we subtract `cached` here. The OpenAI docs have been
+  // ambiguous about whether `input_tokens` includes cached — the
+  // current spec (2026-05) says it's the TOTAL, so this subtraction
+  // is correct. If OpenAI ever changes that convention, the
+  // cachedFraction will flip below 0; the buildCacheStatsPayload
+  // helper clamps it but the displayed cost will drift.
+  //
+  // 2026-05-15 (M10): also surface reasoning_tokens. With
+  // `reasoning: { effort: 'low' }` set on the request, the model
+  // emits reasoning tokens billed at the output rate. Previously
+  // dropped entirely from the cache-stats payload, so the UI showed
+  // ~30-50% under-counted output cost.
   const input = typeof usage?.input_tokens === 'number' ? usage.input_tokens : undefined;
   const cached =
     typeof usage?.input_tokens_details?.cached_tokens === 'number'
       ? usage.input_tokens_details.cached_tokens
       : undefined;
   const output = typeof usage?.output_tokens === 'number' ? usage.output_tokens : undefined;
+  const reasoning =
+    typeof usage?.output_tokens_details?.reasoning_tokens === 'number'
+      ? usage.output_tokens_details.reasoning_tokens
+      : undefined;
   return {
-    input_tokens: input != null && cached != null ? input - cached : input,
+    input_tokens: input != null && cached != null ? Math.max(0, input - cached) : input,
     cache_read_input_tokens: cached,
-    cache_creation_input_tokens: 0,
+    // OpenAI has no notion of cache_creation tokens (auto-cache is free
+    // on the write side). Anthropic charges a one-time write fee per
+    // breakpoint. Returning undefined avoids inflating cost when the
+    // downstream UI multiplies by an Anthropic-rate.
+    cache_creation_input_tokens: undefined,
     output_tokens: output,
+    reasoning_tokens: reasoning,
   };
 }
 

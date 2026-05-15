@@ -56,6 +56,7 @@ export function buildGetEvidenceIndexTool(
           encodePointer({
             type: 'evidence',
             id: bundleId.bundleId,
+            tenantId: c.tenantId,
             metadata: { section, ...(metadata ?? {}) },
           });
 

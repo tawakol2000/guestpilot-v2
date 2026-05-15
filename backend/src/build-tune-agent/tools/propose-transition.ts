@@ -85,7 +85,9 @@ export function buildProposeTransitionTool(
         }
 
         const now = new Date();
-        const nonce = mintTransitionNonce();
+        // 2026-05-15 (M3): bind conversationId into the nonce so a token
+        // minted for this conversation cannot be replayed against another.
+        const nonce = mintTransitionNonce(c.conversationId ?? undefined);
         const pending: PendingTransition = {
           to: args.to,
           because: args.because,

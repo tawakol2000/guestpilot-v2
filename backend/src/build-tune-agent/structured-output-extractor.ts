@@ -62,6 +62,14 @@ export function feedExtractor(state: ExtractorState, chunk: string): ExtractorOu
   state.pending += chunk;
 
   // eslint-disable-next-line no-constant-condition
+  // 2026-05-15 (M7): cap the JSON we'll attempt to parse from a model-
+  // emitted block. The model is supposed to echo small structured
+  // descriptors here (data-question-choices, data-audit-report) — a
+  // multi-megabyte payload is either a runaway hallucination or an
+  // attempt to OOM the worker via crafted tool output the model relays.
+  // 200 KB is well past any legitimate descriptor.
+  const MAX_INLINE_JSON_BYTES = 200_000;
+
   while (true) {
     if (state.active) {
       const closeTag = `</${state.active.tag}>`;
@@ -69,13 +77,19 @@ export function feedExtractor(state: ExtractorState, chunk: string): ExtractorOu
       if (closeIdx >= 0) {
         const jsonText = state.active.jsonBuf + state.pending.slice(0, closeIdx);
         const partType = state.active.partType;
-        try {
-          const parsed = JSON.parse(jsonText.trim());
-          out.emittedDataParts.push({ partType, data: parsed });
-        } catch (err) {
+        if (jsonText.length > MAX_INLINE_JSON_BYTES) {
           out.errors.push(
-            `failed to parse ${state.active.tag} payload: ${(err as Error).message}`,
+            `${state.active.tag} payload exceeds ${MAX_INLINE_JSON_BYTES} bytes — dropped to avoid OOM`,
           );
+        } else {
+          try {
+            const parsed = JSON.parse(jsonText.trim());
+            out.emittedDataParts.push({ partType, data: parsed });
+          } catch (err) {
+            out.errors.push(
+              `failed to parse ${state.active.tag} payload: ${(err as Error).message}`,
+            );
+          }
         }
         state.pending = state.pending.slice(closeIdx + closeTag.length);
         state.active = null;
@@ -87,6 +101,16 @@ export function feedExtractor(state: ExtractorState, chunk: string): ExtractorOu
       const safeJson = state.pending.slice(0, state.pending.length - tailHold);
       state.active.jsonBuf += safeJson;
       state.pending = state.pending.slice(safeJson.length);
+      // 2026-05-15 (M7): if the buffered JSON has already exceeded the
+      // cap, drop the active block now rather than waiting for the
+      // closing tag — protects against a model that streams a giant
+      // payload without ever closing the tag.
+      if (state.active.jsonBuf.length > MAX_INLINE_JSON_BYTES) {
+        out.errors.push(
+          `${state.active.tag} payload exceeded ${MAX_INLINE_JSON_BYTES} bytes pre-close — abandoning block`,
+        );
+        state.active = null;
+      }
       return out;
     }
 

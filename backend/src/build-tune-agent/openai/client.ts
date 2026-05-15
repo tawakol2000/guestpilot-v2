@@ -30,19 +30,40 @@ function isRetryable(err: unknown): boolean {
   );
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms));
+/**
+ * 2026-05-15 (L3): abort-aware sleep. If the caller passes a `signal`
+ * that fires mid-backoff (client disconnect, user cancel), throw early
+ * so the retry loop doesn't keep sleeping into a stream nobody's
+ * listening to.
+ */
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new Error('aborted');
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new Error('aborted'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
-export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { signal?: AbortSignal } = {},
+): Promise<T> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (options.signal?.aborted) throw new Error('aborted');
     try {
       return await fn();
     } catch (err) {
       if (!isRetryable(err) || attempt === MAX_RETRIES) throw err;
       const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
       const jitter = baseDelay * (0.5 + Math.random() * 0.5);
-      await sleep(jitter);
+      await sleep(jitter, options.signal);
     }
   }
   // Unreachable — the loop either returns or throws.

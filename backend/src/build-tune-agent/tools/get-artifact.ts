@@ -165,7 +165,7 @@ export function buildGetArtifactTool(
       const c = ctx();
       const span = startAiSpan('build-tune-agent.studio_get_artifact', {});
       try {
-        const decoded = decodePointer(args.pointer, 'artifact');
+        const decoded = decodePointer(args.pointer, 'artifact', c.tenantId);
         if (!decoded.ok) {
           span.end({ error: `bad_pointer:${decoded.reason}` });
           return asError(`studio_get_artifact: invalid pointer (${decoded.reason})`);

@@ -80,6 +80,7 @@ export function buildGetTenantIndexTool(
             body_pointer: encodePointer({
               type: 'artifact',
               id: `system_prompt:${variant}`,
+              tenantId: c.tenantId,
               metadata: { kind: 'system_prompt', variant },
             }),
           };
@@ -96,10 +97,16 @@ export function buildGetTenantIndexTool(
             id: s.id,
             label: s.category,
             status: s.enabled ? 'enabled' : 'disabled',
-            body_tokens: approxTokens(String(bodySize)),
+            // 2026-05-15: bodySize is already a char count summed across
+            // variants. Earlier code wrapped it in String() then ran the
+            // approxTokens divider over the digit count (~2-3 tokens for
+            // any SOP) so the agent under-budgeted SOP reads. Divide by
+            // 4 directly to match the prose ratio used elsewhere.
+            body_tokens: Math.ceil(bodySize / 4),
             body_pointer: encodePointer({
               type: 'artifact',
               id: s.id,
+              tenantId: c.tenantId,
               metadata: {
                 kind: 'sop',
                 variantCount: s.variants.length,
@@ -126,6 +133,7 @@ export function buildGetTenantIndexTool(
             body_pointer: encodePointer({
               type: 'artifact',
               id: f.id,
+              tenantId: c.tenantId,
               metadata: {
                 kind: 'faq',
                 scope: f.scope,
@@ -147,6 +155,7 @@ export function buildGetTenantIndexTool(
             body_pointer: encodePointer({
               type: 'artifact',
               id: t.id,
+              tenantId: c.tenantId,
               metadata: {
                 kind: 'tool',
                 customOrSystem: t.isCustom ? 'custom' : 'system',

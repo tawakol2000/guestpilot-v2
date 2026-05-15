@@ -402,6 +402,13 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   const compliance = { lastUserSanctionedApply: false, lastUserSanctionedRollback: false };
   const persistedDataParts: Array<{ type: string; id?: string; data: unknown }> = [];
   const toolCallsInvoked: string[] = [];
+  // 2026-05-15 (H2): track per-tool-use-id success/failure as the SDK
+  // emits tool_use blocks (in `assistant` messages) and tool_result
+  // blocks (in `user` messages). The verifying auto-exit fires only on
+  // a SUCCESSFUL studio_test_pipeline so a failing test leaves state in
+  // verifying for the manager to retry.
+  const toolUseNameById: Map<string, string> = new Map();
+  const toolCallsSucceeded: string[] = [];
 
   let suggestedFixEmitted = 0;
   let suggestedFixDropped = 0;
@@ -438,6 +445,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     lastUserSanctionedApply: false,
     emitDataPart,
     turnFlags,
+    abortSignal: input.signal,
   };
   const hookCtx: HookContext = {
     prisma: input.prisma,
@@ -573,6 +581,23 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
         if (!sdkSessionId && 'session_id' in message && typeof message.session_id === 'string') {
           sdkSessionId = message.session_id;
         }
+        // Inspect `user` messages for tool_result blocks so we can flag
+        // success vs failure per-tool. The SDK emits these between
+        // rounds; is_error=true means the tool returned an isError
+        // payload OR threw inside the handler.
+        if (message.type === 'user') {
+          const content = (message as { message?: { content?: unknown[] } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              const b = block as { type?: string; tool_use_id?: string; is_error?: boolean };
+              if (b.type !== 'tool_result' || !b.tool_use_id) continue;
+              const name = toolUseNameById.get(b.tool_use_id);
+              if (name && !b.is_error) {
+                toolCallsSucceeded.push(name);
+              }
+            }
+          }
+        }
         if (message.type === 'assistant') {
           const toolNamesInThisRound: string[] = [];
           for (const block of message.message?.content ?? []) {
@@ -580,6 +605,9 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
             if (block.type === 'tool_use') {
               toolCallsInvoked.push(block.name);
               toolNamesInThisRound.push(block.name);
+              if (typeof (block as { id?: string }).id === 'string') {
+                toolUseNameById.set((block as { id: string }).id, block.name);
+              }
             }
           }
           const u: any = (message as any).message?.usage;
@@ -699,7 +727,10 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
   //      one-turn <state_transition> announcement.
   let endSnapshot: StateMachineSnapshot = turnStartSnapshot;
   try {
-    const testPipelineSucceeded = toolCallsInvoked.includes(
+    // 2026-05-15 (H2): success, not invocation. See toolCallsSucceeded
+    // population above — a failing test_pipeline leaves state in
+    // verifying so the manager can retry.
+    const testPipelineSucceeded = toolCallsSucceeded.includes(
       TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     );
     const next = computeTurnEndSnapshot({

@@ -46,6 +46,17 @@ function closeText(state: OpenAiBridgeState, write: Writer) {
   }
 }
 
+/**
+ * 2026-05-15 (H6): exposed helper for the runner's error path. When the
+ * run throws mid-stream, the bridge may have an open text block. The
+ * runner must close it BEFORE writing `error` + `finish` chunks, then
+ * mark `state.finished = true` so the trailing finaliser short-circuits.
+ * Calling this on a clean bridge (no open block) is a no-op.
+ */
+export function closeOpenTextBlockBeforeError(state: OpenAiBridgeState, write: Writer): void {
+  closeText(state, write);
+}
+
 function ensureTextBlock(state: OpenAiBridgeState, write: Writer): string {
   if (state.textBlockId) return state.textBlockId;
   state.textBlockCounter += 1;

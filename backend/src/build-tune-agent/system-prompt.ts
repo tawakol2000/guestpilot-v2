@@ -1122,7 +1122,11 @@ function renderCurrentState(snapshot: StateMachineSnapshot | null | undefined): 
 function renderStateTransition(snapshot: StateMachineSnapshot | null | undefined): string | null {
   if (!snapshot) return null;
   if (!snapshot.transition_ack_pending) return null;
-  const at = snapshot.last_transition_at ?? new Date().toISOString();
+  // 2026-05-15: previously `?? new Date().toISOString()` — that emitted a
+  // different string every turn for a snapshot with transition_ack_pending
+  // but no recorded timestamp, defeating cache hits and any diff-based
+  // test. Use a stable sentinel so the prompt text is deterministic.
+  const at = snapshot.last_transition_at ?? 'unknown';
   const reason = snapshot.last_transition_reason ?? 'no reason provided';
   return `<state_transition>
 State transitioned to ${snapshot.inner_state} at ${at}.

@@ -358,48 +358,49 @@ export function makeTuningConversationController(prisma: PrismaClient) {
           res.status(400).json({ error: 'NONCE_REQUIRED' });
           return;
         }
-        const verified = verifyTransitionNonce(nonce);
+        // 2026-05-15 (M3): verify with conversationId so a nonce minted
+        // for conversation A cannot be replayed against conversation B.
+        const verified = verifyTransitionNonce(nonce, id);
         if (!verified.ok) {
           res.status(400).json({ error: 'INVALID_NONCE', reason: verified.reason });
           return;
         }
-        const conv = await prisma.tuningConversation.findFirst({
-          where: { id, tenantId },
-          select: { id: true, stateMachineSnapshot: true },
+        // 2026-05-15 (C3): consume the nonce inside a transaction so two
+        // concurrent confirm calls cannot both pass the pending-check
+        // before either clears `pending_transition`. We re-read the row
+        // inside the tx, re-verify, then conditionally update — Prisma
+        // serialises the writes via Postgres row locks. The second tx
+        // sees pending_transition=null and returns 409.
+        const result = await prisma.$transaction(async (tx) => {
+          const conv = await tx.tuningConversation.findFirst({
+            where: { id, tenantId },
+            select: { id: true, stateMachineSnapshot: true },
+          });
+          if (!conv) return { status: 404 as const, body: { error: 'CONVERSATION_NOT_FOUND' } };
+          const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+          const pending = snapshot.pending_transition;
+          if (!pending) return { status: 409 as const, body: { error: 'NO_PENDING_TRANSITION' } };
+          if (pending.token !== nonce) return { status: 409 as const, body: { error: 'NONCE_MISMATCH' } };
+          const expiresAt = new Date(pending.expires_at).getTime();
+          if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+            return { status: 410 as const, body: { error: 'NONCE_EXPIRED' } };
+          }
+          const now = new Date();
+          const next: StateMachineSnapshot = {
+            ...snapshot,
+            inner_state: pending.to,
+            last_transition_at: now.toISOString(),
+            last_transition_reason: pending.because,
+            transition_ack_pending: true,
+            pending_transition: null,
+          };
+          await tx.tuningConversation.update({
+            where: { id, tenantId },
+            data: { stateMachineSnapshot: next as unknown as object },
+          });
+          return { status: 200 as const, body: { ok: true, stateMachineSnapshot: next } };
         });
-        if (!conv) {
-          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
-          return;
-        }
-        const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
-        const pending = snapshot.pending_transition;
-        if (!pending) {
-          res.status(409).json({ error: 'NO_PENDING_TRANSITION' });
-          return;
-        }
-        if (pending.token !== nonce) {
-          res.status(409).json({ error: 'NONCE_MISMATCH' });
-          return;
-        }
-        const expiresAt = new Date(pending.expires_at).getTime();
-        if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
-          res.status(410).json({ error: 'NONCE_EXPIRED' });
-          return;
-        }
-        const now = new Date();
-        const next: StateMachineSnapshot = {
-          ...snapshot,
-          inner_state: pending.to,
-          last_transition_at: now.toISOString(),
-          last_transition_reason: pending.because,
-          transition_ack_pending: true,
-          pending_transition: null,
-        };
-        await prisma.tuningConversation.update({
-          where: { id, tenantId },
-          data: { stateMachineSnapshot: next as unknown as object },
-        });
-        res.json({ ok: true, stateMachineSnapshot: next });
+        res.status(result.status).json(result.body);
       } catch (err) {
         console.error('[tuning-conversation] confirmTransition failed:', err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });
@@ -414,37 +415,42 @@ export function makeTuningConversationController(prisma: PrismaClient) {
           res.status(400).json({ error: 'NONCE_REQUIRED' });
           return;
         }
-        const verified = verifyTransitionNonce(nonce);
+        // 2026-05-15 (M3): bind to conversationId — see confirmTransition.
+        const verified = verifyTransitionNonce(nonce, id);
         if (!verified.ok) {
           res.status(400).json({ error: 'INVALID_NONCE', reason: verified.reason });
           return;
         }
-        const conv = await prisma.tuningConversation.findFirst({
-          where: { id, tenantId },
-          select: { id: true, stateMachineSnapshot: true },
+        // 2026-05-15 (C3): transactional consume — same reasoning as
+        // confirmTransition. Reject is naturally idempotent (clearing
+        // pending_transition twice is harmless) but the tx still
+        // protects against concurrent confirm-then-reject races where
+        // the confirm has not yet flushed.
+        const result = await prisma.$transaction(async (tx) => {
+          const conv = await tx.tuningConversation.findFirst({
+            where: { id, tenantId },
+            select: { id: true, stateMachineSnapshot: true },
+          });
+          if (!conv) return { status: 404 as const, body: { error: 'CONVERSATION_NOT_FOUND' } };
+          const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
+          const pending = snapshot.pending_transition;
+          if (!pending || pending.token !== nonce) {
+            return {
+              status: 200 as const,
+              body: { ok: true, stateMachineSnapshot: snapshot, alreadyCleared: true },
+            };
+          }
+          const next: StateMachineSnapshot = {
+            ...snapshot,
+            pending_transition: null,
+          };
+          await tx.tuningConversation.update({
+            where: { id, tenantId },
+            data: { stateMachineSnapshot: next as unknown as object },
+          });
+          return { status: 200 as const, body: { ok: true, stateMachineSnapshot: next } };
         });
-        if (!conv) {
-          res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
-          return;
-        }
-        const snapshot = coerceSnapshot(conv.stateMachineSnapshot);
-        const pending = snapshot.pending_transition;
-        // Idempotent: if pending is gone or doesn't match the nonce,
-        // there's nothing to reject. Don't 409 — the client may have
-        // double-clicked or the proposal already expired. Just return ok.
-        if (!pending || pending.token !== nonce) {
-          res.json({ ok: true, stateMachineSnapshot: snapshot, alreadyCleared: true });
-          return;
-        }
-        const next: StateMachineSnapshot = {
-          ...snapshot,
-          pending_transition: null,
-        };
-        await prisma.tuningConversation.update({
-          where: { id, tenantId },
-          data: { stateMachineSnapshot: next as unknown as object },
-        });
-        res.json({ ok: true, stateMachineSnapshot: next });
+        res.status(result.status).json(result.body);
       } catch (err) {
         console.error('[tuning-conversation] rejectTransition failed:', err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });

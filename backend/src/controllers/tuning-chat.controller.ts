@@ -157,6 +157,19 @@ export function makeTuningChatController(prisma: PrismaClient) {
           });
         },
         onFinish: async (event) => {
+          // 2026-05-15 (M5): when the client disconnected mid-stream we
+          // aborted the turn. Persisting a half-streamed message here
+          // would (a) leave a misleading transcript entry whose `parts`
+          // are partial, and (b) bump `priorMessageCount` for the next
+          // turn — racing any concurrent re-submit that the operator
+          // queued after losing connection. Skip persistence on abort;
+          // the user can just retry.
+          if (turnAbort.signal.aborted) {
+            console.warn(
+              `[tuning-chat] skipping onFinish persist — turn was aborted (conversationId=${conversationId})`,
+            );
+            return;
+          }
           try {
             const responseMessage: any = event.responseMessage;
             const parts: unknown[] = Array.isArray(responseMessage?.parts)

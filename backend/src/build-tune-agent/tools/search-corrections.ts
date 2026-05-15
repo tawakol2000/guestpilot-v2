@@ -88,6 +88,7 @@ export function buildSearchCorrectionsTool(
           detail_pointer: encodePointer({
             type: 'correction',
             id: r.id,
+            tenantId: c.tenantId,
           }),
         }));
         const payload = { count: results.length, results };

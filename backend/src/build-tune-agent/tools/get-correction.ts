@@ -27,7 +27,7 @@ export function buildGetCorrectionTool(
       const c = ctx();
       const span = startAiSpan('build-tune-agent.studio_get_correction', {});
       try {
-        const decoded = decodePointer(args.pointer, 'correction');
+        const decoded = decodePointer(args.pointer, 'correction', c.tenantId);
         if (!decoded.ok) {
           span.end({ error: `bad_pointer:${decoded.reason}` });
           return asError(`studio_get_correction: invalid pointer (${decoded.reason})`);

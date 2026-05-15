@@ -61,10 +61,27 @@ export async function runForcedFirstTurnCall(
       success: true,
     });
   } catch (err: any) {
-    // Degrade silently (CLAUDE.md rule 2) — a failed forced call must
-    // never block the turn. The SDK loop will still run.
+    // Degrade gracefully — a failed forced call must never block the
+    // turn (CLAUDE.md rule 2). 2026-05-15 (M8): also emit a stub
+    // `data-state-snapshot` carrying an error marker so the frontend
+    // right-rail can render "couldn't load" instead of staying blank.
+    // The stub still lets the UI hydrate the rail layout — actual
+    // counts come back on the next turn's snapshot emit.
     // eslint-disable-next-line no-console
     console.warn('[tuning-agent] forced first-turn tenant index failed:', err);
+    try {
+      input.emitDataPart({
+        type: 'data-state-snapshot',
+        id: `state-snapshot:${input.assistantMessageId}`,
+        data: {
+          posture: 'UNKNOWN',
+          error: true,
+          errorMessage: err?.message ?? String(err),
+        },
+      });
+    } catch {
+      /* writer may already be closed; swallow */
+    }
     void logToolCall(input.prisma, {
       tenantId: input.tenantId,
       conversationId: input.conversationId,

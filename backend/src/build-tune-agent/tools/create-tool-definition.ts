@@ -53,7 +53,7 @@ PARAMETERS:
   name (string, snake_case, unique per tenant)
   description (string, 3-4 sentences minimum per Anthropic guidance)
   parameters (JSON schema)
-  webhookUrl (string, https)
+  webhookUrl (string, MUST start with "https://" and point to a publicly-routable host — private/loopback/link-local/cloud-metadata addresses are rejected as SSRF risk)
   webhookAuth (object, { type: 'bearer'|'basic'|'none', secretName })
   availableStatuses (array of reservation statuses)
   rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this tool is being created (e.g. "Manager asked for a way to check the cleaning schedule mid-turn so the AI doesn't have to escalate every scheduling question.")
@@ -115,6 +115,18 @@ export function buildCreateToolDefinitionTool(
     },
     async (args) => {
       const c = ctx();
+      // 2026-05-15: defensive runtime guards. The OpenAI Responses API path
+      // runs with strict:false, so a model can omit fields the schema marks
+      // as required (e.g. webhookAuth). Without these checks the function
+      // body NPEs on `args.webhookAuth.type` / iterates `availableStatuses`
+      // as `undefined`. Anthropic strict mode catches these at the SDK
+      // boundary; OpenAI does not.
+      if (!args.webhookAuth || typeof args.webhookAuth !== 'object') {
+        return asError('create_tool_definition: webhookAuth is required (provide {type, secretName?})');
+      }
+      if (!Array.isArray(args.availableStatuses) || args.availableStatuses.length === 0) {
+        return asError('create_tool_definition: availableStatuses is required and must list at least one reservation status');
+      }
       const span = startAiSpan('build-tune-agent.create_tool_definition', {
         name: args.name,
         authType: args.webhookAuth.type,
