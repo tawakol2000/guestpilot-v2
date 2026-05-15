@@ -12,6 +12,7 @@ import { STUDIO_TOKENS_V2 } from './tokens'
 import { ChevronRightIcon, MenuIcon } from './icons'
 import { useIsNarrow } from './hooks/use-is-narrow'
 import { useStudioShell } from './studio-shell-context'
+import { displaySessionTitle } from './session-autoname'
 
 export interface TopBarProps {
   tenantName: string
@@ -101,16 +102,21 @@ export function TopBar({ tenantName, sessionTitle, rightSlot }: TopBarProps) {
             }}
             title={sessionTitle}
           >
-            {sessionTitle}
+            {displaySessionTitle(sessionTitle)}
           </span>
         </nav>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         {rightSlot}
+        {/* 2026-05-15 polish: was "Draft" — operators read that as a
+            conversation state ("draft of what?"). The pill's actual
+            meaning is "edits stay as drafts until you publish them" —
+            mirror the footer line for consistency. */}
         <span
           role="status"
-          aria-label="Draft environment"
+          aria-label="Edits stay as drafts until published"
+          title="Edits are drafts until you publish"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -131,7 +137,7 @@ export function TopBar({ tenantName, sessionTitle, rightSlot }: TopBarProps) {
               background: STUDIO_TOKENS_V2.amber,
             }}
           />
-          Draft
+          Drafts
         </span>
       </div>
     </header>

@@ -87,23 +87,34 @@ export function SessionDiffCard({ data }: SessionDiffCardProps) {
           fontSize: 11.5,
         }}
       >
-        <span data-testid="session-diff-written">
-          <span aria-hidden>✏️</span> Wrote {created}
-        </span>
-        <span data-testid="session-diff-edited">
-          <span aria-hidden>🔧</span> Edited {edited}
-        </span>
+        {/* 2026-05-15 polish: skip zero-rows. A note-only payload was
+            previously rendering four "Wrote 0  Edited 0  Reverted 0
+            Cancelled 0" rows above the note. */}
+        {created > 0 ? (
+          <span data-testid="session-diff-written">
+            <span aria-hidden>✏️</span> Wrote {created}
+          </span>
+        ) : null}
+        {edited > 0 ? (
+          <span data-testid="session-diff-edited">
+            <span aria-hidden>🔧</span> Edited {edited}
+          </span>
+        ) : null}
         {testedLabel ? (
           <span data-testid="session-diff-tested">
             <span aria-hidden>🧪</span> {testedLabel}
           </span>
         ) : null}
-        <span data-testid="session-diff-reverted">
-          <span aria-hidden>⤺</span> Reverted {reverted}
-        </span>
-        <span data-testid="session-diff-cancelled">
-          <span aria-hidden>✖</span> Cancelled {cancelled}
-        </span>
+        {reverted > 0 ? (
+          <span data-testid="session-diff-reverted">
+            <span aria-hidden>⤺</span> Reverted {reverted}
+          </span>
+        ) : null}
+        {cancelled > 0 ? (
+          <span data-testid="session-diff-cancelled">
+            <span aria-hidden>✖</span> Cancelled {cancelled}
+          </span>
+        ) : null}
       </div>
       {data.note ? (
         <div

@@ -48,6 +48,11 @@ export interface MiddlewareState {
   lastUserMessage: string;
   /** Per-turn read-tool counter. */
   readsThisTurn: number;
+  /** Inner-states that have already emitted a read_budget_exceeded advisory
+   * this turn. Prevents the same advisory firing on every subsequent read
+   * once the budget has been crossed — the operator only needs one nudge
+   * per state per turn. */
+  readBudgetAdvisoryStates: Set<InnerState>;
   emitDataPart: (part: {
     type: string;
     id?: string;
@@ -133,7 +138,8 @@ export function recordReadBudget(
   if (!READ_TOOLS.has(toolNamePrefixed)) return;
   state.readsThisTurn += 1;
   const budget = READ_BUDGET_BY_STATE[state.innerState];
-  if (state.readsThisTurn > budget) {
+  if (state.readsThisTurn > budget && !state.readBudgetAdvisoryStates.has(state.innerState)) {
+    state.readBudgetAdvisoryStates.add(state.innerState);
     try {
       state.emitDataPart({
         type: DATA_PART_TYPES.advisory,

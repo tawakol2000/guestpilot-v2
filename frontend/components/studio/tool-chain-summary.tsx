@@ -51,6 +51,18 @@ function collectToolEntries(parts: Array<Record<string, any>>): ToolEntry[] {
   for (const p of parts) {
     if (typeof p?.type !== 'string') continue
     if (!p.type.startsWith('tool-')) continue
+    // 2026-05-15: state-transition parts (tool-input-start / tool-output-
+    // available / tool-output-error) are persisted in TuningMessage.parts
+    // without a `toolName` field. They're meant to merge with their
+    // matching tool-input-available part by toolCallId, but a standalone
+    // entry would render the literal type suffix ("output-available") as
+    // the chip label. Skip them when no toolName accompanies the part.
+    const hasToolName = typeof p.toolName === 'string' && p.toolName.length > 0
+    if (!hasToolName && (
+      p.type === 'tool-output-available' ||
+      p.type === 'tool-output-error' ||
+      p.type === 'tool-input-start'
+    )) continue
 
     // Deduplicate by toolCallId (fall back to toolName+index position)
     const id: string =
@@ -63,7 +75,7 @@ function collectToolEntries(parts: Array<Record<string, any>>): ToolEntry[] {
 
     entries.push({
       toolCallId: id,
-      toolName: (typeof p.toolName === 'string' && p.toolName) ? p.toolName : p.type.slice('tool-'.length),
+      toolName: hasToolName ? p.toolName : p.type.slice('tool-'.length),
       type: p.type,
       state: typeof p.state === 'string' ? p.state : 'input-available',
       input: p.input,
@@ -93,7 +105,15 @@ function SummaryChip({
   entry: ToolEntry
   onOpenToolDrawer?: (part: ToolCallDrawerPart, origin: HTMLElement | null) => void
 }) {
-  const short = entry.toolName.replace(/^mcp__[^_]+__/, '').replace(/_/g, ' ')
+  // 2026-05-15: use the shared verb map ("Read context") instead of the
+  // raw MCP name ("studio get context"). Matches the collapsed summary
+  // line above and the inline chips in studio-chat.
+  const verb = toolVerb(
+    entry.toolName,
+    typeof entry.input === 'object' && entry.input !== null
+      ? (entry.input as Record<string, unknown>)
+      : undefined,
+  )
   const running = isRunning(entry.state)
   const err = isErrored(entry.state)
 
@@ -114,7 +134,7 @@ function SummaryChip({
           e.currentTarget,
         )
       }
-      aria-label={`Tool call details: ${short}`}
+      aria-label={`Tool call details: ${verb}`}
       className="inline-flex items-center gap-1.5 self-start rounded-full border-0 px-2.5 py-0.5 text-[11px] font-medium"
       style={{
         background: err
@@ -142,7 +162,7 @@ function SummaryChip({
           opacity: running ? 0.7 : 1,
         }}
       />
-      {short}
+      {verb}
     </button>
   )
 }
@@ -163,9 +183,41 @@ export function ToolChainSummary({ parts, onOpenToolDrawer, onExpandedChange }: 
   const entries = collectToolEntries(parts)
   if (entries.length === 0) return null
 
-  // Build the collapsed summary line
-  const visible = entries.slice(0, MAX_COLLAPSED)
-  const overflowCount = entries.length - MAX_COLLAPSED
+  // 2026-05-15 polish: collapse consecutive same-verb entries with a count
+  // ("Read artifact ×3" instead of "Read artifact · Read artifact · Read
+  // artifact"). The agent often re-reads the same artifact across rounds
+  // and printing each call eats horizontal space without adding signal.
+  type GroupedEntry = ToolEntry & { count: number }
+  const grouped: GroupedEntry[] = []
+  for (const e of entries) {
+    const v = toolVerb(
+      e.toolName,
+      typeof e.input === 'object' && e.input !== null
+        ? (e.input as Record<string, unknown>)
+        : undefined,
+    )
+    const last = grouped[grouped.length - 1]
+    if (last) {
+      const lastV = toolVerb(
+        last.toolName,
+        typeof last.input === 'object' && last.input !== null
+          ? (last.input as Record<string, unknown>)
+          : undefined,
+      )
+      // Group with the predecessor only when verb matches AND running
+      // state matches — so we don't visually merge a finished call with
+      // an in-flight one (the spinner needs to remain accurate).
+      if (lastV === v && isRunning(last.state) === isRunning(e.state) && isErrored(last.state) === isErrored(e.state)) {
+        last.count += 1
+        continue
+      }
+    }
+    grouped.push({ ...e, count: 1 })
+  }
+
+  // Build the collapsed summary line from grouped entries
+  const visible = grouped.slice(0, MAX_COLLAPSED)
+  const overflowCount = grouped.length - MAX_COLLAPSED
 
   return (
     <div className="mb-1.5">
@@ -228,6 +280,11 @@ export function ToolChainSummary({ parts, onOpenToolDrawer, onExpandedChange }: 
                     }}
                   >
                     {verb}
+                    {entry.count > 1 ? (
+                      <span style={{ marginLeft: 4, color: STUDIO_COLORS.inkSubtle, fontVariantNumeric: 'tabular-nums' }}>
+                        ×{entry.count}
+                      </span>
+                    ) : null}
                   </span>
                   {running && (
                     <span

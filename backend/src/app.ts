@@ -66,7 +66,26 @@ export function createApp(prisma: PrismaClient) {
   if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
     console.warn('[CORS] WARNING: CORS_ORIGINS not set in production — falling back to localhost. This is unsafe for production.');
   }
-  app.use(cors({ origin: allowedOrigins, credentials: true }));
+  // 2026-05-15: in development, accept any localhost / 127.0.0.1 origin
+  // regardless of port. Preview tooling assigns ephemeral ports
+  // (e.g. 56491) that would otherwise need to be hand-rolled into
+  // CORS_ORIGINS each restart. Production still uses the exact allowlist.
+  const isDevHost = (origin: string | undefined): boolean =>
+    typeof origin === 'string' &&
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (!origin) return cb(null, true);
+        if (allowedOrigins.includes(origin)) return cb(null, true);
+        if (process.env.NODE_ENV !== 'production' && isDevHost(origin)) {
+          return cb(null, true);
+        }
+        return cb(new Error(`CORS: origin ${origin} not allowed`));
+      },
+      credentials: true,
+    }),
+  );
   app.use(express.json({
     limit: '10mb',
     verify: (req: any, _res, buf) => { req.rawBody = buf; },

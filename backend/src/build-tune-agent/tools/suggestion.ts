@@ -100,8 +100,11 @@ export function buildSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolCon
       targetHint: z
         .object({
           sopCategory: z.string().optional(),
+          // 2026-05-15: full reservation-status set so an agent reasoning
+          // about PENDING / CHECKED_OUT SOPs doesn't ZodError before the
+          // handler runs. Must match the draft.sopStatus enum below.
           sopStatus: z
-            .enum(['DEFAULT', 'INQUIRY', 'CONFIRMED', 'CHECKED_IN'])
+            .enum(['DEFAULT', 'INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'])
             .optional(),
           sopPropertyId: z.string().optional(),
           faqEntryId: z.string().optional(),
@@ -117,10 +120,17 @@ export function buildSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolCon
           artifactId: z.string().optional(),
           sectionId: z.string().optional(),
           slotKey: z.string().optional(),
-          lineRange: z.tuple([z.number(), z.number()]).optional(),
+          // 2026-05-15: named object beats z.tuple — models drop the second
+          // tuple element in ~10% of calls per harness observation.
+          lineRange: z
+            .object({
+              start: z.number().int().min(1),
+              end: z.number().int().min(1),
+            })
+            .optional(),
           sopCategory: z.string().optional(),
           sopStatus: z
-            .enum(['DEFAULT', 'INQUIRY', 'CONFIRMED', 'CHECKED_IN'])
+            .enum(['DEFAULT', 'INQUIRY', 'PENDING', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'])
             .optional(),
           sopPropertyId: z.string().optional(),
           faqEntryId: z.string().optional(),

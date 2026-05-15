@@ -163,12 +163,17 @@ export function TransitionProposalCard({
           Proposal expired — start a fresh one if still needed.
         </p>
       ) : null}
-      <div style={{ display: 'flex', gap: 8 }}>
+      {/* 2026-05-15 polish: flex-wrap so the buttons stack instead of
+          overflowing on narrow widths (≤360px) — the "Confirm transition
+          to Verifying" label is ~28 chars and was overflowing the 520px
+          card border on mobile rail layouts. */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={confirm}
           disabled={disabled}
           style={{
+            flex: '1 1 auto',
             padding: '6px 12px',
             border: 'none',
             borderRadius: STUDIO_TOKENS_V2.radiusMd,
@@ -190,6 +195,7 @@ export function TransitionProposalCard({
           onClick={reject}
           disabled={disabled}
           style={{
+            flex: '0 0 auto',
             padding: '6px 12px',
             border: `1px solid ${STUDIO_TOKENS_V2.border}`,
             borderRadius: STUDIO_TOKENS_V2.radiusMd,

@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { X } from 'lucide-react'
 import { sanitiseToolPayload } from '@/lib/tool-call-sanitise'
 import { STUDIO_COLORS } from './tokens'
+import { toolVerb } from './tool-verbs'
 
 export interface ToolCallDrawerPart {
   type: string
@@ -48,9 +49,17 @@ export interface ToolCallDrawerProps {
   onToggleShowFull?: (next: boolean) => void
 }
 
-function shortToolName(raw: string | undefined): string {
+function shortToolName(raw: string | undefined, input?: unknown): string {
   if (!raw) return 'tool'
-  return raw.replace(/^mcp__[^_]+__/, '').replace(/_/g, ' ')
+  // 2026-05-15: prefer the human verb map ("Read context", "Wrote SOP")
+  // over the underscored raw name ("studio get context"). Falls through
+  // to the legacy behaviour for unmapped tools.
+  return toolVerb(
+    raw,
+    typeof input === 'object' && input !== null
+      ? (input as Record<string, unknown>)
+      : undefined,
+  )
 }
 
 function formatPayload(value: unknown): string {
@@ -114,7 +123,7 @@ export function ToolCallDrawer({
 
   if (!open || !part) return null
 
-  const short = shortToolName(part.toolName ?? part.type.replace(/^tool-/, ''))
+  const short = shortToolName(part.toolName ?? part.type.replace(/^tool-/, ''), part.input)
   const state = part.state ?? 'unknown'
   const waitingForOutput =
     (state === 'input-available' || state === 'input-start') && !outputText

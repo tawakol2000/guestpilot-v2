@@ -24,6 +24,7 @@ function makeState(overrides: Partial<MiddlewareState> = {}): MiddlewareState {
     innerState: 'scoping',
     lastUserMessage: '',
     readsThisTurn: 0,
+    readBudgetAdvisoryStates: new Set(),
     emitDataPart: () => {},
     ...overrides,
   } as MiddlewareState;
@@ -113,6 +114,21 @@ test('read-budget: scoping budget exceeded emits advisory', () => {
   assert.ok(emitted.length >= 1);
   assert.equal(emitted[0].type, 'data-advisory');
   assert.equal((emitted[0].data as any).kind, 'read_budget_exceeded');
+});
+
+test('read-budget: advisory dedupes per state per turn', () => {
+  // 2026-05-15 polish: budget overage previously fired the advisory on
+  // EVERY subsequent read. The operator only needs one nudge per state per
+  // turn. With budget=5 and 12 reads, we expect exactly one emit.
+  const emitted: any[] = [];
+  const state = makeState({
+    innerState: 'scoping',
+    emitDataPart: (part) => emitted.push(part),
+  });
+  for (let i = 0; i < 12; i++) {
+    recordReadBudget(TUNING_AGENT_TOOL_NAMES.studio_get_artifact, state);
+  }
+  assert.equal(emitted.length, 1, 'advisory should fire exactly once per state per turn');
 });
 
 test('read-budget: non-read tools do NOT increment', () => {

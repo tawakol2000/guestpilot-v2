@@ -124,3 +124,11 @@
   0%   { opacity: 0; transform: translateY(4px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Generic spinner — used by inline 'spin 0.9s linear infinite' rules in
+       interview-progress.tsx / tabs/tests-tab.tsx. Without this keyframe the
+       'asking' interview-slot icon + 'running' test-case dot render as a
+       frozen ring. ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

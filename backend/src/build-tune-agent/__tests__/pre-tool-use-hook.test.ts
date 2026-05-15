@@ -15,8 +15,26 @@ import { buildPreToolUseHook } from '../hooks/pre-tool-use';
 import { TUNING_AGENT_TOOL_NAMES } from '../tools/names';
 
 function ctx(overrides: any = {}) {
+  // 2026-05-15: the state-gate lookup added to pre-tool-use.ts queries
+  // tuningConversation.findFirst — fail-closed if it throws. Provide a
+  // permissive default mock so tests that aren't exercising state-gating
+  // don't fall into the fail-closed branch when their prisma mock omits
+  // this method.
+  const prisma = {
+    tuningConversation: {
+      findFirst: async () => ({
+        stateMachineSnapshot: {
+          outer_mode: 'BUILD',
+          inner_state: 'drafting',
+          transition_ack_pending: false,
+          pending_transition: null,
+        },
+      }),
+    },
+    ...(overrides.prisma ?? {}),
+  };
   return {
-    prisma: overrides.prisma,
+    prisma,
     tenantId: 't1',
     conversationId: 'c1',
     userId: null,

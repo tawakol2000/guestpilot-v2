@@ -37,6 +37,36 @@ export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext
     async (args) => {
       const c = ctx();
       const span = startAiSpan('tuning-agent.memory', { op: args.op, key: args.key, prefix: args.prefix });
+      // 2026-05-15: cap value size at 8000 chars on write ops. Without this
+      // an agent can write a 1MB blob and it'd land in <memory_snapshot>
+      // on every future turn. We also apply this to the truncated list/view
+      // rendering below to keep output deterministic.
+      const isWriteOp = args.op === 'create' || args.op === 'update';
+      if (isWriteOp && args.value !== undefined) {
+        const asStr =
+          typeof args.value === 'string' ? args.value : JSON.stringify(args.value);
+        if (asStr.length > 8000) {
+          return asError(
+            `memory.${args.op}: value too large (${asStr.length} chars; max 8000). Split into multiple keys or summarise.`,
+          );
+        }
+      }
+      // 2026-05-15: harness parity — never mutate AgentMemory under
+      // STUDIO_HARNESS_DRY_RUN. Return a synthetic ok payload so the agent's
+      // downstream flow exercises end-to-end without leaking rows.
+      if (
+        process.env.STUDIO_HARNESS_DRY_RUN === 'true' &&
+        (args.op === 'create' || args.op === 'update' || args.op === 'delete')
+      ) {
+        const payload = {
+          ok: true,
+          dryRun: true,
+          op: args.op,
+          key: args.key,
+        };
+        span.end(payload);
+        return asCallToolResult(payload);
+      }
       try {
         switch (args.op) {
           case 'view': {
@@ -60,8 +90,27 @@ export function buildMemoryTool(tool: typeof ToolFactory, ctx: () => ToolContext
           case 'list': {
             const prefix = args.prefix ?? 'preferences/';
             const rows = await listMemoryByPrefix(c.prisma, c.tenantId, prefix, args.limit ?? 30);
-            const payload = { prefix, count: rows.length, records: rows };
-            span.end(payload);
+            // 2026-05-15: truncate each value to 280 chars by default
+            // (matches <memory_snapshot> rendering). detailed verbosity
+            // returns full values verbatim for an audit-style read.
+            const detailed = args.verbosity === 'detailed';
+            const truncatedRows = detailed
+              ? rows
+              : rows.map((r: any) => {
+                  const v = r?.value;
+                  if (typeof v === 'string' && v.length > 280) {
+                    return { ...r, value: `${v.slice(0, 280)}…` };
+                  }
+                  if (v && typeof v === 'object') {
+                    const j = JSON.stringify(v);
+                    if (j.length > 280) {
+                      return { ...r, value: `${j.slice(0, 280)}…` };
+                    }
+                  }
+                  return r;
+                });
+            const payload = { prefix, count: rows.length, records: truncatedRows };
+            span.end({ prefix, count: rows.length, detailed });
             return asCallToolResult(payload);
           }
           case 'create': {

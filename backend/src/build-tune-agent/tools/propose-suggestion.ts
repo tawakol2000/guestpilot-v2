@@ -176,7 +176,13 @@ export function buildProposeSuggestionTool(tool: typeof ToolFactory, ctx: () => 
           artifactId: z.string().optional(),
           sectionId: z.string().optional(),
           slotKey: z.string().optional(),
-          lineRange: z.tuple([z.number(), z.number()]).optional(),
+          // 2026-05-15: named object beats z.tuple — see suggestion.ts.
+          lineRange: z
+            .object({
+              start: z.number().int().min(1),
+              end: z.number().int().min(1),
+            })
+            .optional(),
         })
         .optional(),
       impact: z.string().max(300).optional(),

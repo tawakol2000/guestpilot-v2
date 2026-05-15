@@ -46,11 +46,20 @@ export function TenantStateBanner({
     : { bg: STUDIO_COLORS.accentSoft, fg: STUDIO_COLORS.accent }
 
   const hasPrompt = Boolean(promptCaption)
+  // 2026-05-15 polish: brownfield + EMPTY systemPromptStatus (real combo —
+  // tenant had a prompt that was wiped) was rendering the same caption as
+  // "unedited since seed". Branch on the real status enum so the operator
+  // can tell those apart at a glance.
+  const status = state.systemPromptStatus ?? (state.isGreenfield ? 'EMPTY' : 'DEFAULT')
   const caption = hasPrompt
     ? promptCaption
-    : state.isGreenfield
-    ? 'No system prompt yet — ask the agent to write one'
-    : 'System prompt — unedited since seed'
+    : status === 'EMPTY'
+      ? state.isGreenfield
+        ? 'No system prompt yet — ask the agent to write one'
+        : 'No system prompt — ask the agent to draft one'
+      : status === 'DEFAULT'
+        ? 'System prompt — default (unedited since seed)'
+        : 'System prompt — edited'
 
   const canOpen = hasPrompt && !!onOpenPrompt
   const showSeed =

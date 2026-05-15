@@ -1,4 +1,12 @@
-import 'dotenv/config';
+// 2026-05-15: explicit override so a parent shell with an empty
+// `ANTHROPIC_API_KEY=` / `OPENAI_API_KEY=` doesn't shadow the values in
+// .env. The bare `dotenv/config` import preserves existing process env;
+// developers commonly inherit empty exports from prior sessions and end
+// up debugging "ANTHROPIC_API_KEY missing" even though .env is correct.
+// Production deployments set env via Railway directly — .env is dev-only,
+// so the override is safe there too.
+import { config as dotenvConfig } from 'dotenv';
+dotenvConfig({ override: true });
 import { createServer } from 'http';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from './app';

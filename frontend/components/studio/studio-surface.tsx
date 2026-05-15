@@ -670,29 +670,59 @@ export function StudioSurface({ conversationId, onConversationChange }: StudioSu
                 })
               }}
               onRevertRow={async (row: BuildArtifactHistoryRow) => {
-                // Two-step: dry-run preview, then native confirm before commit.
+                // 2026-05-15 polish: replace native window.confirm /
+                // alert with a sonner toast carrying inline Confirm/Cancel
+                // actions. Native dialogs break the design language and
+                // some browsers permanently disable them per-origin.
                 try {
                   const preview = await apiRevertArtifactFromHistory(row.id, {
                     dryRun: true,
                   })
                   if (!preview.ok) {
-                    alert(`Revert preview failed: ${preview.error ?? 'unknown'}`)
+                    toast.error(`Revert preview failed: ${preview.error ?? 'unknown'}`)
                     return
                   }
-                  const proceed = window.confirm(
-                    `Revert ${row.artifactType} "${row.artifactId}" to its pre-write state? This writes a REVERT row to the ledger.`,
-                  )
-                  if (!proceed) return
-                  const result = await apiRevertArtifactFromHistory(row.id, {
-                    dryRun: false,
+                  await new Promise<void>((resolve) => {
+                    const id = toast(
+                      `Revert ${row.artifactType} "${row.artifactId}" to its pre-write state?`,
+                      {
+                        description: 'This writes a REVERT row to the ledger.',
+                        duration: 20000,
+                        action: {
+                          label: 'Revert',
+                          onClick: async () => {
+                            toast.dismiss(id)
+                            try {
+                              const result = await apiRevertArtifactFromHistory(row.id, {
+                                dryRun: false,
+                              })
+                              if (!result.ok) {
+                                toast.error(`Revert failed: ${result.error ?? 'unknown'}`)
+                              } else {
+                                toast.success('Reverted to prior version')
+                                setLedgerRefreshKey((k) => k + 1)
+                              }
+                            } catch (err) {
+                              toast.error(
+                                `Revert error: ${err instanceof Error ? err.message : String(err)}`,
+                              )
+                            } finally {
+                              resolve()
+                            }
+                          },
+                        },
+                        cancel: {
+                          label: 'Cancel',
+                          onClick: () => {
+                            toast.dismiss(id)
+                            resolve()
+                          },
+                        },
+                      },
+                    )
                   })
-                  if (!result.ok) {
-                    alert(`Revert failed: ${result.error ?? 'unknown'}`)
-                    return
-                  }
-                  setLedgerRefreshKey((k) => k + 1)
                 } catch (err) {
-                  alert(
+                  toast.error(
                     `Revert error: ${err instanceof Error ? err.message : String(err)}`,
                   )
                 }

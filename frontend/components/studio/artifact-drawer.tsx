@@ -393,8 +393,23 @@ export function ArtifactDrawer(props: ArtifactDrawerProps) {
 
   if (!open || !target) return null
 
-  const headerTitle = detail?.title ?? target.sessionArtifact?.title ?? 'Artifact'
+  // 2026-05-15 polish: clean up the header so the eyebrow + title don't
+  // read redundantly ("SYSTEM PROMPT · System prompt - screening"). For
+  // system_prompt artifacts, derive a tighter title from the variant
+  // metadata ("Screening" / "Coordinator") since the eyebrow already
+  // tells the operator it's a system prompt. Fall through to the
+  // backend-supplied title for other artifact types.
+  const rawTitle = detail?.title ?? target.sessionArtifact?.title ?? 'Artifact'
   const typeLabel = TYPE_LABEL[target.artifact]
+  const headerTitle = (() => {
+    if (target.artifact === 'system_prompt') {
+      const variant = (detail?.meta as { variant?: string } | undefined)?.variant
+      if (variant) return `${variant.charAt(0).toUpperCase()}${variant.slice(1)}`
+      // Strip "System prompt - " / "System prompt: " prefix when present.
+      return rawTitle.replace(/^system prompt[\s:·—-]+/i, '') || rawTitle
+    }
+    return rawTitle
+  })()
   const deepLink =
     target.sessionArtifact && resolveArtifactDeepLink(target.sessionArtifact)
   const isPending = Boolean(target.isPending)

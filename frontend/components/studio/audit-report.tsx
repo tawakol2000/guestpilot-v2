@@ -50,6 +50,14 @@ const ARTIFACT_LABEL: Record<AuditReportRowData['artifact'], string> = {
 }
 
 export function AuditReportCard(props: AuditReportCardProps) {
+  // 2026-05-15 polish: skip rendering when there are no findings and
+  // no summary. An empty-checked + no-summary payload (the agent
+  // sometimes emits an audit-report shell with nothing to say) was
+  // rendering as a stranded header-only card with a hairline border
+  // and no body — visual noise that the operator can't act on.
+  if ((!props.rows || props.rows.length === 0) && !props.summary) {
+    return null
+  }
   return (
     <article
       data-studio-card="audit-report"

@@ -102,6 +102,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
       type: 'data-agent-disabled',
       id: `disabled:${input.assistantMessageId}`,
       data: { reason: reason ?? 'disabled' },
+      transient: true,
     } as any);
     input.writer.write({ type: 'finish', finishReason: 'error' });
     return {
@@ -120,6 +121,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
       type: 'data-agent-disabled',
       id: `disabled:${input.assistantMessageId}`,
       data: { reason, mode: 'BUILD' },
+      transient: true,
     } as any);
     input.writer.write({ type: 'finish', finishReason: 'error' });
     return {
@@ -209,9 +211,41 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     return acc;
   }, {});
 
-  const turnStartSnapshot: StateMachineSnapshot = coerceSnapshot(
-    conversation.stateMachineSnapshot ?? DEFAULT_SNAPSHOT,
+  let turnStartSnapshot: StateMachineSnapshot = coerceSnapshot(
+    conversation.stateMachineSnapshot ?? null,
+    mode,
   );
+  // 2026-05-15: on the FIRST assistant turn, force outer_mode to match
+  // input.mode even when the persisted snapshot disagrees. The Prisma
+  // schema default hardcodes outer_mode='BUILD' on every new
+  // TuningConversation row, so a TUNE-mode harness/controller-created
+  // conversation would otherwise render <current_state> as BUILD/scoping.
+  // After the first assistant message the snapshot is canonical and we
+  // trust whatever the previous turn wrote. Use priorAssistantCount (not
+  // priorMessageCount) because the controller persists the user message
+  // BEFORE calling runTuningAgentTurn, so priorMessageCount ≥ 1 even on
+  // the agent's first response.
+  const priorAssistantCount = await input.prisma.tuningMessage.count({
+    where: { conversationId: input.conversationId, role: 'assistant' },
+  });
+  const isFirstAssistantTurn = priorAssistantCount === 0;
+  if (isFirstAssistantTurn && turnStartSnapshot.outer_mode !== mode) {
+    turnStartSnapshot = { ...turnStartSnapshot, outer_mode: mode };
+    // Persist the corrected snapshot now so the next turn (and any
+    // out-of-band reads) see the right mode, and so the SSE
+    // data-state-machine-snapshot emit at turn end reflects it. Skip
+    // under harness dry-run so we don't leak fixes back to the live row.
+    if (process.env.STUDIO_HARNESS_DRY_RUN !== 'true') {
+      try {
+        await input.prisma.tuningConversation.update({
+          where: { id: input.conversationId },
+          data: { stateMachineSnapshot: turnStartSnapshot as unknown as object },
+        });
+      } catch (err) {
+        console.warn('[openai-runner] first-turn outer_mode correction persist failed:', err);
+      }
+    }
+  }
 
   const promptCtx: SystemPromptContext = {
     tenantId: input.tenantId,
@@ -369,6 +403,7 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     innerState: turnStartSnapshot.inner_state,
     lastUserMessage: input.userMessage,
     readsThisTurn: 0,
+    readBudgetAdvisoryStates: new Set(),
     emitDataPart,
   };
 
@@ -839,7 +874,10 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
     pendingInput = toolOutputs;
   }
 
-  // Max rounds exceeded — emit a synthetic advisory + finish.
+  // Max rounds exceeded — emit a synthetic advisory + visible text so the
+  // operator isn't left staring at a silent stream. Without this, the chat
+  // surface shows only the user message and the typing indicator clears
+  // with no agent reply.
   console.warn('[openai-runner] hit MAX_TOOL_ROUNDS, terminating turn');
   args.emitDataPart({
     type: DATA_PART_TYPES.advisory,
@@ -849,6 +887,12 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
     },
     transient: true,
   });
+  const fallbackText =
+    `I ran out of tool-call rounds before I could finish. Tell me what you ` +
+    `want me to do next and I'll pick up from here — or try rephrasing the ` +
+    `request more directly.`;
+  emitFinalText(fallbackText, args.bridgeState, args.filteredWrite);
+  args.onFinalText(fallbackText);
   finalizeOpenAiBridge(args.bridgeState, args.filteredWrite, 'stop');
 }
 

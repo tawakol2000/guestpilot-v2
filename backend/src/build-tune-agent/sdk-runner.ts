@@ -247,6 +247,10 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
       type: 'data-agent-disabled',
       id: `disabled:${input.assistantMessageId}`,
       data: { reason: reason ?? 'disabled' },
+      // 2026-05-15: transient so the disabled-banner doesn't get
+      // persisted into TuningMessage.parts and re-render on every
+      // historical message load after the env is fixed.
+      transient: true,
     } as any);
     input.writer.write({ type: 'finish', finishReason: 'error' });
     return {
@@ -265,6 +269,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
       type: 'data-agent-disabled',
       id: `disabled:${input.assistantMessageId}`,
       data: { reason, mode: 'BUILD' },
+      transient: true,
     } as any);
     input.writer.write({ type: 'finish', finishReason: 'error' });
     return {
@@ -386,9 +391,34 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     // Sprint 060-C — DB snapshot drives <current_state> + optional
     // <state_transition> in Region C. Falls back to default scoping
     // for any legacy row that somehow missed the migration default.
-    stateMachineSnapshot: coerceSnapshot(conversation.stateMachineSnapshot ?? DEFAULT_SNAPSHOT),
+    stateMachineSnapshot: coerceSnapshot(
+      conversation.stateMachineSnapshot ?? null,
+      mode,
+    ),
   };
-  const turnStartSnapshot: StateMachineSnapshot = promptCtx.stateMachineSnapshot!;
+  let turnStartSnapshot: StateMachineSnapshot = promptCtx.stateMachineSnapshot!;
+  // 2026-05-15: on the FIRST assistant turn, force outer_mode to match
+  // input.mode — see openai-runner.ts for full rationale (schema default
+  // hardcodes BUILD; controller persists the user message before calling
+  // the runner, so priorMessageCount counts that message and isFirstTurn
+  // is misleading here).
+  const priorAssistantCount = await input.prisma.tuningMessage.count({
+    where: { conversationId: input.conversationId, role: 'assistant' },
+  });
+  if (priorAssistantCount === 0 && turnStartSnapshot.outer_mode !== mode) {
+    turnStartSnapshot = { ...turnStartSnapshot, outer_mode: mode };
+    promptCtx.stateMachineSnapshot = turnStartSnapshot;
+    if (process.env.STUDIO_HARNESS_DRY_RUN !== 'true') {
+      try {
+        await input.prisma.tuningConversation.update({
+          where: { id: input.conversationId },
+          data: { stateMachineSnapshot: turnStartSnapshot as unknown as object },
+        });
+      } catch (err) {
+        console.warn('[sdk-runner] first-turn outer_mode correction persist failed:', err);
+      }
+    }
+  }
   const systemPrompt = assembleSystemPrompt(promptCtx);
   logCacheBlockStructure(input.tenantId, systemPrompt);
   // Feature 047 PR 6 — per-state allow-list compaction. The agent only

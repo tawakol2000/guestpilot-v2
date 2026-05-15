@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Tag as TagIcon, X, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { STUDIO_COLORS } from './tokens'
 import { DiffBody } from './artifact-views/diff-body'
 import {
@@ -336,23 +337,34 @@ function VersionRow({
   const rationale = extractRationaleExcerpt(row.metadata)
 
   async function handleRevertClick() {
-    const proceed = window.confirm(
-      `Revert to this version from ${formatTimestamp(row.createdAt)}? A new REVERT row will be written to the ledger.`,
-    )
-    if (!proceed) return
-    setReverting(true)
-    try {
-      const res = await apiRevertToVersion(row.id, { dryRun: false })
-      if (!res.ok) {
-        alert(`Revert failed: ${res.error ?? 'unknown'}`)
-        return
-      }
-      onReverted()
-    } catch (err) {
-      alert(`Revert error: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setReverting(false)
-    }
+    // 2026-05-15 polish: sonner action toast replaces native window.confirm
+    // — matches the design language and works on Safari/Chrome even when
+    // the user has disabled native dialogs per-origin.
+    const id = toast(`Revert to this version?`, {
+      description: `From ${formatTimestamp(row.createdAt)}. A new REVERT row will be written to the ledger.`,
+      duration: 20000,
+      action: {
+        label: 'Revert',
+        onClick: async () => {
+          toast.dismiss(id)
+          setReverting(true)
+          try {
+            const res = await apiRevertToVersion(row.id, { dryRun: false })
+            if (!res.ok) {
+              toast.error(`Revert failed: ${res.error ?? 'unknown'}`)
+              return
+            }
+            toast.success('Reverted to this version')
+            onReverted()
+          } catch (err) {
+            toast.error(`Revert error: ${err instanceof Error ? err.message : String(err)}`)
+          } finally {
+            setReverting(false)
+          }
+        },
+      },
+      cancel: { label: 'Cancel', onClick: () => toast.dismiss(id) },
+    })
   }
 
   async function handleTagSave() {
@@ -688,19 +700,30 @@ function VersionDiffModal({
   const mode = artifact === 'faq' ? 'token' : 'line'
 
   async function handleRevertTo(row: BuildArtifactHistoryRow) {
-    const proceed = window.confirm(
-      `Revert to version from ${formatTimestamp(row.createdAt)}?`,
-    )
-    if (!proceed) return
+    const id = toast(`Revert to this version?`, {
+      description: `From ${formatTimestamp(row.createdAt)}.`,
+      duration: 20000,
+      action: {
+        label: 'Revert',
+        onClick: async () => {
+          toast.dismiss(id)
+          await doRevert(row)
+        },
+      },
+      cancel: { label: 'Cancel', onClick: () => toast.dismiss(id) },
+    })
+  }
+  async function doRevert(row: BuildArtifactHistoryRow) {
     try {
       const res = await apiRevertToVersion(row.id, { dryRun: false })
       if (!res.ok) {
-        alert(`Revert failed: ${res.error ?? 'unknown'}`)
+        toast.error(`Revert failed: ${res.error ?? 'unknown'}`)
         return
       }
+      toast.success('Reverted to this version')
       onReverted()
     } catch (err) {
-      alert(`Revert error: ${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`Revert error: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

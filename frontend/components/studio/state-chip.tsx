@@ -26,10 +26,18 @@ export interface StateChipProps {
   onSnapshotChange: (s: StudioStateMachineSnapshot) => void
 }
 
+// 2026-05-15 polish: operator-friendly labels. Internal state-machine
+// names ("scoping", "drafting", "verifying") leaked into the chip; non-
+// engineers can't intuit what state they're in. The internal enum stays
+// in the title-tooltip below for power users / debugging.
 const INNER_LABEL: Record<StudioInnerState, string> = {
-  scoping: 'Scoping',
+  scoping: 'Asking',
   drafting: 'Drafting',
   verifying: 'Verifying',
+}
+const OUTER_LABEL: Record<StudioOuterMode, string> = {
+  BUILD: 'Building',
+  TUNE: 'Tuning',
 }
 
 const INNER_COLOR: Record<StudioInnerState, string> = {
@@ -76,8 +84,8 @@ export function StateChip({ conversationId, snapshot, onSnapshotChange }: StateC
       }}
       title={
         snapshot?.last_transition_reason
-          ? `Last transition: ${snapshot.last_transition_reason}`
-          : `Mode ${outer} · inner state ${inner}`
+          ? `Last transition: ${snapshot.last_transition_reason} (state-machine: ${outer.toLowerCase()}/${inner})`
+          : `state-machine: ${outer.toLowerCase()}/${inner}`
       }
     >
       <span
@@ -89,15 +97,15 @@ export function StateChip({ conversationId, snapshot, onSnapshotChange }: StateC
           background: INNER_COLOR[inner],
         }}
       />
-      <span style={{ color: STUDIO_TOKENS_V2.ink, fontWeight: 500 }}>{outer}</span>
+      <span style={{ color: STUDIO_TOKENS_V2.ink, fontWeight: 500 }}>{OUTER_LABEL[outer]}</span>
       <span style={{ color: STUDIO_TOKENS_V2.muted2 }}>·</span>
       <span>{INNER_LABEL[inner]}</span>
       <button
         type="button"
         onClick={onReclassify}
         disabled={busy}
-        title={`Reclassify to ${target}`}
-        aria-label={`Reclassify conversation to ${target}`}
+        title={`Switch to ${OUTER_LABEL[target].toLowerCase()}`}
+        aria-label={`Switch this conversation to ${OUTER_LABEL[target].toLowerCase()} mode`}
         style={{
           marginLeft: 4,
           padding: '2px 8px',
@@ -109,7 +117,7 @@ export function StateChip({ conversationId, snapshot, onSnapshotChange }: StateC
           cursor: busy ? 'wait' : 'pointer',
         }}
       >
-        → {target}
+        → {OUTER_LABEL[target]}
       </button>
       {err ? (
         <span role="alert" style={{ color: '#dc2626', fontSize: 11 }}>

@@ -55,7 +55,10 @@ PARAMETERS:
   parameters (JSON schema)
   webhookUrl (string, MUST start with "https://" and point to a publicly-routable host — private/loopback/link-local/cloud-metadata addresses are rejected as SSRF risk)
   webhookAuth (object, { type: 'bearer'|'basic'|'none', secretName })
-  availableStatuses (array of reservation statuses)
+  availableStatuses (array of reservation statuses) — NOTE: this list is
+    recorded in artifact history for the manager to review, but the runtime
+    AI pipeline does NOT yet enforce status-gating on custom tools. Treat
+    the field as documentation-only until the schema column lands.
   rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this tool is being created (e.g. "Manager asked for a way to check the cleaning schedule mid-turn so the AI doesn't have to escalate every scheduling question.")
   transactionId (string, optional)
   dryRun (boolean, optional) — when true, validate + return SANITISED preview, no DB write
@@ -79,7 +82,21 @@ export function buildCreateToolDefinitionTool(
       description: z
         .string()
         .min(40, 'description should be 3-4 sentences minimum — Anthropic guidance'),
-      parameters: z.record(z.string(), z.unknown()),
+      // 2026-05-15: shape-validate the JSON Schema up-front so we catch
+       // model-emitted garbage at write time instead of opaque main-AI
+       // failures at tool-invocation time. Accept either an object-typed
+       // JSON Schema (the standard case) or a top-level `{type: string,
+       // properties?: object, required?: string[], ...}` shape.
+      parameters: z
+        .record(z.string(), z.unknown())
+        .refine(
+          (p) => {
+            const t = (p as any).type;
+            if (typeof t !== 'string') return false;
+            return ['object', 'string', 'number', 'integer', 'boolean', 'array', 'null'].includes(t);
+          },
+          'parameters must be a JSON Schema with a top-level "type" (object/string/number/integer/boolean/array/null)',
+        ),
       webhookUrl: z
         .string()
         .url()

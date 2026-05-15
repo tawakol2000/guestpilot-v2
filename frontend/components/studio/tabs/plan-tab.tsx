@@ -20,6 +20,7 @@ import { StateSnapshotCard, type StateSnapshotData } from '../state-snapshot'
 import { FileIcon, BookIcon, FlaskIcon, HotelIcon } from '../icons'
 import type { SessionArtifact } from '../session-artifacts'
 import { useStudioShell } from '../studio-shell-context'
+import { toolVerb } from '../tool-verbs'
 
 export interface PlanTabProps {
   snapshot: StateSnapshotData
@@ -168,10 +169,15 @@ export function PlanTab({ snapshot, sessionArtifacts, onOpenArtifact }: PlanTabP
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      fontFamily: 'var(--font-sans, Inter Tight, sans-serif)',
                     }}
-                    title={r.target ?? r.toolName}
+                    title={`${r.toolName}${r.target ? ` · ${r.target}` : ''}`}
                   >
-                    {r.toolName}
+                    {/* 2026-05-15 polish: render the human verb ("Read
+                       context", "Wrote SOP") instead of the raw MCP tool
+                       name. The raw name + target stay in the title
+                       tooltip for power users + debugging. */}
+                    {toolVerb(r.toolName)}
                     {r.target ? ` · ${r.target}` : ''}
                   </span>
                   <span

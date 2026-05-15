@@ -868,11 +868,17 @@ function DiffPane({
       >
         {label}
       </span>
+      {/* 2026-05-15 polish: cap body height so a single legacy
+          suggestion (full system-prompt body × 2 panes) doesn't blow
+          the list to ~2300px and force scrolling forever. Overflow
+          scrolls within the pane; the operator can still see the
+          context boundary cards above/below. */}
       <div
         style={{
           border: `1px solid ${borderColor}`,
           borderRadius: STUDIO_TOKENS_V2.radiusSm,
-          overflow: 'hidden',
+          overflow: 'auto',
+          maxHeight: 260,
           background: bg,
         }}
       >

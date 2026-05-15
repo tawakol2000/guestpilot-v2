@@ -16,6 +16,7 @@ import {
 } from '@/lib/api'
 import { STUDIO_TOKENS_V2 } from './tokens'
 import { BrandAsteriskIcon, HotelIcon, PlusIcon, SearchIcon } from './icons'
+import { displaySessionTitle } from './session-autoname'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -498,7 +499,7 @@ function SessionRow({
             width: '100%',
           }}
         >
-          {item.title || 'Untitled session'}
+          {displaySessionTitle(item.title) || 'Untitled session'}
         </span>
         <span
           style={{

@@ -11,7 +11,7 @@
  * the default handlers are no-ops, which is fine for dogfooding the
  * card surface in isolation.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { STUDIO_COLORS, getStudioCategoryStyle, attributedStyle } from './tokens'
 
@@ -20,7 +20,10 @@ export interface SuggestedFixTarget {
   artifactId?: string
   sectionId?: string
   slotKey?: string
-  lineRange?: [number, number]
+  // 2026-05-15: lineRange is now an object on the backend ({start, end});
+  // accept the legacy tuple for back-compat (older emitters in the cached
+  // session ledger still produce it).
+  lineRange?: { start: number; end: number } | [number, number]
   // Sprint 047 Session A — category-specific apply hints threaded through
   // so the Studio accept-on-preview path can dispatch the write without
   // re-asking the agent. Additive; pre-session-A emitters omit them.
@@ -98,7 +101,7 @@ function renderTargetChip(target: SuggestedFixTarget): string {
   const detail = [
     target.sectionId && `§${target.sectionId}`,
     target.slotKey && `{${target.slotKey}}`,
-    target.lineRange && `L${target.lineRange[0]}–${target.lineRange[1]}`,
+    target.lineRange && renderLineRange(target.lineRange),
     target.artifactId && target.artifactId.slice(0, 8),
   ]
     .filter(Boolean)
@@ -106,29 +109,51 @@ function renderTargetChip(target: SuggestedFixTarget): string {
   return detail ? `${base} · ${detail}` : base
 }
 
+function renderLineRange(lr: NonNullable<SuggestedFixTarget['lineRange']>): string {
+  if (Array.isArray(lr)) return `L${lr[0]}–${lr[1]}`
+  return `L${lr.start}–${lr.end}`
+}
+
 type CardState = 'idle' | 'accepting' | 'accepted' | 'rejecting' | 'rejected' | 'error'
 
 export function SuggestedFixCard(props: SuggestedFixCardProps) {
   const [state, setState] = useState<CardState>('idle')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const categoryStyle = getStudioCategoryStyle(props.category)
+
+  // 2026-05-15 polish: after a failed accept/reject, auto-return to idle
+  // so the operator can retry. Previously the card stuck in 'error' with
+  // both buttons disabled (cursor: not-allowed) and no retry affordance.
+  useEffect(() => {
+    if (state !== 'error') return
+    const t = setTimeout(() => {
+      setState('idle')
+      setErrorMessage(null)
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [state])
 
   async function handleAccept() {
     if (!props.onAccept) return
     setState('accepting')
+    setErrorMessage(null)
     try {
       await props.onAccept(props.id)
       setState('accepted')
-    } catch {
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Apply failed — retrying enabled in 3s')
       setState('error')
     }
   }
   async function handleReject() {
     if (!props.onReject) return
     setState('rejecting')
+    setErrorMessage(null)
     try {
       await props.onReject(props.id)
       setState('rejected')
-    } catch {
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Reject failed — retrying enabled in 3s')
       setState('error')
     }
   }
@@ -366,7 +391,15 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
             fontSize: 12,
             fontWeight: 600,
             borderRadius: 6,
-            cursor: state === 'idle' && props.onAccept ? 'pointer' : 'not-allowed',
+            // 2026-05-15 polish: 'default' cursor when settled — "Accepted"
+            // with not-allowed reads as a hard error, but the green colour
+            // says success. Pick one signal.
+            cursor:
+              state === 'idle' && props.onAccept
+                ? 'pointer'
+                : state === 'accepted'
+                  ? 'default'
+                  : 'not-allowed',
           }}
         >
           <Check size={14} />
@@ -395,7 +428,7 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
         </button>
         {state === 'error' && (
           <span style={{ fontSize: 12, color: STUDIO_COLORS.dangerFg }}>
-            Something went wrong. Try again.
+            {errorMessage ?? 'Something went wrong. Try again.'}
           </span>
         )}
       </footer>

@@ -128,13 +128,14 @@ test('returns rows in DESC order by createdAt (newest first)', async () => {
   assert.ok(!result.isError, 'should not return error');
 
   const parsed = JSON.parse(result.content[0].text);
-  assert.ok(Array.isArray(parsed.rows), 'rows must be an array');
-  assert.equal(parsed.rows.length, 3, 'all three rows returned');
+  assert.ok(Array.isArray(parsed.entries), 'rows must be an array');
+  assert.equal(parsed.entries.length, 3, 'all three rows returned');
 
-  // Newest first
-  assert.equal(parsed.rows[0].appliedAt, '2026-01-03T10:00:00.000Z');
-  assert.equal(parsed.rows[1].appliedAt, '2026-01-02T10:00:00.000Z');
-  assert.equal(parsed.rows[2].appliedAt, '2026-01-01T10:00:00.000Z');
+  // Newest first. The unified shape exposes the timestamp as `timestamp`,
+  // not `appliedAt` (which lives on the inner single-artifact rowset).
+  assert.equal(parsed.entries[0].timestamp, '2026-01-03T10:00:00.000Z');
+  assert.equal(parsed.entries[1].timestamp, '2026-01-02T10:00:00.000Z');
+  assert.equal(parsed.entries[2].timestamp, '2026-01-01T10:00:00.000Z');
 });
 
 test('tenant isolation: artifact owned by tenant B returns empty under tenant A', async () => {
@@ -160,7 +161,7 @@ test('tenant isolation: artifact owned by tenant B returns empty under tenant A'
   const result = await invoke({ artifactType: 'sop', artifactId: 'sop-xyz' });
   assert.ok(!result.isError, 'should not return error');
   const parsed = JSON.parse(result.content[0].text);
-  assert.deepEqual(parsed.rows, [], 'no rows for wrong tenant — graceful empty, not 404');
+  assert.deepEqual(parsed.entries, [], 'no rows for wrong tenant — graceful empty, not 404');
 });
 
 test('limit is respected; default is 10 when absent', async () => {
@@ -184,12 +185,12 @@ test('limit is respected; default is 10 when absent', async () => {
   // No limit supplied → default 10
   const r1 = await invoke({ artifactType: 'faq', artifactId: 'faq-many' });
   const p1 = JSON.parse(r1.content[0].text);
-  assert.equal(p1.rows.length, 10, 'default limit is 10');
+  assert.equal(p1.entries.length, 10, 'default limit is 10');
 
   // Explicit limit 3
   const r2 = await invoke({ artifactType: 'faq', artifactId: 'faq-many', limit: 3 });
   const p2 = JSON.parse(r2.content[0].text);
-  assert.equal(p2.rows.length, 3, 'explicit limit respected');
+  assert.equal(p2.entries.length, 3, 'explicit limit respected');
 });
 
 test('rationale-prefix passes through unchanged from metadata', async () => {
@@ -217,8 +218,8 @@ test('rationale-prefix passes through unchanged from metadata', async () => {
 
   const result = await invoke({ artifactType: 'faq', artifactId: 'faq-prefix' });
   const parsed = JSON.parse(result.content[0].text);
-  assert.equal(parsed.rows.length, 1);
-  const row = parsed.rows[0];
+  assert.equal(parsed.count, 1);
+  const row = parsed.entries[0];
   assert.equal(row.rationale, 'Agent-authored rationale');
   assert.equal(row.operatorRationale, 'Operator override reason');
   assert.equal(row.rationalePrefix, 'edited-by-operator');
@@ -235,7 +236,7 @@ test('zero rows → { rows: [] } returned, no error', async () => {
   const result = await invoke({ artifactType: 'system_prompt', artifactId: 'nonexistent-id' });
   assert.ok(!result.isError, 'should not be an error');
   const parsed = JSON.parse(result.content[0].text);
-  assert.deepEqual(parsed, { rows: [] }, 'empty rows shape returned');
+  assert.deepEqual(parsed, { count: 0, entries: [] }, 'empty shape returned');
 });
 
 test('null metadata fields map to null in output (no undefined leakage)', async () => {
@@ -259,8 +260,8 @@ test('null metadata fields map to null in output (no undefined leakage)', async 
 
   const result = await invoke({ artifactType: 'sop', artifactId: 'sop-nometa' });
   const parsed = JSON.parse(result.content[0].text);
-  assert.equal(parsed.rows.length, 1);
-  const row = parsed.rows[0];
+  assert.equal(parsed.count, 1);
+  const row = parsed.entries[0];
   assert.equal(row.rationale, null);
   assert.equal(row.operatorRationale, null);
   assert.equal(row.rationalePrefix, null);

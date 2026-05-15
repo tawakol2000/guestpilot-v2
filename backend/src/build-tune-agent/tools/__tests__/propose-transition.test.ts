@@ -85,9 +85,12 @@ test('mints HMAC-verified nonce', async () => {
   const { captured, tool } = captureFactory();
   buildProposeTransitionTool(tool, ctxFn);
   const r = JSON.parse((await captured[0].handler({ to: 'drafting', because: 'gathered checkin slot; ready to draft SOP' })).content[0].text);
-  assert.equal(verifyTransitionNonce(r.nonce).ok, true);
+  // 2026-05-15 (M3): the nonce is now bound to conversationId at mint time,
+  // so verification must pass the same conversationId. The legacy
+  // unbound path still works for in-flight pre-M3 nonces.
+  assert.equal(verifyTransitionNonce(r.nonce, 'conv1').ok, true);
   // Tampering trips verification.
-  assert.equal(verifyTransitionNonce(r.nonce.slice(0, -2) + 'XX').ok, false);
+  assert.equal(verifyTransitionNonce(r.nonce.slice(0, -2) + 'XX', 'conv1').ok, false);
 });
 
 test('refuses to propose out of verifying state (auto-exit only)', async () => {

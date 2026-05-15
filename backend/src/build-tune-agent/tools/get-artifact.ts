@@ -60,11 +60,17 @@ Defaulting to concise saves 5-25K tokens per call. Section drill-down on a 25K s
 const HEAD_EXCERPT_CHARS = 1200;
 
 function getSectionSecret(): string {
-  return (
-    process.env.STUDIO_POINTER_HMAC_KEY ??
-    process.env.JWT_SECRET ??
-    'fallback-test-secret'
-  );
+  const k = process.env.STUDIO_POINTER_HMAC_KEY ?? process.env.JWT_SECRET;
+  if (k) return k;
+  // 2026-05-15: fail closed in production. A hardcoded fallback would let
+  // an attacker forge pointers; better to surface a config error than
+  // accept a forge-able secret on a live tenant.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'STUDIO_POINTER_HMAC_KEY (or JWT_SECRET) must be set in production — refusing to use fallback-test-secret.',
+    );
+  }
+  return 'fallback-test-secret';
 }
 
 function conciseText(full: string | null | undefined): string {

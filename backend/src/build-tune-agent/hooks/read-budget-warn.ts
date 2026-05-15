@@ -53,6 +53,10 @@ interface ReadBudgetCounter {
   conversationId: string;
   turn: number;
   reads: number;
+  /** Inner-states that have already emitted a read_budget_exceeded advisory
+   * this turn. Without this, the advisory fires on every subsequent read
+   * past the budget — the operator only needs the nudge once. */
+  firedForStates: Set<InnerState>;
 }
 
 // Module-level counter map. Keyed by conversationId; reset per-turn by
@@ -60,7 +64,7 @@ interface ReadBudgetCounter {
 const counters = new Map<string, ReadBudgetCounter>();
 
 export function resetReadBudgetForTurn(conversationId: string, turn: number): void {
-  counters.set(conversationId, { conversationId, turn, reads: 0 });
+  counters.set(conversationId, { conversationId, turn, reads: 0, firedForStates: new Set() });
 }
 
 export function getReadBudgetCount(conversationId: string): number {
@@ -84,10 +88,11 @@ export function buildReadBudgetWarnHook(
     const convId = ctx.conversationId;
     if (!convId) return {};
 
-    const counter = counters.get(convId);
+    let counter = counters.get(convId);
     if (!counter || counter.turn !== ctx.turn) {
       // First read of this turn — initialize/reset.
-      counters.set(convId, { conversationId: convId, turn: ctx.turn, reads: 1 });
+      counter = { conversationId: convId, turn: ctx.turn, reads: 1, firedForStates: new Set() };
+      counters.set(convId, counter);
       return {};
     }
     counter.reads += 1;
@@ -108,7 +113,8 @@ export function buildReadBudgetWarnHook(
     }
     const budget = READ_BUDGET_BY_STATE[innerState];
 
-    if (counter.reads > budget) {
+    if (counter.reads > budget && !counter.firedForStates.has(innerState)) {
+      counter.firedForStates.add(innerState);
       // Emit a non-blocking advisory data-part (the runtime forwards it
       // to the active Langfuse span for the operator to inspect post-hoc).
       // No `decision` field → SDK proceeds with the call as normal.

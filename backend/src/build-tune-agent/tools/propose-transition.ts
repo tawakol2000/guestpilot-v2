@@ -96,15 +96,20 @@ export function buildProposeTransitionTool(
           token: nonce,
         };
 
-        await c.prisma.tuningConversation.update({
-          where: { id: c.conversationId },
-          data: {
-            stateMachineSnapshot: {
-              ...snapshot,
-              pending_transition: pending,
-            } as unknown as object,
-          },
-        });
+        // 2026-05-15: harness parity — never mutate stateMachineSnapshot
+        // under STUDIO_HARNESS_DRY_RUN. The pending_transition would survive
+        // into real chat sessions otherwise.
+        if (process.env.STUDIO_HARNESS_DRY_RUN !== 'true') {
+          await c.prisma.tuningConversation.update({
+            where: { id: c.conversationId },
+            data: {
+              stateMachineSnapshot: {
+                ...snapshot,
+                pending_transition: pending,
+              } as unknown as object,
+            },
+          });
+        }
 
         // Emit a question_choices card with the transition_proposal
         // discriminator. The frontend renders this as a transition-
@@ -151,6 +156,10 @@ export function buildProposeTransitionTool(
         return asError(`studio_propose_transition failed: ${err?.message ?? String(err)}`);
       }
     },
-    { annotations: { readOnlyHint: true } },
+    // 2026-05-15: readOnlyHint was incorrectly true — the tool writes
+    // pending_transition into stateMachineSnapshot. Mark non-destructive
+    // (since the operator confirms before inner_state changes) but not
+    // read-only, so MCP retry/cache layers handle correctly.
+    { annotations: { destructiveHint: false } },
   );
 }

@@ -23,11 +23,31 @@ const DEFAULT_TITLES = new Set<string>([
 const MAX_LEN = 50
 
 /** True if the title is still one of the generic defaults we create on
- *  bootstrap — i.e. we're free to overwrite it on first user intent. */
+ *  bootstrap — i.e. we're free to overwrite it on first user intent.
+ *  2026-05-15: also treat fully-bracketed `[xxx]` titles as default. The
+ *  studio test harness + scripts mint conversations with names like
+ *  "[harness test]"; surfacing those in the operator UI is jarring.
+ *  Operators never name a session in brackets, so this is a safe heuristic. */
 export function isDefaultTitle(title: string | null | undefined): boolean {
   if (title == null) return true
   const trimmed = title.trim()
-  return DEFAULT_TITLES.has(trimmed)
+  if (DEFAULT_TITLES.has(trimmed)) return true
+  if (/^\[.+\]$/.test(trimmed)) return true
+  return false
+}
+
+/**
+ * Display-friendly version of a session title. Strips outer `[...]` wrapping
+ * from dev-tag-style titles so a manager doesn't see "[harness test]" in
+ * the top bar or sidebar. The DB still holds the raw title — the strip is
+ * purely cosmetic at the render layer.
+ */
+export function displaySessionTitle(title: string | null | undefined): string {
+  if (!title) return ''
+  const trimmed = title.trim()
+  const bracketed = trimmed.match(/^\[(.+)\]$/)
+  if (bracketed) return bracketed[1].trim()
+  return trimmed
 }
 
 /** Guard — messages this short are almost always "hi" / "test" / "ok"

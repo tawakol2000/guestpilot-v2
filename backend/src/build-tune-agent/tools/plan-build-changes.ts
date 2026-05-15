@@ -41,7 +41,13 @@ const planItemSchema = z.object({
       artifactId: z.string().optional(),
       sectionId: z.string().optional(),
       slotKey: z.string().optional(),
-      lineRange: z.tuple([z.number(), z.number()]).optional(),
+      // 2026-05-15: named object beats z.tuple — see suggestion.ts.
+      lineRange: z
+        .object({
+          start: z.number().int().min(1),
+          end: z.number().int().min(1),
+        })
+        .optional(),
     })
     .optional(),
   previewDiff: z
@@ -69,6 +75,29 @@ export function buildPlanBuildChangesTool(
         itemCount: args.items.length,
         types: args.items.map((i) => i.type).join(','),
       });
+      // 2026-05-15: harness parity — never persist BuildTransaction rows
+      // under STUDIO_HARNESS_DRY_RUN. Synthesise a fake transactionId so the
+      // agent's downstream flow exercises end-to-end without leaking rows
+      // into the live tenant.
+      if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') {
+        const dryId = `tx-dry-${Date.now().toString(36)}`;
+        const plannedAt = new Date().toISOString();
+        const payload = {
+          ok: true,
+          dryRun: true,
+          transactionId: dryId,
+          plannedAt,
+          approvalRequired: args.items.length > 1,
+          uiHint: 'Dry-run: no DB row created. Show plan; downstream tools will also no-op.',
+          items: args.items,
+          rationale: args.rationale,
+        };
+        if (c.emitDataPart) {
+          c.emitDataPart({ type: 'data-build-plan', id: `plan:${dryId}`, data: payload });
+        }
+        span.end(payload);
+        return asCallToolResult(payload);
+      }
       try {
         const created = await c.prisma.buildTransaction.create({
           data: {
@@ -107,6 +136,11 @@ export function buildPlanBuildChangesTool(
         return asError(`plan_build_changes failed: ${err?.message ?? String(err)}`);
       }
     },
-    { annotations: { idempotentHint: true } },
+    // 2026-05-15: idempotentHint was incorrectly true — two consecutive
+    // calls produce two distinct transactionIds (different DB rows), so the
+    // operation is NOT idempotent. MCP clients use this hint to decide auto-
+    // retry policies; an incorrect hint causes silent double-creates. Mark
+    // as non-destructive (no rollback on retry) but explicitly not idempotent.
+    { annotations: { destructiveHint: false } },
   );
 }

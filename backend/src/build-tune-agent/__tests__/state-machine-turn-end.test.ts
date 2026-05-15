@@ -7,7 +7,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-turn-end';
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeTurnEndSnapshot, DEFAULT_SNAPSHOT } from '../state-machine';
+import { coerceSnapshot, computeTurnEndSnapshot, DEFAULT_SNAPSHOT } from '../state-machine';
 
 test('verifying + test_pipeline ran → auto-exit to drafting', () => {
   const start = { ...DEFAULT_SNAPSHOT, inner_state: 'verifying' as const };

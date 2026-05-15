@@ -98,7 +98,11 @@ export function buildGetEvidenceIndexTool(
         return asError(`studio_get_evidence_index failed: ${err?.message ?? String(err)}`);
       }
     },
-    { annotations: { readOnlyHint: true } },
+    // 2026-05-15: readOnlyHint was incorrectly true — the messageId branch
+    // persists a fresh EvidenceBundle row on every call. Mark non-
+    // destructive (re-runs just re-create bundle rows, no data loss) but
+    // not read-only.
+    { annotations: { destructiveHint: false } },
   );
 }
 
@@ -133,6 +137,23 @@ async function ensureBundleId(
     if (!message) {
       return { ok: false, message: `Message ${args.messageId} not found for tenant.` };
     }
+    // 2026-05-15: dedupe — if we assembled a bundle for this (tenant,
+    // message) in the last 10 minutes, return that one instead of
+    // creating yet another row. Each evidence_index call previously
+    // wrote a new row; over a long tuning session that's hundreds of
+    // duplicate bundles per message.
+    const recent = await c.prisma.evidenceBundle.findFirst({
+      where: {
+        tenantId: c.tenantId,
+        messageId: message.id,
+        createdAt: { gte: new Date(Date.now() - 10 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true },
+    });
+    if (recent) {
+      return { ok: true, bundleId: recent.id, bundle: recent.payload };
+    }
     const assembled = await assembleEvidenceBundle(
       {
         tenantId: c.tenantId,
@@ -142,6 +163,11 @@ async function ensureBundleId(
       },
       c.prisma,
     );
+    // Harness parity — don't persist under dry-run. Return a synthetic id
+    // so studio_get_evidence_section can resolve via the carried payload.
+    if (process.env.STUDIO_HARNESS_DRY_RUN === 'true') {
+      return { ok: true, bundleId: `dry-${message.id}`, bundle: assembled };
+    }
     // Persist a temporary row so studio_get_evidence_section can re-load
     // by id. Without this, the bundle would have to be carried in the
     // pointer payload (bloating the token) or re-assembled on every

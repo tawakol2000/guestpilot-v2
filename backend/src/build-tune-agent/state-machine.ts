@@ -54,11 +54,23 @@ export const TRANSITION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 /**
  * Best-effort coercion of an unknown JSONB value into a snapshot,
  * filling in defaults for missing fields. Tolerates legacy rows.
+ *
+ * `defaultOuterMode` is honored only when the raw value is null/empty or
+ * its outer_mode is missing — never overrides a persisted outer_mode.
+ * Used by runners to seed first-turn conversations with the per-request
+ * `input.mode` instead of the hardcoded BUILD default, so a TUNE-mode
+ * turn doesn't render <current_state> as BUILD/scoping.
  */
-export function coerceSnapshot(raw: unknown): StateMachineSnapshot {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SNAPSHOT };
+export function coerceSnapshot(
+  raw: unknown,
+  defaultOuterMode: OuterMode = DEFAULT_SNAPSHOT.outer_mode,
+): StateMachineSnapshot {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_SNAPSHOT, outer_mode: defaultOuterMode };
+  }
   const r = raw as Partial<StateMachineSnapshot>;
-  const outer: OuterMode = r.outer_mode === 'TUNE' ? 'TUNE' : 'BUILD';
+  const outer: OuterMode =
+    r.outer_mode === 'TUNE' || r.outer_mode === 'BUILD' ? r.outer_mode : defaultOuterMode;
   const inner: InnerState =
     r.inner_state === 'drafting' || r.inner_state === 'verifying'
       ? r.inner_state

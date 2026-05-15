@@ -22,7 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, type UIMessage } from 'ai'
-import { ArrowUp, AlertTriangle, Sparkles } from 'lucide-react'
+import { ArrowUp, AlertTriangle, Sparkles, Square } from 'lucide-react'
+import { toolVerb } from './tool-verbs'
 import { toast } from 'sonner'
 import { getToken, apiConfirmTransition, apiRejectTransition, type StudioStateMachineSnapshot } from '@/lib/api'
 import { readStudioProvider } from './provider-toggle'
@@ -340,7 +341,7 @@ export function StudioChat({
     [conversationId],
   )
 
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status, error, stop } = useChat({
     id: conversationId,
     messages: initialMessages,
     transport,
@@ -516,7 +517,13 @@ export function StudioChat({
     const setDerived = shellContext.setDerivedContext
     if (typeof setDerived !== 'function') return
     const items: { toolName: string; target: string | null; at: string }[] = []
-    const seen = new Set<string>()
+    // 2026-05-15 polish: dedup by (toolName, target) instead of toolCallId.
+    // The agent often re-reads the same artifact across rounds (e.g. two
+    // studio_get_artifact calls on system_prompt:screening); listing both
+    // under CONTEXT IN USE makes the panel feel noisy and wastes vertical
+    // space. Collapsing by target preserves the "what was consulted"
+    // signal without duplicates.
+    const seenTargets = new Set<string>()
     for (const m of messages) {
       const parts = (m as any).parts as Array<Record<string, any>> | undefined
       if (!Array.isArray(parts)) continue
@@ -529,12 +536,13 @@ export function StudioChat({
         const rawToolName = typeof p.toolName === 'string' ? p.toolName : t.slice('tool-'.length)
         const toolName = normalizeToolName(rawToolName)
         if (!READ_TOOL_NAMES.has(toolName)) continue
-        const callKey = typeof p.toolCallId === 'string' ? p.toolCallId : `${m.id}:${toolName}:${items.length}`
-        if (seen.has(callKey)) continue
-        seen.add(callKey)
+        const target = extractToolTarget(toolName, p.input)
+        const dedupKey = `${toolName}::${target ?? ''}`
+        if (seenTargets.has(dedupKey)) continue
+        seenTargets.add(dedupKey)
         items.push({
           toolName,
-          target: extractToolTarget(toolName, p.input),
+          target,
           at: new Date().toISOString(),
         })
       }
@@ -794,7 +802,10 @@ export function StudioChat({
     })
   }, [error])
 
-  const empty = messages.length === 0
+  // 2026-05-15 polish: suppress the empty-state CTA when the parent has
+  // seeded an anchorMessage — in that case the auto-opener effect fires
+  // ~1 frame after mount and would otherwise flash the greenfield CTA.
+  const empty = messages.length === 0 && !anchorMessage?.id
 
   return (
     <div
@@ -918,6 +929,15 @@ export function StudioChat({
                 onSubmit(e as unknown as React.FormEvent)
                 return
               }
+              // 2026-05-15 polish: Esc while a turn is streaming aborts it.
+              // Matches Cursor / Claude.ai convention; pairs with the Stop
+              // button. No-op when not streaming so the textarea's Esc-clear
+              // (browser default for some platforms) still feels native.
+              if (e.key === 'Escape' && (isStreaming || isSending)) {
+                e.preventDefault()
+                stop()
+                return
+              }
               // Sprint 058-A F8 — ⌘Z (mac) / Ctrl+Z (others) within 15s of an
               // ✨ enhance restores the pre-enhance draft. No-op once the
               // window expires or no undo slot is stashed.
@@ -1033,21 +1053,43 @@ export function StudioChat({
               <Sparkles size={15} strokeWidth={2.25} aria-hidden />
             </button>
           ) : null}
-          <button
-            type="submit"
-            disabled={!canSend}
-            aria-label="Send message"
-            className="flex shrink-0 items-center justify-center disabled:opacity-60"
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: STUDIO_TOKENS_V2.radiusMd,
-              background: canSend ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.surface3,
-              color: canSend ? '#FFFFFF' : STUDIO_TOKENS_V2.muted2,
-            }}
-          >
-            <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
-          </button>
+          {isStreaming || isSending ? (
+            <button
+              type="button"
+              onClick={() => stop()}
+              aria-label="Stop generating"
+              title="Stop generating (Esc)"
+              data-testid="composer-stop-button"
+              className="flex shrink-0 items-center justify-center"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: STUDIO_TOKENS_V2.radiusMd,
+                background: STUDIO_TOKENS_V2.surface3,
+                color: STUDIO_TOKENS_V2.ink,
+                border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+                cursor: 'pointer',
+              }}
+            >
+              <Square size={12} strokeWidth={2.5} aria-hidden fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!canSend}
+              aria-label="Send message"
+              className="flex shrink-0 items-center justify-center disabled:opacity-60"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: STUDIO_TOKENS_V2.radiusMd,
+                background: canSend ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.surface3,
+                color: canSend ? '#FFFFFF' : STUDIO_TOKENS_V2.muted2,
+              }}
+            >
+              <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
+            </button>
+          )}
           </div>
           {/* Sprint 046 T013 — composer chips row. Reference opens the
              artifact-picker popover (FR-025a); Test forwards the draft
@@ -1220,7 +1262,52 @@ function MessageRow({
   onStateMachineSnapshot?: (data: StudioStateMachineSnapshot) => void
 }) {
   const isUser = message.role === 'user'
-  const parts = ((message as any).parts as Array<Record<string, any>>) ?? []
+  const rawParts = ((message as any).parts as Array<Record<string, any>>) ?? []
+  // 2026-05-15 polish: merge persisted tool-* parts by toolCallId. At
+  // stream time the Vercel AI SDK exposes a single tool part with a
+  // `state` attribute that transitions input-start → input-available →
+  // output-available. The PERSISTED shape (TuningMessage.parts) is
+  // separate parts per state-transition emit. Without merging, the
+  // drawer shows "running" + "Waiting for output…" on every historical
+  // tool call because it only sees the tool-input-available part (the
+  // output-available part has no toolName so it's stripped). Walk the
+  // list once, fold output-available into the matching input-available
+  // by toolCallId, and drop the now-redundant trailing part.
+  const parts: Array<Record<string, any>> = (() => {
+    const byCallId = new Map<string, Record<string, any>>()
+    // Fallback: queue of input parts without a callId, so a subsequent
+    // output-available part with no callId pairs with the most recent
+    // unpaired input. Persisted parts written by the harness + legacy
+    // controller emit had no `toolCallId`, so positional pairing is the
+    // only signal we have. Sequential ordering is preserved because the
+    // SDK emits input → output back-to-back per tool call.
+    const positionalQueue: Array<Record<string, any>> = []
+    const out: Array<Record<string, any>> = []
+    for (const p of rawParts) {
+      const t = typeof p?.type === 'string' ? p.type : ''
+      const callId = typeof p?.toolCallId === 'string' ? p.toolCallId : null
+      if (t === 'tool-input-available' || (t.startsWith('tool-') && typeof p?.toolName === 'string' && p.toolName)) {
+        const merged = { ...p, type: 'tool-input-available', state: 'input-available' as const }
+        if (callId) byCallId.set(callId, merged)
+        positionalQueue.push(merged)
+        out.push(merged)
+        continue
+      }
+      if (t === 'tool-output-available' || t === 'tool-output-error') {
+        // Prefer callId match; fall back to oldest unpaired input part.
+        const target = (callId && byCallId.get(callId)) || positionalQueue.shift()
+        if (target) {
+          target.state = t === 'tool-output-error' ? 'output-error' : 'output-available'
+          if (p.output !== undefined) target.output = p.output
+          if (p.errorText !== undefined) target.errorText = p.errorText
+          if (callId) byCallId.delete(callId)
+          continue
+        }
+      }
+      out.push(p)
+    }
+    return out
+  })()
 
   // Sprint 057-A F1 — track whether the tool-chain summary is expanded so
   // we can show/hide the standalone tool-chip section in sync.
@@ -1235,14 +1322,11 @@ function MessageRow({
   // cancelled the stream, etc.) we previously rendered a ghost row:
   // just the Studio avatar + name with an empty body. The operator
   // saw no signal and couldn't retry. Fallback below covers that.
-  const hasRenderableContent =
-    textParts.length > 0 ||
-    reasoningParts.length > 0 ||
-    toolParts.length > 0 ||
-    standaloneParts.length > 0
-  // Only show the fallback on *finalised* turns (not the currently-
-  // streaming last message, where transient empty states are normal).
-  const showEmptyTurnFallback = !isUser && !hasRenderableContent && !isLast
+  // 2026-05-15 polish: previously `hasRenderableContent` was computed
+  // BEFORE the classification loop ran, so the four bucket arrays were
+  // always empty at this point and EmptyAssistantTurnFallback fired on
+  // every historical finalised assistant message — even ones with text +
+  // tool chips. Move the computation to AFTER classification (below).
   // Sprint 058-A F9b — merge consecutive reasoning parts into a single
   // entry so each reasoning streak renders as one <ReasoningLine>, not
   // one per SDK chunk. Without this, chunk boundaries produce the
@@ -1270,6 +1354,16 @@ function MessageRow({
       lastClassified = 'standalone'
     }
   }
+
+  // 2026-05-15 polish: classification done; now compute renderable flag.
+  const hasRenderableContent =
+    textParts.length > 0 ||
+    reasoningParts.length > 0 ||
+    toolParts.length > 0 ||
+    standaloneParts.length > 0
+  // Only show the fallback on *finalised* turns (not the currently-
+  // streaming last message, where transient empty states are normal).
+  const showEmptyTurnFallback = !isUser && !hasRenderableContent && !isLast
 
   // Sprint 046 T024+T025 — bubble redesign.
   //
@@ -1462,9 +1556,22 @@ function MessageRow({
 
             {standaloneParts.length > 0 && (
               <div className="flex flex-col gap-2">
-                {standaloneParts.map((p, i) => (
+                {standaloneParts.map((p, i) => {
+                  // 2026-05-15 polish: prefer the data-part's own id when
+                  // present so a re-emission (same id, fresh payload) tears
+                  // down + remounts the child, resetting any internal
+                  // "Accepted" state that would otherwise persist across
+                  // the re-stream. Fall back to position when no id (legacy
+                  // parts that don't supply one).
+                  const partKey =
+                    (p as any)?.id != null
+                      ? `s:${(p as any).id}`
+                      : (p as any)?.data?.id != null
+                        ? `s:${(p as any).data.id}`
+                        : `s:${i}:${(p as any)?.type ?? 'p'}`
+                  return (
                   <StandalonePart
-                    key={`s:${i}`}
+                    key={partKey}
                     part={p}
                     conversationId={conversationId}
                     conversationMessages={conversationMessages}
@@ -1478,7 +1585,7 @@ function MessageRow({
                     onOpenVerificationForHistoryId={onOpenVerificationForHistoryId}
                     onStateMachineSnapshot={onStateMachineSnapshot}
                   />
-                ))}
+                )})}
               </div>
             )}
           </div>
@@ -1536,12 +1643,23 @@ function StandalonePart({
   }
 
   if (type.startsWith('tool-')) {
-    const toolName = part.toolName ?? type.slice('tool-'.length)
+    // 2026-05-15: tool-output-available + tool-input-start carry no
+    // toolName when persisted standalone (the Vercel AI SDK merges them
+    // into a single part by toolCallId at runtime, but the persisted
+    // history shape is one part per state-transition emit). Skip these
+    // state-transition shells — the canonical tool-input-available part
+    // (which DOES carry toolName) is the one we want to chip.
+    const rawToolName = part.toolName
+    if (!rawToolName && (type === 'tool-output-available' || type === 'tool-output-error' || type === 'tool-input-start')) {
+      return null
+    }
+    const toolName = rawToolName ?? type.slice('tool-'.length)
     const state = part.state ?? 'input-available'
     return (
       <ToolCallChip
         toolName={toolName}
         state={state}
+        input={part.input}
         onClick={(origin) =>
           onOpenToolDrawer?.(
             {
@@ -2035,13 +2153,24 @@ function StandalonePart({
 function ToolCallChip({
   toolName,
   state,
+  input,
   onClick,
 }: {
   toolName: string
   state: string
+  input?: unknown
   onClick?: (origin: HTMLElement | null) => void
 }) {
-  const short = toolName.replace(/^mcp__[^_]+__/, '').replace(/_/g, ' ')
+  // 2026-05-15: render the human verb ("Read context", "Wrote SOP") via
+  // the shared TOOL_VERB_MAP rather than the underscored raw name. The
+  // mapping respects per-op verbs (e.g. studio_suggestion → "Proposed
+  // fix" vs "Applied fix") when input is passed.
+  const verb = toolVerb(
+    toolName,
+    typeof input === 'object' && input !== null
+      ? (input as Record<string, unknown>)
+      : undefined,
+  )
   const running = state === 'input-available' || state === 'input-start'
   const err = state === 'output-error'
   const style = getStudioCategoryStyle(undefined)
@@ -2049,7 +2178,7 @@ function ToolCallChip({
     <button
       type="button"
       onClick={(e) => onClick?.(e.currentTarget)}
-      aria-label={`Tool call details: ${short}`}
+      aria-label={`Tool call details: ${verb}`}
       className="inline-flex items-center gap-1.5 self-start rounded-full border-0 px-2.5 py-0.5 text-[11px] font-medium"
       style={{
         background: err
@@ -2077,7 +2206,7 @@ function ToolCallChip({
           opacity: running ? 0.7 : 1,
         }}
       />
-      {short}
+      {verb}
     </button>
   )
 }
@@ -2110,20 +2239,27 @@ function AttributedText({
   if (!hasCitations) {
     return <AgentProse text={text} isUser={isUser} />
   }
+  // 2026-05-15 polish: previously each text chunk between citation markers
+  // was rendered through <AgentProse>, which wraps text in a <p> with
+  // margin-bottom: 10px. That broke citation-bearing prose into 3+
+  // stacked paragraphs (text → chip → text → chip → text) with vertical
+  // gaps and dangling punctuation (a trailing "," on its own line was
+  // the most visible artefact). Render the whole thing as a single
+  // paragraph with inline text/chip spans so the prose flows naturally.
   return (
-    <div
+    <p
+      className="whitespace-pre-wrap"
       data-origin={isUser ? 'user' : 'agent'}
       style={{
-        color: isUser ? STUDIO_COLORS.ink : STUDIO_COLORS.inkMuted,
+        margin: 0,
+        fontSize: 14,
+        lineHeight: 1.55,
+        color: isUser ? 'inherit' : STUDIO_COLORS.inkMuted,
       }}
     >
       {tokens.map((t, i) =>
         t.kind === 'text' ? (
-          // Rendering each text chunk through AgentProse means citations
-          // break out of any enclosing paragraph (react-markdown wraps
-          // single-line text in <p>), but that matches the pre-fix
-          // behaviour — chips sat inline with surrounding prose.
-          <AgentProse key={`t:${i}`} text={t.text} isUser={isUser} />
+          <span key={`t:${i}`}>{t.text}</span>
         ) : (
           <CitationChip
             key={`c:${i}:${t.raw}`}
@@ -2143,7 +2279,7 @@ function AttributedText({
           />
         ),
       )}
-    </div>
+    </p>
   )
 }
 

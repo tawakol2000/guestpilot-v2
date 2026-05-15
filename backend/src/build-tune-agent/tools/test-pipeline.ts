@@ -247,7 +247,11 @@ export function buildTestPipelineTool(
         // variants onto the triggering history row's metadata.testResult.
         // Outside a ritual, we deliberately DO NOT mutate any row —
         // a user-initiated test_pipeline renders in chat only.
-        if (historyId) {
+        // 2026-05-15: skip metadata persistence under STUDIO_HARNESS_DRY_RUN
+        // so harness runs don't mutate BuildArtifactHistory rows on the
+        // live tenant. The variant data still flows through the SSE part
+        // so the agent + frontend see the same payload.
+        if (historyId && process.env.STUDIO_HARNESS_DRY_RUN !== 'true') {
           await appendVerificationResult(
             c.prisma,
             historyId,
@@ -306,6 +310,10 @@ export function buildTestPipelineTool(
         );
       }
     },
-    { annotations: { readOnlyHint: true } },
+    // 2026-05-15: readOnlyHint was incorrectly true — the tool writes
+    // verification metadata to BuildArtifactHistory under a live ritual.
+    // Mark non-destructive (re-running re-stamps metadata, no data loss)
+    // but not read-only.
+    { annotations: { destructiveHint: false } },
   );
 }

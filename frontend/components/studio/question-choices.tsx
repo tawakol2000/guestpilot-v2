@@ -363,6 +363,13 @@ export function QuestionChoicesCard(props: QuestionChoicesCardProps) {
                 onBlur={() => setCustomActive(false)}
                 onChange={(e) => setCustomText(e.target.value)}
                 onKeyDown={(e) => {
+                  // 2026-05-15 polish: stop digit-key propagation so the
+                  // article-level keyboard shortcut (pressing "1".."9" to
+                  // pick an option) doesn't fire while the operator is
+                  // typing a custom answer like "1bedroom unit".
+                  if (/^[1-9]$/.test(e.key)) {
+                    e.stopPropagation()
+                  }
                   if (e.key === 'Enter') {
                     e.preventDefault()
                     sendCustom()

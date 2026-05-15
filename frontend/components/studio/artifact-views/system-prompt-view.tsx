@@ -76,19 +76,32 @@ export function SystemPromptView({
             />
           )
         ) : (
+          // 2026-05-15 polish: friendlier copy + lock icon so the gate
+          // feels like a sensible permission instead of a hard wall.
+          // "Open the dedicated Tuning editor" mentions a thing the
+          // operator can't actually navigate to from here, so it's
+          // dropped in favour of a one-line explanation.
           <div
             role="note"
+            aria-label="Body hidden — admin access required"
             style={{
-              fontSize: 12,
-              color: STUDIO_COLORS.inkSubtle,
-              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              fontSize: 12.5,
+              color: STUDIO_COLORS.inkMuted,
+              padding: '10px 14px',
               background: STUDIO_COLORS.surfaceRaised,
               border: `1px dashed ${STUDIO_COLORS.hairline}`,
-              borderRadius: 5,
+              borderRadius: 6,
+              lineHeight: 1.5,
             }}
           >
-            Full system-prompt body is admin-only. Open the dedicated
-            Tuning editor for authorised access.
+            <span aria-hidden style={{ fontSize: 14, lineHeight: 1, marginTop: 1 }}>🔒</span>
+            <span>
+              Body hidden — system-prompt contents are admin-only. Ask an
+              admin to enable raw-prompt access if you need to inspect it.
+            </span>
           </div>
         )}
       </div>
@@ -98,8 +111,36 @@ export function SystemPromptView({
 
 function formatDate(iso: string | undefined): string {
   if (!iso) return '—'
+  // 2026-05-15 polish: relative time ("today 5:38 PM", "yesterday",
+  // "3 days ago") reads better than the locale-default
+  // "5/15/2026, 5:38:06 PM" string. Falls back to the absolute form for
+  // older edits.
   try {
-    return new Date(iso).toLocaleString()
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMin = Math.round(diffMs / 60_000)
+    const diffH = Math.round(diffMs / 3_600_000)
+    const diffD = Math.round(diffMs / 86_400_000)
+    const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    if (diffMin < 1) return 'just now'
+    if (diffMin < 60) return `${diffMin} min ago`
+    if (diffH < 12) return `${diffH}h ago`
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    if (sameDay) return `today, ${timeStr}`
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    const isYesterday =
+      d.getFullYear() === yesterday.getFullYear() &&
+      d.getMonth() === yesterday.getMonth() &&
+      d.getDate() === yesterday.getDate()
+    if (isYesterday) return `yesterday, ${timeStr}`
+    if (diffD < 7) return `${diffD} days ago`
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
   } catch {
     return iso
   }

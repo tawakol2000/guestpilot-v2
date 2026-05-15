@@ -34,7 +34,12 @@ export function AgentProse({ text, isUser }: AgentProseProps) {
   return (
     <div
       data-origin={isUser ? 'user' : 'agent'}
-      className="text-[14px] leading-[1.55]"
+      // 2026-05-15 polish: drop the bottom margin on the last block-level
+      // child so single-paragraph messages (the common case in a user
+      // bubble) don't float against the top of the bubble with a void
+      // beneath. Multi-paragraph messages still get inter-paragraph
+      // spacing from the per-element styles below.
+      className="text-[14px] leading-[1.55] [&>*:last-child]:!mb-0"
       style={{ color }}
     >
       <ReactMarkdown

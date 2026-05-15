@@ -76,9 +76,13 @@ export interface FixTarget {
   artifactId?: string;
   sectionId?: string;
   slotKey?: string;
-  lineRange?: [number, number];
+  // 2026-05-15: tool schemas now emit lineRange as {start,end}. Accept both
+  // shapes here so legacy persisted parts (the chat hydrates from history)
+  // continue to deserialise; frontend renderer also accepts both.
+  lineRange?: { start: number; end: number } | [number, number];
   sopCategory?: string;
-  sopStatus?: 'DEFAULT' | 'INQUIRY' | 'CONFIRMED' | 'CHECKED_IN';
+  // 2026-05-15: full reservation-status set — mirrors suggestion.ts.
+  sopStatus?: 'DEFAULT' | 'INQUIRY' | 'PENDING' | 'CONFIRMED' | 'CHECKED_IN' | 'CHECKED_OUT';
   sopPropertyId?: string;
   faqEntryId?: string;
   systemPromptVariant?: 'coordinator' | 'screening';
