@@ -427,7 +427,12 @@ export function SuggestedFixCard(props: SuggestedFixCardProps) {
           {state === 'rejecting' ? 'Rejecting…' : state === 'rejected' ? 'Rejected' : 'Reject'}
         </button>
         {state === 'error' && (
-          <span style={{ fontSize: 12, color: STUDIO_COLORS.dangerFg }}>
+          // 2026-05-16 a11y: role="alert" so screen-reader users hear
+          // the failure without re-tabbing onto the error span.
+          <span
+            role="alert"
+            style={{ fontSize: 12, color: STUDIO_COLORS.dangerFg }}
+          >
             {errorMessage ?? 'Something went wrong. Try again.'}
           </span>
         )}

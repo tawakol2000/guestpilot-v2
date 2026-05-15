@@ -267,6 +267,16 @@ const SDK_INTERNAL_LIFECYCLE_TYPES = new Set<string>([
   'finish-step',
   'start',
   'finish',
+  // 2026-05-16: types the agent emits but the operator UI doesn't surface
+  // inline — they're either consumed by parent callbacks (cache-stats,
+  // state-machine-snapshot), persisted to the ledger (write-echoes), or
+  // routed via Plan/Tests/Suggestions tabs. Without this set they leaked
+  // as "(unsupported card: data-cache-stats)" mid-conversation.
+  'data-cache-stats',
+  'data-faq-created',
+  'data-sop-created',
+  'data-tool-created',
+  'data-system-prompt-written',
 ])
 
 // Sprint 050 A3 — helpers that turn a plan-approval or suggested-fix
@@ -2458,9 +2468,16 @@ function EmptyAssistantTurnFallback({ onRetry }: { onRetry: () => void }) {
 }
 
 function TypingIndicator() {
+  // 2026-05-16 a11y: role="status" + aria-live="polite" so screen-reader
+  // users hear "Agent is thinking..." when a turn starts and silence
+  // (i.e. the indicator clearing) when it finishes. Without this the
+  // SR user got no signal when a turn started or completed.
   return (
     <div
       className="px-5 py-3 text-[12px]"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       style={{ color: STUDIO_COLORS.inkSubtle }}
     >
       <span>Agent is thinking…</span>

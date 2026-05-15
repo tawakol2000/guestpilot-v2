@@ -271,7 +271,10 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
       />
 
       {error ? (
+        // 2026-05-16 a11y: role="alert" so SR users hear the load
+        // failure without having to tab to it.
         <div
+          role="alert"
           style={{
             border: `1px solid rgba(220, 38, 38, 0.25)`,
             background: STUDIO_COLORS.dangerBg,
