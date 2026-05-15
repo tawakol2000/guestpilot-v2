@@ -131,7 +131,7 @@ export function TestPipelineResult(props: TestPipelineResultProps) {
             className="text-[10.5px] font-medium uppercase tracking-wide"
             style={{ color: TUNING_COLORS.inkSubtle }}
           >
-            Verification ritual · {data.ritualVersion ?? ''}
+            Verification ritual{data.ritualVersion ? ` · ${data.ritualVersion}` : ''}
           </span>
         </div>
       </header>
@@ -258,6 +258,11 @@ function renderHeadline(
 }
 
 function computeAggregate(passed: number, failed: number): AggregateVerdict {
+  // 2026-05-16: empty-variants payload should not render a red
+  // "all_failed" verdict. A test ritual that emits with variants:[] is
+  // a no-op, not a failure — treat as all-passed (the renderer above
+  // also short-circuits when total === 0).
+  if (passed === 0 && failed === 0) return 'all_passed'
   if (passed > 0 && failed === 0) return 'all_passed'
   if (passed === 0) return 'all_failed'
   return 'partial'
@@ -352,7 +357,14 @@ function VariantRow({ variant }: { variant: TestPipelineVariant }) {
         <span
           style={{ fontSize: 10.5, fontFamily: 'monospace', color: TUNING_COLORS.inkSubtle }}
         >
-          {Math.round(variant.judgeScore * 100)}%
+          {/* 2026-05-16: guard against undefined judgeScore so the
+             card doesn't print "NaN%" when the agent didn't ship a
+             score (the judge sometimes returns null on parse failure
+             and the front returns score:0 — but the upstream Test
+             Pipeline payload occasionally lands with undefined). */}
+          {Number.isFinite(variant.judgeScore)
+            ? `${Math.round(variant.judgeScore * 100)}%`
+            : '—'}
         </span>
       </button>
       {open ? (

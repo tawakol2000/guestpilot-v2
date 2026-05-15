@@ -40,6 +40,20 @@ const OUTER_LABEL: Record<StudioOuterMode, string> = {
   TUNE: 'Tuning',
 }
 
+// 2026-05-16: defensive fallback when the backend ships a value outside
+// the enum (e.g. a future state we don't recognise yet). Returns a
+// sentence-cased version of the raw value rather than `undefined`.
+function safeInnerLabel(s: StudioInnerState | string): string {
+  if (INNER_LABEL[s as StudioInnerState]) return INNER_LABEL[s as StudioInnerState]
+  const raw = String(s ?? 'unknown')
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+function safeOuterLabel(o: StudioOuterMode | string): string {
+  if (OUTER_LABEL[o as StudioOuterMode]) return OUTER_LABEL[o as StudioOuterMode]
+  const raw = String(o ?? 'unknown')
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+}
+
 const INNER_COLOR: Record<StudioInnerState, string> = {
   scoping: '#3b82f6', // blue — info gathering
   drafting: '#a855f7', // purple — mutation
@@ -97,15 +111,15 @@ export function StateChip({ conversationId, snapshot, onSnapshotChange }: StateC
           background: INNER_COLOR[inner],
         }}
       />
-      <span style={{ color: STUDIO_TOKENS_V2.ink, fontWeight: 500 }}>{OUTER_LABEL[outer]}</span>
+      <span style={{ color: STUDIO_TOKENS_V2.ink, fontWeight: 500 }}>{safeOuterLabel(outer)}</span>
       <span style={{ color: STUDIO_TOKENS_V2.muted2 }}>·</span>
-      <span>{INNER_LABEL[inner]}</span>
+      <span>{safeInnerLabel(inner)}</span>
       <button
         type="button"
         onClick={onReclassify}
         disabled={busy}
-        title={`Switch to ${OUTER_LABEL[target].toLowerCase()}`}
-        aria-label={`Switch this conversation to ${OUTER_LABEL[target].toLowerCase()} mode`}
+        title={`Switch to ${safeOuterLabel(target).toLowerCase()}`}
+        aria-label={`Switch this conversation to ${safeOuterLabel(target).toLowerCase()} mode`}
         style={{
           marginLeft: 4,
           padding: '2px 8px',
@@ -117,7 +131,7 @@ export function StateChip({ conversationId, snapshot, onSnapshotChange }: StateC
           cursor: busy ? 'wait' : 'pointer',
         }}
       >
-        → {OUTER_LABEL[target]}
+        → {safeOuterLabel(target)}
       </button>
       {err ? (
         <span role="alert" style={{ color: '#dc2626', fontSize: 11 }}>

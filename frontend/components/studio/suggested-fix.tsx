@@ -505,10 +505,14 @@ function DiffBlock({
           color: STUDIO_COLORS.diffAddFg,
           borderColor: 'rgba(17, 122, 61, 0.25)',
           margin: 0,
-          fontStyle: pending ? 'italic' : 'normal',
+          fontStyle: !after ? 'italic' : pending ? 'italic' : 'normal',
         }}
       >
-        {after}
+        {/* 2026-05-16: render an explicit "(removed)" placeholder for
+           removal-only fixes. Without this the green pane was an
+           empty 8px-padding block that read as "content here you
+           can't see" rather than "nothing here on purpose". */}
+        {after || '(removed)'}
       </pre>
     </div>
   )

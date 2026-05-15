@@ -20,8 +20,12 @@ import {
   type StudioStateMachineSnapshot,
 } from '@/lib/api'
 
+// 2026-05-16 polish: operator-facing labels mirror state-chip.tsx so
+// confirm/reject text doesn't read "Confirm transition to Verifying"
+// next to a chip that says "Asking / Drafting / Verifying" — keep one
+// vocabulary across the surface. Internal enum still drives logic.
 const STATE_LABEL: Record<StudioInnerState, string> = {
-  scoping: 'Scoping',
+  scoping: 'Asking',
   drafting: 'Drafting',
   verifying: 'Verifying',
 }
@@ -148,16 +152,22 @@ export function TransitionProposalCard({
         <span style={{ color: STUDIO_TOKENS_V2.muted2 }}>→</span>
         <Pill state={proposedState} />
       </div>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 13,
-          lineHeight: 1.5,
-          color: STUDIO_TOKENS_V2.ink2,
-        }}
-      >
-        “{because}”
-      </p>
+      {/* 2026-05-16: skip the quote block when `because` is blank
+         (the agent occasionally omits the rationale). Without this
+         the operator saw an empty pair of curly quotes — looks like
+         a render bug. */}
+      {because && because.trim() ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: STUDIO_TOKENS_V2.ink2,
+          }}
+        >
+          “{because}”
+        </p>
+      ) : null}
       {expired ? (
         <p style={{ margin: 0, fontSize: 11, color: STUDIO_TOKENS_V2.amber }}>
           Proposal expired — start a fresh one if still needed.

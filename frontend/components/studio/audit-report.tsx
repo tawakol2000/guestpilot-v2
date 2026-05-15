@@ -144,15 +144,19 @@ export function AuditReportCard(props: AuditReportCardProps) {
                 borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
               }}
             >
+              {/* 2026-05-16: STATUS_LABEL/STUDIO_STATUS_DOT lookups
+                 returned undefined for any value outside the 5-key
+                 enum, producing an invisible dot with no tooltip.
+                 Default to a neutral "unknown" label + dot. */}
               <span
-                title={STATUS_LABEL[row.status]}
-                aria-label={STATUS_LABEL[row.status]}
+                title={STATUS_LABEL[row.status] ?? 'Status unknown'}
+                aria-label={STATUS_LABEL[row.status] ?? 'Status unknown'}
                 style={{
                   width: 10,
                   height: 10,
                   marginTop: 6,
                   borderRadius: '50%',
-                  background: STUDIO_STATUS_DOT[row.status],
+                  background: STUDIO_STATUS_DOT[row.status] ?? STUDIO_COLORS.inkSubtle,
                   flexShrink: 0,
                 }}
               />
