@@ -145,6 +145,19 @@ function assistantPartsToItems(parts: VercelPart[]): ResponsesInputItem[] {
           call_id: part.toolCallId,
           arguments: serialiseArguments(part.input),
         });
+        // Vercel AI SDK persists completed tool round-trips with BOTH
+        // input AND output on the same assistant-row part (state:
+        // 'output-available'). OpenAI Responses API requires every
+        // function_call to be followed by a function_call_output —
+        // emit it here when the output is present, otherwise the API
+        // rejects the next turn with a 400.
+        if (part.state === 'output-available' || part.output !== undefined) {
+          items.push({
+            type: 'function_call_output',
+            call_id: part.toolCallId,
+            output: serialiseToolOutput(part.output),
+          });
+        }
       }
     }
   }
