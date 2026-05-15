@@ -2141,12 +2141,28 @@ function StandalonePart({
       body?: string
     }
     const body = typeof data.body === 'string' ? data.body : ''
-    const label =
+    // 2026-05-15 polish: prettify the source label. The backend often
+    // sends "SOP: sop-early-check-in · DEFAULT" — combined with the
+    // chip's `uppercase` class, that rendered as "SOP: SOP-EARLY-CHECK-IN
+    // · DEFAULT" (shouty + duplicate SOP). Strip the studio-internal
+    // slug prefix and replace dashes with spaces so the chip reads cleanly.
+    const cleanLabel = (raw: string): string =>
+      raw
+        // Strip duplicated "Type: " prefix — the chip is already styled as
+        // an artifact-source pill (border + colour), so "SOP: early check
+        // in" reads as "Type: name" twice. Keep only the name half.
+        .replace(/^(SOP|FAQ|Prompt|Tool|Property)\s*:\s*/i, '')
+        .replace(/sop[_-]/gi, '')
+        .replace(/system[_-]prompt[_-]?/gi, '')
+        .replace(/faq[_-]/gi, '')
+        .replace(/[_-]+/g, ' ')
+    const rawLabel =
       typeof data.sourceLabel === 'string' && data.sourceLabel
         ? data.sourceLabel
         : typeof data.artifact === 'string'
           ? `From ${data.artifact}${data.artifactId ? ` · ${data.artifactId.slice(0, 8)}` : ''}`
           : 'Quoted'
+    const label = cleanLabel(rawLabel)
     if (!body) return null
     const drawerType = mapQuoteArtifactToDrawer(data.artifact)
     const canOpen =
