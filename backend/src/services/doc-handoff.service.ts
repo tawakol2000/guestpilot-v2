@@ -746,6 +746,171 @@ export async function filterSafeImageUrls(urls: string[]): Promise<string[]> {
   return safe;
 }
 
+// ── Operator override: force-fire ─────────────────────────────────────────
+
+/**
+ * Operator-driven "fire now" for a specific reservation. Bypasses the
+ * scheduled fire time but runs the full evaluator (gates: feature enabled,
+ * recipient configured, checklist presence, WAsender enabled) and renders
+ * the real handoff/reminder text + images.
+ *
+ * If a row exists for (reservationId, messageType), it's reset to
+ * SCHEDULED at now() and re-evaluated. If none exists, one is created.
+ * Returns the post-evaluation row so the UI can show what happened.
+ */
+export async function forceFireDocHandoff(
+  reservationId: string,
+  messageType: 'REMINDER' | 'HANDOFF',
+  prisma: PrismaClient,
+): Promise<{
+  rowId: string;
+  result: 'sent' | 'deferred' | 'failed' | 'skipped' | 'noop';
+  row: Awaited<ReturnType<typeof prisma.documentHandoffState.findUnique>>;
+}> {
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    select: { id: true, tenantId: true },
+  });
+  if (!reservation) {
+    throw new Error('Reservation not found');
+  }
+
+  const existing = await prisma.documentHandoffState.findUnique({
+    where: { reservationId_messageType: { reservationId, messageType } },
+  });
+  let rowId: string;
+  if (existing) {
+    await prisma.documentHandoffState.update({
+      where: { id: existing.id },
+      data: {
+        status: STATUS_SCHEDULED,
+        scheduledFireAt: new Date(),
+        attemptCount: 0,
+        lastError: null,
+      },
+    });
+    rowId = existing.id;
+  } else {
+    const created = await prisma.documentHandoffState.create({
+      data: {
+        tenantId: reservation.tenantId,
+        reservationId,
+        messageType,
+        status: STATUS_SCHEDULED,
+        scheduledFireAt: new Date(),
+      },
+    });
+    rowId = created.id;
+  }
+
+  const result = await evaluateSingleRow(rowId, prisma);
+  const row = await prisma.documentHandoffState.findUnique({ where: { id: rowId } });
+  return { rowId, result, row };
+}
+
+/**
+ * Operator-driven listing of reservations whose check-in falls today in
+ * the doc-handoff timezone (Africa/Cairo). Used by the settings page to
+ * offer a "fire now" button per reservation.
+ */
+export async function listTodayCheckIns(
+  tenantId: string,
+  prisma: PrismaClient,
+): Promise<
+  Array<{
+    reservationId: string;
+    hostawayReservationId: string | null;
+    guestName: string | null;
+    propertyName: string | null;
+    checkIn: string;
+    checkOut: string;
+    status: string;
+    checklist: DocumentChecklist | null;
+    checklistComplete: boolean;
+    reminderRow: { status: string; sentAt: string | null; lastError: string | null } | null;
+    handoffRow: { status: string; sentAt: string | null; lastError: string | null } | null;
+  }>
+> {
+  const tzFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DOC_HANDOFF_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const todayStr = tzFmt.format(new Date());
+
+  // Pull a 60-hour window around now to comfortably cover today's check-ins
+  // in Cairo regardless of how the UTC timestamps drift.
+  const now = Date.now();
+  const reservations = await prisma.reservation.findMany({
+    where: {
+      tenantId,
+      status: { not: 'CANCELLED' },
+      checkIn: {
+        gte: new Date(now - 36 * 60 * 60 * 1000),
+        lte: new Date(now + 36 * 60 * 60 * 1000),
+      },
+    },
+    include: {
+      property: { select: { name: true } },
+      guest: { select: { name: true } },
+    },
+    orderBy: { checkIn: 'asc' },
+    take: 50,
+  });
+
+  const todayRes = reservations.filter((r) => tzFmt.format(r.checkIn) === todayStr);
+  if (todayRes.length === 0) return [];
+
+  const handoffRows = await prisma.documentHandoffState.findMany({
+    where: { reservationId: { in: todayRes.map((r) => r.id) } },
+    select: {
+      reservationId: true,
+      messageType: true,
+      status: true,
+      sentAt: true,
+      lastError: true,
+    },
+  });
+  const byRes = new Map<string, { reminder?: typeof handoffRows[number]; handoff?: typeof handoffRows[number] }>();
+  for (const row of handoffRows) {
+    const bucket = byRes.get(row.reservationId) ?? {};
+    if (row.messageType === MESSAGE_TYPE_REMINDER) bucket.reminder = row;
+    else if (row.messageType === MESSAGE_TYPE_HANDOFF) bucket.handoff = row;
+    byRes.set(row.reservationId, bucket);
+  }
+
+  return todayRes.map((r) => {
+    const checklist = getChecklistFromReservation(r);
+    const rows = byRes.get(r.id);
+    return {
+      reservationId: r.id,
+      hostawayReservationId: r.hostawayReservationId ?? null,
+      guestName: r.guest?.name?.trim() || null,
+      propertyName: r.property?.name ?? null,
+      checkIn: r.checkIn.toISOString(),
+      checkOut: r.checkOut.toISOString(),
+      status: r.status,
+      checklist,
+      checklistComplete: isChecklistComplete(checklist),
+      reminderRow: rows?.reminder
+        ? {
+            status: rows.reminder.status,
+            sentAt: rows.reminder.sentAt?.toISOString() ?? null,
+            lastError: rows.reminder.lastError ?? null,
+          }
+        : null,
+      handoffRow: rows?.handoff
+        ? {
+            status: rows.handoff.status,
+            sentAt: rows.handoff.sentAt?.toISOString() ?? null,
+            lastError: rows.handoff.lastError ?? null,
+          }
+        : null,
+    };
+  });
+}
+
 // ── Hot exports for tests ──────────────────────────────────────────────────
 
 export const __test = {

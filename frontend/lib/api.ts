@@ -1068,6 +1068,57 @@ export async function apiTestSendDocHandoff(input: {
   })
 }
 
+export interface DocHandoffTodayItem {
+  reservationId: string
+  hostawayReservationId: string | null
+  guestName: string | null
+  propertyName: string | null
+  checkIn: string
+  checkOut: string
+  status: string
+  checklist: {
+    passportsNeeded: number
+    passportsReceived: number
+    marriageCertNeeded: boolean
+    marriageCertReceived: boolean
+  } | null
+  checklistComplete: boolean
+  reminderRow: { status: string; sentAt: string | null; lastError: string | null } | null
+  handoffRow: { status: string; sentAt: string | null; lastError: string | null } | null
+}
+
+export interface DocHandoffForceFireResult {
+  ok: boolean
+  result: 'sent' | 'deferred' | 'failed' | 'skipped' | 'noop'
+  rowId: string
+  durationMs: number
+  row: {
+    status: string
+    sentAt: string | null
+    recipientUsed: string | null
+    messageBodyUsed: string | null
+    imageUrlCount: number
+    imageUrlsUsed: string[]
+    providerMessageId: string | null
+    lastError: string | null
+    attemptCount: number
+  } | null
+}
+
+export async function apiListDocHandoffToday(): Promise<{ items: DocHandoffTodayItem[] }> {
+  return apiFetch('/api/tenant-config/doc-handoff/today')
+}
+
+export async function apiForceFireDocHandoff(input: {
+  reservationId: string
+  messageType: 'REMINDER' | 'HANDOFF'
+}): Promise<DocHandoffForceFireResult> {
+  return apiFetch('/api/tenant-config/doc-handoff/force-fire', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 // ─── AI Logs ─────────────────────────────────────────────────────────────────
 export interface AiApiLogEntry {
   id: string

@@ -12,10 +12,48 @@ import {
   apiPutDocHandoffConfig,
   apiListDocHandoffSends,
   apiTestSendDocHandoff,
+  apiListDocHandoffToday,
+  apiForceFireDocHandoff,
   type DocHandoffConfig,
   type DocHandoffSendItem,
   type DocHandoffTestSendResult,
+  type DocHandoffTodayItem,
+  type DocHandoffForceFireResult,
 } from '@/lib/api'
+
+function FireResultLine({
+  label,
+  result,
+}: {
+  label: string
+  result: DocHandoffForceFireResult
+}): React.ReactElement {
+  const tone =
+    result.ok
+      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+      : result.result === 'skipped'
+        ? 'bg-amber-50 border-amber-200 text-amber-900'
+        : 'bg-rose-50 border-rose-200 text-rose-900'
+  return (
+    <div className={`rounded border px-2 py-1.5 text-xs ${tone}`}>
+      <span className="font-semibold">
+        {label}: {result.row?.status || result.result}
+      </span>
+      {result.row?.recipientUsed ? (
+        <span className="font-mono"> · {result.row.recipientUsed}</span>
+      ) : null}
+      {result.row?.imageUrlCount !== undefined ? (
+        <span> · {result.row.imageUrlCount} image{result.row.imageUrlCount === 1 ? '' : 's'}</span>
+      ) : null}
+      {result.row?.providerMessageId ? (
+        <span className="font-mono"> · msgId {result.row.providerMessageId}</span>
+      ) : null}
+      {result.row?.lastError ? (
+        <div className="mt-1 font-mono break-all">err: {result.row.lastError}</div>
+      ) : null}
+    </div>
+  )
+}
 
 function statusTone(status: string): string {
   if (status === 'SENT') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -49,6 +87,10 @@ export default function DocHandoffSection(): React.ReactElement {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<DocHandoffTestSendResult | null>(null)
 
+  const [today, setToday] = useState<DocHandoffTodayItem[]>([])
+  const [firing, setFiring] = useState<string | null>(null)
+  const [fireResults, setFireResults] = useState<Record<string, DocHandoffForceFireResult>>({})
+
   const load = useCallback(() => {
     apiGetDocHandoffConfig()
       .then((cfg) => {
@@ -58,6 +100,9 @@ export default function DocHandoffSection(): React.ReactElement {
       .catch((err: any) => setError(err?.message || 'Failed to load settings'))
     apiListDocHandoffSends(20)
       .then((r) => setSends(r.items))
+      .catch(() => {})
+    apiListDocHandoffToday()
+      .then((r) => setToday(r.items))
       .catch(() => {})
   }, [])
 
@@ -108,6 +153,30 @@ export default function DocHandoffSection(): React.ReactElement {
       }
     } finally {
       setTesting(false)
+    }
+  }
+
+  async function onForceFire(reservationId: string, messageType: 'REMINDER' | 'HANDOFF') {
+    const key = `${reservationId}:${messageType}`
+    setFiring(key)
+    try {
+      const result = await apiForceFireDocHandoff({ reservationId, messageType })
+      setFireResults((prev) => ({ ...prev, [key]: result }))
+      load()
+    } catch (err: any) {
+      setFireResults((prev) => ({
+        ...prev,
+        [key]: {
+          ok: false,
+          result: 'failed',
+          rowId: '',
+          durationMs: 0,
+          row: null,
+          ...(err?.data && typeof err.data === 'object' ? err.data : {}),
+        } as DocHandoffForceFireResult,
+      }))
+    } finally {
+      setFiring(null)
     }
   }
 
@@ -362,6 +431,88 @@ export default function DocHandoffSection(): React.ReactElement {
             ) : null}
           </div>
         ) : null}
+      </div>
+
+      <div className="pt-4 border-t border-neutral-100 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold">Today&apos;s check-ins</h3>
+          <p className="text-xs text-neutral-500 mt-1">
+            Fire the real reminder or handoff for today&apos;s reservations right now —
+            renders the actual message body and uploads passport images from the checklist.
+            Skips the scheduled fire time but still runs all the same gates.
+          </p>
+        </div>
+
+        {today.length === 0 ? (
+          <p className="text-xs text-neutral-500">No reservations checking in today (Africa/Cairo).</p>
+        ) : (
+          <div className="space-y-3">
+            {today.map((r) => {
+              const reminderKey = `${r.reservationId}:REMINDER`
+              const handoffKey = `${r.reservationId}:HANDOFF`
+              const reminderRes = fireResults[reminderKey]
+              const handoffRes = fireResults[handoffKey]
+              const checklist = r.checklist
+              return (
+                <div
+                  key={r.reservationId}
+                  className="border border-neutral-200 rounded p-3 space-y-2 bg-neutral-50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">
+                        {r.propertyName || 'Unknown property'}
+                        {r.guestName ? <span className="text-neutral-500 font-normal"> · {r.guestName}</span> : null}
+                      </div>
+                      <div className="text-xs text-neutral-500 font-mono mt-0.5">
+                        {formatTs(r.checkIn)} → {formatTs(r.checkOut)} · {r.status}
+                        {r.hostawayReservationId ? ` · ha#${r.hostawayReservationId}` : ''}
+                      </div>
+                      {checklist ? (
+                        <div className="text-xs mt-1">
+                          <span className={r.checklistComplete ? 'text-emerald-700' : 'text-amber-700'}>
+                            Passports {checklist.passportsReceived}/{checklist.passportsNeeded}
+                            {checklist.marriageCertNeeded
+                              ? ` · marriage cert ${checklist.marriageCertReceived ? '✓' : '✗'}`
+                              : ''}
+                            {r.checklistComplete ? ' · complete' : ' · incomplete'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-neutral-500 mt-1">No checklist on this reservation</div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onForceFire(r.reservationId, 'REMINDER')}
+                        disabled={firing === reminderKey}
+                        className="px-3 py-1 rounded border border-neutral-300 bg-white text-xs hover:bg-neutral-100 disabled:opacity-40"
+                      >
+                        {firing === reminderKey ? 'Firing…' : 'Fire reminder now'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onForceFire(r.reservationId, 'HANDOFF')}
+                        disabled={firing === handoffKey}
+                        className="px-3 py-1 rounded border border-neutral-300 bg-white text-xs hover:bg-neutral-100 disabled:opacity-40"
+                      >
+                        {firing === handoffKey ? 'Firing…' : 'Fire handoff now'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {(reminderRes || handoffRes) ? (
+                    <div className="space-y-1.5">
+                      {reminderRes ? <FireResultLine label="Reminder" result={reminderRes} /> : null}
+                      {handoffRes ? <FireResultLine label="Handoff" result={handoffRes} /> : null}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="pt-4 border-t border-neutral-100">

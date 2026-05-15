@@ -14,6 +14,10 @@ import {
   WasenderServerError,
   WasenderTimeoutError,
 } from '../services/wasender.service';
+import {
+  forceFireDocHandoff,
+  listTodayCheckIns,
+} from '../services/doc-handoff.service';
 
 export function makeDocHandoffController(prisma: PrismaClient) {
   return {
@@ -254,6 +258,71 @@ export function makeDocHandoffController(prisma: PrismaClient) {
           error: 'Test send crashed',
           diagnostics: { ...diagnostics, errorKind: 'crash', errorMessage: err?.message || String(err) },
         });
+      }
+    },
+
+    async listToday(req: AuthenticatedRequest, res: Response) {
+      try {
+        const tenantId = req.tenantId!;
+        const items = await listTodayCheckIns(tenantId, prisma);
+        res.json({ items });
+      } catch (err: any) {
+        console.error('[DocHandoff] listToday failed:', err);
+        res.status(500).json({ error: 'Failed to list today reservations' });
+      }
+    },
+
+    async forceFire(req: AuthenticatedRequest, res: Response) {
+      try {
+        const tenantId = req.tenantId!;
+        const body = (req.body || {}) as {
+          reservationId?: string;
+          messageType?: 'REMINDER' | 'HANDOFF';
+        };
+        if (!body.reservationId || typeof body.reservationId !== 'string') {
+          return sendValidation(res, 'reservationId', 'Missing reservationId');
+        }
+        if (body.messageType !== 'REMINDER' && body.messageType !== 'HANDOFF') {
+          return sendValidation(res, 'messageType', 'messageType must be REMINDER or HANDOFF');
+        }
+        // Tenant scope guard — never let one tenant fire another's handoff.
+        const reservation = await prisma.reservation.findFirst({
+          where: { id: body.reservationId, tenantId },
+          select: { id: true },
+        });
+        if (!reservation) {
+          res.status(404).json({ error: 'Reservation not found for this tenant' });
+          return;
+        }
+
+        const t0 = Date.now();
+        const { rowId, result, row } = await forceFireDocHandoff(
+          body.reservationId,
+          body.messageType,
+          prisma,
+        );
+        res.json({
+          ok: result === 'sent',
+          result,
+          rowId,
+          durationMs: Date.now() - t0,
+          row: row
+            ? {
+                status: row.status,
+                sentAt: row.sentAt?.toISOString() ?? null,
+                recipientUsed: row.recipientUsed,
+                messageBodyUsed: row.messageBodyUsed,
+                imageUrlCount: row.imageUrlsUsed.length,
+                imageUrlsUsed: row.imageUrlsUsed,
+                providerMessageId: row.providerMessageId,
+                lastError: row.lastError,
+                attemptCount: row.attemptCount,
+              }
+            : null,
+        });
+      } catch (err: any) {
+        console.error('[DocHandoff] forceFire failed:', err);
+        res.status(500).json({ error: err?.message || 'Force-fire failed' });
       }
     },
 
