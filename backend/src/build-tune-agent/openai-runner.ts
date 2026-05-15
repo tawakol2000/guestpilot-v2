@@ -630,7 +630,15 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       tools,
       tool_choice: 'auto',
       parallel_tool_calls: false,
-      reasoning: { effort: 'low' },
+      // 2026-05-15: high reasoning for Studio. The agent has to read SOPs,
+      // FAQs, evidence bundles, plan edits, validate diffs, plan transitions,
+      // and verify — each step benefits from deeper reasoning. The cache
+      // hit rate is already 93–98%, so the input-token cost is dominated
+      // by reasoning tokens; bumping effort from low → high typically
+      // ~doubles latency and 2-3x's reasoning tokens but produces
+      // markedly better edits, fewer redundant reads, and tighter close-of-
+      // turn summaries.
+      reasoning: { effort: 'high' },
       prompt_cache_key: args.systemBundle.promptCacheKey,
       store: true,
     };

@@ -33,7 +33,16 @@ ARGS by op:
   op='propose': category, subLabel, rationale, confidence?, proposedText?,
     beforeText?, targetHint? | target?, editFormat?, oldText?, newText?,
     diff?: { before, after }   ← embeds the diff inside the suggested-fix card
-  op='apply': suggestionId, draft? (used when no PENDING row exists yet)
+  op='apply':
+     • If a PENDING TuningSuggestion row already exists (e.g. surfaced
+       from search_corrections or via the queue), pass its real DB id as
+       suggestionId. Real ids look like cuids (e.g. 'cmp6zhj5q00001234...').
+     • If you JUST proposed inline in this same turn and want to apply
+       it now, do NOT pass suggestionId — pass 'draft' with the full
+       edit payload (category, target, proposedText OR oldText+newText,
+       rationale). The preview id from a data-suggested-fix card (the
+       'preview:XXX' string) is NOT a suggestionId; it is a frontend-
+       only render handle and passing it as suggestionId will fail.
   op='reject': suggestionId, reason?
   op='edit_then_apply': suggestionId, edits
 
@@ -184,6 +193,24 @@ export function buildSuggestionTool(tool: typeof ToolFactory, ctx: () => ToolCon
         return proposeTool.handler(proposeArgs as any, extra);
       }
       if (op === 'apply') {
+        // 2026-05-15 polish (harness-observed): catch the common mistake
+        // of passing a preview-id ('preview:xxx', emitted as the render
+        // handle in data-suggested-fix cards) as suggestionId. Real
+        // TuningSuggestion ids are cuids — they never start with
+        // 'preview:'. Reject up-front with a clear error so the model
+        // self-corrects on the next round.
+        if (args.suggestionId && args.suggestionId.startsWith('preview:')) {
+          return asError(
+            `studio_suggestion(op=apply): '${args.suggestionId}' is a frontend preview id, not a saved suggestionId. ` +
+              `If you just proposed inline in this turn, omit suggestionId and pass the edit via 'draft' instead. ` +
+              `If a real PENDING row exists, pass its DB id (a cuid like 'cmp6...') as suggestionId.`,
+          );
+        }
+        if (!args.suggestionId && !args.draft) {
+          return asError(
+            `studio_suggestion(op=apply): provide either a saved suggestionId OR a 'draft' payload to apply inline.`,
+          );
+        }
         return actionTool.handler(
           {
             suggestionId: args.suggestionId,

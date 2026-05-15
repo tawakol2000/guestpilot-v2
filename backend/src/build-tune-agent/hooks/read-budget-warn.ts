@@ -35,10 +35,18 @@ const READ_TOOL_NAMES: ReadonlySet<string> = new Set([
   TUNING_AGENT_TOOL_NAMES.studio_memory,
 ]);
 
+// 2026-05-15 polish (harness-observed): drafting=2 was too aggressive.
+// A drafting turn legitimately needs: get_context (orient) + get_artifact
+// (read the thing being edited) + sometimes get_evidence_index (re-check
+// the originating witness) + memory (preferences). With reasoning=high
+// the agent reads more deliberately too, so a budget of 4 keeps the
+// advisory off for legitimate sessions and only fires when the agent
+// genuinely wanders. The advisory is non-blocking; this just tunes when
+// the read-budget warning surfaces.
 export const READ_BUDGET_BY_STATE: Record<InnerState, number> = {
-  scoping: 4,
-  drafting: 2,
-  verifying: 1,
+  scoping: 5,
+  drafting: 4,
+  verifying: 2,
 };
 
 interface ReadBudgetCounter {

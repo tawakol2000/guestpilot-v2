@@ -100,16 +100,16 @@ test('compliance-gate: studio_suggestion(apply) requires sanction', () => {
   assert.equal(allowed.ok, true);
 });
 
-test('read-budget: scoping budget = 4, exceeding emits advisory', () => {
+test('read-budget: scoping budget exceeded emits advisory', () => {
   const emitted: any[] = [];
   const state = makeState({
     innerState: 'scoping',
     emitDataPart: (part) => emitted.push(part),
   });
-  for (let i = 0; i < 5; i++) {
+  // 2026-05-15 polish: scoping budget is 5 (was 4). Need 6 reads to trip.
+  for (let i = 0; i < 7; i++) {
     recordReadBudget(TUNING_AGENT_TOOL_NAMES.studio_get_artifact, state);
   }
-  // Budget=4; 5th call should have emitted an advisory.
   assert.ok(emitted.length >= 1);
   assert.equal(emitted[0].type, 'data-advisory');
   assert.equal((emitted[0].data as any).kind, 'read_budget_exceeded');

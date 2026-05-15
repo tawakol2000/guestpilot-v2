@@ -75,9 +75,12 @@ export const OSCILLATION_CONFIDENCE_BOOST = 1.25;
  * unambiguous single words `yes` and `approve` / `approved` are kept as-is.
  */
 const APPLY_SANCTION_PATTERNS = [
-  // "apply" in clear imperative context
-  /\bapply\s+(it|this|that|them|the\s+(change|suggestion|fix|edit|update|changes)|now)\b/i,
-  /\bapply\s+(now|them|it|this|that)\b/i,
+  // "apply" in clear imperative context. 2026-05-15 polish: broaden to
+  // accept any determiner + noun ("apply the screening prompt edit",
+  // "apply this fix") rather than just hard-coding edit-type nouns.
+  // The leading determiner excludes "apply for a visa" (noun phrase).
+  /\bapply\s+(?:it|this|that|them|these|those|now)\b/i,
+  /\bapply\s+(?:the|this|that|these|those|my|your|our|some|all|both)\s+[\w\s'’-]{0,60}?\b(?:change|changes|suggestion|fix|edit|edits|update|updates|patch|patches|rule|rules|prompt|prompts|sop|faq|tool|tweak|tweaks|version|revision|adjustment|adjustments|amendment|tightening|fixup)\b/i,
   // Politeness-prefixed "apply": "please apply", "sure, apply", "ok apply",
   // "could you apply", etc. The leading-word check keeps it from matching
   // "apply for a visa" (no imperative cue) while covering common natural

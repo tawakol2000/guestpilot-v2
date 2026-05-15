@@ -136,12 +136,13 @@ export function buildSuggestionActionTool(
               if (conv?.anchorMessageId) args.draft.sourceMessageId = conv.anchorMessageId;
             }
           }
-          if (!args.draft.sourceMessageId) {
-            span.end({ error: 'NO_SOURCE_MESSAGE' });
-            return asError(
-              'Cannot persist draft suggestion without sourceMessageId (either explicitly in draft or via an anchored conversation).'
-            );
-          }
+          // 2026-05-15 polish (harness-observed): sourceMessageId is
+          // nullable on the TuningSuggestion schema since sprint-047
+          // Session A — MANUAL conversations (operator opens chat from
+          // sidebar to do general tuning, not anchored to a specific bad
+          // reply) legitimately have no source message. The previous
+          // hard error broke draft-apply for every non-anchored
+          // conversation. Persist with null instead.
           // Sprint 10 workstream A: resolve search_replace → full proposedText
           // before persisting. The apply path downstream writes proposedText
           // directly to the artifact, so we normalise edit-format here. If

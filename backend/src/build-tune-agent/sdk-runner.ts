@@ -573,7 +573,12 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
           ...(resumeSessionId ? { resume: resumeSessionId } : {}),
           permissionMode: 'dontAsk',
           settingSources: [],
-          effort: 'medium',
+          // 2026-05-15: bump to 'high' for Studio. Same rationale as the
+          // OpenAI path — the agent does multi-step reasoning across
+          // reads, planning, drafting, and verification. The Anthropic
+          // prefix cache absorbs most of the input cost so the trade
+          // is mostly extra reasoning tokens for sharper edits.
+          effort: 'high',
           abortController: sdkAbortController,
         },
       });
