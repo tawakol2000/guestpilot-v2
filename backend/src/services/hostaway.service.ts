@@ -104,7 +104,11 @@ async function getClient(accountId: string, apiKey: string): Promise<AxiosInstan
           config.headers = config.headers ?? {};
           config.headers.Authorization = `Bearer ${freshToken}`;
           config.__retriedAfter401 = true;
-          return await axios.request(config);
+          // 2026-05-15 (review pass): retry via the SAME interceptor-equipped
+          // `client`, not bare `axios`. A bare retry escapes the interceptor
+          // chain, so a second 401 (key rotation still mid-flight) would
+          // propagate uncaught and the cache would stay half-invalidated.
+          return await client.request(config);
         } catch (retryErr) {
           return Promise.reject(retryErr);
         }

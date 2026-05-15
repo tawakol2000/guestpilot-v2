@@ -171,9 +171,30 @@ export async function getSopContent(
       await seedSopDefinitions(tenantId, db);
     }
 
-    // Find the SopDefinition for this category + tenant
+    // 2026-05-15 (perf review P3): collapse the 5-query waterfall (def +
+    // up to 4 findUnique calls) into one round-trip. Previously a
+    // cold-cache lookup for a single category cost 5 sequential DB
+    // hits; multiplied by 3 categories per AI turn = 15 round-trips
+    // per AI reply on cache miss. With this include() it's 1.
     const sopDef = await db.sopDefinition.findUnique({
       where: { tenantId_category: { tenantId, category } },
+      include: {
+        variants: {
+          where: {
+            status: { in: [status, 'DEFAULT'] },
+            enabled: true,
+          },
+        },
+        propertyOverrides: propertyId
+          ? {
+              where: {
+                propertyId,
+                status: { in: [status, 'DEFAULT'] },
+                enabled: true,
+              },
+            }
+          : { where: { id: '__never__' } }, // empty result when no propertyId
+      },
     });
     if (!sopDef || !sopDef.enabled) {
       cacheSet(cacheKey, '');
@@ -182,66 +203,26 @@ export async function getSopContent(
 
     let content = '';
 
-    // 1. Property override — exact status
+    // Resolve the cascade in JS — same order as before:
+    //   1. property override @ exact status
+    //   2. property override @ DEFAULT
+    //   3. variant @ exact status
+    //   4. variant @ DEFAULT
     if (propertyId) {
-      const override = await db.sopPropertyOverride.findUnique({
-        where: {
-          sopDefinitionId_propertyId_status: {
-            sopDefinitionId: sopDef.id,
-            propertyId,
-            status,
-          },
-        },
-      });
-      if (override?.enabled) {
-        content = override.content;
+      const exactOverride = sopDef.propertyOverrides.find((o) => o.status === status);
+      if (exactOverride) content = exactOverride.content;
+      if (!content) {
+        const defaultOverride = sopDef.propertyOverrides.find((o) => o.status === 'DEFAULT');
+        if (defaultOverride) content = defaultOverride.content;
       }
     }
-
-    // 2. Property override — DEFAULT status
-    if (!content && propertyId) {
-      const overrideDef = await db.sopPropertyOverride.findUnique({
-        where: {
-          sopDefinitionId_propertyId_status: {
-            sopDefinitionId: sopDef.id,
-            propertyId,
-            status: 'DEFAULT',
-          },
-        },
-      });
-      if (overrideDef?.enabled) {
-        content = overrideDef.content;
-      }
-    }
-
-    // 3. Variant — exact status
     if (!content) {
-      const variant = await db.sopVariant.findUnique({
-        where: {
-          sopDefinitionId_status: {
-            sopDefinitionId: sopDef.id,
-            status,
-          },
-        },
-      });
-      if (variant?.enabled) {
-        content = variant.content;
-      }
+      const exactVariant = sopDef.variants.find((v) => v.status === status);
+      if (exactVariant) content = exactVariant.content;
     }
-
-    // 4. Variant — DEFAULT
     if (!content) {
-      const variantDef = await db.sopVariant.findUnique({
-        where: {
-          sopDefinitionId_status: {
-            sopDefinitionId: sopDef.id,
-            status: 'DEFAULT',
-          },
-        },
-      });
-      if (variantDef?.enabled) {
-        content = variantDef.content;
-      }
+      const defaultVariant = sopDef.variants.find((v) => v.status === 'DEFAULT');
+      if (defaultVariant) content = defaultVariant.content;
     }
 
     cacheSet(cacheKey, content);

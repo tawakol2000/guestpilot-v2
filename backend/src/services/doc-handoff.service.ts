@@ -207,26 +207,39 @@ async function upsertScheduledRow(
   prisma: PrismaClient,
   status: string = STATUS_SCHEDULED
 ): Promise<void> {
-  // Skip if a terminal row already exists — never re-send.
-  const existing = await prisma.documentHandoffState.findUnique({
-    where: { reservationId_messageType: { reservationId, messageType } },
-  });
-  if (existing && !ACTIVE_STATUSES.includes(existing.status as any)) return;
-
-  await prisma.documentHandoffState.upsert({
-    where: { reservationId_messageType: { reservationId, messageType } },
-    create: {
-      tenantId,
-      reservationId,
-      messageType,
-      status,
-      scheduledFireAt,
-    },
-    update: {
-      scheduledFireAt,
-      status,
-    },
-  });
+  // 2026-05-15 (review pass): close the TOCTOU between the findUnique
+  // "skip-if-terminal" check and the subsequent upsert. Two concurrent
+  // calls (webhook fires twice, or messageSync racing reservationSync)
+  // could BOTH read a STATUS_SENT row and bypass the guard, then BOTH
+  // execute upsert.update — flipping SENT back to SCHEDULED and causing
+  // a double send.
+  //
+  // Fix: split into create-or-update with the terminal-status filter on
+  // the update path enforced atomically by Prisma. Strategy:
+  //   1. Try `updateMany` scoped to ACTIVE_STATUSES — succeeds (count=1)
+  //      only when the existing row is still active.
+  //   2. If no row was updated, try to create — if a row already exists
+  //      we get a P2002 unique-constraint error, which means the row
+  //      reached terminal state between our two queries; treat as no-op.
+  try {
+    const updated = await prisma.documentHandoffState.updateMany({
+      where: {
+        reservationId,
+        messageType,
+        status: { in: ACTIVE_STATUSES as unknown as string[] },
+      },
+      data: { scheduledFireAt, status },
+    });
+    if (updated.count > 0) return;
+    await prisma.documentHandoffState.create({
+      data: { tenantId, reservationId, messageType, status, scheduledFireAt },
+    });
+  } catch (err: any) {
+    // P2002 = unique-constraint violation; means another concurrent
+    // upsert won the race (or the row is already terminal). Either way
+    // we silently no-op.
+    if (err?.code !== 'P2002') throw err;
+  }
 }
 
 export async function rescheduleOnReservationChange(

@@ -629,10 +629,15 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
     }
 
     // Emit any visible text BEFORE the tool calls (rare but possible).
+    // 2026-05-15 (review pass D6): emit to the wire so the operator sees
+    // the agent's mid-turn reasoning, but DO NOT mix it into
+    // aggregateFinalText. That field feeds the output linter +
+    // finalAssistantText return value — concatenating interim text
+    // confuses citation / NO_FIX detection and pollutes the persisted
+    // assistant message text.
     const interimText = collectTextFromOutput(outputItems);
     if (interimText) {
       emitFinalText(interimText, args.bridgeState, args.filteredWrite);
-      args.onFinalText(interimText);
     }
 
     // Dispatch each function call.

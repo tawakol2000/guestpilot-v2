@@ -166,7 +166,24 @@ export function buildOpenAiToolRegistry(getCtx: () => ToolContext): OpenAiToolRe
   buildGetCanonicalTemplateTool(spy, getCtx);
   buildProposeTransitionTool(spy, getCtx);
 
-  const tools: OpenAiFunctionTool[] = captured.map((c) => ({
+  // 2026-05-15 (review pass D7): `buildSuggestionTool` internally invokes
+  // `buildProposeSuggestionTool` and `buildSuggestionActionTool` (legacy
+  // tool names retained for back-compat with old chained sessions) before
+  // registering `studio_suggestion`. The spy captures all three. We
+  // already filter at the per-state allow-list, but having legacy entries
+  // in the handlers/prefixedNames maps invites accidental dispatch if a
+  // stale `previous_response_id` chain ever surfaces those names. Filter
+  // here so the registry only ever knows about the canonical Studio tool
+  // names declared in TUNING_AGENT_TOOL_NAMES.
+  const canonicalRawNames = new Set(
+    Object.values(TUNING_AGENT_TOOL_NAMES).map((prefixed) => {
+      const m = prefixed.match(/^mcp__[^_]+(?:_[^_]+)*__(.+)$/);
+      return m ? m[1] : prefixed;
+    }),
+  );
+  const filteredCaptured = captured.filter((c) => canonicalRawNames.has(c.name));
+
+  const tools: OpenAiFunctionTool[] = filteredCaptured.map((c) => ({
     type: 'function',
     name: c.name,
     description: c.description,
@@ -176,7 +193,7 @@ export function buildOpenAiToolRegistry(getCtx: () => ToolContext): OpenAiToolRe
 
   const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
   const prefixedNames = new Map<string, string>();
-  for (const c of captured) {
+  for (const c of filteredCaptured) {
     handlers.set(c.name, c.handler);
     prefixedNames.set(c.name, c.prefixedName);
   }

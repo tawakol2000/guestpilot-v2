@@ -22,6 +22,13 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
   // The atomic claim prevents duplicate sends, but the overlapping
   // ticks waste DB connections.
   let running = false;
+  // 2026-05-15 (review pass): collect in-flight pipeline promises so the
+  // `running` flag stays true until every pipeline this tick fired-off
+  // has completed. The previous version cleared `running` in the
+  // synchronous-looking `finally` immediately after dispatching all
+  // promises, which let the NEXT tick start while round-1 pipelines were
+  // still mid-OpenAI-call.
+  const inflight: Promise<unknown>[] = [];
 
   const timer = setInterval(async () => {
     if (running) {
@@ -67,6 +74,10 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
         // Build context for AI
         const customKb = property.customKnowledgeBase as Record<string, unknown> | null ?? {};
 
+        // 2026-05-15 (review pass): push into the inflight tracker so the
+        // tick's `running` flag stays true until this pipeline actually
+        // completes (or fails through the .catch).
+        inflight.push(
         generateAndSendAiReply(
           {
             tenantId: tenant.id,
@@ -156,11 +167,20 @@ export function startAiDebounceJob(prisma: PrismaClient): NodeJS.Timeout {
               resetErr,
             );
           }
-        });
+        })
+        );
       }
     } catch (err) {
       console.error('[AiDebounceJob] Poll error:', err);
     } finally {
+      // 2026-05-15 (review pass): wait for every pipeline this tick
+      // dispatched to settle before releasing `running`. Without this,
+      // the next tick would start while round-1 pipelines were still
+      // open OpenAI streams, defeating the overlap guard.
+      const settled = inflight.splice(0, inflight.length);
+      if (settled.length > 0) {
+        await Promise.allSettled(settled).catch(() => undefined);
+      }
       running = false;
     }
   }, POLL_INTERVAL_MS);

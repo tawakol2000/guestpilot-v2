@@ -24,7 +24,30 @@ export default function RootLayout({
         className={`${plusJakarta.variable} ${playfair.variable} ${fontInterTight.variable} ${fontJetbrainsMono.variable} font-sans antialiased`}
       >
         {children}
-        <Toaster richColors closeButton position="bottom-right" />
+        {/* 2026-05-15: root-level Toaster. Styling absorbed from the
+            former TuningToaster so /tuning + /studio + /inbox all share
+            the same calm raised-card aesthetic on the cool neutral palette. */}
+        <Toaster
+          richColors
+          closeButton
+          position="bottom-right"
+          duration={3500}
+          gap={12}
+          expand={false}
+          visibleToasts={4}
+          toastOptions={{
+            style: {
+              background: '#ffffff',
+              color: '#0a0a0b',
+              border: '1px solid #e7e8ec',
+              borderRadius: 12,
+              boxShadow:
+                '0 10px 25px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+              fontSize: 14,
+              padding: '12px 14px',
+            },
+          }}
+        />
       </body>
     </html>
   )

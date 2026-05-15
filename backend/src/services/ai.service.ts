@@ -254,7 +254,7 @@ const SCREENING_SCHEMA = {
 async function createMessage(
   systemPrompt: string,
   userContent: ContentBlock[],
-  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolNames?: string[]; toolInput?: any; toolResults?: any; toolDurationMs?: number; tools?: Array<{ name: string; input: any; results: any; durationMs: number }>; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any }
+  options?: { model?: string; maxTokens?: number; topK?: number; topP?: number; temperature?: number; stopSequences?: string[]; agentName?: string; tenantId?: string; conversationId?: string; ragContext?: { query: string; chunks: Array<{ content: string; category: string; similarity: number; sourceKey: string; isGlobal: boolean }>; totalRetrieved: number; durationMs: number; toolUsed?: boolean; toolName?: string; toolNames?: string[]; toolInput?: any; toolResults?: any; toolDurationMs?: number; tools?: Array<{ name: string; input: any; results: any; durationMs: number }>; openaiRequestId?: string; rateLimitRemaining?: { requests: number; tokens: number } }; openTaskCount?: number; totalMessages?: number; memorySummarized?: boolean; hasImage?: boolean; tools?: any[]; toolChoice?: any; toolHandlers?: Map<string, ToolHandler>; toolContext?: unknown; reasoningEffort?: 'none' | 'low' | 'medium' | 'high'; agentType?: string; stream?: boolean; inputTurns?: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>; outputSchema?: any; /** 2026-05-15 — abort the in-flight OpenAI call (and break out of the streaming for-await) when the caller's controller / job is cancelled. Without this a stalled worker burns tokens through completion. */ signal?: AbortSignal }
 ): Promise<string> {
   const startMs = Date.now();
   const model = options?.model || 'gpt-5.4-mini-2026-03-17';
@@ -410,26 +410,41 @@ async function createMessage(
       // Send ALL tool results back — don't enforce json_schema yet (blocks further tool calls).
       // Schema is enforced on the final response after the tool loop exits.
       if (options?.stream && options?.tenantId && options?.conversationId) {
+        // 2026-05-15 (review pass): thread the caller's AbortSignal so a
+        // BullMQ stall (worker re-claim) or controller disconnect actually
+        // cancels the in-flight OpenAI stream instead of running to completion.
+        const streamCreateOpts: Record<string, unknown> = {};
+        if (options.signal) streamCreateOpts.signal = options.signal;
         const toolFollowUpStream = await withRetry(() =>
-          (openai.responses as any).create({
-            model,
-            instructions: systemPrompt,
-            input: toolOutputs,
-            previous_response_id: response.id,
-            max_output_tokens: maxTokens,
-            reasoning: { effort: reasoningEffort },
-            tools: options?.tools,
-            tool_choice: 'auto',
-            store: true,
-            stream: true,
-            ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
-            prompt_cache_retention: '24h',
-          })
+          (openai.responses as any).create(
+            {
+              model,
+              instructions: systemPrompt,
+              input: toolOutputs,
+              previous_response_id: response.id,
+              max_output_tokens: maxTokens,
+              reasoning: { effort: reasoningEffort },
+              tools: options?.tools,
+              tool_choice: 'auto',
+              store: true,
+              stream: true,
+              ...(options?.tenantId ? { prompt_cache_key: `tenant-${options.tenantId}-${options.agentType || 'default'}` } : {}),
+              prompt_cache_retention: '24h',
+            },
+            streamCreateOpts,
+          )
         );
 
         let streamedText = '';
         let streamResponse: any = null;
         for await (const event of toolFollowUpStream as AsyncIterable<any>) {
+          // 2026-05-15: bail out of the stream loop if the caller aborted.
+          // The OpenAI SDK should also tear down the underlying request,
+          // but defensive belt-and-braces.
+          if (options.signal?.aborted) {
+            console.warn('[AI] stream loop aborted by caller — breaking');
+            break;
+          }
           if (event.type === 'response.output_text.delta') {
             streamedText += event.delta;
             broadcastToTenant(options.tenantId, 'ai_typing_text', {

@@ -59,8 +59,25 @@ export async function loadConversationHistoryAsResponsesInput(
   // to the next 'message' boundary.
   if (flat.length <= MAX_HISTORY_TURNS * 4) return flat;
   const tail = flat.slice(-(MAX_HISTORY_TURNS * 4));
-  // Trim leading orphan function_call_output items at the tail boundary.
+  // 2026-05-15 (review pass D5): the slice point can land BETWEEN a
+  // function_call and its matching function_call_output (both items live
+  // on the same assistant row in flat[]). After trimming leading
+  // function_call_output items, also trim a leading function_call whose
+  // call_id has no matching function_call_output anywhere in the tail —
+  // otherwise OpenAI rejects the next turn with a 400 "previous response
+  // must include function_call_output for call_id …".
   while (tail.length > 0 && tail[0].type === 'function_call_output') {
+    tail.shift();
+  }
+  while (tail.length > 0 && tail[0].type === 'function_call') {
+    const orphanCallId = tail[0].call_id;
+    const hasMatchingOutput = tail.some(
+      (item, idx) =>
+        idx > 0 &&
+        item.type === 'function_call_output' &&
+        item.call_id === orphanCallId,
+    );
+    if (hasMatchingOutput) break;
     tail.shift();
   }
   console.warn(

@@ -112,11 +112,11 @@ export interface RunTurnInput {
   providerOverride?: 'anthropic' | 'openai' | null;
   /**
    * Cancellation signal — fired by the controller's `req.on('close')`
-   * when the client disconnects. The OpenAI runner forwards this to
-   * `responses.create({signal})` so an in-flight long turn doesn't keep
-   * burning tokens after the operator refreshed/closed the panel. The
-   * SDK runner cannot forward an arbitrary AbortSignal into the Claude
-   * Agent SDK at this surface, so for now it only logs the abort.
+   * when the client disconnects. Both runners forward this:
+   *   - OpenAI runner → `responses.create({signal})`
+   *   - Claude SDK runner → `query({options: {abortController}})`, wrapped
+   *     around the inbound signal so the SDK can fire its own abort
+   *     listeners when the operator disconnects mid-turn.
    */
   signal?: AbortSignal;
 }
@@ -527,6 +527,19 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
         || /session.*(not found|does not exist|invalid)/i.test(msg)
   }
 
+  // 2026-05-15 H5 completion: the Claude Agent SDK Options DOES accept
+  // `abortController` (sdk.d.ts:970). Wrap the caller's AbortSignal into
+  // a fresh AbortController so the SDK can fire its own abort handlers
+  // when the operator disconnects mid-stream.
+  const sdkAbortController = new AbortController();
+  if (input.signal) {
+    if (input.signal.aborted) {
+      sdkAbortController.abort();
+    } else {
+      input.signal.addEventListener('abort', () => sdkAbortController.abort(), { once: true });
+    }
+  }
+
   const runQuery = async (resumeSessionId: string | null): Promise<void> => {
     // Feature 047 PR 4 — reset the read-budget counter at the start of
     // each runQuery call (one query == one user turn). Hook reads the
@@ -553,6 +566,7 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
           permissionMode: 'dontAsk',
           settingSources: [],
           effort: 'medium',
+          abortController: sdkAbortController,
         },
       });
       for await (const message of q) {

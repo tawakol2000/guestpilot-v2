@@ -54,11 +54,23 @@ export function makeConversationsController(prisma: PrismaClient) {
     async list(req: AuthenticatedRequest, res: Response): Promise<void> {
       try {
         const { tenantId } = req;
+        // 2026-05-15 (perf review P4): cap the inbox list at a sensible
+        // default. Previously unbounded — a tenant with 2K+ conversations
+        // returned 8K+ rows per page-load (4 JOINs each). The
+        // `?limit=` query param lets a future paginated frontend pass
+        // explicit window sizes; the cap protects against accidental
+        // unbounded fetches. 500 fits typical STR operator scale; bump
+        // when wiring proper cursor pagination.
+        const rawLimit = Number((req.query?.limit as string | undefined) ?? '500');
+        const limit = Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.min(Math.floor(rawLimit), 2000)
+          : 500;
         const conversations = await prisma.conversation.findMany({
           where: {
             tenantId,
           },
           orderBy: { lastMessageAt: 'desc' },
+          take: limit,
           include: {
             guest: true,
             property: true,

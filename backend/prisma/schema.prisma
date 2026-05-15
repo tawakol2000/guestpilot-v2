@@ -266,6 +266,11 @@ model Message {
   // (tenantId, role=AI) then order/window by sentAt. This composite
   // avoids an in-memory sort on the hot path.
   @@index([tenantId, role, sentAt(sort: Desc)])
+  // 2026-05-15 (perf review P2): hot-path query in ai.service is
+  // `where: { tenantId, conversationId }` + `orderBy sentAt desc` +
+  // `take 100`. Without this 3-field index Postgres bitmap-joins
+  // (tenantId) and (conversationId) then sorts in memory.
+  @@index([tenantId, conversationId, sentAt(sort: Desc)])
 }
 
 model PendingAiReply {
@@ -309,6 +314,11 @@ model Task {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([conversationId])
+  // 2026-05-15 (perf review P1): handleEscalation's hot-path query is
+  // `where: { tenantId, conversationId, status: 'open' }` on every AI
+  // reply. Without this 3-field index Postgres uses (tenantId, status)
+  // then filters by conversationId in-memory — O(open tasks per tenant).
+  @@index([tenantId, conversationId, status])
 }
 
 // ─── Feature 043: per-tenant reply templates for action-card escalations ──────

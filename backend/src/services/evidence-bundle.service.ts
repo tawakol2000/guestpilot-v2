@@ -2,12 +2,12 @@
  * Feature 041 sprint 01 §2 — Evidence bundle assembler.
  *
  * Packages a triggering event (an edit, reject, complaint, thumbs-down, or
- * future cluster/escalation trigger) into a single JSON snapshot the future
- * tuning agent will consume via a tool call. The bundle is the primary input
- * the tuning agent reasons against — rich evidence beats thin context.
+ * future cluster/escalation trigger) into a single JSON snapshot the tuning
+ * agent consumes via a tool call. The bundle is the primary input the
+ * tuning agent reasons against — rich evidence beats thin context.
  *
- * No caller yet. Sprint 02 will wire this into the diagnostic pipeline, which
- * replaces the two-step analyzer deleted this sprint.
+ * Now wired into the diagnostic pipeline (diagnostic.service.ts) and the
+ * Studio agent's studio_get_evidence_* tools.
  *
  * Design choices:
  * - Primary source for "what the main AI did" is `AiApiLog.ragContext`

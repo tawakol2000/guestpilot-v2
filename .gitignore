@@ -19,3 +19,8 @@ backend/build/
 pnpm-lock.yaml
 package-lock.json
 .pnpm-debug.log*
+
+# 2026-05-15: Claude Code agent worktrees — scratch directories created
+# by parallel agent runs. Each holds an ephemeral clone of the repo for
+# isolated agent work and should never be committed.
+.claude/worktrees/

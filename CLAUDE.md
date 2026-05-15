@@ -166,6 +166,9 @@ WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
                        # doc-handoff feature is silently disabled.
 WASENDER_BASE_URL      # Default: https://wasenderapi.com
 WASENDER_TIMEOUT_MS    # Default: 20000
+TRANSLATION_PROVIDER   # "google" (default). Future cases (deepl, openai)
+                       # slot into resolveTranslationProvider() in
+                       # backend/src/services/translation.service.ts.
 ```
 
 ## Critical Rules
