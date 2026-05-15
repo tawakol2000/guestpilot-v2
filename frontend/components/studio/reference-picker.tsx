@@ -48,6 +48,28 @@ interface Row {
   title: string
 }
 
+/**
+ * Convert a kebab-case SOP category slug into a manager-friendly label.
+ * "sop-early-check-in"     → "Early check-in"
+ * "sop-payment-issues"     → "Payment issues"
+ * "pricing-negotiation"    → "Pricing negotiation"
+ * Returns null if the input doesn't look like a slug we can prettify.
+ */
+function prettifySopSlug(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  // Drop a leading "sop-" prefix (the backend mostly stores without it,
+  // but legacy rows still have it on a few categories).
+  const noPrefix = trimmed.replace(/^sop[_-]/i, '')
+  // Convert remaining dashes/underscores to spaces.
+  const spaced = noPrefix.replace(/[_-]+/g, ' ').trim()
+  if (!spaced) return null
+  // Capitalise the first letter only — keep "check-in" / "Wi-Fi" / proper
+  // nouns intact rather than enforcing Title Case.
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 const SEGMENTS: { id: ReferenceKind; label: string }[] = [
   { id: 'sop', label: 'SOPs' },
   { id: 'faq', label: 'FAQs' },
@@ -79,7 +101,11 @@ export function ReferencePicker({ open, anchorEl, onClose, onSelect }: Reference
         next = (data.definitions ?? []).map((s) => ({
           kind: 'sop' as const,
           id: s.id,
-          title: s.category || s.toolDescription?.slice(0, 60) || s.id,
+          // 2026-05-15 polish: prettify the SOP category slug. Stored
+          // form is "sop-early-check-in"; surface as "Early check-in"
+          // so the picker reads cleanly to a manager (the slug form
+          // stays accessible via the s.id detail when needed).
+          title: prettifySopSlug(s.category) || s.toolDescription?.slice(0, 60) || s.id,
         }))
       } else if (kind === 'faq') {
         const data = await apiGetFaqEntries({ status: 'ACTIVE' })
