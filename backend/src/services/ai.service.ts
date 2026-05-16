@@ -58,18 +58,48 @@ let _prismaRef: PrismaClient | null = null;
 export function setAiServicePrisma(prisma: PrismaClient) { _prismaRef = prisma; }
 
 // ─── Retry wrapper (rate limit 429, server errors 500/502/503) ──────────────
+// 2026-05-16: also retry on transient network errors (ECONNRESET,
+// ETIMEDOUT, EAI_AGAIN, socket hang up). Without these, a single TCP
+// reset mid-flight would surface as a "AI is unavailable" advisory
+// even though a simple replay would have succeeded.
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'EPIPE',
+  'UND_ERR_SOCKET',
+]);
 async function withRetry<T>(fn: () => Promise<T>, retries = 6): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
     } catch (err: unknown) {
-      const e = err as { status?: number; code?: string };
-      const isRetryable = e?.status === 429 || e?.status === 500 || e?.status === 502 || e?.status === 503;
+      const e = err as { status?: number; code?: string; cause?: { code?: string }; name?: string; message?: string };
+      // Don't retry deliberately-aborted calls — the caller wants us
+      // to stop, not pile on more cost. AbortError surfaces as
+      // err.name === 'AbortError' or message contains 'aborted'.
+      const isAbort =
+        e?.name === 'AbortError' ||
+        (typeof e?.message === 'string' && /aborted|cancel/i.test(e.message));
+      if (isAbort) throw err;
+      const code = e?.code ?? e?.cause?.code;
+      const isHttpRetryable =
+        e?.status === 429 ||
+        e?.status === 500 ||
+        e?.status === 502 ||
+        e?.status === 503 ||
+        e?.status === 504;
+      const isNetworkRetryable = typeof code === 'string' && TRANSIENT_NETWORK_CODES.has(code);
+      const isRetryable = isHttpRetryable || isNetworkRetryable;
       if (isRetryable && attempt < retries) {
         // Exponential backoff with jitter: 1-60s range
         const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
         const jitter = baseDelay * (0.5 + Math.random() * 0.5);
-        console.warn(`[AI] Retry ${attempt + 1}/${retries} after ${Math.round(jitter)}ms (status=${e?.status})`);
+        console.warn(
+          `[AI] Retry ${attempt + 1}/${retries} after ${Math.round(jitter)}ms (status=${e?.status ?? '–'} code=${code ?? '–'})`,
+        );
         await sleep(jitter);
         continue;
       }

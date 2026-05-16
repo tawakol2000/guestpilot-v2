@@ -94,3 +94,23 @@ export const pushSubscribeLimiter = rateLimit({
   store: createRedisStore('rl:push-sub:'),
   passOnStoreError: true,
 });
+
+// 2026-05-16: studio agent turn endpoint. Each call kicks off an
+// Anthropic / OpenAI request + up to 5 tool rounds + (optionally) a
+// 3-variant pipeline judge. A bug or abusive script that fires
+// /api/build/turn in a tight loop could burn thousands of dollars
+// per hour. 30/min per user is far above human studio cadence
+// (each turn takes 5-30s wall) but cheaply trips runaway loops.
+export const buildTurnLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    error: 'Studio agent rate limit hit. Wait a minute before sending another turn.',
+  },
+  keyGenerator: (req) =>
+    (req as any).userId || (req as any).tenantId || req.ip || 'unknown',
+  store: createRedisStore('rl:build-turn:'),
+  passOnStoreError: true,
+});

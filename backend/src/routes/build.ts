@@ -19,6 +19,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
 import { makeBuildController } from '../controllers/build-controller';
 import { isBuildModeEnabled } from '../build-tune-agent/config';
+import { buildTurnLimiter } from '../middleware/rate-limit';
 
 export function buildRouter(prisma: PrismaClient): Router {
   const router = Router();
@@ -45,7 +46,11 @@ export function buildRouter(prisma: PrismaClient): Router {
   router.get('/system-prompt', (req: any, res) =>
     ctl.getSystemPrompt(req, res)
   );
-  router.post('/turn', (req: any, res) => ctl.turn(req, res));
+  // 2026-05-16: 30/min per user — the studio turn endpoint kicks off
+  // a chain of expensive LLM calls, so a tight-loop bug can rack up
+  // serious cost. Limiter sits AFTER auth so the keyGenerator can
+  // see req.userId.
+  router.post('/turn', buildTurnLimiter, (req: any, res) => ctl.turn(req, res));
   // Sprint 056-A F1 — compose-at-cursor span edit endpoint.
   router.post('/compose-span', (req: any, res) => ctl.composeSpan(req, res));
   router.post('/plan/:id/approve', (req: any, res) => ctl.approvePlan(req, res));
