@@ -198,6 +198,43 @@ cd backend && npx prisma db push    # apply schema
 cd backend && npx prisma studio     # browse data
 ```
 
+## Diagnosing Production Failures
+
+When something fails in prod (failed send, AI error, crash, slow response), check sources in this order — cheapest to most expensive:
+
+1. **Database first** — most errors leave a trail.
+   - `Message.deliveryStatus`/`deliveryError` for send failures (prefixed `Hostaway <status>: ...` or `INTERNAL_ERROR: ...`)
+   - `AiApiLog.error` for AI pipeline failures (includes the full system+user prompt that was in flight)
+   - `WebhookLog.error` for Hostaway webhook ingestion failures
+   - `TuningSuggestion`/`BuildArtifactHistory` for tuning + studio writes
+   Query via `npx prisma studio` or a one-off `npx tsx -e ...` script in `backend/scripts/`.
+
+2. **Langfuse** — see `~/.claude/projects/.../memory/reference_langfuse_access.md` for credentials + endpoints. Covers the AI generations that flowed through `ai.service.ts traceAiCall` and `diagnostic.service.ts` spans (~5% of total OpenAI calls — most of the studio + test_pipeline + judge surface bypasses it).
+
+3. **Railway logs** — the catch-all when (1) and (2) don't surface the cause (uncaught exceptions, route handlers that errored before persisting, infrastructure / boot issues).
+
+   ```bash
+   # CLI is installed at /opt/homebrew/bin/railway (v4.31+).
+   # First-time setup per workstation:
+   railway login                                  # opens browser, persists token in ~/.railway
+   railway link                                   # bind cwd to the project (interactive picker)
+
+   # Live tail of the running service:
+   railway logs                                   # latest deploy of currently-linked service
+   railway logs --service backend                 # specific service if the project has many
+
+   # Historical search for a specific message id / error string:
+   railway logs --json | jq 'select(.message | contains("cmp89nfza"))' | head -50
+   railway logs --json | jq 'select(.message | contains("ShadowPreview"))' | tail -100
+
+   # If `railway` says Unauthorized: re-run `railway login`. There is no
+   # `RAILWAY_TOKEN` in backend/.env — token lives in ~/.railway after CLI login.
+   ```
+
+   For a project-scoped non-interactive token (e.g. for cron diagnostics), generate it in the Railway dashboard → Tokens → Create, then export `RAILWAY_TOKEN=...` before invoking the CLI. Do NOT add this token to `.env` — it's per-developer.
+
+4. **OpenAI dashboard** (https://platform.openai.com/usage) — last resort for total spend, request volume, and per-request inspection. The dashboard shows ALL OpenAI calls (854/day vs Langfuse's ~36) but doesn't filter by tenant / message id.
+
 ## Branch Strategy
 Feature branches merge directly to `main`. No long-lived dev branches.
 
