@@ -75,6 +75,17 @@ export interface DiagnosticResult {
   proposedText: string | null;
   artifactTarget: { type: ArtifactTargetType; id: string | null };
   capabilityRequest: { title: string; description: string; rationale: string } | null;
+  // 2026-05-16: when category='FAQ' AND artifactTarget.id is null (i.e. a
+  // CREATE new FAQ suggestion), the model must also emit a normalized
+  // question + a category from FAQ_CATEGORIES so the resulting
+  // TuningSuggestion is renderable as a real FAQ in the admin page (not
+  // just an answer floating without a question). Required for FAQ-create;
+  // null in every other category.
+  faqProposal: {
+    question: string;
+    category: string; // one of FAQ_CATEGORIES
+    scope: 'GLOBAL' | 'PROPERTY';
+  } | null;
   // Sprint 10: explicit per-category reasoning chain (required, length 8).
   decisionTrace: DecisionTraceEntry[];
   // Pass-through context so the suggestion writer can stamp linkage fields
@@ -372,6 +383,26 @@ Rules (non-negotiable):
   a rationale instead of guessing.
 - capabilityRequest must be non-null ONLY when category is
   MISSING_CAPABILITY. Otherwise it must be null.
+- faqProposal must be non-null ONLY when category='FAQ' AND
+  artifactTarget.id is null (i.e. you are proposing a NEW FAQ entry, not
+  editing one that already exists). For FAQ-edit, FAQ-with-existing-id,
+  and every other category, faqProposal must be null.
+  When non-null, all three fields are required:
+    question  — a normalized, generalized phrasing of the underlying
+                guest question (5–20 words, ending in a question mark, NOT
+                a snapshot of the manager's reply, NOT property-specific
+                phrasing like "for my unit"). Example: "What's the
+                check-in time?". Counter-example: "I'll check with the
+                manager about a prayer mat..." (this is a manager reply,
+                not a question — reject).
+    category  — exactly one of the 15 FAQ_CATEGORIES enum values shown
+                in the schema (kebab-case slug).
+    scope     — 'GLOBAL' if the answer applies to every property under
+                this tenant, 'PROPERTY' if the answer is specific to one
+                unit. Prefer GLOBAL when the answer would be true across
+                the whole brand; only pick PROPERTY when a per-unit
+                fact (e.g. "the Apartment 103 garden has a side gate") is
+                being captured.
 - artifactTarget.type must be NONE when category is NO_FIX or
   MISSING_CAPABILITY. Otherwise, pick the target type that matches the
   category (SOP for SOP_CONTENT/SOP_ROUTING, FAQ for FAQ, etc.) and
@@ -458,6 +489,39 @@ const DIAGNOSTIC_SCHEMA = {
         required: ['title', 'description', 'rationale'],
         additionalProperties: false,
       },
+      // 2026-05-16: FAQ-create payload. Required (= non-null) when
+      // category='FAQ' AND artifactTarget.id is null. Null in every other
+      // case (FAQ-edit uses artifactTarget.id; other categories don't
+      // touch FAQs).
+      faqProposal: {
+        type: ['object', 'null'] as any,
+        properties: {
+          question: { type: 'string' },
+          category: {
+            type: 'string',
+            enum: [
+              'check-in-access',
+              'check-out-departure',
+              'wifi-technology',
+              'kitchen-cooking',
+              'appliances-equipment',
+              'house-rules',
+              'parking-transportation',
+              'local-recommendations',
+              'attractions-activities',
+              'cleaning-housekeeping',
+              'safety-emergencies',
+              'booking-reservation',
+              'payment-billing',
+              'amenities-supplies',
+              'property-neighborhood',
+            ],
+          },
+          scope: { type: 'string', enum: ['GLOBAL', 'PROPERTY'] },
+        },
+        required: ['question', 'category', 'scope'],
+        additionalProperties: false,
+      },
       // Sprint 10 workstream C.2: explicit per-category reasoning chain.
       // The model evaluates ALL 8 categories before committing to its
       // final pick — every entry is 'eliminated' or 'candidate' with a
@@ -498,6 +562,7 @@ const DIAGNOSTIC_SCHEMA = {
       'proposedText',
       'artifactTarget',
       'capabilityRequest',
+      'faqProposal',
       'decision_trace',
     ],
     additionalProperties: false,
@@ -775,6 +840,7 @@ function majorityVoteResult(results: DiagnosticResult[]): DiagnosticResult {
       proposedText: null,
       artifactTarget: { type: 'NONE', id: null },
       capabilityRequest: null,
+      faqProposal: null,
     };
   }
   const winners = buckets.get(bestCategory)!;
@@ -1079,6 +1145,7 @@ function normalizeResult(
   let proposedText = parsed.proposedText ?? null;
   let capabilityRequest = parsed.capabilityRequest ?? null;
   let artifactTarget = parsed.artifactTarget ?? { type: 'NONE' as const, id: null };
+  let faqProposal = parsed.faqProposal ?? null;
 
   if (parsed.category === 'NO_FIX' || parsed.category === 'MISSING_CAPABILITY') {
     proposedText = null;
@@ -1086,6 +1153,12 @@ function normalizeResult(
   }
   if (parsed.category !== 'MISSING_CAPABILITY') {
     capabilityRequest = null;
+  }
+  // faqProposal is meaningful ONLY when category='FAQ' AND
+  // artifactTarget.id is null (creating a new FAQ). Strip otherwise to
+  // prevent stale model output from leaking into the suggestion writer.
+  if (parsed.category !== 'FAQ' || artifactTarget.id) {
+    faqProposal = null;
   }
 
   // Sprint 10: decision_trace passes through. The schema enforces 8 entries,
@@ -1106,6 +1179,7 @@ function normalizeResult(
     proposedText,
     artifactTarget,
     capabilityRequest,
+    faqProposal,
     decisionTrace,
     ...extra,
   };

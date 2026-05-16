@@ -127,8 +127,22 @@ export async function writeSuggestionFromDiagnostic(
     return { suggestion: null, capabilityRequestId: null, note: 'COOLDOWN_48H' };
   }
 
-  const actionType = mapCategoryToActionType(result.category);
+  let actionType = mapCategoryToActionType(result.category);
   const targetFields = buildTargetFields(result);
+
+  // 2026-05-16: when the diagnostic proposes a NEW FAQ entry (category='FAQ'
+  // with no existing faqEntryId), surface the model-emitted faqProposal
+  // (normalized question + FAQ_CATEGORIES slug + GLOBAL/PROPERTY scope) into
+  // the dedicated TuningSuggestion columns so the FAQ admin page can render
+  // it as a real Q&A card pre-acceptance — not just an answer floating
+  // without a question.
+  if (result.category === 'FAQ' && !result.artifactTarget.id && result.faqProposal) {
+    actionType = TuningActionType.CREATE_FAQ;
+    targetFields.faqQuestion = result.faqProposal.question;
+    targetFields.faqCategory = result.faqProposal.category;
+    targetFields.faqScope = result.faqProposal.scope;
+    targetFields.faqAnswer = result.proposedText ?? null;
+  }
 
   // ─── Sprint 08 §4: criticalFailure detection ────────────────────────────
   const isCriticalFailure =

@@ -30,6 +30,9 @@ export function faqRouter(prisma: PrismaClient): Router {
   // GET /api/faq/categories — category stats (MUST be before /:id to avoid conflict)
   router.get('/categories', ((req, res) => ctrl.categories(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 
+  // GET /api/faq/suggestions — pending FAQ TuningSuggestions for the admin page
+  router.get('/suggestions', ((req, res) => ctrl.suggestions(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
+
   // PATCH /api/faq/:id — update entry
   router.patch('/:id', ((req, res) => ctrl.update(req as unknown as AuthenticatedRequest, res)) as RequestHandler);
 

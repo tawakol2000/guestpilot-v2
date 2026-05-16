@@ -6,7 +6,10 @@ import * as hostawayService from '../services/hostaway.service';
 import { cancelPendingAiReply } from '../services/debounce.service';
 import { getAiConfig } from '../services/ai-config.service';
 import { createMessage, stripCodeFences } from '../services/ai.service';
-import { processFaqSuggestion } from '../services/faq-suggest.service';
+// 2026-05-16: faq-suggest.service (gpt-5-nano auto-suggester) deleted.
+// FAQ creation is now single-source: the tuning-diagnostic pipeline produces
+// TuningSuggestion(category='FAQ') rows which surface in both the Studio
+// Suggestions tab AND the FAQ admin page as "Suggested by Studio" cards.
 import { compactMessageAsync } from '../services/message-compaction.service';
 import { translationService } from '../services/translation.service';
 // Feature 041 — legacy copilot tuning trigger. The shadow-mode preview send
@@ -229,21 +232,11 @@ export function makeMessagesController(prisma: PrismaClient) {
           });
         }
 
-        // Auto-suggest FAQ: if conversation has an open info_request task, classify the reply
-        try {
-          const infoRequestTask = await prisma.task.findFirst({
-            where: { conversationId: id, status: 'open', urgency: 'info_request' },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (infoRequestTask?.note) {
-            // Use the task's note (escalation context) — not the last guest message,
-            // which might be "just escalate this" instead of the actual question.
-            processFaqSuggestion(prisma, tenantId, id, conversation.propertyId, infoRequestTask.note, content)
-              .catch(err => console.warn('[FAQ] Auto-suggest failed (non-fatal):', err.message));
-          }
-        } catch (err: any) {
-          console.warn('[FAQ] Auto-suggest trigger failed (non-fatal):', err.message);
-        }
+        // 2026-05-16: gpt-5-nano FAQ auto-suggester removed (redundant with
+        // the tuning-diagnostic pipeline). Manager reply → guest correction
+        // → tuning-diagnostic produces a TuningSuggestion(category='FAQ')
+        // which lands in both the Studio Suggestions tab and the FAQ admin
+        // page as a "Suggested by Studio" card.
 
         // Background: pre-fill pending knowledge suggestion if exists
         prisma.knowledgeSuggestion.findFirst({
