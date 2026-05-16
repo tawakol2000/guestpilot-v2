@@ -659,6 +659,8 @@ async function createMessage(
           userContent: JSON.stringify(inputMessages),
           responseText,
           inputTokens: logEntry.inputTokens,
+          cachedInputTokens,
+          reasoningTokens,
           outputTokens: logEntry.outputTokens,
           costUsd,
           durationMs: logEntry.durationMs,

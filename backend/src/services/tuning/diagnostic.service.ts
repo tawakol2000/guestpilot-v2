@@ -819,12 +819,19 @@ async function logSampleToAiApiLog(
       userContent: systemPlusInput,
       responseText: responseText ?? '',
       inputTokens: usage.inputTokens,
+      cachedInputTokens: usage.cachedInputTokens,
+      // Diagnostic uses reasoning=high but doesn't surface reasoning
+      // tokens through this code path's `usage` shape — left at 0
+      // default. The diagnostic's primary observability is the
+      // batch-level log line + Langfuse trace anyway.
       outputTokens: usage.outputTokens,
       durationMs,
       error: error ?? null,
       ragContext: {
         batchId,
         sampleIndex,
+        // Preserved in ragContext for back-compat with anything that
+        // parses the JSON shape; the column above is authoritative.
         cachedInputTokens: usage.cachedInputTokens,
       } as any,
     },

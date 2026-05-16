@@ -136,6 +136,13 @@ export async function generateOrExtendSummary(
         reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
         store: true,
+        // 2026-05-16: SUMMARIZE_PROMPT is a small but stable string
+        // (~200 tokens). With explicit cache key + 24h retention,
+        // every summary call after the first hits the cached prefix.
+        // Tenant-scoped key keeps cross-tenant leakage off the table
+        // even though the prompt itself is shared.
+        prompt_cache_key: `summary-fresh-${conversationId}`,
+        prompt_cache_retention: '24h',
       });
 
       summaryText = (response.output_text || '').trim();
@@ -156,6 +163,8 @@ export async function generateOrExtendSummary(
         reasoning: { effort: 'minimal' },
         max_output_tokens: 300,
         store: true,
+        prompt_cache_key: `summary-extend-${conversationId}`,
+        prompt_cache_retention: '24h',
       });
 
       summaryText = (response.output_text || '').trim();

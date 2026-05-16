@@ -120,6 +120,12 @@ export async function evaluateEscalation(input: TaskManagerInput): Promise<TaskM
       input: userMessage,
       reasoning: { effort: 'minimal' },
       store: true,
+      // 2026-05-16: SYSTEM_PROMPT is stable across all tenants —
+      // tenant-scoping is for cross-tenant isolation only, not because
+      // the prompt varies.  Heavy hitter: every guest message
+      // triggers a task-manager call.
+      prompt_cache_key: `task-manager-${input.tenantId}`,
+      prompt_cache_retention: '24h',
     });
 
     const text = response.output_text || '';

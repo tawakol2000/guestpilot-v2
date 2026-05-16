@@ -675,6 +675,15 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       // turn summaries.
       reasoning: { effort: 'high' },
       prompt_cache_key: args.systemBundle.promptCacheKey,
+      // 2026-05-16: explicit 24h retention. Without this OpenAI uses
+      // the default 5–10 min TTL — a Studio session with any pause
+      // between turns (operator thinks, walks away, comes back) drops
+      // the cache and the next turn pays full input price for the
+      // ~20K-token shared prefix. The other call sites that share
+      // this prefix (ai.service.ts, diagnostic.service.ts) already
+      // pass '24h', so retention here aligns Studio with the rest of
+      // the system.
+      prompt_cache_retention: '24h',
       store: true,
     };
     if (previousResponseId) {

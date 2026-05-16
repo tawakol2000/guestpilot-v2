@@ -526,6 +526,14 @@ model AiApiLog {
   userContent    String   @db.Text
   responseText   String   @db.Text
   inputTokens    Int      @default(0)
+  // 2026-05-16: first-class cache + reasoning token columns. Previously we
+  // pulled these from `ragContext` JSON which (a) requires every reader to
+  // parse JSON to compute hit rate, (b) is only set when callers pass a
+  // ragContext bag (~half the sites), and (c) makes Prisma aggregations
+  // impossible. Indexed by (tenantId, createdAt) below for fast hit-rate
+  // dashboards over arbitrary windows.
+  cachedInputTokens Int      @default(0) // input_tokens_details.cached_tokens from OpenAI
+  reasoningTokens   Int      @default(0) // output_tokens_details.reasoning_tokens from OpenAI
   outputTokens   Int      @default(0)
   costUsd        Float    @default(0)
   durationMs     Int      @default(0)

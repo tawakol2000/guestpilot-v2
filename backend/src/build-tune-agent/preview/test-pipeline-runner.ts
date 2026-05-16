@@ -211,6 +211,17 @@ export async function runPipelineDry(
         ],
         max_output_tokens: 600,
         text: { format: schema },
+        // 2026-05-16: prompt caching. The dry pipeline runner sends a
+        // full assembled system prompt with all SOPs + FAQs injected —
+        // typically 8–20K input tokens. Without an explicit key + 24h
+        // retention OpenAI's cache rarely lasts past a single Studio
+        // session because the test_pipeline calls cluster temporally
+        // (3 variants in parallel, then nothing for minutes). Per-
+        // tenant + per-isInquiry key matches the prompt's two
+        // distinct shapes (screening vs coordinator).
+        prompt_cache_key: `studio-test-pipeline-${input.tenantId}-${isInquiry ? 'screening' : 'coordinator'}`,
+        prompt_cache_retention: '24h',
+        store: true,
       },
       { signal: dryController.signal },
     );
