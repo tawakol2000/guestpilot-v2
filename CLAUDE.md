@@ -175,6 +175,13 @@ WASENDER_TIMEOUT_MS    # Default: 20000
 TRANSLATION_PROVIDER   # "google" (default). Future cases (deepl, openai)
                        # slot into resolveTranslationProvider() in
                        # backend/src/services/translation.service.ts.
+RAILWAY_TOKEN          # Project-scoped Railway API token, used only by the
+                       # `railway` CLI for diagnostics — NEVER read at app
+                       # runtime. Lets log queries work non-interactively:
+                       #   RAILWAY_TOKEN=$(grep ^RAILWAY_TOKEN= .env | cut -d= -f2) \
+                       #     railway logs --since 1h
+                       # Per-developer secret; do NOT commit. See
+                       # §Diagnosing Production Failures below.
 ```
 
 ## Critical Rules
@@ -215,23 +222,32 @@ When something fails in prod (failed send, AI error, crash, slow response), chec
 
    ```bash
    # CLI is installed at /opt/homebrew/bin/railway (v4.31+).
-   # First-time setup per workstation:
-   railway login                                  # opens browser, persists token in ~/.railway
-   railway link                                   # bind cwd to the project (interactive picker)
+   # Project-scoped token lives in backend/.env as RAILWAY_TOKEN
+   # (read-only, per-developer). When invoking the CLI from a shell that
+   # already sourced backend/.env, no extra env wiring is needed; from
+   # a bare shell, prefix the command:
 
-   # Live tail of the running service:
-   railway logs                                   # latest deploy of currently-linked service
-   railway logs --service backend                 # specific service if the project has many
+   cd backend
+   RAILWAY_TOKEN=$(grep '^RAILWAY_TOKEN=' .env | cut -d= -f2) railway logs --since 1h | tail -50
 
-   # Historical search for a specific message id / error string:
-   railway logs --json | jq 'select(.message | contains("cmp89nfza"))' | head -50
-   railway logs --json | jq 'select(.message | contains("ShadowPreview"))' | tail -100
+   # Common queries:
+   railway logs                                      # live tail (current deploy)
+   railway logs --since 4h --lines 500               # historical window
+   railway logs --since 6h | grep ShadowPreview      # filter by source tag
 
-   # If `railway` says Unauthorized: re-run `railway login`. There is no
-   # `RAILWAY_TOKEN` in backend/.env — token lives in ~/.railway after CLI login.
+   # Common gotcha: every redeploy starts a new container and the
+   # default tail only covers the latest deploy. For an error that
+   # happened on a previous deploy, pass --deployment-id <id> (find
+   # IDs in the Railway dashboard → service → Deployments).
+
+   # If `railway` says Unauthorized:
+   #   - The token in .env is per-developer (project-scoped, not account-
+   #     scoped). It is the user's secret. Rotate it via the Railway
+   #     dashboard → Project Settings → Tokens if compromised.
+   #   - For interactive account-level access (`railway list`,
+   #     `railway environment`), the project token isn't enough — run
+   #     `railway login` once to persist account creds to ~/.railway.
    ```
-
-   For a project-scoped non-interactive token (e.g. for cron diagnostics), generate it in the Railway dashboard → Tokens → Create, then export `RAILWAY_TOKEN=...` before invoking the CLI. Do NOT add this token to `.env` — it's per-developer.
 
 4. **OpenAI dashboard** (https://platform.openai.com/usage) — last resort for total spend, request volume, and per-request inspection. The dashboard shows ALL OpenAI calls (854/day vs Langfuse's ~36) but doesn't filter by tenant / message id.
 
