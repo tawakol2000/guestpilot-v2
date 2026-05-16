@@ -83,7 +83,27 @@ export function __setHttpClient(client: AxiosInstance | null): void {
   _client = client;
 }
 
-async function postSendMessage(body: Record<string, unknown>): Promise<SendResult> {
+// 2026-05-16: WAsender 4xx error bodies for rate-limit hits typically
+// include phrases like "send 1 message every 5 seconds" or "every N
+// seconds". Parse the N out so the 429 retry waits long enough; fall
+// back to a fixed delay when no number is parseable.
+const RATE_LIMIT_FALLBACK_MS = 6_000;
+function parseRateLimitWaitMs(responseBody: unknown): number {
+  const txt = [
+    (responseBody as any)?.error,
+    (responseBody as any)?.message,
+  ]
+    .filter((s): s is string => typeof s === 'string')
+    .join(' ');
+  const m = txt.match(/every\s+(\d+)\s*seconds?/i);
+  if (m) return Math.max(Number(m[1]), 1) * 1000 + 500;
+  return RATE_LIMIT_FALLBACK_MS;
+}
+
+async function postSendMessage(
+  body: Record<string, unknown>,
+  attempt = 0,
+): Promise<SendResult> {
   if (!isWasenderEnabled()) throw new WasenderDisabledError();
   const started = Date.now();
   try {
@@ -123,6 +143,21 @@ async function postSendMessage(body: Record<string, unknown>): Promise<SendResul
         : typeof (responseBody as any)?.message === 'string'
           ? String((responseBody as any).message).slice(0, 200)
           : 'unknown';
+    // 2026-05-16: on 429, wait the WAsender-indicated period and retry
+    // once. Production handoff for Apartment 103 lost 2 of 3 passport
+    // images because WAsender returned "send 1 message every 5 seconds"
+    // and the caller (doc-handoff.service) had no per-call retry — a
+    // single 429 immediately abandoned the rest of the loop. One retry
+    // here turns a transient burst into a 6-7s pause instead of a
+    // partial-delivery incident.
+    if (status === 429 && attempt === 0) {
+      const waitMs = parseRateLimitWaitMs(responseBody);
+      console.warn(
+        `[WAsender] 429 rate-limit — sleeping ${waitMs}ms then retrying once. error=${trimmedError}`,
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+      return postSendMessage(body, attempt + 1);
+    }
     console.warn(`[WAsender] request error status=${status} error=${trimmedError}`);
     throw new WasenderRequestError(axiosErr.message, status, responseBody);
   }

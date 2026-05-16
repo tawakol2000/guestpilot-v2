@@ -520,7 +520,15 @@ async function doSendHandoff(
     // 2-4 passport images back-to-back in a tight loop was reliably
     // tripping HTTP 429 on the second image. Pause briefly between sends
     // so the per-second bucket can refill.
-    const INTER_IMAGE_DELAY_MS = 2_000;
+    //
+    // 2026-05-16: bumped 2s → 5500ms. Production handoff for Apartment 103
+    // (row cmocmj7nv000f2ya2172gejf7) delivered 1/3 images because
+    // WAsender's "account protection" mode for this tenant returned:
+    //   "You can only send 1 message every 5 seconds."
+    // The 2s delay was correct for the standard rate-limit but not for
+    // account-protection. 5500ms covers the 5s floor plus a small safety
+    // margin (jitter from server-side clocks + axios queue delay).
+    const INTER_IMAGE_DELAY_MS = 5_500;
     for (const url of restUrls) {
       await new Promise<void>((resolve) => setTimeout(resolve, INTER_IMAGE_DELAY_MS));
       try {
