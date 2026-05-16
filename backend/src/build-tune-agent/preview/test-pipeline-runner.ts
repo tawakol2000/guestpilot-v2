@@ -237,6 +237,19 @@ export async function runPipelineDry(
     );
   }
 
+  // 2026-05-16: log cache stats so test_pipeline calls show up in
+  // ops logs and operators can verify the prompt cache is actually
+  // hitting. The dry runner skips AiApiLog (it's a side-effect-free
+  // preview), so this log line is the only signal.
+  const usage: any = (response as any)?.usage ?? {};
+  const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
+  const inputTokens = usage?.input_tokens ?? 0;
+  const outputTokens = usage?.output_tokens ?? 0;
+  const hitPct = inputTokens > 0 ? ((100 * cachedTokens) / inputTokens).toFixed(1) : '0.0';
+  console.log(
+    `[test_pipeline] tenant=${input.tenantId} status=${status} input=${inputTokens} cached=${cachedTokens} hit=${hitPct}% output=${outputTokens} dur=${Date.now() - started}ms`,
+  );
+
   return {
     reply: parsed.reply,
     replyModel: normalisedModel,
