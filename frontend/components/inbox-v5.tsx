@@ -5196,12 +5196,15 @@ export default function InboxV5() {
                                           // includes a short detail field on
                                           // every error response.
                                           const extraDetail = err?.data?.detail ? ` — ${err.data.detail}` : ''
+                                          const status = err?.status as number | undefined
                                           if (detail === 'PREVIEW_NOT_PENDING') {
                                             setShadowToast('This preview has already been superseded.')
                                           } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {
                                             setShadowToast(`Send failed — guest channel rejected the message${extraDetail}.`)
                                           } else if (detail === 'INTERNAL_ERROR') {
                                             setShadowToast(`Send failed${extraDetail}. Check Studio logs.`)
+                                          } else if (status === 429 || /rate limit/i.test(detail)) {
+                                            setShadowToast('Rate limit hit. Wait a minute and retry.')
                                           } else {
                                             setShadowToast(`Send failed: ${detail}${extraDetail}`)
                                           }

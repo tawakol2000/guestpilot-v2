@@ -1,7 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authMiddleware } from '../middleware/auth';
-import { messageSendLimiter } from '../middleware/rate-limit';
+import { messageTranslateLimiter } from '../middleware/rate-limit';
 import { makeKnowledgeController } from '../controllers/knowledge.controller';
 import { makeMessagesController } from '../controllers/messages.controller';
 import { AuthenticatedRequest } from '../types';
@@ -20,7 +20,7 @@ export function messagesRouter(prisma: PrismaClient): Router {
   router.post(
     '/:messageId/translate',
     auth,
-    messageSendLimiter as any,
+    messageTranslateLimiter as any,
     ((req, res) =>
       msgCtrl.translateMessageById(req as unknown as AuthenticatedRequest, res)) as RequestHandler
   );
