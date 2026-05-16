@@ -2142,6 +2142,26 @@ function StandalonePart({
     )
   }
 
+  if (type === 'data-agent-aborted') {
+    // 2026-05-16: the operator (or a tab refresh) cancelled the turn
+    // mid-stream. The backend still persists whatever fragments
+    // landed before abort, then drops this marker so the reloaded
+    // transcript shows a muted footer instead of a phantom "Agent
+    // never replied" gap.
+    return (
+      <div
+        className="rounded-md border px-3 py-1.5 text-xs italic"
+        style={{
+          background: STUDIO_COLORS.surfaceSunken,
+          borderColor: STUDIO_COLORS.hairlineSoft,
+          color: STUDIO_COLORS.inkSubtle,
+        }}
+      >
+        Turn ended early
+      </div>
+    )
+  }
+
   if (type === 'data-artifact-quote') {
     // Sprint 050 A1 — typographic attribution. Renders existing artifact
     // content (what `get_current_state` surfaced) as a monospace block

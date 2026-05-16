@@ -587,11 +587,18 @@ export function makeBuildController(prisma: PrismaClient) {
       // operator navigated away. Registered before stream creation so it
       // fires for both execute and onFinish phases.
       const turnAbort = new AbortController();
+      // 2026-05-16: tracked across the closure so the onError + onFinish
+      // handlers can distinguish "stream errored" from "operator
+      // cancelled the turn." Clean cancels shouldn't surface as
+      // `data-agent-error` rows in the transcript on reload.
+      let clientDisconnected = false;
+      let assistantPersisted = false;
       req.on('close', () => {
         if (!res.writableEnded) {
           console.warn(
             `[build-controller] client disconnected mid-stream (conversationId=${conversationId}) — aborting agent turn.`,
           );
+          clientDisconnected = true;
           turnAbort.abort();
         }
       });
@@ -622,11 +629,38 @@ export function makeBuildController(prisma: PrismaClient) {
             const persistableParts = parts.filter(
               (p: any) => !p || p.transient !== true
             );
+            // 2026-05-16: persist whatever fragments survived even when
+            // the stream was cut short (client disconnect, mid-flight
+            // error). Otherwise the next reload of the conversation
+            // shows a missing turn and the audit log has no record of
+            // the partial work — managers lose the SOP draft they were
+            // watching when their browser tab refreshed. Drop a
+            // sentinel `data-agent-aborted` so the UI can render a
+            // muted "(turn ended early)" footer on reload.
+            const isAborted =
+              (event as { isAborted?: boolean }).isAborted === true ||
+              clientDisconnected;
+            const finalParts: unknown[] = isAborted
+              ? [
+                  ...persistableParts,
+                  {
+                    type: 'data-agent-aborted',
+                    id: `aborted:${assistantMessageId}`,
+                    data: { reason: clientDisconnected ? 'client-disconnect' : 'stream-aborted' },
+                  },
+                ]
+              : persistableParts;
+            // Skip empty rows — a true zero-output turn shouldn't
+            // pollute the ledger, but DO persist a marker if aborted
+            // so the reload shows the operator hit cancel.
+            if (finalParts.length === 0) return;
+            if (assistantPersisted) return;
+            assistantPersisted = true;
             await prisma.tuningMessage.create({
               data: {
                 conversationId,
                 role: 'assistant',
-                parts: persistableParts as unknown as Prisma.InputJsonValue,
+                parts: finalParts as unknown as Prisma.InputJsonValue,
               },
             });
             await prisma.tuningConversation.update({
@@ -640,6 +674,15 @@ export function makeBuildController(prisma: PrismaClient) {
         onError: (err) => {
           const errorText = err instanceof Error ? err.message : String(err);
           console.error('[build-controller] stream error:', errorText);
+          // 2026-05-16: a clean cancellation is not an error worth
+          // surfacing — onFinish will land a `data-agent-aborted`
+          // marker for the reload UI. Only persist a `data-agent-error`
+          // row when this was a real failure (Anthropic 5xx / 529,
+          // tool throw, etc.) so the transcript doesn't show a red
+          // error chip every time an operator hits cancel.
+          if (clientDisconnected || /aborted|AbortError/i.test(errorText)) {
+            return errorText;
+          }
           // Bugfix (2026-04-23): the build-controller stream used to
           // return `errorText` and rely on the AI SDK's implicit error
           // channel, but the client's useChat hook surfaces that via
@@ -649,6 +692,8 @@ export function makeBuildController(prisma: PrismaClient) {
           // tuning-chat.controller pattern: persist a `data-agent-error`
           // stub so the reloaded transcript has a visible error row
           // and the operator can see what happened.
+          if (assistantPersisted) return errorText;
+          assistantPersisted = true;
           prisma.tuningMessage
             .create({
               data: {
