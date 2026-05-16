@@ -1,5 +1,23 @@
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 import type { Store } from 'express-rate-limit';
+import type { Request } from 'express';
+
+// 2026-05-16: production Railway logs were flooded with
+//   ValidationError: Custom keyGenerator appears to use request IP
+//   without calling the ipKeyGenerator helper function for IPv6 addresses.
+// every container start. Cause: every limiter below falls back to
+// `req.ip` for unauthenticated callers. Under IPv6 the raw remote
+// address is a single /128 — a single client can bypass per-IP
+// limits by rotating addresses within its /64 prefix. The library's
+// `ipKeyGenerator(req)` collapses /64 to a stable bucket.
+//
+// This helper applies the same normalisation everywhere the limiter
+// needs to fall back to IP. Stable across IPv4 + IPv6 callers and
+// silences the validation warnings in prod logs.
+function ipFallbackKey(req: Request): string {
+  const reqAny = req as unknown as Parameters<typeof ipKeyGenerator>[0];
+  return ipKeyGenerator(reqAny) ?? 'unknown';
+}
 
 function createRedisStore(prefix: string): Store | undefined {
   if (!process.env.REDIS_URL) return undefined;
@@ -49,7 +67,7 @@ export const webhookLimiter = rateLimit({
   limit: 100,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => req.params.tenantId || req.ip || 'unknown',
+  keyGenerator: (req) => req.params.tenantId || ipFallbackKey(req),
   store: createRedisStore('rl:webhook:'),
   passOnStoreError: true,
 });
@@ -61,7 +79,7 @@ export const messageSendLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded. Try again in a minute.' },
-  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  keyGenerator: (req) => (req as any).tenantId || ipFallbackKey(req),
   store: createRedisStore('rl:msg-send:'),
   passOnStoreError: true,
 });
@@ -73,7 +91,7 @@ export const reservationActionLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded. Try again in a minute.' },
-  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  keyGenerator: (req) => (req as any).tenantId || ipFallbackKey(req),
   store: createRedisStore('rl:res-action:'),
   passOnStoreError: true,
 });
@@ -90,7 +108,7 @@ export const pushSubscribeLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded. Try again in a minute.' },
-  keyGenerator: (req) => (req as any).tenantId || req.ip || 'unknown',
+  keyGenerator: (req) => (req as any).tenantId || ipFallbackKey(req),
   store: createRedisStore('rl:push-sub:'),
   passOnStoreError: true,
 });
@@ -110,7 +128,7 @@ export const buildTurnLimiter = rateLimit({
     error: 'Studio agent rate limit hit. Wait a minute before sending another turn.',
   },
   keyGenerator: (req) =>
-    (req as any).userId || (req as any).tenantId || req.ip || 'unknown',
+    (req as any).userId || (req as any).tenantId || ipFallbackKey(req),
   store: createRedisStore('rl:build-turn:'),
   passOnStoreError: true,
 });
