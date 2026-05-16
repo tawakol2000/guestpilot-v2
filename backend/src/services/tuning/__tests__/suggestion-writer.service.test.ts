@@ -268,3 +268,70 @@ test('AUTO_SUPPRESSED: small sample size (<5) does not trigger gating', async ()
   assert.equal(out.note, 'CREATED');
   assert.equal(state.created[0].status, 'PENDING');
 });
+
+// 2026-05-16: FAQ-create path. When the diagnostic emits category='FAQ'
+// with artifactTarget.id=null AND faqProposal populated, the writer must
+// promote actionType to CREATE_FAQ and surface the proposal fields onto
+// the TuningSuggestion row so the FAQ admin page can render the
+// suggestion as a real Q&A card (and the accept handler can build the
+// FaqEntry on apply).
+test('FAQ-create: faqProposal lands on the TuningSuggestion row', async () => {
+  const { prisma, state } = makeMockPrisma();
+  const out = await writeSuggestionFromDiagnostic(
+    baseResult({
+      category: 'FAQ',
+      subLabel: 'wifi-credentials-missing',
+      proposedText:
+        'WiFi network: SunsetLofts-3B. Password: welcome2024. Router lives in the living room.',
+      artifactTarget: { type: 'FAQ', id: null },
+      faqProposal: {
+        question: "What's the WiFi network and password?",
+        category: 'wifi-technology',
+        scope: 'PROPERTY',
+      },
+    }),
+    {},
+    prisma as any,
+  );
+  assert.equal(out.note, 'CREATED');
+  assert.equal(state.created.length, 1);
+  const row = state.created[0];
+  assert.equal(row.diagnosticCategory, 'FAQ');
+  assert.equal(row.actionType, 'CREATE_FAQ');
+  assert.equal(row.faqQuestion, "What's the WiFi network and password?");
+  assert.equal(row.faqCategory, 'wifi-technology');
+  assert.equal(row.faqScope, 'PROPERTY');
+  assert.ok(typeof row.faqAnswer === 'string' && row.faqAnswer.includes('SunsetLofts'));
+  // proposedText is still the answer text (legacy field used by other UIs).
+  assert.equal(row.proposedText, row.faqAnswer);
+});
+
+test('FAQ-edit: existing faqEntryId is preserved, faqProposal is ignored', async () => {
+  const { prisma, state } = makeMockPrisma();
+  await writeSuggestionFromDiagnostic(
+    baseResult({
+      category: 'FAQ',
+      subLabel: 'wifi-password-edit',
+      proposedText: 'Updated answer: SunsetLofts-3B / welcome2024',
+      artifactTarget: { type: 'FAQ', id: 'cfaq_existing' },
+      // Even if the model accidentally emitted faqProposal alongside an
+      // existing id, the writer should treat this as an EDIT, not promote
+      // to CREATE_FAQ. (Defense-in-depth: normalizeResult already nulls
+      // this combination, but we want the writer to be safe too.)
+      faqProposal: {
+        question: 'shouldnt show up',
+        category: 'wifi-technology',
+        scope: 'GLOBAL',
+      },
+    }),
+    {},
+    prisma as any,
+  );
+  const row = state.created[0];
+  assert.equal(row.actionType, 'EDIT_FAQ');
+  assert.equal(row.faqEntryId, 'cfaq_existing');
+  // The bogus faqProposal must NOT leak into a CREATE_FAQ shape.
+  assert.equal(row.faqQuestion, undefined);
+  assert.equal(row.faqCategory, undefined);
+  assert.equal(row.faqScope, undefined);
+});

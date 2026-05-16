@@ -1090,7 +1090,15 @@ async function callDiagnosticModel(
     // reasoning effort high spends a meaningful chunk of output tokens on
     // hidden reasoning before producing the structured JSON. 1500 starves
     // the model and produces empty output on real (non-NO_FIX) edits.
-    max_output_tokens: 4000,
+    // 2026-05-16: bumped to 10000. gpt-5.4 with effort=high burns 4-7k
+    // reasoning tokens BEFORE emitting the structured JSON. The previous
+    // 4000 cap produced empty outputs; 6000 produced truncated JSON
+    // ("Unterminated string in JSON at position 1700"); the response
+    // body shows ~5k+ on reasoning before the schema even starts. 10000
+    // gives reliable headroom for the full payload (proposedText can be
+    // the entire revised system prompt or SOP body, plus 8-entry
+    // decision_trace, plus the faqProposal object).
+    max_output_tokens: 10000,
     text: { format: DIAGNOSTIC_SCHEMA },
     store: true,
     prompt_cache_key: `tuning-diagnostic-${tenantId}`,

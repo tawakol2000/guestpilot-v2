@@ -456,9 +456,20 @@ function StudioSuggestionCard({
               <div style={{ marginTop: 2 }}>{suggestion.existingAnswer}</div>
             </div>
           )}
-          <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 4 }}>
-            {question || '(no question)'}
-          </div>
+          {!question.trim() && (
+            <div style={{
+              padding: '6px 10px', marginBottom: 6, borderRadius: T.radius.sm,
+              background: `${T.status.amber}10`, border: `1px solid ${T.status.amber}30`,
+              fontSize: 11, color: T.status.amber, fontFamily: T.font.sans, lineHeight: 1.4,
+            }}>
+              Legacy suggestion — click Edit to add a question before accepting.
+            </div>
+          )}
+          {question.trim() && (
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 4 }}>
+              {question}
+            </div>
+          )}
           <p style={{
             fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans,
             margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap',
@@ -560,12 +571,28 @@ function StudioSuggestionCard({
             <MessageSquare size={11} /> Discuss
           </SmallBtn>
         )}
-        <SmallBtn
-          onClick={() => onAccept(suggestion, { question, answer, category, scope, propertyId })}
-          variant="success"
-        >
-          <Check size={11} /> {dirty ? 'Accept (edited)' : 'Accept'}
-        </SmallBtn>
+        {(() => {
+          // Accept is disabled when the suggestion is missing a question
+          // (legacy pre-Phase-2 rows have null faqQuestion) or an answer.
+          // The manager must click Edit and fill them in before accepting —
+          // the backend's accept handler 400s on missing question/answer.
+          const missingQ = !question || question.trim().length === 0
+          const missingA = !answer || answer.trim().length === 0
+          const acceptDisabled = missingQ || missingA
+          const title = acceptDisabled
+            ? `Click Edit and fill in the ${missingQ ? 'question' : 'answer'} first`
+            : undefined
+          return (
+            <SmallBtn
+              onClick={() => onAccept(suggestion, { question, answer, category, scope, propertyId })}
+              variant="success"
+              disabled={acceptDisabled}
+              style={title ? { cursor: 'not-allowed' } : undefined}
+            >
+              <Check size={11} /> {dirty ? 'Accept (edited)' : 'Accept'}
+            </SmallBtn>
+          )
+        })()}
       </div>
     </div>
   )
