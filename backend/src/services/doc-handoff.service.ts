@@ -532,7 +532,13 @@ async function doSendHandoff(
     for (const url of restUrls) {
       await new Promise<void>((resolve) => setTimeout(resolve, INTER_IMAGE_DELAY_MS));
       try {
-        await sendImage({ to: recipient, imageUrl: url });
+        // 2026-05-16: re-send the caption (unit + dates) on every image, not
+        // just the first. Security desk receives passport + marriage-cert
+        // photos as a stream — without the caption on each one, images 2..N
+        // arrive uncontextualized and the operator can't match them back to
+        // a specific reservation in WhatsApp scroll. The caption is short
+        // (one line: unit + DD/MM-DD/MM) so the repetition is cheap.
+        await sendImage({ to: recipient, text, imageUrl: url });
         deliveredUrls.push(url);
       } catch (imgErr: any) {
         partialErr = imgErr instanceof Error ? imgErr : new Error(String(imgErr));
