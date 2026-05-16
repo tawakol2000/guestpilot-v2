@@ -5187,14 +5187,25 @@ export default function InboxV5() {
                                           setPreviewEditBuffer('')
                                         } catch (err: any) {
                                           const detail = err?.data?.error || err?.message || 'Send failed'
+                                          // 2026-05-16: include the backend's
+                                          // detail string when the error code
+                                          // doesn't match a known case — the
+                                          // previous "Send failed." gave the
+                                          // operator no signal at all about
+                                          // what went wrong. Backend now
+                                          // includes a short detail field on
+                                          // every error response.
+                                          const extraDetail = err?.data?.detail ? ` — ${err.data.detail}` : ''
                                           if (detail === 'PREVIEW_NOT_PENDING') {
                                             setShadowToast('This preview has already been superseded.')
                                           } else if (detail === 'HOSTAWAY_DELIVERY_FAILED') {
-                                            setShadowToast('Send failed — guest channel rejected the message.')
+                                            setShadowToast(`Send failed — guest channel rejected the message${extraDetail}.`)
+                                          } else if (detail === 'INTERNAL_ERROR') {
+                                            setShadowToast(`Send failed${extraDetail}. Check Studio logs.`)
                                           } else {
-                                            setShadowToast('Send failed.')
+                                            setShadowToast(`Send failed: ${detail}${extraDetail}`)
                                           }
-                                          setTimeout(() => setShadowToast(null), 3500)
+                                          setTimeout(() => setShadowToast(null), 6500)
                                         } finally {
                                           setSendingPreviewId(null)
                                         }

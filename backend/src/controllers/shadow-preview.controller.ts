@@ -239,22 +239,49 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
             },
             analyzerQueued,
           });
-        } catch (sendErr) {
+        } catch (sendErr: any) {
+          const errMsg = sendErr?.message ?? String(sendErr);
+          const errStatus = sendErr?.response?.status ?? sendErr?.status ?? null;
           console.error(`[ShadowPreview] [${messageId}] Hostaway send failed:`, sendErr);
-          // Roll back to PREVIEW_PENDING so the admin can retry.
-          // 2026-05-15 (auto-review F6): scope the update by (id, tenantId)
-          // — the happy-path commit elsewhere in this controller already
-          // uses that pair; the rollback path was the lone exception.
+          // 2026-05-16: persist the failure reason to the Message row
+          // so admins can diagnose without grepping Railway logs.
+          // Roll back to PREVIEW_PENDING so the admin can retry, AND
+          // stamp deliveryStatus/deliveryError. Best-effort — must not
+          // swallow the original response.
           await prisma.message
-            .updateMany({ where: { id: messageId, tenantId }, data: { previewState: 'PREVIEW_PENDING' } })
+            .updateMany({
+              where: { id: messageId, tenantId },
+              data: {
+                previewState: 'PREVIEW_PENDING',
+                deliveryStatus: 'failed',
+                deliveryError: errStatus
+                  ? `Hostaway ${errStatus}: ${errMsg.slice(0, 480)}`
+                  : `Hostaway: ${errMsg.slice(0, 480)}`,
+              },
+            })
             .catch(() => {});
           res.status(502).json({
             error: 'HOSTAWAY_DELIVERY_FAILED',
+            detail: errMsg.slice(0, 400),
           });
         }
-      } catch (err) {
+      } catch (err: any) {
+        const errMsg = err?.message ?? String(err);
         console.error(`[ShadowPreview] [${messageId}] send handler error:`, err);
-        res.status(500).json({ error: 'INTERNAL_ERROR' });
+        // 2026-05-16: persist the internal-error reason on the Message
+        // row so a "Send failed." toast leaves a queryable trail.
+        // Previously the only signal was a console.error → Railway log,
+        // which is fragile to find for a specific message.
+        await prisma.message
+          .updateMany({
+            where: { id: messageId, tenantId },
+            data: {
+              deliveryStatus: 'failed',
+              deliveryError: `INTERNAL_ERROR: ${errMsg.slice(0, 480)}`,
+            },
+          })
+          .catch(() => {});
+        res.status(500).json({ error: 'INTERNAL_ERROR', detail: errMsg.slice(0, 400) });
       }
     },
   };
