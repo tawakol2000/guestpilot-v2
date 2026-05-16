@@ -4,7 +4,7 @@
  * Three execution paths exist:
  *
  *   1. **OpenAI Responses API** (`./openai-runner.ts`) — gated by
- *      `STUDIO_PROVIDER=openai`. Runs gpt-5.4-mini against the same
+ *      `STUDIO_PROVIDER=openai`. Runs gpt-5.4 against the same
  *      tool registry + system prompt; produces byte-identical SSE
  *      data-parts so the frontend works either way.
  *

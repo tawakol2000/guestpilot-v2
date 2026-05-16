@@ -136,13 +136,19 @@ VAPID_SUBJECT          # mailto:support@guestpilot.com
 STUDIO_PROVIDER        # "anthropic" (default) | "openai" — selects the
                        # Studio agent runtime. anthropic = Claude Agent SDK
                        # (Sonnet 4.6); openai = OpenAI Responses API
-                       # (gpt-5.4-mini). Both paths share the system prompt,
+                       # (gpt-5.4 full, not mini — Studio is an authoring
+                       # surface used dozens of times per week, not the
+                       # high-volume guest-reply hot path, so the larger
+                       # model is worth the spend). Both paths share the system prompt,
                        # the 18-tool registry, state-machine enforcement,
                        # and SSE wire contract; flip at deploy time for A/B.
                        # When openai, requires OPENAI_API_KEY (already set
                        # for the main guest-reply pipeline).
 STUDIO_OPENAI_MODEL    # Optional override for the OpenAI Studio model.
-                       # Default: gpt-5.4-mini-2026-03-17.
+                       # Default: gpt-5.4 (full, not mini — see
+                       # STUDIO_PROVIDER for rationale). Set to
+                       # `gpt-5.4-mini-2026-03-17` to fall back to the
+                       # cheaper model for cost-sensitive deployments.
 BUILD_AGENT_DIRECT_TRANSPORT  # Sprint 058-A F1 — when "true"/"1"/"yes"/"on",
                               # the BUILD tuning-agent bypasses the Claude
                               # Agent SDK's string-only systemPrompt surface

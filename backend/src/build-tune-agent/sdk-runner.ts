@@ -105,7 +105,7 @@ export interface RunTurnInput {
   /**
    * Per-request provider toggle from the frontend. When set, overrides
    * `STUDIO_PROVIDER` env for this single turn so an operator can A/B
-   * Claude vs gpt-5.4-mini from the UI without redeploying. Accepted
+   * Claude vs gpt-5.4 from the UI without redeploying. Accepted
    * values: 'anthropic' | 'openai'. When omitted, falls back to the
    * env-resolved provider in `resolveStudioProvider()`.
    */

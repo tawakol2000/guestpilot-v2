@@ -18,12 +18,21 @@ export function resolveTuningAgentModel(): string {
 
 export type StudioProvider = 'anthropic' | 'openai';
 
-export const STUDIO_OPENAI_DEFAULT_MODEL = 'gpt-5.4-mini-2026-03-17';
+// 2026-05-16: bumped default from gpt-5.4-mini to gpt-5.4. The Studio
+// agent is the manager-facing authoring surface (BUILD interview, TUNE
+// suggestion review, ritual verification). It runs orders of magnitude
+// less often than the guest-reply pipeline — a manager configures the
+// AI maybe a dozen times a week — so the ~3.3× per-token cost of the
+// full model is well-spent for tighter slot questions, sharper SOP
+// drafts, and better suggestion reasoning. The guest-reply hot path
+// (ai.service.ts) stays on gpt-5.4-mini for unit economics.
+// Override via STUDIO_OPENAI_MODEL env if needed.
+export const STUDIO_OPENAI_DEFAULT_MODEL = 'gpt-5.4';
 
 /**
  * Provider toggle for the Studio agent. Default is `anthropic` (the Claude
  * Agent SDK path). Set `STUDIO_PROVIDER=openai` to run the OpenAI Responses
- * API path against gpt-5.4-mini. Both paths share Region A/B prefix and
+ * API path against gpt-5.4. Both paths share Region A/B prefix and
  * produce byte-identical SSE data-parts so the frontend works either way.
  */
 export function resolveStudioProvider(): StudioProvider {
