@@ -286,6 +286,23 @@ function mapCategoryToActionType(category: DiagnosticResult['category']): Tuning
 
 // ─── Target field population (legacy compat) ─────────────────────────────────
 
+// 2026-05-16: shape check. The diagnostic prompt instructs the model
+// to populate artifactTarget.id with a CATEGORY SLUG for SOP_*, an
+// existing FAQ entry id for FAQ, a variant NAME (coordinator/screening)
+// for SYSTEM_PROMPT, and a TOOL NAME for TOOL_CONFIG. The model
+// occasionally returns a cuid (variant id, faq category slug, etc.)
+// which the writer would silently store in the wrong field — the
+// Accept flow then 404s at apply time.
+//
+// `looksLikeCuid` detects the 25-char cuid format Prisma uses by
+// default. When detected for a category that should NOT be a cuid, we
+// drop the id (the suggestion still persists, just with a null target
+// so the operator picks via the UI rather than a broken auto-target).
+const CUID_RE = /^c[a-z0-9]{24}$/;
+function looksLikeCuid(s: string): boolean {
+  return typeof s === 'string' && CUID_RE.test(s);
+}
+
 function buildTargetFields(result: DiagnosticResult): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const id = result.artifactTarget.id;
@@ -293,20 +310,34 @@ function buildTargetFields(result: DiagnosticResult): Record<string, unknown> {
   switch (result.category) {
     case 'SOP_CONTENT':
     case 'SOP_ROUTING':
+    case 'PROPERTY_OVERRIDE':
+      // sopCategory must be a SLUG like 'sop-early-check-in', NOT a
+      // SopVariant cuid. Drop variant-ids the model returned by
+      // mistake — the UI can prompt the manager to pick the category.
+      if (looksLikeCuid(id)) {
+        console.warn(
+          `[SuggestionWriter] dropped variant-id "${id}" returned as artifactTarget.id for ${result.category} — expected category slug. Target left null.`
+        );
+        break;
+      }
       out.sopCategory = id;
       // sopStatus is unknown from the diagnostic payload — leave null so the
       // sprint-03 UI can prompt the manager to pick the status. Setting it
       // incorrectly would cause the legacy accept endpoint to write to the
       // wrong variant.
       break;
-    case 'PROPERTY_OVERRIDE':
-      out.sopCategory = id;
-      // sopPropertyId similarly unknown — sprint-03 UI supplies it.
-      break;
     case 'FAQ':
+      // faqEntryId IS expected to be a cuid (FaqEntry primary key).
       out.faqEntryId = id;
       break;
     case 'SYSTEM_PROMPT':
+      // Expected: "coordinator" or "screening" — short string, not a cuid.
+      if (looksLikeCuid(id)) {
+        console.warn(
+          `[SuggestionWriter] dropped cuid "${id}" returned as systemPromptVariant — expected "coordinator" or "screening".`
+        );
+        break;
+      }
       out.systemPromptVariant = id;
       break;
     case 'TOOL_CONFIG':

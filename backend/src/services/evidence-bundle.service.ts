@@ -147,12 +147,20 @@ export interface EvidenceBundle {
   };
 
   /** The specific SOP category(ies) classified for this run, plus the SOP
-   *  variants + property overrides that were in effect at bundle time. */
+   *  variants + property overrides that were in effect at bundle time.
+   *
+   *  When ragContext didn't surface a specific category (no AiApiLog,
+   *  log-persistence race, harness run, or a late trigger like a complaint
+   *  filed days after the AI reply), `fallback: true` indicates the row
+   *  is from the tenant's full enabled catalog — useful as a "what could
+   *  the manager have meant to edit?" surface but NOT an attribution
+   *  signal that this specific SOP fired during the disputed turn. */
   sopsInEffect: Array<{
     category: string;
     toolDescription: string;
     variants: Array<Pick<SopVariant, 'id' | 'status' | 'content' | 'enabled'>>;
     propertyOverrides: Array<Pick<SopPropertyOverride, 'id' | 'status' | 'content' | 'enabled' | 'propertyId'>>;
+    fallback?: boolean;
   }>;
 
   /** FAQ entries that were retrieved in this run (by id from ragContext). If
@@ -445,9 +453,27 @@ async function buildSopsInEffect(
   categories: string[],
   reservationStatus: string
 ): Promise<EvidenceBundle['sopsInEffect']> {
-  if (categories.length === 0) return [];
+  // 2026-05-16: when ragContext is missing (no AiApiLog, harness run,
+  // log persistence race) the diagnostic used to see `sopsInEffect:
+  // []` and systematically misclassified SOP_CONTENT edits as FAQ
+  // because the existing SOP wasn't visible. Fall back to the
+  // tenant's full enabled SOP catalog filtered by reservation status
+  // so the diagnostic always has something to discriminate against.
+  // Cap at 20 SOPs to keep the prompt tight — typical tenants have
+  // 6-12 SOPs, an unusually-large tenant gets a truncated view but
+  // never a black hole.
+  //
+  // The downside is the diagnostic might attribute the edit to the
+  // wrong SOP when the manager corrected behaviour that crossed two
+  // SOPs — but that's strictly better than the current black-hole
+  // behaviour where ZERO SOPs are visible.
+  const FALLBACK_SOP_CAP = 20;
+  const useFallback = categories.length === 0;
+
   const sopDefs = await prisma.sopDefinition.findMany({
-    where: { tenantId, category: { in: categories } },
+    where: useFallback
+      ? { tenantId, enabled: true }
+      : { tenantId, category: { in: categories } },
     include: {
       variants: { where: { OR: [{ status: reservationStatus }, { status: 'DEFAULT' }] } },
       propertyOverrides: propertyId
@@ -459,6 +485,7 @@ async function buildSopsInEffect(
           }
         : false,
     },
+    take: useFallback ? FALLBACK_SOP_CAP : undefined,
   });
   return sopDefs.map((def) => ({
     category: def.category,
@@ -476,6 +503,11 @@ async function buildSopsInEffect(
       enabled: o.enabled,
       propertyId: o.propertyId,
     })),
+    // Mark fallback rows so the diagnostic prompt knows the SOP wasn't
+    // necessarily routed to during the disputed turn — it's a
+    // "what's available to edit" surface rather than a "what fired"
+    // attribution.
+    fallback: useFallback || undefined,
   }));
 }
 
@@ -508,7 +540,30 @@ async function buildFaqHits(
   const faqCategories = Array.isArray(ragContext?.faqCategories)
     ? (ragContext!.faqCategories as unknown[]).filter((v): v is string => typeof v === 'string')
     : [];
-  if (faqCategories.length === 0) return [];
+  // 2026-05-16: fallback when no ragContext info is available — return
+  // the tenant's enabled FAQ catalog (capped) so the diagnostic can see
+  // whether a relevant FAQ exists rather than assuming none does.
+  // Matches the same gap fixed in buildSopsInEffect.
+  if (faqCategories.length === 0) {
+    const rows = await prisma.faqEntry.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        OR: [{ scope: 'GLOBAL' }, ...(propertyId ? [{ propertyId }] : [])],
+      },
+      take: 30,
+      select: {
+        id: true,
+        question: true,
+        answer: true,
+        category: true,
+        scope: true,
+        propertyId: true,
+        status: true,
+      },
+    });
+    return rows;
+  }
   const rows = await prisma.faqEntry.findMany({
     where: {
       tenantId,

@@ -302,6 +302,32 @@ or 'candidate' with a one-sentence reason citing specific evidence (e.g.
 the candidate that becomes the final category — multiple candidates with
 ambiguous evidence means you should return NO_FIX.
 
+FALLBACK SOPs / FAQs. The evidence bundle distinguishes two kinds of SOP
+rows in "## SOPs in effect":
+
+  - Specific (no \`fallback\` field): the SOP was classified for the
+    disputed turn. Use it as direct attribution evidence — if the SOP
+    text contradicts the manager's edit, that's strong SOP_CONTENT
+    signal.
+
+  - Fallback (\`"fallback": true\`): the disputed turn left no
+    ragContext (no AiApiLog or persistence race), so we surface the
+    tenant's full enabled SOP catalog. These rows tell you what the
+    tenant CAN edit, not what was routed to. You must reason from the
+    disputed reply's topic to pick the matching SOP. Example: manager's
+    edit talks about early check-in pricing; the fallback list contains
+    \`sop-early-check-in\` with content "$25/hour before 3pm"; the
+    manager's edit clearly contradicts that text — classify
+    SOP_CONTENT against that variant, and put the variant id in
+    artifactTarget.id. Do NOT default to FAQ just because the
+    "routed-to" SOP is unknown.
+
+The same rule applies to FAQ rows: a fallback catalog means scan it
+for a topic match before concluding "no FAQ covers this." Only return
+FAQ as the category when the topic genuinely has no SOP home and no
+existing FAQ entry — for early-check-in policy, check-out times,
+parking, WiFi, etc., the SOP is almost always the right home.
+
 Rules (non-negotiable):
 
 - Anti-sycophancy: if no artifact change is warranted, return NO_FIX. Do
@@ -349,9 +375,32 @@ Rules (non-negotiable):
 - artifactTarget.type must be NONE when category is NO_FIX or
   MISSING_CAPABILITY. Otherwise, pick the target type that matches the
   category (SOP for SOP_CONTENT/SOP_ROUTING, FAQ for FAQ, etc.) and
-  include the target id from the evidence bundle when one is obvious
-  (e.g. the sopCategory + status that was classified). If no id is
-  knowable from the evidence, return id = null.
+  populate artifactTarget.id with the IDENTIFIER LISTED BELOW. The
+  downstream Accept flow uses this id to look up the artifact — a
+  variant id where the category slug is expected (or vice versa)
+  breaks the Apply path silently. Use null when unknown — never guess.
+
+  By category:
+    SOP_CONTENT       → category slug from sopsInEffect[*].category
+                         (e.g. "sop-early-check-in"). NOT a variant id.
+    SOP_ROUTING       → same: category slug.
+    PROPERTY_OVERRIDE → category slug; the property is inferred from
+                         the entities.property block, NOT from the id.
+    FAQ               → existing faqHits[*].id when editing an existing
+                         entry; null when creating a new one (the
+                         downstream writer handles either path).
+    SYSTEM_PROMPT     → variant name from systemPromptContext.agentName
+                         (e.g. "coordinator" or "screening"). String,
+                         not a database id.
+    TOOL_CONFIG       → tool name from the tool registry mentioned in
+                         the bundle's tool-call traces (e.g. "get_sop",
+                         "check_extend_availability"). String name,
+                         not a database id.
+
+  Examples of WRONG ids the writer will silently corrupt:
+    - SOP_CONTENT with id="cmoaayppu00061mjyekha2zx3" (variant id)  ✗
+    - FAQ with id="faq-checkin" (category slug, not entry id)        ✗
+    - SYSTEM_PROMPT with id="version-3" (version, not variant name)  ✗
 - Prefer editing an existing artifact over creating a new one. If the
   evidence bundle already shows an SOP variant or FAQ entry on the same
   topic, propose editing it rather than creating a duplicate.
