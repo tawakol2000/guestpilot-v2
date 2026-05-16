@@ -119,12 +119,22 @@ export function invalidateSopCache(tenantId: string): void {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Resolve SOP content from DB with cascading fallback:
- *   1. SopPropertyOverride (sopDefId, propertyId, status)  → if enabled
- *   2. SopPropertyOverride (sopDefId, propertyId, DEFAULT) → if enabled
- *   3. SopVariant          (sopDefId, status)              → if enabled
- *   4. SopVariant          (sopDefId, DEFAULT)             → if enabled
- *   5. '' (empty)
+ * Resolve SOP content from DB.
+ *
+ * 2026-05-16: SOPs are now single-body — one DEFAULT variant per category
+ * containing inline `### When booking is X` subsections. Per-status
+ * variants (INQUIRY/CONFIRMED/CHECKED_IN) are no longer seeded; legacy
+ * rows from older tenants are ignored (migration script merges them).
+ *
+ * Resolution cascade:
+ *   1. SopPropertyOverride (sopDefId, propertyId, DEFAULT) → if enabled
+ *   2. SopVariant          (sopDefId, DEFAULT)             → if enabled
+ *   3. '' (empty)
+ *
+ * The `reservationStatus` argument is still required because it's threaded
+ * through `applyTemplates` (e.g. ACCESS_CONNECTIVITY is empty for INQUIRY)
+ * and embedded in the cache key, but it no longer steers which variant
+ * row we pick.
  *
  * Auto-seeds the tenant on first call if no SopDefinitions exist.
  * Caches resolved content per (tenant, category, status, propertyId) for 5 min.
@@ -171,29 +181,20 @@ export async function getSopContent(
       await seedSopDefinitions(tenantId, db);
     }
 
-    // 2026-05-15 (perf review P3): collapse the 5-query waterfall (def +
-    // up to 4 findUnique calls) into one round-trip. Previously a
-    // cold-cache lookup for a single category cost 5 sequential DB
-    // hits; multiplied by 3 categories per AI turn = 15 round-trips
-    // per AI reply on cache miss. With this include() it's 1.
+    // 2026-05-16: single-body SOPs — fetch only the DEFAULT variant +
+    // DEFAULT property override (if any). Legacy per-status rows are
+    // ignored; the migration script collapses them into DEFAULT.
     const sopDef = await db.sopDefinition.findUnique({
       where: { tenantId_category: { tenantId, category } },
       include: {
         variants: {
-          where: {
-            status: { in: [status, 'DEFAULT'] },
-            enabled: true,
-          },
+          where: { status: 'DEFAULT', enabled: true },
         },
         propertyOverrides: propertyId
           ? {
-              where: {
-                propertyId,
-                status: { in: [status, 'DEFAULT'] },
-                enabled: true,
-              },
+              where: { propertyId, status: 'DEFAULT', enabled: true },
             }
-          : { where: { id: '__never__' } }, // empty result when no propertyId
+          : { where: { id: '__never__' } },
       },
     });
     if (!sopDef || !sopDef.enabled) {
@@ -203,25 +204,13 @@ export async function getSopContent(
 
     let content = '';
 
-    // Resolve the cascade in JS — same order as before:
-    //   1. property override @ exact status
-    //   2. property override @ DEFAULT
-    //   3. variant @ exact status
-    //   4. variant @ DEFAULT
+    // Property override beats global variant when present.
     if (propertyId) {
-      const exactOverride = sopDef.propertyOverrides.find((o) => o.status === status);
-      if (exactOverride) content = exactOverride.content;
-      if (!content) {
-        const defaultOverride = sopDef.propertyOverrides.find((o) => o.status === 'DEFAULT');
-        if (defaultOverride) content = defaultOverride.content;
-      }
+      const override = sopDef.propertyOverrides[0];
+      if (override) content = override.content;
     }
     if (!content) {
-      const exactVariant = sopDef.variants.find((v) => v.status === status);
-      if (exactVariant) content = exactVariant.content;
-    }
-    if (!content) {
-      const defaultVariant = sopDef.variants.find((v) => v.status === 'DEFAULT');
+      const defaultVariant = sopDef.variants[0];
       if (defaultVariant) content = defaultVariant.content;
     }
 
@@ -421,10 +410,39 @@ const SEED_TOOL_DESCRIPTIONS: Record<string, string> = {
   'escalate': 'Safety concern, legal issue, billing dispute requiring human, or anything needing immediate manager attention.',
 };
 
-/** Default SOP content per category (used as DEFAULT variant during seeding). */
+/**
+ * Default SOP content per category — the SINGLE canonical body the AI receives.
+ *
+ * 2026-05-16: SOP architecture was simplified from per-status variants
+ * (DEFAULT/INQUIRY/CONFIRMED/CHECKED_IN, each with its own body) into a
+ * single merged body per category. Where guidance differs by booking
+ * status, the body now uses explicit Markdown subsections:
+ *
+ *     ### When booking is INQUIRY
+ *     ... do this for inquiries ...
+ *
+ *     ### When booking is CONFIRMED or CHECKED_IN
+ *     ... do this for active reservations ...
+ *
+ * The AI receives the FULL merged body PLUS a one-line preamble naming
+ * the current booking status (`## SOP: <cat>  ·  current booking status:
+ * <STATUS>`), and selects the matching subsection. Content not wrapped
+ * in a "When booking is X" subsection applies to all statuses.
+ *
+ * This costs ~50 tokens per multi-status SOP for the heading scaffold
+ * but reads more clearly than 3 separate near-duplicate variants, and
+ * lets the AI answer cross-status questions ("what about when I check
+ * in?") without re-classifying.
+ */
 export const SEED_SOP_CONTENT: Record<string, string> = {
   'sop-cleaning': `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.
-Extra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate to manager.`,
+
+### When booking is INQUIRY or CONFIRMED (not yet checked in)
+Reassure that extra cleaning is available during the stay. Do NOT schedule — the guest hasn't checked in yet.
+
+### When booking is CHECKED_IN (guest is currently staying)
+Extra cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. Ask for the guest's preferred time, then escalate as "scheduled" once they confirm.
+If the guest reports the unit was not cleaned on arrival, apologise and escalate as "immediate".`,
 
   'sop-amenity-request': `Guest requests towels, extra towels, pillows, blankets, baby crib, extra bed, hair dryer, blender, kids dinnerware, espresso machine, hangers, or any item/amenity.
 
@@ -432,39 +450,74 @@ Extra Cleaning is available during working hours only (10am–5pm). Recurring cl
 
 {PROPERTY_AMENITIES}
 
-Check the property amenities list for available items. Only confirm items explicitly listed there.
-- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled"
-- Item NOT on the list → say "Let me check on that" → escalate as "info_request"`,
+Only confirm items explicitly listed above. Items not listed → say "Let me check on that" → escalate as "info_request".
+
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Confirm what's available based on the amenities list. Don't discuss delivery or scheduling — the guest is still deciding whether to book.
+
+### When booking is CONFIRMED (booked, not yet arrived)
+Confirm availability and assure the amenity will be ready for arrival. Don't schedule delivery — they haven't checked in yet.
+
+### When booking is CHECKED_IN (guest is currently staying)
+- Item on the amenities list → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for the guest to confirm a specific time in their next message, THEN escalate as "scheduled".`,
 
   'sop-maintenance': `Guest reports something broken, not working, or needing repair — AC not cooling, no hot water, plumbing, leak, water damage, appliance broken, electricity issue, insects, bugs, pests, cockroach, mold, smell, noise from neighbors.
-Broken or malfunctioning items: Acknowledge the problem, assure guest someone will look into it and that you informed the manager, and escalate immediately.
+Broken or malfunctioning items: Acknowledge the problem, assure the guest someone will look into it and that you informed the manager, and escalate immediately.
 **All maintenance/technical issues → urgency: "immediate"**`,
 
-  'sop-wifi-doorcode': ``,
+  'sop-wifi-doorcode': `Guest asks about WiFi, internet, the door code, the smart lock, building access, or self check-in.
+
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Confirm that WiFi and self check-in are available at the property. Do NOT share the WiFi password or door code — access details are only released once the booking is confirmed. Reassure that the full access details will be sent ahead of arrival.
+
+### When booking is CONFIRMED or CHECKED_IN (booked or currently staying)
+Share these access details verbatim:
+
+{ACCESS_CONNECTIVITY}
+
+This is a self check-in property — the door code above is what the guest uses to enter.
+
+### Escalation rules (all statuses)
+- WiFi not working → apologise and escalate as "immediate".
+- Door code not working / guest locked out → apologise and escalate as **"immediate"** — high priority, the guest may be stuck outside.
+- Any building or compound access issue → escalate as "immediate".`,
 
   'sop-visitor-policy': `Guest wants to invite someone ELSE over — a friend, family member, or visitor to the apartment. NOTE: This SOP is for VISITOR requests only. If the guest is asking about their OWN booking documents (passport, marriage cert, ID), this does not apply — escalate as info_request instead.
 
-## VISITOR POLICY
-- ONLY immediate family members allowed as visitors
-- Guest must send visitor's passport through the chat
-- Family names must match guest's family name
-Collect passport image → escalate for manager verification
-Non-family visitors (friends, colleagues, etc.) = NOT allowed
-Any pushback on this rule → escalate as immediate`,
+## VISITOR POLICY (all statuses)
+- ONLY immediate family members allowed as visitors.
+- Family names must match the guest's family name.
+- Non-family visitors (friends, colleagues, etc.) = NOT allowed.
+- Any pushback on this rule → escalate as "immediate".
+
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Share the family-only policy upfront so the guest can decide whether to book. Don't request a passport image yet — they aren't booked.
+
+### When booking is CONFIRMED or CHECKED_IN (booked or currently staying)
+Ask the guest to send the visitor's passport image through the chat. Once received, escalate as "immediate" for manager verification.`,
 
   'sop-early-checkin': `Guest asks for early check-in, arriving early, wants to check in before 3pm, or asks if they can come earlier.
 
-## EARLY CHECK-IN
-Standard check-in: 3:00 PM. Back-to-back bookings mean early check-in can only be confirmed 2 days before.
-**More than 2 days before check-in:** Do NOT escalate. Tell guest: "We can only confirm early check-in 2 days before your date since there may be guests checking out. You're welcome to leave your bags with housekeeping and grab coffee at O1 Mall — it's a 1-minute walk."
-**Within 2 days of check-in:** Tell guest you'll check → escalate as "info_request"
-**Never confirm early check-in yourself.**`,
+Standard check-in: 3:00 PM. **Never confirm early check-in yourself.**
+
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Mention the 3:00 PM standard check-in and note that early check-in availability depends on the prior booking. Don't promise a time.
+
+### When booking is CONFIRMED (booked, not yet arrived)
+{CHECKIN_SITUATION}
+
+### When booking is CHECKED_IN (guest is currently staying)
+The guest has already checked in — early check-in is no longer relevant. If they're asking about a different upcoming stay, ask which booking they mean.`,
 
   'sop-late-checkout': `Guest asks for late checkout — wants to leave later on their checkout day, check out after 11am, or stay past checkout time on their last day.
-Standard check-out: 11:00 AM. Back-to-back bookings mean late checkout can only be confirmed 2 days before.
-**More than 2 days before checkout:** Do NOT escalate. Tell guest: "We can only confirm late checkout 2 days before your date since there may be guests checking in. We'll let you know closer to the date."
-**Within 2 days of checkout:** Tell guest you'll check → escalate as "info_request"
-**Never confirm late checkout yourself.**`,
+
+Standard check-out: 11:00 AM. **Never confirm late checkout yourself.** Tiers: 11am-1pm $25, 1-6pm $65, after 6pm $120.
+
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Mention the 11:00 AM standard checkout and note that late checkout may be possible depending on the next booking. Don't promise a time.
+
+### When booking is CONFIRMED or CHECKED_IN (booked or currently staying)
+{CHECKOUT_SITUATION}`,
 
   'sop-complaint': `COMPLAINT: Guest is unhappy, dissatisfied, or complaining about their experience — property quality, cleanliness on arrival, misleading photos/listing, noise from neighbors, uncomfortable beds, bad smell, or general dissatisfaction.
 Acknowledge the complaint with genuine empathy. Do NOT be defensive or dismissive. Ask what specifically is wrong if not clear.
@@ -479,9 +532,24 @@ Never offer refunds, discounts, or compensation yourself. Inform the guest you h
 
   'pricing-negotiation': `PRICING/NEGOTIATION: Guest is asking about rates, requesting discounts, or expressing budget concerns. NEVER offer discounts, special rates, or price matches yourself. If guest asks for better price, weekly/monthly rate, or says it's too expensive, acknowledge and push back. If the guest has booked more than 3 weeks, escalate as info_request with the guest's budget/request details. Don't apologize for pricing — present it neutrally. For long-term stay pricing, also tag with sop-long-term-rental. If you escalate, tell the guest I requested an additional discount from the manager.`,
 
-  'pre-arrival-logistics': `PRE-ARRIVAL LOGISTICS: Guest is coordinating arrival — sharing ETA, asking for directions, requesting location. Share property address and location from your knowledge. If guest asks for directions from a specific location, share what you know or escalate. If the guest asks for instructions for arriving at the compound, tell them to share the apartment number, building number, and their names with the gate security. The property is self check in. `,
+  'pre-arrival-logistics': `Guest is coordinating arrival — sharing ETA, asking for directions, or requesting the property location.
 
-  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself. Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as immediate. For guest count changes that might affect unit assignment, note the new count clearly.`,
+### When booking is INQUIRY (guest is browsing, not yet booked)
+Share general area / neighbourhood info if asked, but do NOT share the exact street address or compound entry instructions until the booking is confirmed.
+
+### When booking is CONFIRMED or CHECKED_IN (booked or currently staying)
+Share the property address and location from your knowledge. For compound entry, tell the guest to share the apartment number, building number, and their names with gate security. The property is self check-in. If the guest asks for directions from a specific location, share what you know or escalate as "info_request".`,
+
+  'sop-booking-modification': `BOOKING MODIFICATION: Guest wants to change dates, add/remove nights, change unit, or update guest count. Acknowledge the request. NEVER confirm modifications yourself.
+
+### When booking is INQUIRY (guest is still browsing, no confirmed booking)
+The guest wants to adjust their inquiry — changes to requested dates, guest count, or unit preference. Acknowledge and escalate to the manager with the new details. Don't reference "your existing booking" — they don't have one yet.
+
+### When booking is CONFIRMED (booked, not yet arrived)
+Escalate as info_request with: current booking details, requested changes, and reason if provided. For date changes within 48 hours of check-in, escalate as "immediate". For guest count changes that might affect unit assignment, note the new count clearly.
+
+### When booking is CHECKED_IN (guest is currently staying)
+Guest is asking to extend or change dates mid-stay. If extending, use check_extend_availability first to confirm the unit is free. Escalate to the manager with details — never confirm modifications yourself.`,
 
   'sop-booking-confirmation': `BOOKING CONFIRMATION: Guest is verifying their reservation exists, checking dates/details, or asking about booking status. Check reservation details in your knowledge and confirm what you can see — dates, unit, guest count. If the booking isn't in your system, let them know you'll check with the team. For guests claiming they booked but no record found or there is a problem, escalate as immediate.`,
 
@@ -516,135 +584,13 @@ Common requests: pharmacy (صيدلية), mall (مول), supermarket, restaurant
 {PROPERTY_DESCRIPTION} `,
 };
 
-// ── Status-variant overrides for SOPs whose response differs by reservation status ──
-
-interface StatusVariant {
-  status: string;
-  content: string;
-}
-
-const SEED_STATUS_VARIANTS: Record<string, StatusVariant[]> = {
-  'sop-amenity-request': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about available amenities or features. Check the amenities listed in your context (AVAILABLE AMENITIES and ON REQUEST AMENITIES blocks). Confirm what is available. Don't discuss delivery or scheduling — the guest is deciding whether to book.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest asks about amenities for their upcoming stay. Confirm availability and assure the amenity will be ready for their arrival. Don't schedule delivery — they haven't checked in yet.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n\n{ON_REQUEST_AMENITIES}`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest requests an amenity to be delivered. Check the ON REQUEST AMENITIES in your context.\n\n## ON REQUEST AMENITIES\nOnly confirm items explicitly listed there.\n{ON_REQUEST_AMENITIES}\n\n- Item listed → confirm availability and ask for preferred delivery time during working hours (10am–5pm). Do NOT escalate yet — wait for guest to confirm time, THEN escalate as "scheduled"\n- Item NOT listed → say "Let me check on that" → escalate as "info_request"`,
-    },
-  ],
-
-  'sop-early-checkin': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asking about early check-in as part of their booking inquiry. Standard check-in is 3:00 PM. Mention this and note that early check-in availability depends on prior bookings.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `## EARLY CHECK-IN\nStandard check-in: 3:00 PM. Never confirm early check-in yourself.\n\n{CHECKIN_SITUATION}`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: '',
-    },
-  ],
-
-  'sop-late-checkout': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asking about late checkout as part of their booking inquiry. Standard checkout is 11:00 AM. Mention this and note that late checkout may be possible depending on next booking.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `## LATE CHECKOUT\nStandard checkout: 11:00 AM. Never confirm late checkout yourself.\nTiers: 11am-1pm $25, 1-6pm $65, after 6pm $120.\n\n{CHECKOUT_SITUATION}`,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `## LATE CHECKOUT\nStandard checkout: 11:00 AM. Never confirm late checkout yourself.\nTiers: 11am-1pm $25, 1-6pm $65, after 6pm $120.\n\n{CHECKOUT_SITUATION}`,
-    },
-  ],
-
-  'sop-cleaning': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, their booking has not been accepted yet. Reassure cleaning services are available on request.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra cleaning is available during their stay. Don't schedule, guest has not checked in yet. Reassure cleaning services are available on request. `,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest asks for cleaning, housekeeping, maid service, tidying up, or mopping.\nExtra Cleaning is available during working hours only (10am–5pm). Recurring cleaning is OK. If the guest mentions anything that the unit was not cleaned, apologies and escalate and schedule booking during working hours. `,
-    },
-  ],
-
-  'sop-wifi-doorcode': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about WiFi or access. Confirm WiFi is available at the property. Reassure that access details will be provided after check-in — the guest is not yet booked.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: `{ACCESS_CONNECTIVITY}\nConfirm WiFi is available at the property, and its self check-in.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `{ACCESS_CONNECTIVITY}\nIf there is an issue with the Wifi apologies and escalate.\nIf there is an issue with the door code apologies and escalate immediately, this is a big issue and needs sorting right away. `,
-    },
-  ],
-
-  'sop-visitor-policy': [
-    {
-      status: 'INQUIRY',
-      content: `Guest asks about visitor policy. Family-only property — only immediate family members allowed as visitors. Non-family visitors are not allowed. Share the policy upfront.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-visitor-policy'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['sop-visitor-policy'],
-    },
-  ],
-
-  'sop-booking-modification': [
-    {
-      status: 'INQUIRY',
-      content: `Guest wants to modify their inquiry — change dates, guest count, or unit preference. Acknowledge the change request and escalate to manager with the new details. Never confirm changes yourself.`,
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['sop-booking-modification'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: `Guest wants to extend their current stay or change dates. Acknowledge the request. Check if the extend-stay tool is available to check availability and pricing. Escalate to manager with details. Never confirm modifications yourself.`,
-    },
-  ],
-
-  'pre-arrival-logistics': [
-    {
-      status: 'INQUIRY',
-      content: '',
-    },
-    {
-      status: 'CONFIRMED',
-      content: SEED_SOP_CONTENT['pre-arrival-logistics'],
-    },
-    {
-      status: 'CHECKED_IN',
-      content: SEED_SOP_CONTENT['pre-arrival-logistics'],
-    },
-  ],
-
-};
+// 2026-05-16: per-status SOP variants were removed in favour of a single
+// merged DEFAULT body per category with inline `### When booking is X`
+// subsections (see SEED_SOP_CONTENT above). New tenants only get a DEFAULT
+// variant; existing tenants are migrated by `backend/scripts/merge-sop-variants.ts`.
+// `getSopContent` now always resolves to the DEFAULT body and the AI
+// receives the current booking status in the get_sop tool result preamble
+// so it can pick the matching subsection.
 
 // ════════════════════════════════════════════════════════════════════════════
 // §6  seedSopDefinitions()
@@ -693,27 +639,6 @@ export async function seedSopDefinitions(
       update: {},
     });
 
-    // Upsert status-specific variants if this SOP needs them
-    const statusVariants = SEED_STATUS_VARIANTS[category];
-    if (statusVariants) {
-      for (const sv of statusVariants) {
-        await prisma.sopVariant.upsert({
-          where: {
-            sopDefinitionId_status: {
-              sopDefinitionId: sopDef.id,
-              status: sv.status,
-            },
-          },
-          create: {
-            sopDefinitionId: sopDef.id,
-            status: sv.status,
-            content: sv.content,
-            enabled: true,
-          },
-          update: {},
-        });
-      }
-    }
   }
 
   console.log(`[SOP] Seeded ${SOP_CATEGORIES.length} SOP definitions for tenant ${tenantId}`);

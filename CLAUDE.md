@@ -251,6 +251,49 @@ When something fails in prod (failed send, AI error, crash, slow response), chec
 
 4. **OpenAI dashboard** (https://platform.openai.com/usage) — last resort for total spend, request volume, and per-request inspection. The dashboard shows ALL OpenAI calls (854/day vs Langfuse's ~36) but doesn't filter by tenant / message id.
 
+## Testing AI Behaviour End-to-End
+
+When verifying a SOP / FAQ / system-prompt change actually changes the AI's reply, drive the same pipeline the Studio `studio_test_pipeline` tool uses — do NOT script your own OpenAI calls and do NOT mock a fake conversation.
+
+**The pipeline**: `runPipelineDry()` in [backend/src/build-tune-agent/preview/test-pipeline-runner.ts](backend/src/build-tune-agent/preview/test-pipeline-runner.ts) sends ONE test message through a simplified, side-effect-free version of the guest-reply pipeline:
+- Reuses the tenant's real system prompt + ALL enabled SOPs + ALL active FAQs.
+- Bypasses the 60s tenant-config cache and 5-min SOP cache so freshly-written artifacts are visible immediately.
+- Does NOT hit Hostaway, write messages, broadcast SSE, or run task-manager dedup.
+- Returns `{ reply, replyModel, latencyMs, action }` where `action` is the structured escalation/scheduledTime decision.
+
+**Minimum test harness** (one-off scripts go under `backend/scripts/`):
+
+```ts
+import * as dotenv from 'dotenv';
+dotenv.config();
+import { PrismaClient } from '@prisma/client';
+import { runPipelineDry } from '../src/build-tune-agent/preview/test-pipeline-runner';
+
+const prisma = new PrismaClient();
+const { reply, latencyMs } = await runPipelineDry({
+  tenantId: 'cmmth6d1r000a6bhlkb75ku4r',
+  testMessage: 'whats the door code',
+  context: { reservationStatus: 'INQUIRY', channel: 'DIRECT' },
+  prisma,
+});
+console.log(reply); // ~10s, ~$0.05 with gpt-5.4-mini at ~8k input tokens
+await prisma.$disconnect();
+```
+
+Reference implementation: [backend/scripts/verify-merged-sops.ts](backend/scripts/verify-merged-sops.ts) sweeps multiple `(message, status)` combinations against a `mustContain` / `mustNotContain` matcher and prints a pass/fail summary.
+
+**Cost / latency**: ~$0.05–0.10 per call (8–20K input tokens, ~100 output). 93–98% prompt-cache hits kick in from the second call onward when calls share `(tenantId, isInquiry)`. Budget ~$0.30 for a 5-call run.
+
+**What this catches** that a structural test cannot:
+- Whether the model actually reads inline status sections (e.g. `### When booking is X` SOP subsections).
+- Whether the FAQ layer overrides the SOP guidance (e.g. a global FAQ leaking access codes that the SOP body would otherwise gate).
+- Whether reasoning prose drifts from intended phrasing (`"after booking"`, `"shared before arrival"`, etc.).
+
+**Gotchas**:
+- `{ACCESS_CONNECTIVITY}` / `{CHECKIN_SITUATION}` / `{CHECKOUT_SITUATION}` template variables are NOT resolved in the dry runner — `collectSopContext` passes no `variableDataMap`, so unresolved `{TOKEN}` placeholders are stripped by `applyTemplates`. Test on the model's *deferral phrasing* (status differentiation), not on whether the literal access codes appear.
+- The runner uses `gpt-5.4-mini-2026-03-17` for both inquiry + coordinator personas. Production also defaults to mini.
+- `OPENAI_API_KEY` must be in the environment (loaded via `dotenv.config()` from `backend/.env`).
+
 ## Branch Strategy
 Feature branches merge directly to `main`. No long-lived dev branches.
 

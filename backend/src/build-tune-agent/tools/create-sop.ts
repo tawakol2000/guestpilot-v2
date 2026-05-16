@@ -52,10 +52,10 @@ WHEN TO USE: In BUILD mode, when the manager describes a policy or procedure tha
 WHEN NOT TO USE: Do NOT use to modify an existing SOP — use search_replace or propose_suggestion instead. Do NOT use as a guess after a single vague incident — probe for cues first.
 PARAMETERS:
   sopCategory (string, 3-8 words, kebab-case canonical name — must not collide with an existing sopCategory for this tenant)
-  status (enum DEFAULT | INQUIRY | PENDING | CONFIRMED | CHECKED_IN | CHECKED_OUT) — the reservation status this SOP applies to. Prefer DEFAULT if the policy is status-agnostic.
+  status (enum, optional, default "DEFAULT") — 2026-05-16 SOPs are SINGLE-BODY: one DEFAULT body per category. When the policy differs by booking status, embed inline "### When booking is INQUIRY|CONFIRMED|CHECKED_IN" subsections inside the body instead of creating a status-specific variant. Only pass a non-DEFAULT status if you are intentionally overriding the merged body for a single status (rare).
   propertyId (string, optional) — if set, creates a SopPropertyOverride for this property. If null, creates a global SopVariant.
   title (string, 3-8 words, human-readable)
-  body (string, ≤800 tokens, use the canonical hospitality template structure)
+  body (string, ≤800 tokens, use the canonical hospitality template structure; use "### When booking is X" subsections for status-specific guidance)
   triggers (array of strings, guest-message patterns that invoke this SOP at classification time)
   rationale (string, 15–280 chars) — REQUIRED. One-sentence explanation of WHY this SOP is being created (e.g. "Tightened the late-checkout SOP to cap approvals at 2pm per the policy clarification the manager gave this turn.")
   transactionId (string, optional) — if part of a plan_build_changes plan, pass the plan's id.
@@ -72,7 +72,7 @@ export function buildCreateSopTool(tool: typeof ToolFactory, ctx: () => ToolCont
         .min(3)
         .max(80)
         .regex(KEBAB_CATEGORY, 'sopCategory must be kebab-case (e.g. "late-checkout-policy")'),
-      status: z.enum(SOP_STATUSES as unknown as [string, ...string[]]),
+      status: z.enum(SOP_STATUSES as unknown as [string, ...string[]]).default('DEFAULT'),
       propertyId: z.string().optional(),
       title: z.string().min(3).max(80),
       body: z.string().min(20).max(8000),

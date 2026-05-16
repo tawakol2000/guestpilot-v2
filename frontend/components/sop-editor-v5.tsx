@@ -235,7 +235,10 @@ function SopRow({ def, isPropertyView, propertyId, overrides, onOverridesChange,
   onDefinitionChange: () => void
 }): React.ReactElement {
   const colors = categoryColor(def.category)
-  const [activeTab, setActiveTab] = useState<StatusTab>('DEFAULT')
+  // 2026-05-16: SOPs are single-body. The legacy status tab bar is
+  // hidden; we always work with the DEFAULT variant. Status-specific
+  // guidance lives inside the body as "### When booking is X" sections.
+  const [activeTab] = useState<StatusTab>('DEFAULT')
   const [descDraft, setDescDraft] = useState(def.toolDescription)
   const [descDirty, setDescDirty] = useState(false)
   const [variantDrafts, setVariantDrafts] = useState<Record<string, string>>({})
@@ -578,16 +581,17 @@ function SopRow({ def, isPropertyView, propertyId, overrides, onOverridesChange,
             fontFamily: T.font.sans,
             marginBottom: 4,
           }}>
-            Content Variants {isPropertyView ? '(Property)' : ''}
+            Body {isPropertyView ? '(Property override)' : ''}
           </span>
-
-          <VariantTabBar
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            variants={def.variants}
-            overrides={isPropertyView ? overrides.filter(o => o.sopDefinitionId === def.id) : undefined}
-            isPropertyView={isPropertyView}
-          />
+          <span style={{
+            fontSize: 11,
+            color: T.text.tertiary,
+            fontFamily: T.font.sans,
+            marginBottom: 6,
+            lineHeight: 1.5,
+          }}>
+            Single body for all booking statuses. When guidance differs by status, add subsections like <code style={{ fontFamily: T.font.mono, fontSize: 10.5 }}>### When booking is INQUIRY</code> / <code style={{ fontFamily: T.font.mono, fontSize: 10.5 }}>### When booking is CONFIRMED</code> / <code style={{ fontFamily: T.font.mono, fontSize: 10.5 }}>### When booking is CHECKED_IN</code>. The AI is told the current status and applies only the matching subsection plus any unsectioned guidance.
+          </span>
 
           {/* ── Property view: override content ── */}
           {isPropertyView ? (
@@ -999,7 +1003,7 @@ export default function SopEditorV5() {
                 margin: 0,
                 marginTop: 2,
               }}>
-                Manage procedures, tool descriptions, and status-based variants
+                Manage procedures and tool descriptions. Status-specific guidance goes inline via "### When booking is X" subsections.
               </p>
             </div>
           </div>

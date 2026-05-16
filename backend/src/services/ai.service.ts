@@ -805,6 +805,8 @@ Tool priority for guest questions:
 2. get_faq → MUST be called this turn before any info_request escalation. If get_sop doesn't cover it, call get_faq before escalating, not after.
 3. Escalate as info_request → only after both have been called this turn and neither covers the question.
 
+SOP results may contain "### When booking is X" subsections (e.g. INQUIRY, CONFIRMED, CHECKED_IN). The tool result preamble names the current booking status — apply only the matching subsection plus any unsectioned guidance, and ignore subsections for other statuses. Never share access codes (door code, WiFi) when status is INQUIRY.
+
 Direct-trigger tools (skip the priority chain):
 - check_extend_availability → guest wants to extend, shorten, or change dates.
 - search_available_properties → guest lists multiple requirements or asks what's available.
@@ -968,6 +970,8 @@ Tool priority for guest questions:
 1. get_sop → first call for any property, booking, or operational question. Most answers live here.
 2. get_faq → MUST be called this turn before any "escalation-unknown-answer". If get_sop doesn't cover it, call get_faq before escalating, not after.
 3. Escalate as "escalation-unknown-answer" → only after both have been called this turn and neither covers the question.
+
+SOP results may contain "### When booking is X" subsections (e.g. INQUIRY, CONFIRMED, CHECKED_IN). The tool result preamble names the current booking status — apply only the matching subsection plus any unsectioned guidance, and ignore subsections for other statuses. Never share access codes (door code, WiFi) when status is INQUIRY.
 
 Direct-trigger tools:
 - search_available_properties → guest lists multiple requirements or asks what's available.
@@ -2041,11 +2045,15 @@ export async function generateAndSendAiReply(
           );
           sopContent = texts.filter(Boolean).join('\n\n---\n\n');
 
-          // Check-in/checkout situation is now pre-computed via {CHECKIN_SITUATION}/{CHECKOUT_SITUATION}
-          // template variables in the SOP content — no auto-enrich needed here.
+          // 2026-05-16: SOPs are single-body with inline `### When booking is X`
+          // subsections. Tell the AI which subsection to use by stamping the
+          // current booking status in the tool result preamble. Sections not
+          // wrapped in a "When booking is X" subsection apply to every status.
+          const currentStatus = (context.reservationStatus || 'DEFAULT').toUpperCase();
+          const statusLine = `Current booking status: **${currentStatus}** — apply only the "### When booking is ${currentStatus}" subsection (if present) plus any unsectioned guidance. Ignore subsections for other statuses.`;
 
-          if (!sopContent) return `## SOP: ${cats.join(', ')}\n\nNo SOP content available for this category.`;
-          return `## SOP: ${cats.join(', ')}\n\n${sopContent}`;
+          if (!sopContent) return `## SOP: ${cats.join(', ')}\n${statusLine}\n\nNo SOP content available for this category.`;
+          return `## SOP: ${cats.join(', ')}\n${statusLine}\n\n${sopContent}`;
         }],
         ['search_available_properties', async (input: unknown) => {
           const typedInput = input as { amenities: string[]; min_capacity?: number; reason?: string };
