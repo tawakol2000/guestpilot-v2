@@ -84,6 +84,8 @@ import {
   apiAcceptAlteration,
   apiRejectAlteration,
   apiSendShadowPreview,
+  apiGetProperties,
+  type ApiProperty,
   type BookingAlteration,
   ApiError,
   mapChannel,
@@ -1714,6 +1716,15 @@ export default function InboxV5() {
   const composeTextareaRef = useRef<HTMLTextAreaElement>(null)
   const sendChannelAnchorRef = useRef<HTMLDivElement>(null)
   const sendChannelDropdownRef = useRef<HTMLDivElement>(null)
+  // 2026-05-16: property-link popover anchored to the ExternalLink button in
+  // the composer toolbar. Lets the operator pick any tenant property + a
+  // channel (Airbnb / Booking.com / VRBO / direct booking engine), then
+  // pastes the corresponding URL into the message composer.
+  const propertyLinkAnchorRef = useRef<HTMLDivElement>(null)
+  const propertyLinkPopoverRef = useRef<HTMLDivElement>(null)
+  const [propertyLinkOpen, setPropertyLinkOpen] = useState(false)
+  const [tenantProperties, setTenantProperties] = useState<ApiProperty[]>([])
+  const [linkPickerPropertyId, setLinkPickerPropertyId] = useState<string | null>(null)
 
   const selectedConv = conversations.find(c => c.id === selectedId) ?? conversations[0]
 
@@ -2584,6 +2595,49 @@ export default function InboxV5() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [sendChannelOpen])
+
+  // ── Effect 8: Property-link popover click-outside + Esc to close ──
+  useEffect(() => {
+    if (!propertyLinkOpen) return
+    function onMouseDown(e: MouseEvent) {
+      if (propertyLinkAnchorRef.current?.contains(e.target as Node)) return
+      if (propertyLinkPopoverRef.current?.contains(e.target as Node)) return
+      setPropertyLinkOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setPropertyLinkOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [propertyLinkOpen])
+
+  // ── Fetch tenant properties once for the property-link picker. Inbox
+  // already pulls per-conversation property details, but the picker needs
+  // the FULL list (operator can suggest a different unit for cross-sell).
+  useEffect(() => {
+    let cancelled = false
+    apiGetProperties()
+      .then(props => { if (!cancelled) setTenantProperties(props) })
+      .catch(() => { /* picker just won't render any properties — UI says so */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // ── Default the picker's selected property to the conversation's
+  // property when the popover opens (or when the conversation changes).
+  useEffect(() => {
+    if (!propertyLinkOpen) return
+    if (linkPickerPropertyId) return
+    const convPropertyName = (selectedConv as any)?.unitName || (selectedConv as any)?.booking?.property
+    if (convPropertyName) {
+      const match = tenantProperties.find(p => p.name === convPropertyName)
+      if (match) { setLinkPickerPropertyId(match.id); return }
+    }
+    if (tenantProperties.length > 0) setLinkPickerPropertyId(tenantProperties[0].id)
+  }, [propertyLinkOpen, linkPickerPropertyId, selectedConv, tenantProperties])
 
   // ── Auto-resize textarea ──
   function handleComposeChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -5544,20 +5598,125 @@ export default function InboxV5() {
                       </div>
 
                       {/* Property link */}
-                      <button
-                        title="Send property link"
-                        aria-label="Send property link"
-                        style={{
-                          width: 32, height: 32, borderRadius: '50%', border: 'none',
-                          background: 'transparent', cursor: 'pointer', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', color: T.text.tertiary,
-                          transition: 'background 0.15s, color 0.15s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = T.bg.tertiary; e.currentTarget.style.color = T.text.primary }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.text.tertiary }}
-                      >
-                        <ExternalLink size={16} />
-                      </button>
+                      <div ref={propertyLinkAnchorRef} style={{ position: 'relative' }}>
+                        <button
+                          title="Send property link"
+                          aria-label="Send property link"
+                          onClick={() => setPropertyLinkOpen(v => !v)}
+                          style={{
+                            width: 32, height: 32, borderRadius: '50%', border: 'none',
+                            background: propertyLinkOpen ? T.bg.tertiary : 'transparent',
+                            cursor: 'pointer', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center',
+                            color: propertyLinkOpen ? T.text.primary : T.text.tertiary,
+                            transition: 'background 0.15s, color 0.15s',
+                          }}
+                          onMouseEnter={e => { if (!propertyLinkOpen) { e.currentTarget.style.background = T.bg.tertiary; e.currentTarget.style.color = T.text.primary } }}
+                          onMouseLeave={e => { if (!propertyLinkOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.text.tertiary } }}
+                        >
+                          <ExternalLink size={16} />
+                        </button>
+                        {propertyLinkOpen && (() => {
+                          const pickedProp = tenantProperties.find(p => p.id === linkPickerPropertyId) ?? null
+                          const kb = (pickedProp?.customKnowledgeBase || {}) as Record<string, unknown>
+                          const channels: Array<{ key: string; label: string; url: string | null }> = [
+                            { key: 'AIRBNB', label: 'Airbnb', url: (kb.airbnbListingUrl as string) || null },
+                            { key: 'BOOKING', label: 'Booking.com', url: (kb.bookingListingUrl as string) || null },
+                            { key: 'VRBO', label: 'VRBO', url: (kb.vrboListingUrl as string) || null },
+                            { key: 'DIRECT', label: 'Direct', url: (kb.bookingEngineUrl as string) || null },
+                          ]
+                          function pasteUrl(url: string) {
+                            const current = replyText
+                            const sep = current && !current.endsWith('\n') ? '\n' : ''
+                            const next = current + sep + url
+                            setReplyText(next)
+                            setPropertyLinkOpen(false)
+                            setTimeout(() => {
+                              const ta = composeTextareaRef.current
+                              if (ta) {
+                                ta.focus()
+                                ta.setSelectionRange(next.length, next.length)
+                              }
+                            }, 0)
+                          }
+                          return (
+                            <div
+                              ref={propertyLinkPopoverRef}
+                              style={{
+                                position: 'absolute', bottom: 'calc(100% + 8px)', left: 0,
+                                zIndex: 50, width: 320, padding: 12,
+                                background: T.bg.primary,
+                                border: `1px solid ${T.border.default}`,
+                                borderRadius: 12,
+                                boxShadow: '0 10px 30px -8px rgba(0,0,0,0.18)',
+                                fontFamily: T.font.sans,
+                              }}
+                            >
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.text.secondary, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                                Send property link
+                              </div>
+
+                              {tenantProperties.length === 0 ? (
+                                <div style={{ fontSize: 12, color: T.text.tertiary, padding: '8px 4px' }}>
+                                  No properties available — sync from Listings.
+                                </div>
+                              ) : (
+                                <>
+                                  <label style={{ display: 'block', fontSize: 10, fontWeight: 600, color: T.text.tertiary, marginBottom: 4 }}>Property</label>
+                                  <select
+                                    value={linkPickerPropertyId ?? ''}
+                                    onChange={e => setLinkPickerPropertyId(e.target.value)}
+                                    style={{
+                                      width: '100%', height: 32, padding: '0 8px',
+                                      fontSize: 13, fontFamily: T.font.sans, color: T.text.primary,
+                                      background: T.bg.secondary, border: `1px solid ${T.border.default}`,
+                                      borderRadius: 6, marginBottom: 10, cursor: 'pointer',
+                                    }}
+                                  >
+                                    {tenantProperties.map(p => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                  </select>
+
+                                  <label style={{ display: 'block', fontSize: 10, fontWeight: 600, color: T.text.tertiary, marginBottom: 4 }}>Channel</label>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                                    {channels.map(c => {
+                                      const disabled = !c.url
+                                      return (
+                                        <button
+                                          key={c.key}
+                                          disabled={disabled}
+                                          onClick={() => c.url && pasteUrl(c.url)}
+                                          title={disabled ? `No ${c.label} URL set for this property` : c.url ?? undefined}
+                                          style={{
+                                            height: 30, padding: '0 8px',
+                                            fontSize: 12, fontWeight: 600, fontFamily: T.font.sans,
+                                            background: disabled ? T.bg.secondary : T.bg.primary,
+                                            color: disabled ? T.text.tertiary : T.text.primary,
+                                            border: `1px solid ${T.border.default}`,
+                                            borderRadius: 6,
+                                            cursor: disabled ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                            textDecoration: disabled ? 'line-through' : 'none',
+                                            transition: 'background 0.15s, border-color 0.15s',
+                                          }}
+                                          onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = T.bg.tertiary }}
+                                          onMouseLeave={e => { if (!disabled) e.currentTarget.style.background = T.bg.primary }}
+                                        >
+                                          {c.label}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                  <div style={{ fontSize: 10, color: T.text.tertiary, marginTop: 8, lineHeight: 1.4 }}>
+                                    Pastes the URL into the message — review before sending.
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
 
                       {/* Gradient divider */}
                       <div style={{ position: 'relative', height: 24, width: 2, margin: '0 4px', flexShrink: 0 }}>
