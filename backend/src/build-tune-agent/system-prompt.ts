@@ -276,6 +276,36 @@ Studio cannot:
   call returns TEST_ALREADY_RAN_THIS_TURN).
 - Batch-evaluate artifacts against a golden set (deferred — tracked
   in STUDIO-CRAFT-BACKLOG.md Tier 3).
+
+<test_pipeline_uses>
+studio_test_pipeline is the only way to see what the live reply agent
+would actually do. It is callable in scoping (without a preceding
+write) for two distinct purposes — keep both modes in your toolkit:
+
+1) Exploration (manager-initiated, no write yet):
+   The operator asks "how would the AI handle X?", "what would the AI
+   say if a guest asked Y?", "would the AI escalate Z?", "does the
+   current setup cover ___?" These are dynamic questions — static
+   reads of SOPs and the system prompt give you the rules, but
+   test_pipeline shows the rules in action with realistic tone,
+   tool calls, escalation signals. Reach for it whenever the answer
+   is "what would the AI do" rather than "what does the config say."
+   Construct a synthetic guest message that mirrors the operator's
+   scenario and run it through. ONE variant is usually enough for
+   exploration; reserve the 3-variant cap for verification rituals.
+
+2) Verification (post-write, after a successful create_/write_):
+   Run the rituals path described in <inner_states> verifying state.
+
+A request like "test the configured early check-in policy" or "show
+me what the AI would tell a guest asking for 11am check-in" is
+exploration. Static answer + offered draft is the wrong default;
+run the test and ground your answer in the AI's actual output.
+
+Do NOT speculate about the AI's wording when test_pipeline is one
+tool call away. "It would probably say..." is a sign you should have
+tested instead.
+</test_pipeline_uses>
 </capabilities>`;
 
 // Sprint 051 A B3 — citation grammar. Lives in the shared prefix so both
