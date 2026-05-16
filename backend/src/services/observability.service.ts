@@ -411,11 +411,31 @@ export function traceAiCall(params: TraceParams): void {
       model: params.model,
       input: traceInput,
       output: traceOutput,
+      // 2026-05-16: Langfuse pulls per-token cost breakdowns from
+      // `usageDetails` (not from `usage.input_cached_tokens` like
+      // OpenAI's API or `usage.cache_read_input_tokens` like
+      // Anthropic's). Without this block, the Langfuse UI shows
+      // "cached: 0" for every call even when our OpenAI / Anthropic
+      // response reported cached tokens > 0, which is exactly what
+      // produced the false "no caching" signal during the 2026-05-16
+      // audit. Send both shapes:
+      //   - `usage` for legacy compatibility + cost dashboards
+      //   - `usageDetails` for the modern per-token breakdown
       usage: {
         input: params.inputTokens,
         output: params.outputTokens,
         unit: 'TOKENS',
       },
+      usageDetails: {
+        input: params.inputTokens,
+        output: params.outputTokens,
+        // OpenAI shape — read from input_tokens_details.cached_tokens
+        input_cached_tokens: params.cacheReadTokens ?? 0,
+        // Anthropic shape — cache creation is the FIRST call that
+        // wrote to cache, cache read is every subsequent hit.
+        cache_creation_input_tokens: params.cacheCreationTokens ?? 0,
+        cache_read_input_tokens: params.cacheReadTokens ?? 0,
+      } as any,
       metadata: {
         costUsd: params.costUsd,
         durationMs: params.durationMs,
