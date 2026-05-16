@@ -1738,6 +1738,32 @@ export async function apiGetFaqCategories(): Promise<{ categories: FaqCategorySt
   return apiFetch<{ categories: FaqCategoryStat[] }>('/api/faq/categories')
 }
 
+// 2026-05-16: pending FAQ TuningSuggestions surfaced inside the FAQ admin
+// page so managers can accept / reject / edit / discuss without leaving the
+// FAQ context. Same rows appear in the Studio Suggestions tab.
+export interface FaqSuggestion {
+  id: string
+  isEdit: boolean
+  existingFaqId: string | null
+  existingQuestion: string | null
+  existingAnswer: string | null
+  proposedQuestion: string | null
+  proposedAnswer: string | null
+  proposedCategory: string | null
+  proposedScope: 'GLOBAL' | 'PROPERTY'
+  proposedPropertyId: string | null
+  rationale: string
+  subLabel: string | null
+  confidence: number | null
+  evidenceBundleId: string | null
+  conversationId: string | null
+  createdAt: string
+}
+
+export async function apiGetFaqSuggestions(): Promise<{ suggestions: FaqSuggestion[]; total: number }> {
+  return apiFetch<{ suggestions: FaqSuggestion[]; total: number }>('/api/faq/suggestions')
+}
+
 // ── Webhook Logs ──────────────────────────────────────────────────────────────
 
 export interface WebhookLogEntry {

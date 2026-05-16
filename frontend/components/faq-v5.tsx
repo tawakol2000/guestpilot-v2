@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Plus, X, Check, ChevronDown, ChevronRight, Edit3, Trash2, Archive, Globe, Building2,
-  Search, RefreshCw, HelpCircle, Sparkles, Hash,
+  Search, RefreshCw, HelpCircle, Sparkles, Hash, MessageSquare, Wand2,
 } from 'lucide-react'
 import {
   apiGetFaqEntries,
@@ -11,10 +11,14 @@ import {
   apiUpdateFaqEntry,
   apiDeleteFaqEntry,
   apiGetFaqCategories,
+  apiGetFaqSuggestions,
+  apiAcceptTuningSuggestion,
+  apiRejectTuningSuggestion,
   apiGetProperties,
   type FaqEntry,
   type FaqCategoryStat,
   type ApiProperty,
+  type FaqSuggestion,
 } from '@/lib/api'
 
 // ─── Design Tokens ──────────────────────────────────────────────────────────
@@ -376,6 +380,197 @@ function FaqModal({ entry, properties, onSave, onClose }: {
 }
 
 // ─── Suggested Entry Card ───────────────────────────────────────────────────
+// 2026-05-16: studio-suggested FAQs come from tuning-diagnostic
+// (TuningSuggestion with category='FAQ'). The same rows also appear in the
+// Studio Suggestions tab; this card surfaces them in the FAQ admin so
+// managers can accept / reject / edit / discuss without leaving FAQ context.
+function StudioSuggestionCard({
+  suggestion,
+  properties,
+  onAccept,
+  onReject,
+  onDiscuss,
+}: {
+  suggestion: FaqSuggestion
+  properties: ApiProperty[]
+  onAccept: (s: FaqSuggestion, edits: {
+    question: string; answer: string; category: string;
+    scope: 'GLOBAL' | 'PROPERTY'; propertyId: string | null;
+  }) => void
+  onReject: (id: string) => void
+  onDiscuss: (s: FaqSuggestion) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [question, setQuestion] = useState(suggestion.proposedQuestion ?? '')
+  const [answer, setAnswer] = useState(suggestion.proposedAnswer ?? '')
+  const [category, setCategory] = useState(suggestion.proposedCategory ?? 'property-neighborhood')
+  const [scope, setScope] = useState<'GLOBAL' | 'PROPERTY'>(suggestion.proposedScope ?? 'GLOBAL')
+  const [propertyId, setPropertyId] = useState<string | null>(suggestion.proposedPropertyId)
+  const propName = propertyId
+    ? properties.find(p => p.id === propertyId)?.name ?? null
+    : null
+
+  const dirty =
+    question !== (suggestion.proposedQuestion ?? '') ||
+    answer !== (suggestion.proposedAnswer ?? '') ||
+    category !== (suggestion.proposedCategory ?? 'property-neighborhood') ||
+    scope !== (suggestion.proposedScope ?? 'GLOBAL') ||
+    propertyId !== suggestion.proposedPropertyId
+
+  return (
+    <div style={{
+      padding: '14px 18px', borderRadius: T.radius.md,
+      border: `1px solid ${T.accent}30`,
+      background: `${T.accent}06`,
+      animation: 'faqFadeIn 0.3s ease-out both',
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      {/* Banner */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Wand2 size={12} color={T.accent} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.accent, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {suggestion.isEdit ? 'Studio agent suggested an edit' : 'Studio agent suggested this FAQ'}
+        </span>
+        {typeof suggestion.confidence === 'number' && (
+          <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>
+            · conf {Math.round(suggestion.confidence * 100)}%
+          </span>
+        )}
+        {suggestion.subLabel && (
+          <span style={{ fontSize: 10, color: T.text.tertiary, fontFamily: T.font.mono }}>
+            · {suggestion.subLabel}
+          </span>
+        )}
+      </div>
+
+      {/* Body — read-only view or editable form */}
+      {!editing ? (
+        <div>
+          {suggestion.isEdit && suggestion.existingQuestion && (
+            <div style={{
+              padding: '8px 10px', marginBottom: 8, borderRadius: T.radius.sm,
+              background: T.bg.secondary, fontSize: 11, color: T.text.tertiary,
+              fontFamily: T.font.sans, textDecoration: 'line-through',
+            }}>
+              <div style={{ fontWeight: 600 }}>{suggestion.existingQuestion}</div>
+              <div style={{ marginTop: 2 }}>{suggestion.existingAnswer}</div>
+            </div>
+          )}
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.text.primary, fontFamily: T.font.sans, marginBottom: 4 }}>
+            {question || '(no question)'}
+          </div>
+          <p style={{
+            fontSize: 12, color: T.text.secondary, fontFamily: T.font.sans,
+            margin: 0, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+          }}>
+            {answer || '(no answer)'}
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            placeholder="Question"
+            style={{
+              padding: '6px 10px', fontSize: 13, fontWeight: 600,
+              border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm,
+              background: T.bg.primary, color: T.text.primary,
+              fontFamily: T.font.sans, outline: 'none',
+            }}
+          />
+          <textarea
+            value={answer}
+            onChange={e => setAnswer(e.target.value)}
+            placeholder="Answer"
+            rows={3}
+            style={{
+              padding: '6px 10px', fontSize: 12, lineHeight: 1.5,
+              border: `1px solid ${T.border.default}`, borderRadius: T.radius.sm,
+              background: T.bg.primary, color: T.text.primary,
+              fontFamily: T.font.sans, outline: 'none', resize: 'vertical',
+            }}
+          />
+          <DropdownSelect
+            value={category}
+            onChange={setCategory}
+            placeholder="Category"
+            options={FAQ_CATEGORIES.map(c => ({ value: c.id, label: c.label }))}
+          />
+        </div>
+      )}
+
+      {/* Rationale */}
+      {suggestion.rationale && (
+        <div style={{
+          padding: '6px 10px', borderRadius: T.radius.sm,
+          background: `${T.accent}08`, fontSize: 11, color: T.text.secondary,
+          fontFamily: T.font.sans, lineHeight: 1.5,
+        }}>
+          <span style={{ fontWeight: 700, color: T.accent }}>Why: </span>{suggestion.rationale}
+        </div>
+      )}
+
+      {/* Actions row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Badge
+          label={CATEGORY_LABEL_MAP[category] || category}
+          color={T.accent}
+          bg={`${T.accent}0A`}
+        />
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={() => { setScope('GLOBAL'); setPropertyId(null) }}
+            style={{
+              height: 24, padding: '0 8px', fontSize: 10, fontWeight: 600,
+              borderRadius: 999, cursor: 'pointer', fontFamily: T.font.sans,
+              border: scope === 'GLOBAL' ? `1px solid ${T.accent}40` : `1px solid ${T.border.default}`,
+              background: scope === 'GLOBAL' ? `${T.accent}10` : 'transparent',
+              color: scope === 'GLOBAL' ? T.accent : T.text.tertiary,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <Globe size={10} /> Global
+          </button>
+          <button
+            onClick={() => setScope('PROPERTY')}
+            style={{
+              height: 24, padding: '0 8px', fontSize: 10, fontWeight: 600,
+              borderRadius: 999, cursor: 'pointer', fontFamily: T.font.sans,
+              border: scope === 'PROPERTY' ? `1px solid ${T.accent}40` : `1px solid ${T.border.default}`,
+              background: scope === 'PROPERTY' ? `${T.accent}10` : 'transparent',
+              color: scope === 'PROPERTY' ? T.accent : T.text.tertiary,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <Building2 size={10} /> {propName ? `Property (${propName})` : 'Property'}
+          </button>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        <SmallBtn onClick={() => onReject(suggestion.id)} variant="danger">
+          <X size={11} /> Reject
+        </SmallBtn>
+        <SmallBtn onClick={() => setEditing(v => !v)} variant="default">
+          <Edit3 size={11} /> {editing ? 'Done editing' : 'Edit'}
+        </SmallBtn>
+        {suggestion.conversationId && (
+          <SmallBtn onClick={() => onDiscuss(suggestion)} variant="default">
+            <MessageSquare size={11} /> Discuss
+          </SmallBtn>
+        )}
+        <SmallBtn
+          onClick={() => onAccept(suggestion, { question, answer, category, scope, propertyId })}
+          variant="success"
+        >
+          <Check size={11} /> {dirty ? 'Accept (edited)' : 'Accept'}
+        </SmallBtn>
+      </div>
+    </div>
+  )
+}
+
 function SuggestedCard({ entry, properties, onApprove, onEdit, onReject }: {
   entry: FaqEntry
   properties: ApiProperty[]
@@ -631,6 +826,7 @@ function CategorySection({ category, entries, properties, onEdit, onArchive, onD
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function FaqV5(): React.ReactElement {
   const [entries, setEntries] = useState<FaqEntry[]>([])
+  const [studioSuggestions, setStudioSuggestions] = useState<FaqSuggestion[]>([])
   const [properties, setProperties] = useState<ApiProperty[]>([])
   const [categoryStats, setCategoryStats] = useState<FaqCategoryStat[]>([])
   const [loading, setLoading] = useState(true)
@@ -686,9 +882,17 @@ export default function FaqV5(): React.ReactElement {
     } catch { /* silent */ }
   }, [])
 
+  const loadStudioSuggestions = useCallback(async () => {
+    try {
+      const data = await apiGetFaqSuggestions()
+      setStudioSuggestions(data.suggestions)
+    } catch { /* silent — section just won't render */ }
+  }, [])
+
   useEffect(() => { loadEntries() }, [loadEntries])
   useEffect(() => { loadProperties() }, [loadProperties])
   useEffect(() => { loadCategories() }, [loadCategories])
+  useEffect(() => { loadStudioSuggestions() }, [loadStudioSuggestions])
 
   // Filtered entries (client-side search on top of server filters)
   const filteredEntries = useMemo(() => {
@@ -797,6 +1001,44 @@ export default function FaqV5(): React.ReactElement {
     await apiDeleteFaqEntry(id)
     loadEntries()
     loadCategories()
+  }
+
+  // ─── Studio (tuning) FAQ suggestions ──────────────────────────────────────
+  const handleStudioAccept = async (
+    s: FaqSuggestion,
+    edits: { question: string; answer: string; category: string;
+      scope: 'GLOBAL' | 'PROPERTY'; propertyId: string | null },
+  ) => {
+    const edited =
+      edits.question !== (s.proposedQuestion ?? '') ||
+      edits.answer !== (s.proposedAnswer ?? '') ||
+      edits.category !== (s.proposedCategory ?? '') ||
+      edits.scope !== s.proposedScope ||
+      edits.propertyId !== s.proposedPropertyId
+    await apiAcceptTuningSuggestion(s.id, {
+      editedQuestion: edits.question,
+      editedAnswer: edits.answer,
+      faqCategory: edits.category,
+      faqScope: edits.scope,
+      faqPropertyId: edits.scope === 'PROPERTY' ? edits.propertyId ?? undefined : undefined,
+      editedFromOriginal: edited,
+    })
+    loadStudioSuggestions()
+    loadEntries()
+    loadCategories()
+  }
+
+  const handleStudioReject = async (id: string) => {
+    await apiRejectTuningSuggestion(id)
+    loadStudioSuggestions()
+  }
+
+  const handleStudioDiscuss = (s: FaqSuggestion) => {
+    if (!s.conversationId) return
+    const u = new URL(window.location.href)
+    u.searchParams.set('tab', 'studio')
+    u.searchParams.set('conversationId', s.conversationId)
+    window.location.href = u.toString()
   }
 
   const openEdit = (entry: FaqEntry) => {
@@ -957,7 +1199,42 @@ export default function FaqV5(): React.ReactElement {
           </div>
         )}
 
-        {/* ─── Suggested Entries Section ──────────────────────────────── */}
+        {/* ─── Studio Suggestions (tuning-diagnostic FAQ proposals) ─────── */}
+        {studioSuggestions.length > 0 && (
+          <div style={{
+            marginBottom: 24, animation: 'faqFadeIn 0.3s ease-out 0.08s both',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12,
+            }}>
+              <Wand2 size={14} color={T.accent} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.font.sans, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Suggested by Studio
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 700, fontFamily: T.font.mono,
+                color: T.accent, background: `${T.accent}14`,
+                padding: '1px 7px', borderRadius: 999,
+              }}>
+                {studioSuggestions.length}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {studioSuggestions.map(s => (
+                <StudioSuggestionCard
+                  key={s.id}
+                  suggestion={s}
+                  properties={properties}
+                  onAccept={handleStudioAccept}
+                  onReject={handleStudioReject}
+                  onDiscuss={handleStudioDiscuss}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ─── Suggested Entries Section (legacy gpt-5-nano output) ────── */}
         {suggestedEntries.length > 0 && (
           <div style={{
             marginBottom: 24, animation: 'faqFadeIn 0.3s ease-out 0.1s both',
