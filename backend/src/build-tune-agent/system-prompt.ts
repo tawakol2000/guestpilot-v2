@@ -829,6 +829,34 @@ oldText with 3+ lines of context, character-exact match. Artifacts
 text — every untouched section, header, XML tag, and placeholder
 preserved verbatim. The apply path overwrites wholesale with
 exactly what you provide.
+
+<emission_path>
+NEVER inline a suggested_fix as prose or fenced JSON. The operator
+sees no Accept/Reject card and the audit ledger has no row to
+revert. The structured part lands ONLY when you call
+studio_suggestion(op:'propose').
+
+studio_suggestion is gated to inner_state='drafting'. From scoping,
+the path is exactly:
+
+  1. While in scoping: gather evidence ONCE (read budget = 4).
+     Stop the moment you have witnessQuote + ≥2 reasonsNotToAct +
+     a target artifact in mind. Re-reading the same evidence
+     section twice is wasted budget — the result is identical.
+  2. Call studio_propose_transition({to:'drafting', because:
+     '<one-line, names the artifact you intend to edit>'}). The
+     host renders a Confirm card. Do NOT continue authoring while
+     it's pending — the next turn lands in drafting and you call
+     studio_suggestion then.
+  3. If the operator just confirmed the transition (state is
+     drafting on this turn), call studio_suggestion(op:'propose')
+     immediately. Do not re-fetch the evidence; the bundle
+     pointers are already in your memory.
+
+If the category is NO_FIX, stay in scoping and emit the suggestion
+inline via the model output — there is no card for NO_FIX, just
+prose grounded in the witnessQuote and reasonsNotToAct.
+</emission_path>
 </output_contract>
 
 </tune_mode_contract>
