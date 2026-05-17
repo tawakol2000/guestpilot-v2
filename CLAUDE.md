@@ -189,6 +189,12 @@ STUDIO_JUDGE_MODEL     # Override the test_pipeline cross-family judge
                        # overkill once verification_intent landed, Haiku
                        # cuts judge cost ~70% with no observed quality
                        # drop). Set to 'claude-sonnet-4-6' to roll back.
+STUDIO_VERBOSITY       # OpenAI Responses API text.verbosity for the
+                       # Studio agent. 'low' (default) | 'medium' | 'high'.
+                       # 'low' aligns with the 120-word prose cap and
+                       # NEVER_DO rule 1 (no preambles), trims ~10-20%
+                       # of output tokens. Bump only if the agent feels
+                       # too terse for a particular tenant.
 WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
                        # doc-handoff feature is silently disabled.
 WASENDER_BASE_URL      # Default: https://wasenderapi.com

@@ -78,6 +78,7 @@ import {
   buildModeDisabledReason,
   resolveStudioOpenAiModel,
   resolveStudioReasoningEffort,
+  resolveStudioVerbosity,
   isStudioDebugTraceEnabled,
 } from './config';
 import {
@@ -899,18 +900,36 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       input: pendingInput,
       tools,
       tool_choice: 'auto',
-      parallel_tool_calls: false,
-      // 2026-05-17: reasoning effort dropped from 'high' → 'medium'. With
-      // the cache hit rate already 93–98%, input-token cost is dominated
-      // by reasoning tokens (billed at output rate). 'high' was burning
-      // 3K–8K reasoning tokens per round, ~80% of the per-round cost.
-      // Empirically a ~27-message session cost $2.50 at 'high'; dropping
-      // to 'medium' is expected to halve that without meaningfully
-      // degrading edit quality (the harder thinking happens at write
-      // time, gated by sanction discipline + state-machine — not by
-      // reasoning depth on read turns). Override via
-      // STUDIO_REASONING_EFFORT env if needed.
+      // 2026-05-17: enabled. Per OpenAI's gpt-5.4 prompting guidance,
+      // independent read tools should run in parallel. Studio routinely
+      // fires multi-read scoping turns (get_tenant_index +
+      // get_evidence_index + studio_memory(op:'list')) where the model
+      // batching them cuts round-trip latency. Safe:
+      //   - read tools have no side effects, no race possible
+      //   - write tools require explicit sanction (NEVER_DO #7), the
+      //     state machine + sanction discipline prevent batching them
+      //   - PreToolUse state gate runs per-tool with the same starting
+      //     snapshot, so a batched-write attempt would be denied
+      //     consistently even if it slipped through the prompt
+      //   - the executor loop dispatches function_calls sequentially in
+      //     JS regardless, so this only affects model batching, not our
+      //     race surface
+      parallel_tool_calls: true,
+      // 2026-05-17: reasoning effort dropped from 'high' → 'medium'.
+      // 'high' was burning 3K–8K reasoning tokens per round; 'medium'
+      // ~halves that without meaningfully degrading edit quality (the
+      // harder thinking happens at write time, gated by sanction
+      // discipline + state-machine — not by reasoning depth on read
+      // turns). Override via STUDIO_REASONING_EFFORT env.
       reasoning: { effort: resolveStudioReasoningEffort() },
+      // 2026-05-17: cap GPT-5.4's internal verbosity register. We
+      // already enforce a 120-word prose cap in <response_contract>;
+      // setting text.verbosity='low' aligns the model's default register
+      // with that cap and pushes it away from preambles ("Great
+      // question!", "Let me dig into this") that NEVER_DO rule 1 also
+      // bans. Expected ~10-20% output token savings, no quality cost.
+      // Override via STUDIO_VERBOSITY env.
+      text: { verbosity: resolveStudioVerbosity() },
       prompt_cache_key: args.systemBundle.promptCacheKey,
       // 2026-05-16: explicit 24h retention. Without this OpenAI uses
       // the default 5–10 min TTL — a Studio session with any pause

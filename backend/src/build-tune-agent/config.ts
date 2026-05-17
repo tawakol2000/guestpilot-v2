@@ -163,6 +163,27 @@ export function resolveStudioReasoningEffort(): StudioReasoningEffort {
 }
 
 /**
+ * 2026-05-17 — GPT-5.4 verbosity register. Independent of reasoning
+ * effort; controls how chatty the model is in its prose output.
+ *
+ * 'low'    — terse, no preambles, no closers. Aligns with our
+ *            120-word prose cap + NEVER_DO rule 1 ("no 'Great
+ *            question!', no 'Let me dig into this'").
+ * 'medium' — default OpenAI behaviour.
+ * 'high'   — more thorough, more explanation. Probably never wanted
+ *            for Studio.
+ *
+ * Default 'low' for cost + tone alignment with our existing prompt.
+ */
+export type StudioVerbosity = 'low' | 'medium' | 'high';
+
+export function resolveStudioVerbosity(): StudioVerbosity {
+  const raw = (process.env.STUDIO_VERBOSITY ?? '').trim().toLowerCase();
+  if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+  return 'low';
+}
+
+/**
  * 2026-05-17 — Studio per-turn debug trace persistence.
  *
  * When enabled, every assistant turn persists a `data-debug-trace` part
