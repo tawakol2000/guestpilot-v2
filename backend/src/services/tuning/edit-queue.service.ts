@@ -153,33 +153,42 @@ export async function analyzeQueueItem(
   queueItemId: string,
   tenantId: string,
   prisma: PrismaClient,
+  options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; status: TuningEditQueueStatus; suggestionId: string | null } | null> {
   const item = await prisma.tuningEditQueue.findFirst({
     where: { id: queueItemId, tenantId },
   });
   if (!item) return null;
-  if (item.status !== 'PENDING') {
-    // Already done (or in flight) — return the current state.
+
+  // Allowed source states: PENDING (initial manual trigger) and the two
+  // skip outcomes when `force=true` (manager wants to override the cheap
+  // gate). Anything else (ANALYZING, ANALYZED, FAILED, DISMISSED) returns
+  // the current state untouched.
+  const skipReanalyzable = item.status === 'SKIPPED_NO_FIX' || item.status === 'SKIPPED_COOLDOWN';
+  const canRun = item.status === 'PENDING' || (options.force && skipReanalyzable);
+  if (!canRun) {
     return { ok: false, status: item.status, suggestionId: item.suggestionId };
   }
 
   // Re-derive the pre-classifier result from persisted fields so we can pass
-  // it to the analysis runner (no need to re-call the classifier).
-  const preClass: PreClassifierResult | null = item.preClassifierCategory
-    ? {
-        category: item.preClassifierCategory as PreClassifierResult['category'],
-        confidence: item.preClassifierConfidence ?? 0,
-        rationale: item.preClassifierRationale ?? '',
-        modelUsed: item.preClassifierModel ?? 'unknown',
-        latencyMs: 0,
-      }
-    : null;
+  // it to the analysis runner. When `force=true` we null this out so the
+  // skip gates inside runAnalysisForQueueItem don't fire again.
+  const preClass: PreClassifierResult | null =
+    options.force || !item.preClassifierCategory
+      ? null
+      : {
+          category: item.preClassifierCategory as PreClassifierResult['category'],
+          confidence: item.preClassifierConfidence ?? 0,
+          rationale: item.preClassifierRationale ?? '',
+          modelUsed: item.preClassifierModel ?? 'unknown',
+          latencyMs: 0,
+        };
 
-  // Move PENDING → ANALYZING and run the diagnostic synchronously so the
-  // HTTP caller gets the outcome in the same response.
+  // Move → ANALYZING and run the diagnostic synchronously so the HTTP
+  // caller gets the outcome in the same response.
   await prisma.tuningEditQueue.update({
     where: { id: queueItemId },
-    data: { status: 'ANALYZING' },
+    data: { status: 'ANALYZING', skipReason: null, errorMessage: null },
   });
 
   await runAnalysisForQueueItem(

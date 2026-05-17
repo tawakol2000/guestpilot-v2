@@ -59,10 +59,10 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
   }, [refresh])
 
   const handleAnalyze = useCallback(
-    async (item: TuningQueueItem) => {
+    async (item: TuningQueueItem, options: { force?: boolean } = {}) => {
       setRowBusy((m) => ({ ...m, [item.id]: 'analyzing' }))
       try {
-        const res = await apiAnalyzeTuningQueueItem(item.id)
+        const res = await apiAnalyzeTuningQueueItem(item.id, options)
         toast.success('Analysis complete', {
           description:
             res.status === 'ANALYZED'
@@ -141,8 +141,8 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
           }}
         >
           {headerCount === 0
-            ? 'no pending edits'
-            : `${headerCount} pending analysis`}
+            ? `${analyzed.length} recent edit${analyzed.length === 1 ? '' : 's'} processed`
+            : `${headerCount} pending · ${analyzed.length} processed`}
         </span>
       </header>
 
@@ -179,7 +179,11 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
           {historyOpen ? (
             <ul style={{ ...listReset, marginTop: 8 }}>
               {analyzed.map((item) => (
-                <AnalyzedRow key={item.id} item={item} />
+                <AnalyzedRow
+                  key={item.id}
+                  item={item}
+                  onForceAnalyze={(i) => handleAnalyze(i, { force: true })}
+                />
               ))}
             </ul>
           ) : null}
@@ -339,43 +343,172 @@ function PendingCard({
   )
 }
 
-// ─── Analyzed history row (compact) ─────────────────────────────────────────
+// ─── Analyzed history row (collapsible) ─────────────────────────────────────
 
-function AnalyzedRow({ item }: { item: TuningQueueItem }) {
+function AnalyzedRow({
+  item,
+  onForceAnalyze,
+}: {
+  item: TuningQueueItem
+  onForceAnalyze: (item: TuningQueueItem) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const verdict = describeAnalyzedOutcome(item)
+  const explainer = explainAnalyzedOutcome(item)
+  const canForce = item.status === 'SKIPPED_COOLDOWN' || item.status === 'SKIPPED_NO_FIX'
+
   return (
     <li
       style={{
         listStyle: 'none',
-        padding: '8px 10px',
+        borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
         fontSize: 11.5,
         color: STUDIO_TOKENS_V2.ink2,
-        borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
-        display: 'flex',
-        gap: 8,
-        alignItems: 'center',
       }}
     >
-      <span
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         style={{
-          fontSize: 9.5,
-          fontWeight: 600,
-          padding: '2px 6px',
-          borderRadius: 4,
-          background: verdict.bg,
-          color: verdict.fg,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
+          width: '100%',
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          padding: '8px 10px',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
         }}
       >
-        {verdict.label}
-      </span>
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: STUDIO_TOKENS_V2.muted }}>
-        {item.editedText}
-      </span>
-      <span style={{ fontSize: 10.5, color: STUDIO_TOKENS_V2.muted2 }}>
-        {formatAge(item.analyzedAt ?? item.createdAt)}
-      </span>
+        <ChevronDownIcon
+          size={11}
+          style={{
+            color: STUDIO_TOKENS_V2.muted,
+            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 140ms ease',
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontSize: 9.5,
+            fontWeight: 600,
+            padding: '2px 6px',
+            borderRadius: 4,
+            background: verdict.bg,
+            color: verdict.fg,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            flexShrink: 0,
+          }}
+        >
+          {verdict.label}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: STUDIO_TOKENS_V2.muted,
+          }}
+        >
+          {item.editedText}
+        </span>
+        <span style={{ fontSize: 10.5, color: STUDIO_TOKENS_V2.muted2, flexShrink: 0 }}>
+          {formatAge(item.analyzedAt ?? item.createdAt)}
+        </span>
+      </button>
+      {open ? (
+        <div style={{ padding: '0 12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: STUDIO_TOKENS_V2.ink2,
+            }}
+          >
+            {explainer}
+          </p>
+          <DiffPair before={item.originalText} after={item.editedText} />
+          {item.skipReason ? (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: STUDIO_TOKENS_V2.muted2,
+                fontStyle: 'italic',
+              }}
+            >
+              <span
+                style={{
+                  fontStyle: 'normal',
+                  fontWeight: 600,
+                  fontSize: 10,
+                  color: STUDIO_TOKENS_V2.muted2,
+                  marginRight: 6,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
+                Detail
+              </span>
+              {item.skipReason}
+            </p>
+          ) : null}
+          {item.errorMessage ? (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                color: STUDIO_COLORS.dangerFg,
+                background: STUDIO_COLORS.dangerBg,
+                padding: '6px 8px',
+                borderRadius: STUDIO_TOKENS_V2.radiusSm,
+              }}
+            >
+              {item.errorMessage}
+            </p>
+          ) : null}
+          {canForce ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await onForceAnalyze(item)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+              style={{
+                alignSelf: 'flex-start',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 10px',
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: '#ffffff',
+                background: STUDIO_TOKENS_V2.blue,
+                border: '1px solid transparent',
+                borderRadius: STUDIO_TOKENS_V2.radiusSm,
+                cursor: busy ? 'default' : 'pointer',
+                opacity: busy ? 0.7 : 1,
+              }}
+            >
+              <SparkleIcon size={11} />
+              {busy ? 'Re-running…' : 'Run full analysis anyway'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   )
 }
@@ -433,13 +566,21 @@ function describeAnalyzedOutcome(item: TuningQueueItem): {
   switch (item.status) {
     case 'ANALYZED':
       if (item.suggestion) {
-        return { label: 'Suggestion', bg: STUDIO_TOKENS_V2.blueSoft, fg: STUDIO_TOKENS_V2.blue }
+        return { label: 'Suggestion ready', bg: STUDIO_TOKENS_V2.blueSoft, fg: STUDIO_TOKENS_V2.blue }
       }
-      return { label: 'No fix', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
+      return { label: 'No change needed', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
     case 'SKIPPED_NO_FIX':
-      return { label: 'Skipped · polish', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
+      return {
+        label: 'Polish only',
+        bg: STUDIO_TOKENS_V2.surface2,
+        fg: STUDIO_TOKENS_V2.muted,
+      }
     case 'SKIPPED_COOLDOWN':
-      return { label: 'Skipped · cooldown', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
+      return {
+        label: 'Already addressed',
+        bg: STUDIO_TOKENS_V2.surface2,
+        fg: STUDIO_TOKENS_V2.muted,
+      }
     case 'DISMISSED':
       return { label: 'Dismissed', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted2 }
     case 'FAILED':
@@ -462,6 +603,26 @@ function prettyStatus(s: string): string {
       return 'Diagnostic failed.'
     default:
       return s
+  }
+}
+
+function explainAnalyzedOutcome(item: TuningQueueItem): string {
+  switch (item.status) {
+    case 'ANALYZED':
+      if (item.suggestion) {
+        return 'Analysis produced a tuning suggestion. See the list below.'
+      }
+      return "Analysis ran but didn't propose a fix — the AI's draft was acceptable as-is or the manager's edit didn't reveal a fixable pattern."
+    case 'SKIPPED_NO_FIX':
+      return "Looks like a wording polish, not a fix the system should remember. The cheap pre-classifier called this NO_FIX with high confidence, so the expensive analysis was skipped (saved ~$0.21). If you actually want a tuning fix, click below."
+    case 'SKIPPED_COOLDOWN':
+      return "Another fix of the same kind was accepted within the last 48 hours, so the system held off — running the full analysis right now would produce a duplicate suggestion the cooldown would drop. If this edit really is about something different, click below to override."
+    case 'FAILED':
+      return 'Analysis crashed. See the error below; you can also retry from a pending state.'
+    case 'DISMISSED':
+      return 'You dismissed this edit without running analysis.'
+    default:
+      return ''
   }
 }
 
