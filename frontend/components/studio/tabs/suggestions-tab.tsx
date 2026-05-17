@@ -37,6 +37,7 @@ import {
   ChevronDownIcon,
   MessageSquareIcon,
 } from '../icons'
+import { EditQueueSection } from './edit-queue-section'
 
 type Filter = 'PENDING' | 'ALL'
 
@@ -261,6 +262,8 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
         </div>
         <WidthToggle wide={rightWide} onToggle={() => setRightWide(!rightWide)} />
       </header>
+
+      <EditQueueSection onAnalyzed={() => void refresh()} />
 
       <FilterPills
         value={filter}

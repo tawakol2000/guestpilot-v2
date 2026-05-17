@@ -132,6 +132,14 @@ export async function updateTenantAiConfig(
     err.field = 'autopilotMinConfidence';
     throw err;
   }
+  if (
+    (updates as any).tuningAutoAnalyze !== undefined &&
+    typeof (updates as any).tuningAutoAnalyze !== 'boolean'
+  ) {
+    const err = new Error('tuningAutoAnalyze must be a boolean') as any;
+    err.field = 'tuningAutoAnalyze';
+    throw err;
+  }
   if (updates.model !== undefined && !ALLOWED_MODELS.includes(updates.model)) {
     const err = new Error(`model must be one of: ${ALLOWED_MODELS.join(', ')}`) as any;
     err.field = 'model';

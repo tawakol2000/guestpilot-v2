@@ -18,14 +18,9 @@ import { translationService } from '../services/translation.service';
 // copilot path (PendingAiReply.suggestion → operator approves/edits → send via
 // this endpoint) would silently drop every edit, so /tuning never received a
 // suggestion for tenants without shadowModeEnabled.
-import { runDiagnostic } from '../services/tuning/diagnostic.service';
-import {
-  writeSuggestionFromDiagnostic,
-  probeRecentHighCooldownAcceptance,
-} from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
-import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
+import { enqueueEditForAnalysis } from '../services/tuning/edit-queue.service';
 
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000, 'Message too long (max 4000 characters)'),
@@ -192,54 +187,24 @@ export function makeMessagesController(prisma: PrismaClient) {
             similarity < 0.3 ? 'REJECT_TRIGGERED' : 'EDIT_TRIGGERED';
 
           if (shouldProcessTrigger(triggerType, message.id)) {
-            void (async () => {
-              try {
-                // 2026-05-17: pre-diagnostic cooldown probe. See
-                // shadow-preview.controller.ts for full rationale. Only
-                // suppresses small edits (similarity ≥ 0.5) when a
-                // high-cooldown category was recently accepted —
-                // wholesale rewrites always run.
-                if (triggerType === 'EDIT_TRIGGERED' && similarity >= 0.5) {
-                  const probe = await probeRecentHighCooldownAcceptance(
-                    prisma,
-                    tenantId,
-                  );
-                  if (probe) {
-                    console.log(
-                      `[Messages] [${message.id}] copilot diagnostic pre-suppressed — ` +
-                        `${probe.category}/${probe.targetLabel} accepted at ` +
-                        `${probe.appliedAt.toISOString()} (within 48h cooldown). ` +
-                        `Saved ~$0.21 + ~120s. Similarity=${similarity.toFixed(2)}.`,
-                    );
-                    return;
-                  }
-                }
-
-                const result = await runDiagnostic(
-                  {
-                    triggerType,
-                    tenantId,
-                    messageId: message.id,
-                    note: triggerType === 'REJECT_TRIGGERED'
-                      ? 'Manager replaced the AI copilot draft wholesale (similarity < 0.3).'
-                      : 'Manager edited the AI copilot draft before sending.',
-                  },
-                  prisma
-                );
-                if (result) {
-                  await writeSuggestionFromDiagnostic(result, {}, prisma);
-                }
-              } catch (diagErr) {
-                logTuningDiagnosticFailure({
-                  phase: 'diagnostic',
-                  path: 'messages',
-                  tenantId,
-                  messageId: message.id,
-                  triggerType,
-                  error: diagErr,
-                });
-              }
-            })();
+            // 2026-05-17: route through the edit queue (see
+            // shadow-preview.controller.ts for full rationale).
+            void enqueueEditForAnalysis(
+              {
+                tenantId,
+                sourceMessageId: message.id,
+                originalText: pendingSuggestion,
+                editedText: content,
+                similarity,
+                triggerType,
+                note:
+                  triggerType === 'REJECT_TRIGGERED'
+                    ? 'Manager replaced the AI copilot draft wholesale (similarity < 0.3).'
+                    : 'Manager edited the AI copilot draft before sending.',
+                callerPath: 'messages',
+              },
+              prisma,
+            );
           } else {
             console.log(`[Messages] [${message.id}] copilot diagnostic deduped (60s window).`);
           }

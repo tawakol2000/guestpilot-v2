@@ -302,13 +302,25 @@ export interface RecentAcceptanceProbeResult {
 export async function probeRecentHighCooldownAcceptance(
   prisma: PrismaClient,
   tenantId: string,
+  /**
+   * 2026-05-17: optional category scope. When supplied, the probe only fires
+   * if a recent ACCEPTED suggestion is in one of these categories. Lets the
+   * pre-classifier (`category-pre-classifier.service.ts`) ask the narrow
+   * question "is the category I just predicted on cooldown?" instead of the
+   * coarse "is any high-cooldown category on cooldown?". When omitted,
+   * defaults to the full HIGH_COOLDOWN_CATEGORIES set (original behavior).
+   */
+  categoryScope?: readonly TuningDiagnosticCategory[],
 ): Promise<RecentAcceptanceProbeResult | null> {
   const since = new Date(Date.now() - COOLDOWN_WINDOW_MS);
+  const scope = (categoryScope && categoryScope.length > 0
+    ? categoryScope
+    : HIGH_COOLDOWN_CATEGORIES) as TuningDiagnosticCategory[];
   const hit = await prisma.tuningSuggestion.findFirst({
     where: {
       tenantId,
       status: 'ACCEPTED',
-      diagnosticCategory: { in: HIGH_COOLDOWN_CATEGORIES as TuningDiagnosticCategory[] },
+      diagnosticCategory: { in: scope },
       appliedAt: { gte: since },
     },
     orderBy: { appliedAt: 'desc' },

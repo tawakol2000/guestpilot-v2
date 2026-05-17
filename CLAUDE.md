@@ -195,6 +195,20 @@ STUDIO_VERBOSITY       # OpenAI Responses API text.verbosity for the
                        # NEVER_DO rule 1 (no preambles), trims ~10-20%
                        # of output tokens. Bump only if the agent feels
                        # too terse for a particular tenant.
+TUNING_PRE_CLASSIFIER_MODEL # Override the pre-classifier model in
+                       # backend/src/services/tuning/category-pre-classifier
+                       # .service.ts. Default 'gpt-5.4-mini-2026-03-17'
+                       # (~$0.01/call, ~1-2s, 4-class output: SYSTEM_PROMPT
+                       # / SOP / FAQ / NO_FIX). Runs BEFORE the expensive
+                       # gpt-5.4 k=3 full diagnostic. Two skip paths:
+                       # NO_FIX with conf ≥ 0.7 short-circuits the
+                       # diagnostic; predicted-category cooldown probe
+                       # scopes the 48h cooldown lookup to the predicted
+                       # category set. Failure or low confidence falls
+                       # through — no behaviour regression. Bumped from
+                       # 'gpt-5-nano' on 2026-05-17 after nano misrouted
+                       # a SYSTEM_PROMPT edit as SOP on a live test; set
+                       # to 'gpt-5-nano' to roll back at ~10× cheaper.
 WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
                        # doc-handoff feature is silently disabled.
 WASENDER_BASE_URL      # Default: https://wasenderapi.com

@@ -513,6 +513,7 @@ export interface TenantAiConfig {
   systemPromptVersion: number
   shadowModeEnabled: boolean // Feature 040: Copilot Shadow Mode
   autopilotMinConfidence: number // 0-1 — minimum AI self-rated confidence required to auto-send in autopilot
+  tuningAutoAnalyze?: boolean // 2026-05-17: when false, manager edits land in the Studio queue for manual analysis
 }
 
 export async function apiGetTenantAiConfig(): Promise<TenantAiConfig> {
@@ -524,6 +525,65 @@ export async function apiUpdateTenantAiConfig(updates: Partial<Omit<TenantAiConf
     method: 'PUT',
     body: JSON.stringify(updates),
   })
+}
+
+// ─── 2026-05-17: Tuning edit queue ──────────────────────────────────────────
+
+export type TuningQueueStatus =
+  | 'PENDING'
+  | 'ANALYZING'
+  | 'ANALYZED'
+  | 'SKIPPED_NO_FIX'
+  | 'SKIPPED_COOLDOWN'
+  | 'FAILED'
+  | 'DISMISSED'
+
+export interface TuningQueueItem {
+  id: string
+  sourceMessageId: string
+  originalText: string
+  editedText: string
+  similarity: number
+  triggerType: 'EDIT_TRIGGERED' | 'REJECT_TRIGGERED' | 'MANUAL' | 'COMPLAINT_TRIGGERED' | 'THUMBS_DOWN_TRIGGERED' | 'CLUSTER_TRIGGERED' | 'ESCALATION_TRIGGERED'
+  reservationStatus: string | null
+  channel: string | null
+  preClassifierCategory: 'SYSTEM_PROMPT' | 'SOP' | 'FAQ' | 'NO_FIX' | null
+  preClassifierConfidence: number | null
+  preClassifierRationale: string | null
+  preClassifierModel: string | null
+  status: TuningQueueStatus
+  skipReason: string | null
+  errorMessage: string | null
+  suggestion: {
+    id: string
+    status: string
+    diagnosticCategory: string | null
+    diagnosticSubLabel: string | null
+    rationale: string
+    confidence: number | null
+  } | null
+  createdAt: string
+  analyzedAt: string | null
+}
+
+export async function apiListTuningQueue(params: {
+  bucket?: 'pending' | 'analyzed' | 'all'
+  limit?: number
+} = {}): Promise<{ items: TuningQueueItem[] }> {
+  const q = new URLSearchParams()
+  if (params.bucket) q.set('bucket', params.bucket)
+  if (params.limit) q.set('limit', String(params.limit))
+  return apiFetch<{ items: TuningQueueItem[] }>(`/api/tuning-queue?${q.toString()}`)
+}
+
+export async function apiAnalyzeTuningQueueItem(
+  id: string,
+): Promise<{ ok: boolean; status: TuningQueueStatus; suggestionId: string | null }> {
+  return apiFetch(`/api/tuning-queue/${id}/analyze`, { method: 'POST' })
+}
+
+export async function apiDismissTuningQueueItem(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/tuning-queue/${id}/dismiss`, { method: 'POST' })
 }
 
 export async function apiResetSystemPrompts(): Promise<TenantAiConfig> {

@@ -84,6 +84,9 @@ model Tenant {
 
   // Sprint 047 Session C — cross-session rejection memory.
   rejectionMemories RejectionMemory[]
+
+  // 2026-05-17: edit queue (manual + auto analysis modes).
+  tuningEditQueueItems TuningEditQueue[]
 }
 
 model Property {
@@ -590,6 +593,11 @@ model TenantAiConfig {
   // Autopilot: minimum self-rated confidence (0-1) required to auto-send. Below
   // this threshold, the reply is downgraded to a shadow preview so a human reviews it.
   autopilotMinConfidence    Float    @default(0.75)
+  // 2026-05-17: tuning-queue auto-analysis toggle. When true (default), every
+  // qualifying edit fires the diagnostic immediately (current behavior).
+  // When false, edits land in TuningEditQueue with status=PENDING and the
+  // manager runs analysis manually from the Studio right column.
+  tuningAutoAnalyze         Boolean  @default(true)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
@@ -1060,6 +1068,7 @@ model TuningSuggestion {
   sourceMessage  Message?            @relation("SourcePreview", fields: [sourceMessageId], references: [id], onDelete: Cascade)
   conversation   TuningConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   evidenceBundle EvidenceBundle?     @relation(fields: [evidenceBundleId], references: [id], onDelete: SetNull)
+  editQueueItems TuningEditQueue[]   // 2026-05-17: back-ref for the edit queue.
 
   @@index([tenantId, status, createdAt(sort: Desc)])
   @@index([sourceMessageId])
@@ -1353,4 +1362,60 @@ model DocumentHandoffState {
   @@unique([reservationId, messageType])
   @@index([tenantId])
   @@index([status, scheduledFireAt])
+}
+
+// ─── 2026-05-17: Tuning Edit Queue ──────────────────────────────────────────
+//
+// Captures every qualifying manager edit (EDIT_TRIGGERED / REJECT_TRIGGERED)
+// BEFORE the pre-classifier / diagnostic decide. Two operating modes via
+// TenantAiConfig.tuningAutoAnalyze:
+//   - true (default): row is created, then analyzed immediately in the same
+//     fire-and-forget. UI shows it under "Analyzed" once the run lands.
+//   - false: row is created with status=PENDING. The Studio right column
+//     surfaces it under "Not analyzed" with a manual "Run analysis" button.
+//
+// One row per source message (unique). The row links to the TuningSuggestion
+// (if any) once analysis completes — NO_FIX outcomes have suggestionId=null
+// and status=SKIPPED_NO_FIX.
+enum TuningEditQueueStatus {
+  PENDING            // Auto-analyze off → waiting for manual trigger
+  ANALYZING          // Diagnostic in flight
+  ANALYZED           // Done; suggestionId populated when a fix was proposed
+  SKIPPED_NO_FIX     // Pre-classifier said NO_FIX with high confidence
+  SKIPPED_COOLDOWN   // Pre-classifier predicted a category recently accepted
+  FAILED             // Diagnostic threw
+  DISMISSED          // Manager clicked dismiss on a pending row
+}
+
+model TuningEditQueue {
+  id              String  @id @default(cuid())
+  tenantId        String
+  sourceMessageId String  @unique // dedupe at the DB level
+
+  originalText     String  @db.Text
+  editedText       String  @db.Text
+  similarity       Float
+  triggerType      TuningConversationTriggerType
+  reservationStatus String?
+  channel          String?
+
+  // Pre-classifier output (always populated when classifier ran)
+  preClassifierCategory   String? // SYSTEM_PROMPT | SOP | FAQ | NO_FIX
+  preClassifierConfidence Float?
+  preClassifierRationale  String? @db.Text
+  preClassifierModel      String?
+
+  status       TuningEditQueueStatus @default(PENDING)
+  skipReason   String?               @db.Text
+  errorMessage String?               @db.Text
+  suggestionId String?               // FK → TuningSuggestion when one was created
+
+  createdAt  DateTime  @default(now())
+  analyzedAt DateTime?
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  suggestion TuningSuggestion? @relation(fields: [suggestionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([suggestionId])
 }

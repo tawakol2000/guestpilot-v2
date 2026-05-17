@@ -967,6 +967,7 @@ function TenantConfigSection({
         reasoningScreening: local.reasoningScreening,
         shadowModeEnabled: local.shadowModeEnabled,
         autopilotMinConfidence: local.autopilotMinConfidence,
+        tuningAutoAnalyze: local.tuningAutoAnalyze,
       })
       onChange(updated)
       showToast('success', 'AI settings saved')
@@ -1191,12 +1192,21 @@ function TenantConfigSection({
         {/* Feature 040: Copilot Shadow Mode — tuning section */}
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Tuning</label>
-          <div style={{ borderBottom: 'none' }}>
+          <div>
             {toggleRow(
               'Shadow Mode (Copilot)',
               'Render copilot AI replies as in-chat preview bubbles (instead of the legacy suggestion card) and fire the tuning analyzer on edited sends. Does not affect autopilot. For tuning sessions only — turn off when done.',
               Boolean(local.shadowModeEnabled),
               'shadowModeEnabled'
+            )}
+          </div>
+          {/* 2026-05-17: auto-analyze toggle — when off, edits land in the Studio queue for manual analysis */}
+          <div style={{ borderBottom: 'none' }}>
+            {toggleRow(
+              'Auto-analyze edits',
+              'On (default): every qualifying manager edit fires the tuning diagnostic immediately. Off: edits land in the Studio right-column queue for you to analyze manually one at a time. Useful when you want to control tuning cost or batch analysis sessions.',
+              local.tuningAutoAnalyze !== false,
+              'tuningAutoAnalyze'
             )}
           </div>
         </div>
