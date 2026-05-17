@@ -77,6 +77,7 @@ import {
   isBuildModeEnabled,
   buildModeDisabledReason,
   resolveStudioOpenAiModel,
+  isStudioDebugTraceEnabled,
 } from './config';
 import { runWithAiTrace } from '../services/observability.service';
 import {
@@ -334,6 +335,36 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     }
   };
 
+  // 2026-05-17: opt-in per-turn debug trace. See sdk-runner for rationale.
+  // Pushed directly to persistedDataParts (not via emitDataPart) so the
+  // 30 KiB system-prompt payload doesn't ride the SSE wire to the browser.
+  if (isStudioDebugTraceEnabled()) {
+    persistedDataParts.push({
+      type: 'data-debug-trace',
+      id: `debug-trace:${input.assistantMessageId}`,
+      data: {
+        capturedAt: new Date().toISOString(),
+        turnNumber,
+        mode,
+        provider: 'openai',
+        model: input.modelOverride ?? resolveStudioOpenAiModel(),
+        // openai-runner doesn't load sdkSessionId today (it isn't used
+        // by the Responses API path); leave null rather than expand the
+        // select() just for the trace.
+        previousResponseId: null,
+        turnStartSnapshot,
+        systemPromptBytes: assembledSystemPrompt.length,
+        systemPrompt: assembledSystemPrompt,
+        regionSizes: {
+          sharedPrefix: regions.sharedPrefix.length,
+          modeAddendum: regions.modeAddendum.length,
+          dynamicSuffix: regions.dynamicSuffix.length,
+        },
+        userMessage: input.userMessage,
+      },
+    });
+  }
+
   const toolCtx: ToolContext = {
     prisma: input.prisma,
     tenantId: input.tenantId,
@@ -518,8 +549,19 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     const testPipelineSucceeded = toolCallsSucceeded.some((n) =>
       n.endsWith('studio_test_pipeline'),
     );
+    // 2026-05-17 fix: see sdk-runner for full rationale. Re-fetch so
+    // mid-turn pending_transition writes from studio_propose_transition
+    // survive the ack-clear/auto-exit spread.
+    const fresh = await input.prisma.tuningConversation.findFirst({
+      where: { id: input.conversationId, tenantId: input.tenantId },
+      select: { stateMachineSnapshot: true },
+    });
+    const currentSnapshot = fresh
+      ? coerceSnapshot(fresh.stateMachineSnapshot ?? null, mode)
+      : turnStartSnapshot;
     const next = computeTurnEndSnapshot({
       startSnapshot: turnStartSnapshot,
+      currentSnapshot,
       testPipelineSucceeded,
     });
     if (next) {

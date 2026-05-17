@@ -92,7 +92,8 @@ PARAMETERS:
   testMessage (string, 1-1000 chars, deprecated) — legacy single-trigger form.
   testMessages (string[], 1-3 entries, preferred) — the 054-A multi-variant form; run in parallel via Promise.all.
   testContext (optional { reservationStatus?, channel? })
-RETURNS: Multi-variant: { ok, variants:[{triggerMessage,pipelineOutput,verdict,judgeReasoning,judgeScore,judgePromptVersion,ranAt}], aggregateVerdict: "all_passed"|"partial"|"all_failed", ritualVersion }`;
+  verificationIntent (optional string, ≤280 chars) — STRONGLY RECOMMENDED after a write. One-line description of THE SPECIFIC change you just made — e.g. "screening prompt: party-composition question now uses 'and who will be joining you?' instead of relationship labels". The judge returns a separate intentLanded verdict (passed/partial/failed) about whether THIS change is visible in the reply, independent of the overall quality score. Without it, a reply that adopts your edit correctly but also has unrelated bugs scores low overall and the operator can't tell if their fix actually worked.
+RETURNS: Multi-variant: { ok, variants:[{triggerMessage,pipelineOutput,verdict,judgeReasoning,judgeScore,judgePromptVersion,intentLanded?,intentRationale?,ranAt}], aggregateVerdict: "all_passed"|"partial"|"all_failed", intentAggregate?: "passed"|"partial"|"failed", ritualVersion }`;
 
 const contextSchema = z
   .object({
@@ -125,6 +126,7 @@ export function buildTestPipelineTool(
       testMessages: z.array(z.string().min(1).max(1000)).min(1).max(3).optional(),
       testContext: contextSchema,
       verbosity: z.enum(['concise', 'detailed']).optional(),
+      verificationIntent: z.string().min(1).max(280).optional(),
     },
     async (args) => {
       const c = ctx();
@@ -203,6 +205,11 @@ export function buildTestPipelineTool(
                   // falls back to legacy reply-only grading in that
                   // case (see JudgePipelineAction header).
                   pipelineAction: dry.action ?? undefined,
+                  // 2026-05-17: per-axis grading — when the agent passes
+                  // verificationIntent (recommended after a write), the
+                  // judge separately reports whether THE specific change
+                  // landed, not just whether the whole reply is good.
+                  verificationIntent: args.verificationIntent,
                 },
                 { signal: c.abortSignal },
               );
@@ -232,6 +239,13 @@ export function buildTestPipelineTool(
               judgeReasoning: judge.rationale,
               judgeScore: judge.score,
               judgeFailureCategory: judge.failureCategory,
+              // 2026-05-17: per-axis verdict — present only when
+              // verificationIntent was passed. UI renders it as a
+              // separate chip next to the overall pass/fail so the
+              // operator can see "the change you made worked" even
+              // when the reply has unrelated quality issues.
+              intentLanded: judge.intentLanded,
+              intentRationale: judge.intentRationale,
               judgePromptVersion: judge.promptVersion,
               judgeModel: judge.judgeModel,
               replyModel: dry.replyModel,
@@ -240,6 +254,23 @@ export function buildTestPipelineTool(
             };
           })
         );
+
+        // 2026-05-17: compute an intent-axis aggregate alongside the
+        // overall-quality aggregate. Same rollup rule: all passed → passed,
+        // none passed → failed, mixed → partial. Absent when no variants
+        // returned an intent verdict (i.e. the agent didn't pass
+        // verificationIntent).
+        const intentVerdicts = results
+          .map((r) => r.intentLanded)
+          .filter((v): v is 'passed' | 'partial' | 'failed' => !!v);
+        const intentAggregate: 'passed' | 'partial' | 'failed' | undefined =
+          intentVerdicts.length === 0
+            ? undefined
+            : intentVerdicts.every((v) => v === 'passed')
+              ? 'passed'
+              : intentVerdicts.every((v) => v === 'failed')
+                ? 'failed'
+                : 'partial';
 
         const aggregateVerdict = computeAggregateVerdict(
           results.map(
@@ -287,6 +318,13 @@ export function buildTestPipelineTool(
           ok: true,
           variants: results,
           aggregateVerdict,
+          // 2026-05-17: present only when verificationIntent was passed.
+          // Frontend should display this AS THE PRIMARY VERDICT when set
+          // and demote `aggregateVerdict` to a secondary "overall quality"
+          // chip. Without it, operators see "all failed" for tests where
+          // their actual edit landed but unrelated bugs dragged the
+          // score down.
+          intentAggregate,
           ritualVersion: VERIFICATION_RITUAL_VERSION,
           sourceWriteHistoryId: historyId,
           sourceWriteLabel: artifactCtx,
@@ -312,12 +350,25 @@ export function buildTestPipelineTool(
         // wraps the session with a concrete pass/fail summary instead of
         // a generic "I ran the test" close. all_passed → ok to close;
         // partial / all_failed → suggest rollback or another iteration.
-        const closeHint =
-          aggregateVerdict === 'all_passed'
+        //
+        // 2026-05-17 refinement: when intentAggregate is present, lead
+        // with it. The operator cares first about "did my edit land?"
+        // and only second about "is the rest of the reply good?".
+        // Conflating the two has been the #1 source of "all tests
+        // failed but they look good tbh" frustration.
+        const closeHint = intentAggregate
+          ? intentAggregate === 'passed' && aggregateVerdict === 'all_passed'
+            ? 'Intent landed AND overall quality passed across all variants. Close with a one-line summary.'
+            : intentAggregate === 'passed'
+              ? `Your intended change LANDED in every variant (intentAggregate=passed). Overall quality verdict is ${aggregateVerdict} due to OTHER issues unrelated to this edit — surface them as separate follow-ups, not as "the fix failed". State plainly: "the edit you asked for is working" and then list the unrelated issues the judge found.`
+              : intentAggregate === 'partial'
+                ? `Your intended change landed in SOME variants but not others (intentAggregate=partial). Per-variant breakdown: ${results.map((r) => `"${r.triggerMessage.slice(0, 40)}…" → ${r.intentLanded ?? 'n/a'}`).join('; ')}. Tell the operator which triggers worked vs. which still don't, and ask whether to iterate on the prompt or accept partial coverage.`
+                : `Your intended change did NOT land in any variant (intentAggregate=failed). This means the edit you wrote isn't taking effect in the live pipeline — re-read the artifact, confirm the right section was edited, and consider a rollback before re-attempting.`
+          : aggregateVerdict === 'all_passed'
             ? 'All variants passed the cross-family judge. Safe to close the turn with a one-line summary.'
             : aggregateVerdict === 'partial'
-              ? 'Some variants regressed under the judge. Surface which variant failed and ask the manager whether to roll back, accept partial improvement, or iterate.'
-              : 'All variants failed the judge. Recommend studio_rollback unless the manager explicitly wants to keep the change.';
+              ? 'Some variants regressed under the judge. Surface which variant failed and ask the manager whether to roll back, accept partial improvement, or iterate. (Tip: pass `verificationIntent` next time to get a per-axis verdict isolating whether YOUR edit landed.)'
+              : 'All variants failed the judge. Recommend studio_rollback unless the manager explicitly wants to keep the change. (Tip: pass `verificationIntent` next time — without it, unrelated quality issues drag down the overall score and you can\'t tell whether the edit you made actually worked.)';
         return asCallToolResult({ ...payload, close_of_turn_hint: closeHint });
       } catch (err: any) {
         span.end({ error: String(err) });

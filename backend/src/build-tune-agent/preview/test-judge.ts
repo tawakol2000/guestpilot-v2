@@ -37,7 +37,7 @@ export const JUDGE_MODEL = 'claude-sonnet-4-6';
 // edit. `_HUMAN_TAG` should still be bumped by hand on intentional
 // material edits so the date advances, but the hash alone is enough
 // to detect drift.
-const _JUDGE_SYSTEM_HUMAN_TAG = 'test-judge/v2 — 2026-04-24';
+const _JUDGE_SYSTEM_HUMAN_TAG = 'test-judge/v3 — 2026-05-17';
 
 /**
  * Background action the pipeline planned, surfaced to the judge so it
@@ -79,6 +79,22 @@ export interface TestJudgeInput {
    * yet thread the structured pipeline output through.
    */
   pipelineAction?: JudgePipelineAction;
+  /**
+   * 2026-05-17: optional one-line description of THE SPECIFIC change the
+   * operator just made and is verifying — e.g. "screening system prompt
+   * was edited to ask 'and who will be joining you?' instead of relationship
+   * labels like 'married couple, siblings'". When set, the judge returns
+   * a separate `intentLanded` verdict (true/false/partial) that grades
+   * whether THIS change is reflected in the reply, independent of the
+   * overall quality score.
+   *
+   * Why: the single 0-1 score was conflating two questions — "did the
+   * operator's edit work?" and "is the whole reply good?". A reply
+   * that correctly adopts the new phrasing but also hallucinates parking
+   * was scoring 0.3 (FAILED overall), giving the operator no signal
+   * that their edit landed. Splitting the verdict surfaces both.
+   */
+  verificationIntent?: string;
 }
 
 export interface TestJudgeResult {
@@ -96,13 +112,25 @@ export interface TestJudgeResult {
    * Absent when score ≥ 0.7.
    */
   failureCategory?: string;
+  /**
+   * 2026-05-17: when the caller passed `verificationIntent`, this
+   * separately reports whether the specific change the operator was
+   * verifying is reflected in the reply, independent of overall quality.
+   *   "passed"  — the reply clearly reflects the intended change.
+   *   "partial" — the change is partially visible (e.g. correct shape, missing wording).
+   *   "failed"  — the reply does not reflect the change at all.
+   * Absent when `verificationIntent` was not provided.
+   */
+  intentLanded?: 'passed' | 'partial' | 'failed';
+  /** One-sentence rationale specifically for the intentLanded verdict. */
+  intentRationale?: string;
   /** Version stamp of the prompt used. */
   promptVersion: string;
   /** Judge model id used. */
   judgeModel: string;
 }
 
-const JUDGE_SYSTEM = `You are a strict but fair judge grading one AI reply that a serviced-apartment tenant's AI chatbot produced for a guest message. Return a single JSON object with keys "score" (number 0..1), "rationale" (string, 1-3 sentences), and "failureCategory" (string or null).
+const JUDGE_SYSTEM = `You are a strict but fair judge grading one AI reply that a serviced-apartment tenant's AI chatbot produced for a guest message. Return a single JSON object with keys "score" (number 0..1), "rationale" (string, 1-3 sentences), "failureCategory" (string or null), and — when <verification_intent> is present in the user prompt — also "intentLanded" ("passed"|"partial"|"failed") and "intentRationale" (string, 1-2 sentences).
 
 You judge the WHOLE pipeline turn, not just the reply text. The turn has TWO parts:
   A) <ai_reply>          — what the guest sees.
@@ -128,6 +156,19 @@ When you assign a score below 0.7, set "failureCategory" to one of:
   "missing-sop-reference" | "policy-violation" | "channel-tone" | "hallucination" | "off-topic" | "safety" | "quality-gap"
 (use "quality-gap" for criteria 6 — failed to request clearer input on a low-quality submission).
 Otherwise set "failureCategory" to null.
+
+VERIFICATION INTENT (when <verification_intent> appears in the user prompt):
+The operator just made a SPECIFIC change to the tenant's config and wants to know whether THIS change is reflected in the reply, independent of overall reply quality. Grade two axes:
+
+  - The full-quality "score" / "rationale" / "failureCategory" trio as above.
+  - A separate "intentLanded" verdict — STRICTLY about whether the described change is visible in <ai_reply>:
+      "passed"  — the change is clearly reflected (e.g. new wording is used, removed phrase is absent).
+      "partial" — the shape of the change is visible but execution is incomplete (e.g. new wording appears but a stray instance of the old phrasing also remains).
+      "failed"  — the change is not visible at all (e.g. old phrasing still used, edit had no effect on this variant).
+
+Critically: intentLanded must IGNORE other quality issues. A reply that adopts the new phrasing but also hallucinates an unrelated fact has intentLanded="passed" and score≈0.4 (or whatever the hallucination warrants). Do not let one axis bleed into the other — the operator needs to know whether their edit worked even when other bugs remain.
+
+Also set "intentRationale" — 1-2 sentences quoting the specific phrase from <ai_reply> that proves the intent landed (or didn't).
 
 Return ONLY the JSON object. No code fences, no prose prefix.`;
 
@@ -199,6 +240,14 @@ export async function runTestJudge(
   const shuffledContext = shuffleTenantContext(input.tenantContext, input.guestMessage);
 
   const actionBlock = formatPipelineAction(input.pipelineAction);
+  const intentBlock = input.verificationIntent && input.verificationIntent.trim().length > 0
+    ? [
+        '',
+        '<verification_intent>',
+        input.verificationIntent.trim(),
+        '</verification_intent>',
+      ]
+    : [];
   const userPrompt = [
     '<tenant_context>',
     shuffledContext,
@@ -215,8 +264,11 @@ export async function runTestJudge(
     '<pipeline_action>',
     actionBlock,
     '</pipeline_action>',
+    ...intentBlock,
     '',
-    'Grade the whole turn (reply + action) now. Return only the JSON object.',
+    intentBlock.length > 0
+      ? 'Grade the whole turn (reply + action) AND separately judge intentLanded against <verification_intent>. Return only the JSON object.'
+      : 'Grade the whole turn (reply + action) now. Return only the JSON object.',
   ].join('\n');
 
   // Bugfix (2026-04-23): no explicit timeout used to mean a hung
@@ -267,6 +319,14 @@ export async function runTestJudge(
       failureCategory:
         parsed.score < 0.7 && parsed.failureCategory
           ? parsed.failureCategory
+          : undefined,
+      intentLanded:
+        input.verificationIntent && parsed.intentLanded
+          ? parsed.intentLanded
+          : undefined,
+      intentRationale:
+        input.verificationIntent && parsed.intentRationale
+          ? parsed.intentRationale
           : undefined,
       promptVersion: JUDGE_PROMPT_VERSION,
       judgeModel: JUDGE_MODEL,
@@ -321,6 +381,8 @@ interface ParsedJudge {
   score: number;
   rationale: string;
   failureCategory?: string;
+  intentLanded?: 'passed' | 'partial' | 'failed';
+  intentRationale?: string;
 }
 
 export function parseJudgeJson(raw: string): ParsedJudge {
@@ -334,6 +396,7 @@ export function parseJudgeJson(raw: string): ParsedJudge {
   }
   try {
     const obj = JSON.parse(match[0]);
+    const il = typeof obj.intentLanded === 'string' ? obj.intentLanded.toLowerCase() : '';
     return {
       score: typeof obj.score === 'number' ? obj.score : 0,
       rationale:
@@ -341,6 +404,14 @@ export function parseJudgeJson(raw: string): ParsedJudge {
       failureCategory:
         typeof obj.failureCategory === 'string' && obj.failureCategory.length > 0
           ? obj.failureCategory
+          : undefined,
+      intentLanded:
+        il === 'passed' || il === 'partial' || il === 'failed'
+          ? (il as 'passed' | 'partial' | 'failed')
+          : undefined,
+      intentRationale:
+        typeof obj.intentRationale === 'string' && obj.intentRationale.length > 0
+          ? obj.intentRationale
           : undefined,
     };
   } catch (err: any) {

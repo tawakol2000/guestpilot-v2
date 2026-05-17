@@ -470,7 +470,8 @@ export function makeBuildController(prisma: PrismaClient) {
         conversationId?: string;
         isOpener?: boolean;
         provider?: string;
-        body?: { conversationId?: string; isOpener?: boolean; provider?: string };
+        mode?: string;
+        body?: { conversationId?: string; isOpener?: boolean; provider?: string; mode?: string };
       };
       const conversationId =
         body.conversationId ?? body.body?.conversationId;
@@ -481,6 +482,7 @@ export function makeBuildController(prisma: PrismaClient) {
           : rawProvider === 'anthropic'
             ? 'anthropic'
             : null;
+      const rawMode = body.mode ?? body.body?.mode;
       if (!conversationId) {
         res.status(400).json({ error: 'MISSING_CONVERSATION_ID' });
         return;
@@ -499,14 +501,33 @@ export function makeBuildController(prisma: PrismaClient) {
 
       // Tenant scoping check on the conversation row before we kick off
       // an agent turn — same rule the tuning-chat controller enforces.
+      // 2026-05-17: also pull stateMachineSnapshot so mode resolution can
+      // honour a persisted outer_mode when the frontend doesn't send one.
+      // See the mode-resolution block below.
       const conv = await prisma.tuningConversation.findFirst({
         where: { id: conversationId, tenantId },
-        select: { id: true },
+        select: { id: true, stateMachineSnapshot: true },
       });
       if (!conv) {
         res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
         return;
       }
+      // 2026-05-17: mode resolution. Used to be hardcoded to 'BUILD' on
+      // every turn, which silently flipped TUNE-mode conversations
+      // (created via "Discuss in tuning") to BUILD on the first agent
+      // turn — the runners' first-turn outer_mode correction would then
+      // persist the override and stick the conversation in BUILD forever.
+      // Precedence: explicit body.mode > persisted snapshot outer_mode >
+      // 'BUILD' default. The runner still loads the snapshot itself; we
+      // only need a defensible value for the input.mode argument.
+      const persistedOuterMode =
+        (conv.stateMachineSnapshot as { outer_mode?: string } | null)?.outer_mode;
+      const resolvedMode: 'BUILD' | 'TUNE' =
+        rawMode === 'TUNE' || rawMode === 'BUILD'
+          ? rawMode
+          : persistedOuterMode === 'TUNE' || persistedOuterMode === 'BUILD'
+            ? persistedOuterMode
+            : 'BUILD';
 
       // Persist incoming user message — same pattern as tuning-chat. We
       // skip on persist failure rather than 500, because BUILD turns
@@ -613,7 +634,7 @@ export function makeBuildController(prisma: PrismaClient) {
             selectedSuggestionId: null,
             assistantMessageId,
             writer,
-            mode: 'BUILD',
+            mode: resolvedMode,
             tenantState: runtimeTenantState,
             interviewProgress: runtimeInterviewProgress,
             providerOverride,

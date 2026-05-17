@@ -187,14 +187,41 @@ export function buildSuggestionActionTool(
             const resolved = performSearchReplace(currentText, oldText, newText);
             if (resolved.kind === 'not_found') {
               span.end({ error: 'SEARCH_REPLACE_OLDTEXT_NOT_FOUND' });
+              // 2026-05-17: self-heal — return the current artifact text
+              // inline so the agent can retry on the SAME turn with a
+              // verbatim passage from the live version. Previously the
+              // error told the agent to "re-read via fetch_evidence_bundle"
+              // which (a) cost a tool round-trip and (b) tempted the agent
+              // to pivot to full_replacement with elision placeholders
+              // when frustrated, which then hit a second error and a
+              // third retry. Inline-text recovery removes that loop.
               return asError(
-                'search_replace failed: oldText was not found in the current artifact. Re-read the artifact via fetch_evidence_bundle and supply an exact, verbatim passage (including whitespace and punctuation). Newlines must match exactly (LF vs CRLF).'
+                [
+                  'search_replace failed: oldText was not found in the current artifact (the artifact likely changed since you last read it — e.g. an operator UI apply, or a prior write this conversation).',
+                  '',
+                  'Do NOT pivot to full_replacement with "..." or other elision markers — the validator will reject it and you will burn another retry.',
+                  '',
+                  `Current artifact text (${currentText.length} chars) follows verbatim — pick a unique passage from it and retry search_replace with that as oldText.`,
+                  '',
+                  '<current_artifact_text>',
+                  currentText,
+                  '</current_artifact_text>',
+                ].join('\n'),
               );
             }
             if (resolved.kind === 'ambiguous') {
               span.end({ error: 'SEARCH_REPLACE_OLDTEXT_AMBIGUOUS' });
+              // 2026-05-17: same self-heal pattern — inline current text
+              // so the agent can pick a longer, unique passage without a
+              // round trip.
               return asError(
-                `search_replace failed: oldText matched ${resolved.count} occurrences in the current artifact. Extend oldText with surrounding context so the match is unique, then retry.`
+                [
+                  `search_replace failed: oldText matched ${resolved.count} occurrences in the current artifact. Extend oldText with surrounding context so the match is unique, then retry — do NOT switch to full_replacement.`,
+                  '',
+                  '<current_artifact_text>',
+                  currentText,
+                  '</current_artifact_text>',
+                ].join('\n'),
               );
             }
             draftProposedText = resolved.result;
@@ -937,7 +964,13 @@ function validateDraftForApply(args: {
     args.editFormat === 'search_replace' ? args.newText ?? '' : args.proposedText ?? '';
   const elision = detectElisionMarker(textToCheck);
   if (elision) {
-    return `proposed text contains an elision marker (${elision}). Include the complete text, not a placeholder.`;
+    // 2026-05-17: make the recovery path explicit. The agent has
+    // historically hit this error after a stale search_replace failure
+    // (it pivoted to full_replacement and abbreviated with "..."). Tell
+    // it directly to go BACK to search_replace with verbatim text — the
+    // not_found path now inlines the current artifact so a retry is
+    // one tool call away, not three.
+    return `proposed text contains an elision marker (${elision}). Do NOT pivot to full_replacement with placeholders. Retry with editFormat='search_replace' and use a verbatim passage from the current artifact (returned inline on the previous search_replace error) as oldText.`;
   }
   return null;
 }

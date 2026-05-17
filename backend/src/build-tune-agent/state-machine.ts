@@ -191,16 +191,25 @@ export function shortToolName(toolName: string): string {
  * below handles that case correctly.
  */
 export interface TurnEndInput {
+  /** Snapshot as it was at the START of the turn — drives the decision
+   * logic (verifying auto-exit eligibility, ack-clear eligibility). */
   startSnapshot: StateMachineSnapshot;
+  /** Snapshot as it is RIGHT NOW in the DB — base for the returned
+   * snapshot so mid-turn mutations (e.g. studio_propose_transition
+   * writing `pending_transition`) are preserved instead of clobbered.
+   * Defaults to `startSnapshot` for back-compat with callers/tests that
+   * don't re-fetch (pre-2026-05-17 behaviour). */
+  currentSnapshot?: StateMachineSnapshot;
   testPipelineSucceeded: boolean;
 }
 
 export function computeTurnEndSnapshot(input: TurnEndInput): StateMachineSnapshot | null {
   const { startSnapshot, testPipelineSucceeded } = input;
+  const base = input.currentSnapshot ?? startSnapshot;
 
   if (startSnapshot.inner_state === 'verifying' && testPipelineSucceeded) {
     return {
-      ...startSnapshot,
+      ...base,
       inner_state: 'drafting',
       last_transition_at: new Date().toISOString(),
       last_transition_reason: 'verifying auto-exit after test_pipeline',
@@ -210,8 +219,13 @@ export function computeTurnEndSnapshot(input: TurnEndInput): StateMachineSnapsho
   }
 
   if (startSnapshot.transition_ack_pending) {
+    // 2026-05-17 fix: spread from `base` (current DB state) so a mid-turn
+    // studio_propose_transition write survives the ack clear. The prior
+    // code spread from startSnapshot, which had pending_transition=null
+    // and silently overwrote the new pending. Symptom: confirm button
+    // on the freshly-emitted transition card returned NO_PENDING_TRANSITION.
     return {
-      ...startSnapshot,
+      ...base,
       transition_ack_pending: false,
     };
   }

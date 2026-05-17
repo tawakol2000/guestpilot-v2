@@ -168,6 +168,13 @@ STUDIO_POINTER_HMAC_KEY   # HMAC for index/section pointers + state-machine
                        # transition nonces. Falls back to JWT_SECRET when
                        # unset — set distinct value in production.
 STUDIO_TRANSITION_HMAC_KEY # Optional; falls back to STUDIO_POINTER_HMAC_KEY.
+STUDIO_DEBUG_TRACE     # Off by default. When truthy, every Studio assistant
+                       # turn persists a `data-debug-trace` part in
+                       # TuningMessage.parts with the byte-exact assembled
+                       # system prompt + turn metadata. Adds ~30 KiB per
+                       # turn. Required only when debugging — pair with
+                       # `backend/scripts/dump-studio-conversation.ts` to
+                       # read it back. See §Debugging Studio Conversations.
 WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
                        # doc-handoff feature is silently disabled.
 WASENDER_BASE_URL      # Default: https://wasenderapi.com
@@ -250,6 +257,31 @@ When something fails in prod (failed send, AI error, crash, slow response), chec
    ```
 
 4. **OpenAI dashboard** (https://platform.openai.com/usage) — last resort for total spend, request volume, and per-request inspection. The dashboard shows ALL OpenAI calls (854/day vs Langfuse's ~36) but doesn't filter by tenant / message id.
+
+## Debugging Studio Conversations
+
+When the Studio agent does something weird, dump the entire conversation to a single markdown file with the full tool i/o and system prompt — much faster than chasing `TuningMessage.parts` JSON by hand.
+
+```bash
+cd backend
+
+# List recent conversations for a tenant (latest 20):
+npx tsx scripts/dump-studio-conversation.ts --list <tenantId>
+
+# Dump a specific conversation to /tmp/studio-dump-<id>-<iso>.md:
+npx tsx scripts/dump-studio-conversation.ts <conversationId>
+
+# Custom output path:
+npx tsx scripts/dump-studio-conversation.ts <conversationId> --out /tmp/foo.md
+```
+
+The dump includes:
+- Conversation metadata + final state-machine snapshot
+- Every TuningMessage with FULL tool input + output (no truncation) and every data-part
+- `BuildToolCallLog` cross-reference table (per-tool timing + success per turn)
+- Reconstructed system prompt using CURRENT templates + tenant state
+
+**Per-turn byte-exact prompt capture (opt-in)**: set `STUDIO_DEBUG_TRACE=true` in `backend/.env` to persist a `data-debug-trace` part on every assistant turn going forward. The trace stores the EXACT assembled system prompt the agent saw that turn — not a reconstruction. Adds ~30 KiB per turn to `TuningMessage.parts`; off by default. The dump script flags whether traces are present at the top of the output.
 
 ## Testing AI Behaviour End-to-End
 

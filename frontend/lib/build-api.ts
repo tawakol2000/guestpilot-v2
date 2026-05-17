@@ -413,6 +413,17 @@ export interface TestPipelineVariant {
   judgeReasoning: string
   judgeScore: number
   judgeFailureCategory?: string | null
+  /**
+   * 2026-05-17: per-axis "did the intended change land?" verdict —
+   * present only when the agent passed `verificationIntent` to
+   * studio_test_pipeline. Separate from the overall `verdict` /
+   * `judgeScore` axis so a reply that adopts a new wording correctly
+   * but has unrelated quality issues can show "intent: passed" next
+   * to "overall: failed".
+   */
+  intentLanded?: 'passed' | 'partial' | 'failed' | null
+  /** One-sentence rationale for the intentLanded verdict (judge-supplied). */
+  intentRationale?: string | null
   judgePromptVersion: string
   judgeModel: string
   replyModel: string
@@ -421,6 +432,7 @@ export interface TestPipelineVariant {
 }
 
 export type AggregateVerdict = 'all_passed' | 'partial' | 'all_failed'
+export type IntentAggregate = 'passed' | 'partial' | 'failed'
 
 export interface SourceWriteLabel {
   artifactType: BuildArtifactType | 'tool_definition'
@@ -432,6 +444,15 @@ export interface TestPipelineResultData {
   ok: boolean
   variants: TestPipelineVariant[]
   aggregateVerdict: AggregateVerdict
+  /**
+   * 2026-05-17: present only when at least one variant returned an
+   * intentLanded verdict (i.e. the agent passed `verificationIntent`).
+   * UI renders this AS THE PRIMARY VERDICT when set, demoting
+   * `aggregateVerdict` to a secondary "overall quality" chip — because
+   * without it, an unrelated quality bug drags the overall score down
+   * and the operator can't tell whether their specific edit landed.
+   */
+  intentAggregate?: IntentAggregate | null
   ritualVersion: string
   /** History row id when this ran inside a ritual window; null otherwise. */
   sourceWriteHistoryId: string | null

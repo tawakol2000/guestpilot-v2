@@ -17,6 +17,7 @@ import {
 import { STUDIO_TOKENS_V2 } from './tokens'
 import { BrandAsteriskIcon, HotelIcon, PlusIcon, SearchIcon } from './icons'
 import { displaySessionTitle } from './session-autoname'
+import { NewChatModeChooser, type StudioStartMode } from './new-chat-mode-chooser'
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -71,32 +72,44 @@ export function LeftRailV2({
     refresh()
   }, [refresh])
 
-  const startNew = useCallback(async () => {
-    try {
-      const { conversation } = await apiCreateTuningConversation({
-        triggerType: 'MANUAL',
-        title: 'Studio session',
-      })
-      setItems((list) => [
-        {
-          id: conversation.id,
-          title: conversation.title,
-          anchorMessageId: null,
-          triggerType: conversation.triggerType,
-          status: 'OPEN',
-          messageCount: 0,
-          createdAt: conversation.createdAt,
-          updatedAt: conversation.createdAt,
-        },
-        ...list,
-      ])
-      onSelect(conversation.id)
-    } catch (err) {
-      toast.error('Couldn’t start a new Studio session', {
-        description: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }, [onSelect])
+  // 2026-05-17: mode is fixed at chat creation. Tuning vs Building used
+  // to be a toggle in the top bar; flipping mid-chat silently mutated
+  // the persisted snapshot and broke the operator's mental model. Now
+  // we open a chooser before creating the session and lock the mode.
+  const [chooserOpen, setChooserOpen] = useState(false)
+  const openChooser = useCallback(() => setChooserOpen(true), [])
+
+  const createSession = useCallback(
+    async (mode: StudioStartMode) => {
+      try {
+        const { conversation } = await apiCreateTuningConversation({
+          triggerType: 'MANUAL',
+          title: mode === 'TUNE' ? 'Tuning session' : 'Building session',
+          initialOuterMode: mode,
+        })
+        setItems((list) => [
+          {
+            id: conversation.id,
+            title: conversation.title,
+            anchorMessageId: null,
+            triggerType: conversation.triggerType,
+            status: 'OPEN',
+            messageCount: 0,
+            createdAt: conversation.createdAt,
+            updatedAt: conversation.createdAt,
+          },
+          ...list,
+        ])
+        onSelect(conversation.id)
+        setChooserOpen(false)
+      } catch (err) {
+        toast.error('Couldn’t start a new Studio session', {
+          description: err instanceof Error ? err.message : String(err),
+        })
+      }
+    },
+    [onSelect],
+  )
 
   // Sprint 046 bug-fix — previously `now = Date.now()` was called on
   // every render and passed as a useMemo dep. The dep changed every
@@ -200,7 +213,7 @@ export function LeftRailV2({
         </div>
         <button
           type="button"
-          onClick={startNew}
+          onClick={openChooser}
           aria-label="Start a new Studio session"
           style={{
             width: 28,
@@ -259,7 +272,7 @@ export function LeftRailV2({
       <div style={{ margin: '6px 10px 10px' }}>
         <button
           type="button"
-          onClick={startNew}
+          onClick={openChooser}
           aria-label="Start a new Studio session"
           style={{
             display: 'inline-flex',
@@ -426,6 +439,13 @@ export function LeftRailV2({
           </span>
         </div>
       </footer>
+
+      {chooserOpen ? (
+        <NewChatModeChooser
+          onClose={() => setChooserOpen(false)}
+          onPick={createSession}
+        />
+      ) : null}
     </div>
   )
 }

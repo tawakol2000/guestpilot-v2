@@ -144,6 +144,28 @@ export function isRawPromptEditorEnabled(): boolean {
 }
 
 /**
+ * 2026-05-17 — Studio per-turn debug trace persistence.
+ *
+ * When enabled, every assistant turn persists a `data-debug-trace` part
+ * into TuningMessage.parts with the assembled system prompt + per-region
+ * sizes + model + provider + usage. Lets `scripts/dump-studio-conversation.ts`
+ * recover the EXACT prompt the agent saw at a historical turn (otherwise
+ * the dump reconstructs using current templates, which drift).
+ *
+ * Storage cost: ~30 KiB per assistant turn (uncompressed). Off by default
+ * because it pads TuningMessage.parts noticeably for long-running sessions;
+ * flip on per-tenant or globally when debugging a flaky agent.
+ *
+ * Truthy values: '1', 'true', 'yes', 'on' (case-insensitive).
+ */
+export function isStudioDebugTraceEnabled(): boolean {
+  const raw = process.env.STUDIO_DEBUG_TRACE;
+  if (!raw) return false;
+  const n = raw.trim().toLowerCase();
+  return n === '1' || n === 'true' || n === 'yes' || n === 'on';
+}
+
+/**
  * Boundary markers embedded into the assembled system prompt. They cost
  * ~30 tokens each and serve as (1) visual debugging aids and (2) future
  * switch points: if a later sprint bypasses the Agent SDK and calls

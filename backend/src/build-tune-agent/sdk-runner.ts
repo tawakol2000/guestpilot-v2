@@ -43,6 +43,7 @@ import {
   isBuildModeEnabled,
   buildModeDisabledReason,
   resolveTuningAgentModel,
+  isStudioDebugTraceEnabled,
 } from './config';
 import {
   runWithAiTrace,
@@ -466,6 +467,33 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     }
   };
 
+  // 2026-05-17: opt-in per-turn debug trace. When STUDIO_DEBUG_TRACE is
+  // truthy, persist the exact system prompt the agent sees this turn,
+  // plus turn metadata, into TuningMessage.parts. The dump script reads
+  // this so future debugging sees the byte-exact prompt — no
+  // reconstruction drift from template/state changes after the fact.
+  // Pushed DIRECTLY to persistedDataParts (not via emitDataPart) so the
+  // 30 KiB payload doesn't ride the SSE wire to the browser uselessly.
+  if (isStudioDebugTraceEnabled()) {
+    persistedDataParts.push({
+      type: 'data-debug-trace',
+      id: `debug-trace:${input.assistantMessageId}`,
+      data: {
+        capturedAt: new Date().toISOString(),
+        turnNumber,
+        mode,
+        provider: 'anthropic',
+        model: input.modelOverride ?? null,
+        sdkSessionId: conversation.sdkSessionId ?? null,
+        turnStartSnapshot,
+        systemPromptBytes: systemPrompt.length,
+        systemPrompt,
+        userMessage: input.userMessage,
+        allowedToolCount: allowedTools.length,
+      },
+    });
+  }
+
   const turnFlags: Record<string, boolean> = {};
   const toolCtx: ToolContext = {
     prisma: input.prisma,
@@ -768,8 +796,22 @@ export async function runSdkTurn(input: RunTurnInput): Promise<RunTurnResult> {
     const testPipelineSucceeded = toolCallsSucceeded.includes(
       TUNING_AGENT_TOOL_NAMES.studio_test_pipeline,
     );
+    // 2026-05-17 fix: re-fetch the snapshot so mid-turn writes from
+    // studio_propose_transition (which sets pending_transition) are
+    // preserved by the spread inside computeTurnEndSnapshot. Spreading
+    // from the stale turnStartSnapshot used to silently overwrite the
+    // fresh pending_transition, leaving the operator's confirm button
+    // pointing at a null pending → NO_PENDING_TRANSITION 409.
+    const fresh = await input.prisma.tuningConversation.findFirst({
+      where: { id: input.conversationId, tenantId: input.tenantId },
+      select: { stateMachineSnapshot: true },
+    });
+    const currentSnapshot = fresh
+      ? coerceSnapshot(fresh.stateMachineSnapshot ?? null, mode)
+      : turnStartSnapshot;
     const next = computeTurnEndSnapshot({
       startSnapshot: turnStartSnapshot,
+      currentSnapshot,
       testPipelineSucceeded,
     });
     if (next) {

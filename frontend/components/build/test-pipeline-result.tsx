@@ -24,6 +24,7 @@ import {
   apiRevertArtifactFromHistory,
   type AggregateVerdict,
   type BuildArtifactType,
+  type IntentAggregate,
   type TestPipelineResultData,
   type TestPipelineVariant,
 } from '@/lib/build-api'
@@ -88,6 +89,18 @@ export function TestPipelineResult(props: TestPipelineResultProps) {
           historyId={data.sourceWriteHistoryId}
           label={sourceWriteLabel}
           onClick={onOpenSourceWrite}
+        />
+      ) : null}
+
+      {/* 2026-05-17: Intent-aggregate banner — appears AT THE TOP when
+          the agent passed verificationIntent. Frames the verdict the
+          way operators think about it ("did MY edit land?"), so an
+          unrelated quality issue dragging the overall score doesn't
+          read as "the fix you made failed". */}
+      {data.intentAggregate ? (
+        <IntentAggregateBanner
+          intent={data.intentAggregate}
+          overall={aggregate}
         />
       ) : null}
 
@@ -157,6 +170,32 @@ export function TestPipelineResult(props: TestPipelineResultProps) {
               className="text-[13px] leading-5"
               style={attributedStyle('ai')}
             >
+              {/* Intent chip (new) — when verificationIntent was passed,
+                  show the per-axis verdict inline before the overall
+                  judge reasoning. */}
+              {v.intentLanded ? (
+                <span
+                  className="mr-1.5 inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    background:
+                      v.intentLanded === 'passed'
+                        ? '#ECFDF5'
+                        : v.intentLanded === 'partial'
+                        ? '#FEF3C7'
+                        : '#FEE2E2',
+                    color:
+                      v.intentLanded === 'passed'
+                        ? TUNING_COLORS.successFg
+                        : v.intentLanded === 'partial'
+                        ? TUNING_COLORS.warnFg
+                        : TUNING_COLORS.dangerFg,
+                    border: '1px solid currentColor',
+                  }}
+                  title={v.intentRationale ?? 'Per-axis verdict for the change you were verifying'}
+                >
+                  Intent: {v.intentLanded}
+                </span>
+              ) : null}
               <span
                 className="mr-1.5 font-semibold"
                 style={{
@@ -266,6 +305,75 @@ function computeAggregate(passed: number, failed: number): AggregateVerdict {
   if (passed > 0 && failed === 0) return 'all_passed'
   if (passed === 0) return 'all_failed'
   return 'partial'
+}
+
+function IntentAggregateBanner({
+  intent,
+  overall,
+}: {
+  intent: IntentAggregate
+  overall: AggregateVerdict
+}) {
+  // The point of this banner is to tell the operator, FIRST, whether
+  // the specific change they made landed — independent of unrelated
+  // quality issues in the reply. When intent passes but overall fails,
+  // we explicitly call that out so they don't read the card as "the
+  // fix you made didn't work".
+  const intentPassed = intent === 'passed'
+  const intentPartial = intent === 'partial'
+  const bg = intentPassed ? '#ECFDF5' : intentPartial ? '#FEF3C7' : '#FEE2E2'
+  const fg = intentPassed
+    ? TUNING_COLORS.successFg
+    : intentPartial
+      ? TUNING_COLORS.warnFg
+      : TUNING_COLORS.dangerFg
+  const headline = intentPassed
+    ? 'Your edit landed.'
+    : intentPartial
+      ? 'Your edit landed in some variants.'
+      : 'Your edit did not land.'
+  const subtitle =
+    intentPassed && overall !== 'all_passed'
+      ? 'The change you asked for is visible in every reply. The overall judge verdict below flagged OTHER issues unrelated to this edit — treat those as separate follow-ups, not as "the fix failed".'
+      : intentPassed
+        ? 'The change you asked for is visible in every reply, and the overall judge verdict also passed.'
+        : intentPartial
+          ? 'The change shows up in some replies but not others. See per-variant detail below to decide whether to iterate or accept partial coverage.'
+          : "The change you asked for isn't visible in any reply. Re-read the artifact and confirm the right section was edited before re-attempting."
+  return (
+    <div
+      data-testid="test-pipeline-result-intent-banner"
+      data-intent={intent}
+      style={{
+        background: bg,
+        borderBottom: `1px solid ${TUNING_COLORS.hairlineSoft}`,
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          marginTop: 2,
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: fg,
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: fg, letterSpacing: '-0.005em' }}>
+          {headline}
+        </span>
+        <span style={{ fontSize: 12, color: TUNING_COLORS.inkMuted, lineHeight: 1.5 }}>
+          {subtitle}
+        </span>
+      </div>
+    </div>
+  )
 }
 
 function SourceWriteChip({
