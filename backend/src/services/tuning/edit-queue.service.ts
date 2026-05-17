@@ -26,13 +26,9 @@ import {
   TuningConversationTriggerType,
 } from '@prisma/client';
 import { runDiagnostic } from './diagnostic.service';
-import {
-  writeSuggestionFromDiagnostic,
-  probeRecentHighCooldownAcceptance,
-} from './suggestion-writer.service';
+import { writeSuggestionFromDiagnostic } from './suggestion-writer.service';
 import {
   classifyEditCategory,
-  expandToFullCategories,
   type PreClassifierResult,
 } from './category-pre-classifier.service';
 import { logTuningDiagnosticFailure } from './diagnostic-failure-log';
@@ -153,36 +149,31 @@ export async function analyzeQueueItem(
   queueItemId: string,
   tenantId: string,
   prisma: PrismaClient,
-  options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; status: TuningEditQueueStatus; suggestionId: string | null } | null> {
   const item = await prisma.tuningEditQueue.findFirst({
     where: { id: queueItemId, tenantId },
   });
   if (!item) return null;
 
-  // Allowed source states: PENDING (initial manual trigger) and the two
-  // skip outcomes when `force=true` (manager wants to override the cheap
-  // gate). Anything else (ANALYZING, ANALYZED, FAILED, DISMISSED) returns
-  // the current state untouched.
-  const skipReanalyzable = item.status === 'SKIPPED_NO_FIX' || item.status === 'SKIPPED_COOLDOWN';
-  const canRun = item.status === 'PENDING' || (options.force && skipReanalyzable);
-  if (!canRun) {
+  // Manual trigger only runs PENDING rows. The skipped (NO_FIX) and
+  // terminal (ANALYZED / FAILED / DISMISSED) states return the current
+  // state untouched. NO_FIX rows are intentionally not re-runnable — the
+  // pre-classifier already decided this edit isn't a real fix.
+  if (item.status !== 'PENDING') {
     return { ok: false, status: item.status, suggestionId: item.suggestionId };
   }
 
-  // Re-derive the pre-classifier result from persisted fields so we can pass
-  // it to the analysis runner. When `force=true` we null this out so the
-  // skip gates inside runAnalysisForQueueItem don't fire again.
-  const preClass: PreClassifierResult | null =
-    options.force || !item.preClassifierCategory
-      ? null
-      : {
-          category: item.preClassifierCategory as PreClassifierResult['category'],
-          confidence: item.preClassifierConfidence ?? 0,
-          rationale: item.preClassifierRationale ?? '',
-          modelUsed: item.preClassifierModel ?? 'unknown',
-          latencyMs: 0,
-        };
+  // Re-derive the pre-classifier result from persisted fields so we can
+  // pass it to the analysis runner.
+  const preClass: PreClassifierResult | null = item.preClassifierCategory
+    ? {
+        category: item.preClassifierCategory as PreClassifierResult['category'],
+        confidence: item.preClassifierConfidence ?? 0,
+        rationale: item.preClassifierRationale ?? '',
+        modelUsed: item.preClassifierModel ?? 'unknown',
+        latencyMs: 0,
+      }
+    : null;
 
   // Move → ANALYZING and run the diagnostic synchronously so the HTTP
   // caller gets the outcome in the same response.
@@ -268,29 +259,10 @@ async function runAnalysisForQueueItem(
       return;
     }
 
-    // Skip path 2: predicted category recently accepted (48h cooldown).
-    if (preClass && preClass.category !== 'NO_FIX' && preClass.confidence >= 0.6) {
-      const scope = expandToFullCategories(preClass.category);
-      const probe = await probeRecentHighCooldownAcceptance(prisma, input.tenantId, scope);
-      if (probe) {
-        const msg =
-          `pre-classifier: ${preClass.category} (conf=${preClass.confidence.toFixed(2)}) — ` +
-          `${probe.category}/${probe.targetLabel} accepted at ${probe.appliedAt.toISOString()} ` +
-          `(within 48h cooldown)`;
-        console.log(`${stamp} ${msg}. Saved ~$0.21 + ~120s.`);
-        await prisma.tuningEditQueue
-          .update({
-            where: { id: queueItemId },
-            data: {
-              status: 'SKIPPED_COOLDOWN',
-              skipReason: msg,
-              analyzedAt: new Date(),
-            },
-          })
-          .catch(() => {});
-        return;
-      }
-    }
+    // 2026-05-17: cooldown removed per operator request. Previously a 48h
+    // probe short-circuited when the predicted category had a recent
+    // ACCEPTED suggestion. Operator wanted every real edit analyzed.
+    // Only NO_FIX (skip path 1 above) still gates the diagnostic spend.
 
     // Full diagnostic run.
     const result = await runDiagnostic(

@@ -1,18 +1,17 @@
 'use client'
 
 /**
- * Tuning Edit Queue section (2026-05-17).
+ * Tuning Edit Queue section (2026-05-17, redesign).
  *
- * Renders above the existing Suggestions list. Two visible buckets:
- *   - "Pending analysis" — edits captured in manual mode (or auto-mode runs
- *     that haven't yet completed). Each card exposes "Run analysis" and
- *     "Dismiss" actions.
- *   - "Recently analyzed" (collapsed by default) — short history of items
- *     that were already run, with their outcome (suggestion id, skipped,
- *     failed). Lets the operator double-check whether a recent edit landed.
- *
- * Lives in its own file so the (already-large) suggestions-tab.tsx stays
- * scannable.
+ * Visual goals:
+ *   - Match the studio suggestion-card aesthetic (hairline cards on white,
+ *     same radius / shadow / typography).
+ *   - One header, one count. No nested toggle clutter.
+ *   - Pending: card with the AFTER text prominent, original tucked under
+ *     a "vs original" disclosure. Single primary CTA + dismiss.
+ *   - Processed: compact one-line rows with a status dot and the edited
+ *     text. Click to expand into a clean detail card with the diagnostic
+ *     outcome — NOT a wall of debugging text.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -35,8 +34,9 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
   const [pending, setPending] = useState<TuningQueueItem[]>([])
   const [analyzed, setAnalyzed] = useState<TuningQueueItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [rowBusy, setRowBusy] = useState<Record<string, 'analyzing' | 'dismissing'>>({})
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -47,7 +47,6 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
       setPending(p.items)
       setAnalyzed(a.items)
     } catch (e) {
-      // Silent: queue is supplementary; failure shouldn't blank the panel.
       console.warn('[EditQueue] list failed:', e)
     } finally {
       setLoading(false)
@@ -59,22 +58,20 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
   }, [refresh])
 
   const handleAnalyze = useCallback(
-    async (item: TuningQueueItem, options: { force?: boolean } = {}) => {
+    async (item: TuningQueueItem) => {
       setRowBusy((m) => ({ ...m, [item.id]: 'analyzing' }))
       try {
-        const res = await apiAnalyzeTuningQueueItem(item.id, options)
+        const res = await apiAnalyzeTuningQueueItem(item.id)
         toast.success('Analysis complete', {
           description:
-            res.status === 'ANALYZED'
-              ? res.suggestionId
-                ? 'A new tuning suggestion is below.'
-                : 'No fix proposed.'
-              : prettyStatus(res.status),
+            res.status === 'ANALYZED' && res.suggestionId
+              ? 'New suggestion below.'
+              : 'No fix was needed for this edit.',
         })
         await refresh()
         if (onAnalyzed) onAnalyzed()
       } catch (e) {
-        toast.error('Could not run analysis', {
+        toast.error('Analysis failed', {
           description: e instanceof Error ? e.message : String(e),
         })
       } finally {
@@ -107,8 +104,6 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
     [refresh],
   )
 
-  const headerCount = pending.length
-
   if (loading) return null
   if (pending.length === 0 && analyzed.length === 0) return null
 
@@ -118,11 +113,11 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        paddingBottom: 12,
+        paddingBottom: 14,
         borderBottom: `1px solid ${STUDIO_TOKENS_V2.border}`,
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <header style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span
           style={{
             fontSize: 10.5,
@@ -134,28 +129,24 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
         >
           Edit queue
         </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: STUDIO_TOKENS_V2.muted,
-          }}
-        >
-          {headerCount === 0
-            ? `${analyzed.length} recent edit${analyzed.length === 1 ? '' : 's'} processed`
-            : `${headerCount} pending · ${analyzed.length} processed`}
+        <span style={{ fontSize: 11.5, color: STUDIO_TOKENS_V2.muted }}>
+          {pending.length > 0
+            ? `${pending.length} waiting${analyzed.length ? ` · ${analyzed.length} done` : ''}`
+            : `${analyzed.length} processed`}
         </span>
       </header>
 
       {pending.length > 0 ? (
         <ul style={listReset}>
           {pending.map((item) => (
-            <PendingCard
-              key={item.id}
-              item={item}
-              busy={rowBusy[item.id]}
-              onAnalyze={() => void handleAnalyze(item)}
-              onDismiss={() => void handleDismiss(item)}
-            />
+            <li key={item.id} style={{ listStyle: 'none', marginBottom: 8 }}>
+              <PendingCard
+                item={item}
+                busy={rowBusy[item.id]}
+                onAnalyze={() => void handleAnalyze(item)}
+                onDismiss={() => void handleDismiss(item)}
+              />
+            </li>
           ))}
         </ul>
       ) : null}
@@ -165,7 +156,19 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
           <button
             type="button"
             onClick={() => setHistoryOpen((v) => !v)}
-            style={historyToggleStyle}
+            aria-expanded={historyOpen}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 0',
+              fontSize: 11.5,
+              fontWeight: 500,
+              color: STUDIO_TOKENS_V2.muted,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+            }}
           >
             <ChevronDownIcon
               size={11}
@@ -174,15 +177,16 @@ export function EditQueueSection({ onAnalyzed }: EditQueueSectionProps) {
                 transition: 'transform 140ms ease',
               }}
             />
-            Recently analyzed ({analyzed.length})
+            History ({analyzed.length})
           </button>
           {historyOpen ? (
-            <ul style={{ ...listReset, marginTop: 8 }}>
+            <ul style={{ ...listReset, marginTop: 6 }}>
               {analyzed.map((item) => (
-                <AnalyzedRow
+                <ProcessedRow
                   key={item.id}
                   item={item}
-                  onForceAnalyze={(i) => handleAnalyze(i, { force: true })}
+                  expanded={expandedRow === item.id}
+                  onToggle={() => setExpandedRow((x) => (x === item.id ? null : item.id))}
                 />
               ))}
             </ul>
@@ -206,112 +210,112 @@ function PendingCard({
   onAnalyze: () => void
   onDismiss: () => void
 }) {
+  const [showOriginal, setShowOriginal] = useState(false)
   const cat = item.preClassifierCategory
-  const conf = item.preClassifierConfidence ?? null
   const triggerColor =
     item.triggerType === 'REJECT_TRIGGERED' ? STUDIO_TOKENS_V2.red : STUDIO_TOKENS_V2.amber
 
   return (
-    <li
+    <article
       style={{
-        listStyle: 'none',
         border: `1px solid ${STUDIO_TOKENS_V2.border}`,
         borderRadius: STUDIO_TOKENS_V2.radiusLg,
         background: STUDIO_TOKENS_V2.bg,
-        padding: 12,
+        padding: '12px 14px',
         boxShadow: STUDIO_TOKENS_V2.shadowSm,
-        marginBottom: 8,
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 10,
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
+          aria-hidden
           style={{
-            fontSize: 10.5,
-            fontWeight: 600,
-            padding: '2px 7px',
+            width: 6,
+            height: 6,
             borderRadius: 999,
-            background: cat ? STUDIO_TOKENS_V2.blueSoft : STUDIO_TOKENS_V2.surface2,
-            color: cat ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.muted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
+            background: triggerColor,
+            flexShrink: 0,
           }}
-        >
-          {cat ? formatCat(cat) : 'unclassified'}
+        />
+        <span style={{ fontSize: 11.5, color: STUDIO_TOKENS_V2.muted2, fontWeight: 500 }}>
+          {item.triggerType === 'REJECT_TRIGGERED' ? 'Rewrote AI draft' : 'Edited AI draft'}
         </span>
-        {conf !== null ? (
-          <span style={{ fontSize: 10.5, color: STUDIO_TOKENS_V2.muted2 }}>
-            conf {(conf * 100).toFixed(0)}%
+        {cat ? (
+          <span style={{ fontSize: 11, color: STUDIO_TOKENS_V2.muted }}>
+            · likely {prettyCategory(cat)}
           </span>
         ) : null}
-        <span
-          style={{
-            fontSize: 10.5,
-            color: STUDIO_TOKENS_V2.muted,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <span
-            aria-hidden
-            style={{ width: 5, height: 5, borderRadius: 999, background: triggerColor }}
-          />
-          {item.triggerType === 'REJECT_TRIGGERED' ? 'wholesale rewrite' : 'edit'}
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: STUDIO_TOKENS_V2.muted2 }}>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: STUDIO_TOKENS_V2.muted2 }}>
           {formatAge(item.createdAt)}
         </span>
       </header>
 
-      <DiffPair before={item.originalText} after={item.editedText} />
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          lineHeight: 1.55,
+          color: STUDIO_TOKENS_V2.ink,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {item.editedText}
+      </p>
 
-      {item.preClassifierRationale ? (
+      <button
+        type="button"
+        onClick={() => setShowOriginal((v) => !v)}
+        aria-expanded={showOriginal}
+        style={{
+          alignSelf: 'flex-start',
+          padding: '2px 0',
+          fontSize: 11,
+          fontWeight: 500,
+          color: STUDIO_TOKENS_V2.muted,
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          gap: 4,
+          alignItems: 'center',
+        }}
+      >
+        <ChevronDownIcon
+          size={10}
+          style={{
+            transform: showOriginal ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 140ms ease',
+          }}
+        />
+        {showOriginal ? 'Hide original AI draft' : 'Show original AI draft'}
+      </button>
+      {showOriginal ? (
         <p
           style={{
             margin: 0,
-            fontSize: 11.5,
+            padding: '8px 10px',
+            fontSize: 12.5,
             lineHeight: 1.5,
-            color: STUDIO_TOKENS_V2.ink2,
+            color: STUDIO_TOKENS_V2.muted,
+            background: STUDIO_TOKENS_V2.surface,
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
           }}
         >
-          <span
-            style={{
-              color: STUDIO_TOKENS_V2.muted2,
-              fontWeight: 600,
-              fontSize: 10,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              marginRight: 6,
-            }}
-          >
-            Pre-classifier
-          </span>
-          {item.preClassifierRationale}
+          {item.originalText}
         </p>
       ) : null}
 
-      <footer style={{ display: 'flex', gap: 6 }}>
+      <footer style={{ display: 'flex', gap: 6, paddingTop: 2 }}>
         <button
           type="button"
           onClick={onAnalyze}
           disabled={!!busy}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#ffffff',
-            background: STUDIO_TOKENS_V2.blue,
-            border: '1px solid transparent',
-            borderRadius: STUDIO_TOKENS_V2.radiusSm,
-            cursor: busy ? 'default' : 'pointer',
-            opacity: busy ? 0.7 : 1,
-          }}
+          style={primaryBtn(busy === 'analyzing')}
         >
           <SparkleIcon size={12} />
           {busy === 'analyzing' ? 'Analyzing…' : 'Run analysis'}
@@ -320,91 +324,65 @@ function PendingCard({
           type="button"
           onClick={onDismiss}
           disabled={!!busy}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            fontSize: 12,
-            fontWeight: 500,
-            color: STUDIO_TOKENS_V2.ink2,
-            background: STUDIO_TOKENS_V2.bg,
-            border: `1px solid ${STUDIO_TOKENS_V2.border}`,
-            borderRadius: STUDIO_TOKENS_V2.radiusSm,
-            cursor: busy ? 'default' : 'pointer',
-            opacity: busy ? 0.6 : 1,
-          }}
+          style={ghostBtn(busy === 'dismissing')}
         >
           <CloseIcon size={12} />
           {busy === 'dismissing' ? 'Dismissing…' : 'Dismiss'}
         </button>
       </footer>
-    </li>
+    </article>
   )
 }
 
-// ─── Analyzed history row (collapsible) ─────────────────────────────────────
+// ─── Processed row (compact, expandable) ────────────────────────────────────
 
-function AnalyzedRow({
+function ProcessedRow({
   item,
-  onForceAnalyze,
+  expanded,
+  onToggle,
 }: {
   item: TuningQueueItem
-  onForceAnalyze: (item: TuningQueueItem) => Promise<void>
+  expanded: boolean
+  onToggle: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const verdict = describeAnalyzedOutcome(item)
-  const explainer = explainAnalyzedOutcome(item)
-  const canForce = item.status === 'SKIPPED_COOLDOWN' || item.status === 'SKIPPED_NO_FIX'
+  const verdict = describeOutcome(item)
 
   return (
     <li
       style={{
         listStyle: 'none',
         borderTop: `1px solid ${STUDIO_TOKENS_V2.border}`,
-        fontSize: 11.5,
-        color: STUDIO_TOKENS_V2.ink2,
       }}
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        onClick={onToggle}
+        aria-expanded={expanded}
         style={{
           width: '100%',
           display: 'flex',
-          gap: 8,
+          gap: 10,
           alignItems: 'center',
-          padding: '8px 10px',
+          padding: '8px 0',
           background: 'transparent',
           border: 'none',
           cursor: 'pointer',
           textAlign: 'left',
+          fontSize: 12,
+          color: STUDIO_TOKENS_V2.ink2,
         }}
       >
-        <ChevronDownIcon
-          size={11}
+        <span
+          aria-hidden
           style={{
-            color: STUDIO_TOKENS_V2.muted,
-            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-            transition: 'transform 140ms ease',
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            background: verdict.dotColor,
             flexShrink: 0,
           }}
         />
-        <span
-          style={{
-            fontSize: 9.5,
-            fontWeight: 600,
-            padding: '2px 6px',
-            borderRadius: 4,
-            background: verdict.bg,
-            color: verdict.fg,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            flexShrink: 0,
-          }}
-        >
+        <span style={{ fontSize: 11.5, color: STUDIO_TOKENS_V2.muted2, flexShrink: 0, minWidth: 90 }}>
           {verdict.label}
         </span>
         <span
@@ -413,7 +391,7 @@ function AnalyzedRow({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            color: STUDIO_TOKENS_V2.muted,
+            color: STUDIO_TOKENS_V2.ink2,
           }}
         >
           {item.editedText}
@@ -422,91 +400,55 @@ function AnalyzedRow({
           {formatAge(item.analyzedAt ?? item.createdAt)}
         </span>
       </button>
-      {open ? (
-        <div style={{ padding: '0 12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p
+      {expanded ? (
+        <div style={{ padding: '0 0 12px 16px' }}>
+          <div
             style={{
-              margin: 0,
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: STUDIO_TOKENS_V2.ink2,
+              padding: '10px 12px',
+              background: STUDIO_TOKENS_V2.surface,
+              borderRadius: STUDIO_TOKENS_V2.radiusMd,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
             }}
           >
-            {explainer}
-          </p>
-          <DiffPair before={item.originalText} after={item.editedText} />
-          {item.skipReason ? (
             <p
               style={{
                 margin: 0,
-                fontSize: 11,
-                lineHeight: 1.5,
-                color: STUDIO_TOKENS_V2.muted2,
-                fontStyle: 'italic',
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: STUDIO_TOKENS_V2.ink2,
               }}
             >
-              <span
+              {verdict.explainer}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: STUDIO_TOKENS_V2.ink,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {item.editedText}
+            </p>
+            {item.errorMessage ? (
+              <p
                 style={{
-                  fontStyle: 'normal',
-                  fontWeight: 600,
-                  fontSize: 10,
-                  color: STUDIO_TOKENS_V2.muted2,
-                  marginRight: 6,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
+                  margin: 0,
+                  fontSize: 11.5,
+                  color: STUDIO_COLORS.dangerFg,
+                  background: STUDIO_COLORS.dangerBg,
+                  padding: '6px 8px',
+                  borderRadius: STUDIO_TOKENS_V2.radiusSm,
                 }}
               >
-                Detail
-              </span>
-              {item.skipReason}
-            </p>
-          ) : null}
-          {item.errorMessage ? (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 11,
-                color: STUDIO_COLORS.dangerFg,
-                background: STUDIO_COLORS.dangerBg,
-                padding: '6px 8px',
-                borderRadius: STUDIO_TOKENS_V2.radiusSm,
-              }}
-            >
-              {item.errorMessage}
-            </p>
-          ) : null}
-          {canForce ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  await onForceAnalyze(item)
-                } finally {
-                  setBusy(false)
-                }
-              }}
-              style={{
-                alignSelf: 'flex-start',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 10px',
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: '#ffffff',
-                background: STUDIO_TOKENS_V2.blue,
-                border: '1px solid transparent',
-                borderRadius: STUDIO_TOKENS_V2.radiusSm,
-                cursor: busy ? 'default' : 'pointer',
-                opacity: busy ? 0.7 : 1,
-              }}
-            >
-              <SparkleIcon size={11} />
-              {busy ? 'Re-running…' : 'Run full analysis anyway'}
-            </button>
-          ) : null}
+                {item.errorMessage}
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </li>
@@ -515,119 +457,81 @@ function AnalyzedRow({
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function DiffPair({ before, after }: { before: string; after: string }) {
-  const mono =
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace'
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <DiffLine kind="before" text={before} mono={mono} />
-      <DiffLine kind="after" text={after} mono={mono} />
-    </div>
-  )
-}
-
-function DiffLine({
-  kind,
-  text,
-  mono,
-}: {
-  kind: 'before' | 'after'
-  text: string
-  mono: string
-}) {
-  const isAfter = kind === 'after'
-  return (
-    <div
-      style={{
-        border: `1px solid ${isAfter ? 'rgba(10, 91, 255, 0.18)' : 'rgba(220, 38, 38, 0.18)'}`,
-        background: isAfter ? STUDIO_TOKENS_V2.diffAddBg : STUDIO_TOKENS_V2.diffDelBg,
-        color: isAfter ? STUDIO_TOKENS_V2.diffAddFg : STUDIO_TOKENS_V2.diffDelFg,
-        borderRadius: STUDIO_TOKENS_V2.radiusSm,
-        padding: '6px 8px',
-        fontFamily: mono,
-        fontSize: 11.5,
-        lineHeight: 1.5,
-        maxHeight: 100,
-        overflow: 'auto',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
-      {text}
-    </div>
-  )
-}
-
-function describeAnalyzedOutcome(item: TuningQueueItem): {
+function describeOutcome(item: TuningQueueItem): {
   label: string
-  bg: string
-  fg: string
+  dotColor: string
+  explainer: string
 } {
   switch (item.status) {
     case 'ANALYZED':
       if (item.suggestion) {
-        return { label: 'Suggestion ready', bg: STUDIO_TOKENS_V2.blueSoft, fg: STUDIO_TOKENS_V2.blue }
+        return {
+          label: 'Suggestion ready',
+          dotColor: STUDIO_TOKENS_V2.blue,
+          explainer: 'A new tuning suggestion was created. Find it in the list below.',
+        }
       }
-      return { label: 'No change needed', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
+      return {
+        label: 'No change needed',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer:
+          "Analysis ran but didn't propose a fix — your edit didn't reveal a pattern worth changing.",
+      }
     case 'SKIPPED_NO_FIX':
       return {
         label: 'Polish only',
-        bg: STUDIO_TOKENS_V2.surface2,
-        fg: STUDIO_TOKENS_V2.muted,
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer:
+          'This looked like a wording polish, so the full analysis was skipped. If you want a real tuning fix, dismiss this and edit again with a clearer change.',
       }
     case 'SKIPPED_COOLDOWN':
       return {
-        label: 'Already addressed',
-        bg: STUDIO_TOKENS_V2.surface2,
-        fg: STUDIO_TOKENS_V2.muted,
+        label: 'Skipped (legacy)',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer:
+          'Legacy cooldown skip. The cooldown was removed; this row is here for history only.',
       }
     case 'DISMISSED':
-      return { label: 'Dismissed', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted2 }
+      return {
+        label: 'Dismissed',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer: 'You dismissed this edit without running analysis.',
+      }
     case 'FAILED':
-      return { label: 'Failed', bg: STUDIO_COLORS.dangerBg, fg: STUDIO_COLORS.dangerFg }
+      return {
+        label: 'Failed',
+        dotColor: STUDIO_TOKENS_V2.red,
+        explainer: 'Analysis crashed. See the error message below.',
+      }
     case 'ANALYZING':
-      return { label: 'Running…', bg: STUDIO_TOKENS_V2.blueSoft, fg: STUDIO_TOKENS_V2.blue }
+      return {
+        label: 'Running…',
+        dotColor: STUDIO_TOKENS_V2.blue,
+        explainer: 'Analysis is in flight.',
+      }
     case 'PENDING':
     default:
-      return { label: 'Pending', bg: STUDIO_TOKENS_V2.surface2, fg: STUDIO_TOKENS_V2.muted }
-  }
-}
-
-function prettyStatus(s: string): string {
-  switch (s) {
-    case 'SKIPPED_NO_FIX':
-      return 'Pre-classifier said NO_FIX — diagnostic skipped.'
-    case 'SKIPPED_COOLDOWN':
-      return 'Recent similar fix on cooldown — diagnostic skipped.'
-    case 'FAILED':
-      return 'Diagnostic failed.'
-    default:
-      return s
-  }
-}
-
-function explainAnalyzedOutcome(item: TuningQueueItem): string {
-  switch (item.status) {
-    case 'ANALYZED':
-      if (item.suggestion) {
-        return 'Analysis produced a tuning suggestion. See the list below.'
+      return {
+        label: 'Pending',
+        dotColor: STUDIO_TOKENS_V2.amber,
+        explainer: 'Waiting for you to start analysis.',
       }
-      return "Analysis ran but didn't propose a fix — the AI's draft was acceptable as-is or the manager's edit didn't reveal a fixable pattern."
-    case 'SKIPPED_NO_FIX':
-      return "Looks like a wording polish, not a fix the system should remember. The cheap pre-classifier called this NO_FIX with high confidence, so the expensive analysis was skipped (saved ~$0.21). If you actually want a tuning fix, click below."
-    case 'SKIPPED_COOLDOWN':
-      return "Another fix of the same kind was accepted within the last 48 hours, so the system held off — running the full analysis right now would produce a duplicate suggestion the cooldown would drop. If this edit really is about something different, click below to override."
-    case 'FAILED':
-      return 'Analysis crashed. See the error below; you can also retry from a pending state.'
-    case 'DISMISSED':
-      return 'You dismissed this edit without running analysis.'
-    default:
-      return ''
   }
 }
 
-function formatCat(c: string): string {
-  return c.replace(/_/g, ' ').toLowerCase()
+function prettyCategory(c: string): string {
+  switch (c) {
+    case 'SYSTEM_PROMPT':
+      return 'system-prompt fix'
+    case 'SOP':
+      return 'SOP fix'
+    case 'FAQ':
+      return 'FAQ fix'
+    case 'NO_FIX':
+      return 'polish only'
+    default:
+      return c.toLowerCase()
+  }
 }
 
 function formatAge(iso: string): string {
@@ -644,21 +548,44 @@ function formatAge(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+// ─── Styles ─────────────────────────────────────────────────────────────────
+
 const listReset: React.CSSProperties = {
   listStyle: 'none',
   padding: 0,
   margin: 0,
 }
 
-const historyToggleStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '4px 8px',
-  fontSize: 11,
-  fontWeight: 500,
-  color: STUDIO_TOKENS_V2.muted,
-  background: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
+function primaryBtn(busy: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#ffffff',
+    background: STUDIO_TOKENS_V2.blue,
+    border: '1px solid transparent',
+    borderRadius: STUDIO_TOKENS_V2.radiusSm,
+    cursor: busy ? 'default' : 'pointer',
+    opacity: busy ? 0.7 : 1,
+  }
+}
+
+function ghostBtn(busy: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 500,
+    color: STUDIO_TOKENS_V2.ink2,
+    background: STUDIO_TOKENS_V2.bg,
+    border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+    borderRadius: STUDIO_TOKENS_V2.radiusSm,
+    cursor: busy ? 'default' : 'pointer',
+    opacity: busy ? 0.6 : 1,
+  }
 }

@@ -108,24 +108,13 @@ export async function writeSuggestionFromDiagnostic(
     return { suggestion: null, capabilityRequestId: null, note: 'NO_SOURCE_MESSAGE_ID' };
   }
 
-  // 3a. 48h cooldown on the same (category, target, sopStatus).
-  //
-  // Sprint 09 fix 10: previously scoped only by (category, sopCategory),
-  // so a fix applied to check-in@CONFIRMED blocked a different fix on
-  // check-in@INQUIRY. Pass sopStatus through when available so the
-  // cooldown narrows to the exact variant being written.
-  const cooldownHit = await checkCooldown(prisma, {
-    tenantId: result.tenantId,
-    category: result.category as TuningDiagnosticCategory,
-    targetId: result.artifactTarget.id,
-    sopStatus: null, // Diagnostic currently doesn't emit sopStatus; placeholder for when it does.
-  });
-  if (cooldownHit) {
-    console.log(
-      `[SuggestionWriter] Cooldown hit for category=${result.category} target=${result.artifactTarget.id ?? 'null'} — skipping (last ACCEPTED at ${cooldownHit.toISOString()}).`
-    );
-    return { suggestion: null, capabilityRequestId: null, note: 'COOLDOWN_48H' };
-  }
+  // 2026-05-17: cooldown removed by operator request. Previously a 48h
+  // window dropped any new suggestion in the same (category, target,
+  // sopStatus) if one was already ACCEPTED. The operator wanted full
+  // visibility — every diagnostic that produces a fix now writes a
+  // TuningSuggestion, even if a similar one was just accepted. The
+  // checkCooldown helper is kept below in case we want to put it back
+  // behind a flag, but it is no longer called.
 
   let actionType = mapCategoryToActionType(result.category);
   const targetFields = buildTargetFields(result);

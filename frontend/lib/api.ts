@@ -578,12 +578,8 @@ export async function apiListTuningQueue(params: {
 
 export async function apiAnalyzeTuningQueueItem(
   id: string,
-  options: { force?: boolean } = {},
 ): Promise<{ ok: boolean; status: TuningQueueStatus; suggestionId: string | null }> {
-  return apiFetch(`/api/tuning-queue/${id}/analyze`, {
-    method: 'POST',
-    body: JSON.stringify({ force: options.force === true }),
-  })
+  return apiFetch(`/api/tuning-queue/${id}/analyze`, { method: 'POST' })
 }
 
 export async function apiDismissTuningQueueItem(id: string): Promise<{ ok: boolean }> {

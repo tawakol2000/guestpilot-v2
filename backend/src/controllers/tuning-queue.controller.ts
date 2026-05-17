@@ -62,10 +62,7 @@ export function makeTuningQueueController(prisma: PrismaClient) {
       try {
         const { tenantId } = req;
         const { id } = req.params;
-        // `force=true` lets the manager override a SKIPPED_NO_FIX or
-        // SKIPPED_COOLDOWN outcome and run the full diagnostic anyway.
-        const force = req.body?.force === true || req.query.force === 'true';
-        const outcome = await analyzeQueueItem(id, tenantId, prisma, { force });
+        const outcome = await analyzeQueueItem(id, tenantId, prisma);
         if (!outcome) {
           res.status(404).json({ error: 'QUEUE_ITEM_NOT_FOUND' });
           return;
