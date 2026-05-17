@@ -148,6 +148,14 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
         id: true,
         anchorMessageId: true,
         stateMachineSnapshot: true,
+        // 2026-05-17: load the prior turn's final OpenAI response id so
+        // this turn can chain via previous_response_id. The chain lets
+        // OpenAI use its server-side stored state (responses live 30
+        // days with store:true) instead of us re-shipping the full
+        // history every turn — which was costing ~$1 in uncached input
+        // per 27-message conversation. See the buildInitialPendingInput
+        // call below for how the chain affects the input shape.
+        sdkSessionId: true,
         anchorMessage: {
           select: { id: true, content: true, role: true },
         },
@@ -447,21 +455,46 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
   const bridgeState = makeOpenAiBridgeState(input.assistantMessageId);
 
   // ─── Build initial Responses API input ──────────────────────────────────
-  const priorInput = await loadConversationHistoryAsResponsesInput(
-    input.prisma,
-    input.conversationId,
-  );
   type RawInputItem = Record<string, unknown>;
-  // 2026-05-15 (C5): emit the per-turn dynamic suffix (Region C) as a
-  // system role input item BEFORE the replayed history + user message.
-  // This keeps the cacheable Region A+B prefix in `instructions` static
-  // across turns, while still letting the model see the up-to-date
-  // pending/memory/state context.
-  let pendingInput: RawInputItem[] = [
-    { type: 'message', role: 'system', content: systemBundle.dynamicSuffix },
-    ...priorInput,
-    { type: 'message', role: 'user', content: input.userMessage },
-  ];
+
+  // 2026-05-17: cross-turn chaining via previous_response_id. When we
+  // have a stored response id from the prior turn, OpenAI's server-side
+  // state (responses persist 30 days when store:true) holds the entire
+  // conversation history — we only need to send the new user message +
+  // new dynamic suffix. Cuts uncached input by ~95% on multi-turn
+  // sessions. Falls back to full history replay if the stored id is
+  // expired/invalid (caught in runResponsesLoop's catch block).
+  //
+  // Why this matters: the actual OpenAI billing for a 27-message session
+  // showed 60% cache hit, not 90%+ as expected. Root cause: every turn
+  // was starting with previousResponseId=null, forcing a full history
+  // replay + a fresh dynamic suffix at position 0 of input — the latter
+  // invalidated the cache prefix for everything else. Chaining sidesteps
+  // both problems.
+  const initialPreviousResponseId = conversation.sdkSessionId ?? null;
+
+  let pendingInput: RawInputItem[];
+  let priorInputForFallback: RawInputItem[] | null = null;
+  if (initialPreviousResponseId) {
+    // Chained path — minimal input. OpenAI fetches everything else from
+    // the prior response's stored state.
+    pendingInput = [
+      { type: 'message', role: 'system', content: systemBundle.dynamicSuffix },
+      { type: 'message', role: 'user', content: input.userMessage },
+    ];
+  } else {
+    // First turn (or fallback) — full history replay.
+    const priorInput = await loadConversationHistoryAsResponsesInput(
+      input.prisma,
+      input.conversationId,
+    );
+    priorInputForFallback = priorInput;
+    pendingInput = [
+      { type: 'message', role: 'system', content: systemBundle.dynamicSuffix },
+      ...priorInput,
+      { type: 'message', role: 'user', content: input.userMessage },
+    ];
+  }
 
   const model = input.modelOverride ?? resolveStudioOpenAiModel();
   let lastUsage:
@@ -486,8 +519,88 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
   };
   let roundCount = 0;
   let aggregateFinalText = '';
-  let previousResponseId: string | null = null;
+  // 2026-05-17: seed previousResponseId from the conversation's stored
+  // sdkSessionId so cross-turn chaining works. Persisted at end-of-turn
+  // (see persistTurnResponseId call below).
+  let previousResponseId: string | null = initialPreviousResponseId;
   let runError: string | null = null;
+
+  // 2026-05-17: detect OpenAI's "previous_response_id not found" error
+  // so we can fall back to full history replay if the chained id is
+  // stale (responses live 30 days; container restart doesn't expire
+  // them but a tenant that hasn't used Studio in >30 days will).
+  const isPreviousResponseIdMissing = (err: unknown): boolean => {
+    const m = (err as any)?.message ?? String(err ?? '');
+    return (
+      /previous_response/i.test(m) &&
+      /(not.found|invalid|expired|does not exist)/i.test(m)
+    );
+  };
+
+  const onUsageHandler = (
+    u: {
+      input_tokens?: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+      output_tokens?: number;
+      reasoning_tokens?: number;
+    },
+    ctx?: { toolCallsInRound?: string[] },
+  ) => {
+    lastUsage = u;
+    roundCount += 1;
+    aggregateUsage.input_tokens += u.input_tokens ?? 0;
+    aggregateUsage.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
+    aggregateUsage.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+    aggregateUsage.output_tokens += u.output_tokens ?? 0;
+    aggregateUsage.reasoning_tokens += (u as any).reasoning_tokens ?? 0;
+    try {
+      logAgentGeneration(
+        buildPerRoundGenerationParams({
+          model,
+          roundIndex: roundCount,
+          usage: u,
+          toolNamesInRound: ctx?.toolCallsInRound ?? [],
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+        }),
+      );
+    } catch (err) {
+      console.warn('[openai-runner] per-round Langfuse emit failed:', err);
+    }
+  };
+  const onFinalTextHandler = (t: string) => {
+    aggregateFinalText += t;
+  };
+  const onPreviousResponseIdSetHandler = (id: string) => {
+    previousResponseId = id;
+  };
+
+  // Runs the responses loop with a given (pendingInput, previousResponseId).
+  // Extracted so the chain-fallback retry can call it twice.
+  const runLoop = (
+    seedInput: RawInputItem[],
+    seedPreviousResponseId: string | null,
+  ) =>
+    runResponsesLoop({
+      input,
+      middleware,
+      fullRegistry,
+      allowedToolsForState,
+      systemBundle,
+      assembledSystemPrompt,
+      model,
+      pendingInput: seedInput,
+      previousResponseId: seedPreviousResponseId,
+      bridgeState,
+      filteredWrite,
+      emitDataPart,
+      toolCallsInvoked,
+      toolCallsSucceeded,
+      onUsage: onUsageHandler,
+      onFinalText: onFinalTextHandler,
+      onPreviousResponseIdSet: onPreviousResponseIdSetHandler,
+    });
 
   try {
     await runWithAiTrace(
@@ -503,53 +616,40 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
         userInput: input.userMessage,
       },
       async () => {
-        await runResponsesLoop({
-          input,
-          middleware,
-          fullRegistry,
-          allowedToolsForState,
-          systemBundle,
-          assembledSystemPrompt,
-          model,
-          pendingInput,
-          previousResponseId,
-          bridgeState,
-          filteredWrite,
-          emitDataPart,
-          toolCallsInvoked,
-          toolCallsSucceeded,
-          onUsage: (u, ctx) => {
-            lastUsage = u;
-            roundCount += 1;
-            aggregateUsage.input_tokens += u.input_tokens ?? 0;
-            aggregateUsage.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
-            aggregateUsage.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
-            aggregateUsage.output_tokens += u.output_tokens ?? 0;
-            aggregateUsage.reasoning_tokens += (u as any).reasoning_tokens ?? 0;
-            // Per-round Langfuse generation — gives us a 50-step timeline
-            // of every Responses API call with cache hit % per round.
-            try {
-              logAgentGeneration(
-                buildPerRoundGenerationParams({
-                  model,
-                  roundIndex: roundCount,
-                  usage: u,
-                  toolNamesInRound: ctx?.toolCallsInRound ?? [],
-                  tenantId: input.tenantId,
-                  conversationId: input.conversationId,
-                }),
-              );
-            } catch (err) {
-              console.warn('[openai-runner] per-round Langfuse emit failed:', err);
-            }
-          },
-          onFinalText: (t) => {
-            aggregateFinalText += t;
-          },
-          onPreviousResponseIdSet: (id) => {
-            previousResponseId = id;
-          },
-        });
+        try {
+          await runLoop(pendingInput, previousResponseId);
+        } catch (err) {
+          // 2026-05-17: stale previous_response_id (>30d or other) — clear
+          // it from the DB, rebuild pendingInput with full history replay,
+          // and retry once. After fallback succeeds, the end-of-turn
+          // persist will write the fresh id back.
+          if (initialPreviousResponseId && isPreviousResponseIdMissing(err)) {
+            console.warn(
+              `[openai-runner] previous_response_id=${initialPreviousResponseId} stale — falling back to full history replay`,
+            );
+            await input.prisma.tuningConversation
+              .update({
+                where: { id: input.conversationId },
+                data: { sdkSessionId: null },
+              })
+              .catch(() => undefined);
+            previousResponseId = null;
+            const replayPrior =
+              priorInputForFallback ??
+              (await loadConversationHistoryAsResponsesInput(
+                input.prisma,
+                input.conversationId,
+              ));
+            const fallbackInput: RawInputItem[] = [
+              { type: 'message', role: 'system', content: systemBundle.dynamicSuffix },
+              ...replayPrior,
+              { type: 'message', role: 'user', content: input.userMessage },
+            ];
+            await runLoop(fallbackInput, null);
+            return;
+          }
+          throw err;
+        }
       },
     );
   } catch (err: any) {
@@ -655,6 +755,28 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     roundCount,
     error: runError,
   });
+
+  // 2026-05-17: persist the final OpenAI response id so the next turn
+  // can chain via previous_response_id. Mirrors what sdk-runner.ts does
+  // for the Anthropic Agent SDK path (line ~776). Skipped when the turn
+  // errored mid-stream (don't poison the chain with a half-finished
+  // response). Skipped under harness dry-run for the same reason as
+  // every other DB write in this file.
+  if (
+    previousResponseId &&
+    !runError &&
+    conversation.sdkSessionId !== previousResponseId &&
+    process.env.STUDIO_HARNESS_DRY_RUN !== 'true'
+  ) {
+    void input.prisma.tuningConversation
+      .update({
+        where: { id: input.conversationId },
+        data: { sdkSessionId: previousResponseId },
+      })
+      .catch((err) =>
+        console.warn('[openai-runner] sdkSessionId persist failed:', err),
+      );
+  }
 
   // ─── Output-linter ──────────────────────────────────────────────────────
   try {
