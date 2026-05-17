@@ -14,12 +14,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   apiAcceptTuningSuggestion,
+  apiAnalyzeTuningQueueItem,
   apiCreateTuningConversation,
+  apiDismissTuningQueueItem,
   apiGetConversation,
+  apiListTuningQueue,
   apiListTuningSuggestions,
   apiRejectTuningSuggestion,
   type ApiConversationDetail,
   type ApiMessage,
+  type TuningQueueItem,
   type TuningSuggestion,
   type TuningSuggestionStatus,
 } from '@/lib/api'
@@ -37,9 +41,7 @@ import {
   ChevronDownIcon,
   MessageSquareIcon,
 } from '../icons'
-import { EditQueueSection } from './edit-queue-section'
-
-type Filter = 'PENDING' | 'ALL'
+type Filter = 'PENDING' | 'ALL' | 'NOT_ANALYZED' | 'ANALYZED'
 
 type RowState =
   | { kind: 'idle' }
@@ -68,9 +70,15 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
   const { rightWide, setRightWide } = useStudioShell()
   const [filter, setFilter] = useState<Filter>('PENDING')
   const [items, setItems] = useState<TuningSuggestion[]>([])
+  const [queueItems, setQueueItems] = useState<TuningQueueItem[]>([])
+  const [queueCounts, setQueueCounts] = useState<{ notAnalyzed: number; analyzed: number }>({
+    notAnalyzed: 0,
+    analyzed: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [rowState, setRowState] = useState<Record<string, RowState>>({})
+  const [queueRowBusy, setQueueRowBusy] = useState<Record<string, 'analyzing' | 'dismissing'>>({})
 
   const reportPending = useCallback(
     (rows: TuningSuggestion[]) => {
@@ -81,21 +89,91 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
     [onPendingCountChange],
   )
 
+  // Always fetch queue counts so the filter pills can show real numbers.
+  const refreshQueueCounts = useCallback(async () => {
+    try {
+      const [p, a] = await Promise.all([
+        apiListTuningQueue({ bucket: 'pending', limit: 50 }),
+        apiListTuningQueue({ bucket: 'analyzed', limit: 50 }),
+      ])
+      setQueueCounts({ notAnalyzed: p.items.length, analyzed: a.items.length })
+    } catch {
+      // Non-fatal — leave counts as-is.
+    }
+  }, [])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const status: TuningSuggestionStatus | 'ALL' =
-        filter === 'PENDING' ? 'PENDING' : 'ALL'
-      const res = await apiListTuningSuggestions({ status, limit: 30 })
-      setItems(res.suggestions)
-      reportPending(res.suggestions)
+      if (filter === 'NOT_ANALYZED') {
+        const res = await apiListTuningQueue({ bucket: 'pending', limit: 50 })
+        setQueueItems(res.items)
+      } else if (filter === 'ANALYZED') {
+        const res = await apiListTuningQueue({ bucket: 'analyzed', limit: 50 })
+        setQueueItems(res.items)
+      } else {
+        const status: TuningSuggestionStatus | 'ALL' =
+          filter === 'PENDING' ? 'PENDING' : 'ALL'
+        const res = await apiListTuningSuggestions({ status, limit: 30 })
+        setItems(res.suggestions)
+        reportPending(res.suggestions)
+      }
+      // Refresh queue counts on every filter switch so the pill badges stay accurate.
+      void refreshQueueCounts()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [filter, reportPending])
+  }, [filter, reportPending, refreshQueueCounts])
+
+  // Handlers for queue rows (only used when filter is NOT_ANALYZED).
+  const handleQueueAnalyze = useCallback(
+    async (item: TuningQueueItem) => {
+      setQueueRowBusy((m) => ({ ...m, [item.id]: 'analyzing' }))
+      try {
+        const res = await apiAnalyzeTuningQueueItem(item.id)
+        toast.success('Analysis complete', {
+          description:
+            res.status === 'ANALYZED' && res.suggestionId
+              ? 'A new tuning suggestion is in the Pending tab.'
+              : 'No fix was needed for this edit.',
+        })
+        await refresh()
+      } catch (e) {
+        toast.error('Analysis failed', {
+          description: e instanceof Error ? e.message : String(e),
+        })
+      } finally {
+        setQueueRowBusy((m) => {
+          const { [item.id]: _, ...rest } = m
+          return rest
+        })
+      }
+    },
+    [refresh],
+  )
+
+  const handleQueueDismiss = useCallback(
+    async (item: TuningQueueItem) => {
+      setQueueRowBusy((m) => ({ ...m, [item.id]: 'dismissing' }))
+      try {
+        await apiDismissTuningQueueItem(item.id)
+        await refresh()
+      } catch (e) {
+        toast.error('Could not dismiss', {
+          description: e instanceof Error ? e.message : String(e),
+        })
+      } finally {
+        setQueueRowBusy((m) => {
+          const { [item.id]: _, ...rest } = m
+          return rest
+        })
+      }
+    },
+    [refresh],
+  )
 
   useEffect(() => {
     void refresh()
@@ -257,16 +335,22 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
               ? 'Loading…'
               : filter === 'PENDING'
                 ? `${pendingCount} pending`
-                : `${items.length} total`}
+                : filter === 'ALL'
+                  ? `${items.length} total`
+                  : filter === 'NOT_ANALYZED'
+                    ? `${queueItems.length} not analyzed`
+                    : `${queueItems.length} analyzed`}
           </span>
         </div>
         <WidthToggle wide={rightWide} onToggle={() => setRightWide(!rightWide)} />
       </header>
 
-      <EditQueueSection onAnalyzed={() => void refresh()} />
-
       <FilterPills
         value={filter}
+        counts={{
+          notAnalyzed: queueCounts.notAnalyzed,
+          analyzed: queueCounts.analyzed,
+        }}
         onChange={(v) => {
           setFilter(v)
           setRowState({})
@@ -313,19 +397,39 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
 
       {loading ? (
         <SkeletonStack />
+      ) : filter === 'NOT_ANALYZED' ? (
+        queueItems.length === 0 ? (
+          <EmptyState filter={filter} />
+        ) : (
+          <ul style={cardListStyle}>
+            {queueItems.map((item) => (
+              <li key={item.id} style={{ listStyle: 'none' }}>
+                <QueuePendingCard
+                  item={item}
+                  busy={queueRowBusy[item.id]}
+                  onAnalyze={() => void handleQueueAnalyze(item)}
+                  onDismiss={() => void handleQueueDismiss(item)}
+                />
+              </li>
+            ))}
+          </ul>
+        )
+      ) : filter === 'ANALYZED' ? (
+        queueItems.length === 0 ? (
+          <EmptyState filter={filter} />
+        ) : (
+          <ul style={cardListStyle}>
+            {queueItems.map((item) => (
+              <li key={item.id} style={{ listStyle: 'none' }}>
+                <QueueAnalyzedCard item={item} />
+              </li>
+            ))}
+          </ul>
+        )
       ) : items.length === 0 ? (
         <EmptyState filter={filter} />
       ) : (
-        <ul
-          style={{
-            listStyle: 'none',
-            padding: 0,
-            margin: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
+        <ul style={cardListStyle}>
           {items.map((s, idx) => (
             <SuggestionCard
               key={s.id}
@@ -343,18 +447,31 @@ export function SuggestionsTab({ onPendingCountChange, onDiscuss }: SuggestionsT
   )
 }
 
+const cardListStyle: React.CSSProperties = {
+  listStyle: 'none',
+  padding: 0,
+  margin: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+}
+
 // ─── Filter pills ───────────────────────────────────────────────────────────
 
 function FilterPills({
   value,
+  counts,
   onChange,
 }: {
   value: Filter
+  counts: { notAnalyzed: number; analyzed: number }
   onChange: (v: Filter) => void
 }) {
-  const options: { id: Filter; label: string }[] = [
+  const options: { id: Filter; label: string; badge?: number }[] = [
     { id: 'PENDING', label: 'Pending' },
     { id: 'ALL', label: 'All' },
+    { id: 'NOT_ANALYZED', label: 'Not analyzed', badge: counts.notAnalyzed },
+    { id: 'ANALYZED', label: 'Analyzed', badge: counts.analyzed },
   ]
   return (
     <div
@@ -362,6 +479,7 @@ function FilterPills({
       aria-label="Filter suggestions"
       style={{
         display: 'inline-flex',
+        flexWrap: 'wrap',
         gap: 2,
         padding: 2,
         background: STUDIO_TOKENS_V2.surface,
@@ -390,9 +508,26 @@ function FilterPills({
               cursor: 'pointer',
               boxShadow: active ? STUDIO_TOKENS_V2.shadowSm : 'none',
               transition: 'background 120ms ease',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
             }}
           >
             {o.label}
+            {o.badge !== undefined && o.badge > 0 ? (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '1px 5px',
+                  borderRadius: 999,
+                  background: active ? STUDIO_TOKENS_V2.blueSoft : STUDIO_TOKENS_V2.surface2,
+                  color: active ? STUDIO_TOKENS_V2.blue : STUDIO_TOKENS_V2.muted2,
+                }}
+              >
+                {o.badge}
+              </span>
+            ) : null}
           </button>
         )
       })}
@@ -440,7 +575,7 @@ function EmptyState({ filter }: { filter: Filter }) {
           color: STUDIO_TOKENS_V2.ink,
         }}
       >
-        {filter === 'PENDING' ? 'No pending suggestions' : 'No suggestions yet'}
+        {emptyTitle(filter)}
       </p>
       <p
         style={{
@@ -451,11 +586,34 @@ function EmptyState({ filter }: { filter: Filter }) {
           maxWidth: 260,
         }}
       >
-        Edit an AI draft in the inbox before sending and the diagnostic agent
-        will surface a tuning fix here within a few seconds.
+        {emptyBody(filter)}
       </p>
     </div>
   )
+}
+
+function emptyTitle(filter: Filter): string {
+  switch (filter) {
+    case 'PENDING':
+      return 'No pending suggestions'
+    case 'ALL':
+      return 'No suggestions yet'
+    case 'NOT_ANALYZED':
+      return 'No edits waiting'
+    case 'ANALYZED':
+      return 'No analysis history'
+  }
+}
+
+function emptyBody(filter: Filter): string {
+  switch (filter) {
+    case 'NOT_ANALYZED':
+      return 'When auto-analyze is off, every manager edit lands here until you click Run analysis.'
+    case 'ANALYZED':
+      return 'Edits you analyzed will appear here with their outcome — fix found, no fix needed, or skipped polish.'
+    default:
+      return 'Edit an AI draft in the inbox before sending and the diagnostic agent will surface a tuning fix here within a few seconds.'
+  }
 }
 
 // ─── Skeleton ───────────────────────────────────────────────────────────────
@@ -1342,4 +1500,390 @@ function ContractIcon({ size = 14 }: { size?: number }) {
       <path d="M15 20v-4h4" />
     </svg>
   )
+}
+
+// ─── Queue cards (Not analyzed / Analyzed filters) ──────────────────────────
+
+function QueuePendingCard({
+  item,
+  busy,
+  onAnalyze,
+  onDismiss,
+}: {
+  item: TuningQueueItem
+  busy: 'analyzing' | 'dismissing' | undefined
+  onAnalyze: () => void
+  onDismiss: () => void
+}) {
+  const [showOriginal, setShowOriginal] = useState(false)
+  const cat = item.preClassifierCategory
+  const triggerColor =
+    item.triggerType === 'REJECT_TRIGGERED' ? STUDIO_TOKENS_V2.red : STUDIO_TOKENS_V2.amber
+
+  return (
+    <article
+      style={{
+        border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+        borderRadius: STUDIO_TOKENS_V2.radiusLg,
+        background: STUDIO_TOKENS_V2.bg,
+        padding: '12px 14px',
+        boxShadow: STUDIO_TOKENS_V2.shadowSm,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span
+          aria-hidden
+          style={{ width: 6, height: 6, borderRadius: 999, background: triggerColor, flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: STUDIO_TOKENS_V2.muted2 }}>
+          {item.triggerType === 'REJECT_TRIGGERED' ? 'Rewrote AI draft' : 'Edited AI draft'}
+        </span>
+        {cat ? (
+          <span style={{ fontSize: 11, color: STUDIO_TOKENS_V2.muted }}>
+            · likely {prettyPreCategory(cat)}
+          </span>
+        ) : null}
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: STUDIO_TOKENS_V2.muted2 }}>
+          {formatAgeShort(item.createdAt)}
+        </span>
+      </header>
+
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          lineHeight: 1.55,
+          color: STUDIO_TOKENS_V2.ink,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {item.editedText}
+      </p>
+
+      <button
+        type="button"
+        onClick={() => setShowOriginal((v) => !v)}
+        aria-expanded={showOriginal}
+        style={{
+          alignSelf: 'flex-start',
+          padding: '2px 0',
+          fontSize: 11,
+          fontWeight: 500,
+          color: STUDIO_TOKENS_V2.muted,
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          gap: 4,
+          alignItems: 'center',
+        }}
+      >
+        <ChevronDownIcon
+          size={10}
+          style={{
+            transform: showOriginal ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 140ms ease',
+          }}
+        />
+        {showOriginal ? 'Hide original AI draft' : 'Show original AI draft'}
+      </button>
+      {showOriginal ? (
+        <p
+          style={{
+            margin: 0,
+            padding: '8px 10px',
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            color: STUDIO_TOKENS_V2.muted,
+            background: STUDIO_TOKENS_V2.surface,
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {item.originalText}
+        </p>
+      ) : null}
+
+      <footer style={{ display: 'flex', gap: 6, paddingTop: 2 }}>
+        <button
+          type="button"
+          onClick={onAnalyze}
+          disabled={!!busy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#ffffff',
+            background: STUDIO_TOKENS_V2.blue,
+            border: '1px solid transparent',
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+            cursor: busy ? 'default' : 'pointer',
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          <SparkleIcon size={12} />
+          {busy === 'analyzing' ? 'Analyzing…' : 'Run analysis'}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          disabled={!!busy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 500,
+            color: STUDIO_TOKENS_V2.ink2,
+            background: STUDIO_TOKENS_V2.bg,
+            border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+            cursor: busy ? 'default' : 'pointer',
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          <CloseIcon size={12} />
+          {busy === 'dismissing' ? 'Dismissing…' : 'Dismiss'}
+        </button>
+      </footer>
+    </article>
+  )
+}
+
+function QueueAnalyzedCard({ item }: { item: TuningQueueItem }) {
+  const verdict = describeQueueOutcome(item)
+  const sugg = item.suggestion
+
+  return (
+    <article
+      style={{
+        border: `1px solid ${STUDIO_TOKENS_V2.border}`,
+        borderRadius: STUDIO_TOKENS_V2.radiusLg,
+        background: STUDIO_TOKENS_V2.bg,
+        padding: '12px 14px',
+        boxShadow: STUDIO_TOKENS_V2.shadowSm,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span
+          aria-hidden
+          style={{ width: 6, height: 6, borderRadius: 999, background: verdict.dotColor, flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: STUDIO_TOKENS_V2.muted2 }}>
+          {verdict.label}
+        </span>
+        {sugg?.diagnosticCategory ? (
+          <span style={{ fontSize: 11, color: STUDIO_TOKENS_V2.muted }}>
+            · {prettyDiagnosticCategory(sugg.diagnosticCategory)}
+            {sugg.diagnosticSubLabel ? ` · ${sugg.diagnosticSubLabel}` : ''}
+          </span>
+        ) : null}
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: STUDIO_TOKENS_V2.muted2 }}>
+          {formatAgeShort(item.analyzedAt ?? item.createdAt)}
+        </span>
+      </header>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <LabeledText label="AI suggested" text={item.originalText} muted />
+        <LabeledText label="You edited to" text={item.editedText} />
+      </div>
+
+      {sugg?.rationale ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: STUDIO_TOKENS_V2.ink2,
+          }}
+        >
+          <span
+            style={{
+              color: STUDIO_TOKENS_V2.muted2,
+              fontWeight: 600,
+              marginRight: 6,
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Why
+          </span>
+          {sugg.rationale}
+        </p>
+      ) : verdict.explainer ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: STUDIO_TOKENS_V2.ink2,
+          }}
+        >
+          {verdict.explainer}
+        </p>
+      ) : null}
+
+      {sugg ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11.5,
+            color: STUDIO_TOKENS_V2.blue,
+          }}
+        >
+          → Suggestion {sugg.status === 'ACCEPTED' ? 'accepted' : sugg.status === 'REJECTED' ? 'rejected' : 'waiting in Pending'}
+        </p>
+      ) : null}
+
+      {item.errorMessage ? (
+        <p
+          style={{
+            margin: 0,
+            fontSize: 11.5,
+            color: STUDIO_COLORS.dangerFg,
+            background: STUDIO_COLORS.dangerBg,
+            padding: '6px 8px',
+            borderRadius: STUDIO_TOKENS_V2.radiusSm,
+          }}
+        >
+          {item.errorMessage}
+        </p>
+      ) : null}
+    </article>
+  )
+}
+
+function LabeledText({ label, text, muted }: { label: string; text: string; muted?: boolean }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <span
+        style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          color: STUDIO_TOKENS_V2.muted2,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
+      >
+        {label}
+      </span>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 12.5,
+          lineHeight: 1.55,
+          color: muted ? STUDIO_TOKENS_V2.muted : STUDIO_TOKENS_V2.ink,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {text}
+      </p>
+    </div>
+  )
+}
+
+function describeQueueOutcome(item: TuningQueueItem): {
+  label: string
+  dotColor: string
+  explainer: string
+} {
+  switch (item.status) {
+    case 'ANALYZED':
+      if (item.suggestion) {
+        return {
+          label: 'Suggestion created',
+          dotColor: STUDIO_TOKENS_V2.blue,
+          explainer: '',
+        }
+      }
+      return {
+        label: 'No fix needed',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer: "Analysis ran but didn't propose a fix.",
+      }
+    case 'SKIPPED_NO_FIX':
+      return {
+        label: 'Polish only',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer: 'Looked like a wording polish, so the full analysis was skipped.',
+      }
+    case 'SKIPPED_COOLDOWN':
+      return {
+        label: 'Skipped (legacy)',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer: 'Legacy cooldown skip — kept for history only.',
+      }
+    case 'DISMISSED':
+      return {
+        label: 'Dismissed',
+        dotColor: STUDIO_TOKENS_V2.muted2,
+        explainer: 'You dismissed this edit without running analysis.',
+      }
+    case 'FAILED':
+      return {
+        label: 'Failed',
+        dotColor: STUDIO_TOKENS_V2.red,
+        explainer: 'Analysis crashed.',
+      }
+    case 'ANALYZING':
+      return {
+        label: 'Running…',
+        dotColor: STUDIO_TOKENS_V2.blue,
+        explainer: 'Analysis is in flight.',
+      }
+    case 'PENDING':
+    default:
+      return {
+        label: 'Pending',
+        dotColor: STUDIO_TOKENS_V2.amber,
+        explainer: '',
+      }
+  }
+}
+
+function prettyPreCategory(c: string): string {
+  switch (c) {
+    case 'SYSTEM_PROMPT':
+      return 'system-prompt fix'
+    case 'SOP':
+      return 'SOP fix'
+    case 'FAQ':
+      return 'FAQ fix'
+    case 'NO_FIX':
+      return 'polish only'
+    default:
+      return c.toLowerCase()
+  }
+}
+
+function prettyDiagnosticCategory(c: string): string {
+  return c.replace(/_/g, ' ').toLowerCase()
+}
+
+function formatAgeShort(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const diffMs = Date.now() - t
+  const m = Math.round(diffMs / 60_000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.round(h / 24)
+  if (d < 7) return `${d}d ago`
+  return new Date(iso).toLocaleDateString()
 }
