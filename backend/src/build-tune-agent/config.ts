@@ -144,6 +144,25 @@ export function isRawPromptEditorEnabled(): boolean {
 }
 
 /**
+ * 2026-05-17 — Studio OpenAI reasoning effort. The dominant cost driver
+ * on the gpt-5.4 path is reasoning tokens (billed at output rate). An
+ * empirical 27-message session cost $2.50 at 'high'; dropping to
+ * 'medium' should ~halve that, 'low' should ~quarter it. Override via
+ * STUDIO_REASONING_EFFORT for A/B testing without code changes.
+ *
+ * Default 'medium' — balances tight slot questions / sharper drafts
+ * (which DO benefit from deeper thinking) against the reality that
+ * most rounds are read-and-summarize where high reasoning is wasted.
+ */
+export type StudioReasoningEffort = 'low' | 'medium' | 'high';
+
+export function resolveStudioReasoningEffort(): StudioReasoningEffort {
+  const raw = (process.env.STUDIO_REASONING_EFFORT ?? '').trim().toLowerCase();
+  if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+  return 'medium';
+}
+
+/**
  * 2026-05-17 — Studio per-turn debug trace persistence.
  *
  * When enabled, every assistant turn persists a `data-debug-trace` part

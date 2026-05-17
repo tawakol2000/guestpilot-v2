@@ -175,6 +175,20 @@ STUDIO_DEBUG_TRACE     # Off by default. When truthy, every Studio assistant
                        # turn. Required only when debugging — pair with
                        # `backend/scripts/dump-studio-conversation.ts` to
                        # read it back. See §Debugging Studio Conversations.
+STUDIO_REASONING_EFFORT # OpenAI gpt-5.4 reasoning effort for the Studio
+                       # agent. 'low' | 'medium' (default) | 'high'.
+                       # Reasoning tokens are billed at the output rate
+                       # and dominate per-turn cost — 'high' burns 3-8K
+                       # reasoning tokens per round (~80% of per-round
+                       # cost), 'medium' typically halves that, 'low'
+                       # quarters it. Drop to 'low' on cost-sensitive
+                       # tenants. Read every turn — flip without restart.
+STUDIO_JUDGE_MODEL     # Override the test_pipeline cross-family judge
+                       # model. Default 'claude-haiku-4-5' (down from
+                       # 'claude-sonnet-4-6' on 2026-05-17 — Sonnet was
+                       # overkill once verification_intent landed, Haiku
+                       # cuts judge cost ~70% with no observed quality
+                       # drop). Set to 'claude-sonnet-4-6' to roll back.
 WASENDER_API_KEY       # Feature 044 WhatsApp doc-handoff. When absent, the
                        # doc-handoff feature is silently disabled.
 WASENDER_BASE_URL      # Default: https://wasenderapi.com
@@ -282,6 +296,21 @@ The dump includes:
 - Reconstructed system prompt using CURRENT templates + tenant state
 
 **Per-turn byte-exact prompt capture (opt-in)**: set `STUDIO_DEBUG_TRACE=true` in `backend/.env` to persist a `data-debug-trace` part on every assistant turn going forward. The trace stores the EXACT assembled system prompt the agent saw that turn — not a reconstruction. Adds ~30 KiB per turn to `TuningMessage.parts`; off by default. The dump script flags whether traces are present at the top of the output.
+
+**Token cost + cache hit rate (always on, 2026-05-17)**: every Studio turn on the OpenAI path now persists one `AiApiLog` row with `agentName='studio'`, containing the full assembled system prompt, user message, final response text, and aggregate input / cached-input / reasoning / output tokens. Query it directly:
+
+```ts
+await prisma.aiApiLog.findMany({
+  where: { tenantId, agentName: 'studio' },
+  orderBy: { createdAt: 'desc' },
+  take: 20,
+  select: { createdAt: true, model: true, inputTokens: true, cachedInputTokens: true, reasoningTokens: true, outputTokens: true, costUsd: true, error: true },
+});
+```
+
+The dump script does NOT need this row — it reads from `TuningMessage.parts` — but the column-based query is much faster for "what's my hit rate today?" / "which turn cost the most?" lookups.
+
+**Langfuse coverage (2026-05-17)**: the Studio OpenAI runner now emits one `trace.generation('tuning-agent.query')` per internal model round AND one `trace.span('studio.tool.<name>')` per tool invocation (with truncated input + output). The trace root also carries the system prompt + user message as `input`. Open https://cloud.langfuse.com → filter by `userId` = tenantId and you get a complete per-round timeline.
 
 ## Testing AI Behaviour End-to-End
 

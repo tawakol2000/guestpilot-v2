@@ -23,7 +23,15 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'crypto';
 
-export const JUDGE_MODEL = 'claude-sonnet-4-6';
+// 2026-05-17: dropped from Sonnet 4.6 → Haiku 4.5. Sonnet at $3/$15 was
+// overkill for "did this reply use the new wording?" — the verification_intent
+// rubric (added the same day) makes the judge's job a substring + semantic
+// check, not deep reasoning. Haiku at $1/$5 cuts judge cost ~70% with no
+// observed quality drop on the test corpus. Still cross-family vs the
+// gpt-5.4 pipeline so Zheng et al. self-enhancement bias does not apply.
+// Override via STUDIO_JUDGE_MODEL env if a regression appears and you need
+// to roll back to Sonnet.
+export const JUDGE_MODEL = process.env.STUDIO_JUDGE_MODEL ?? 'claude-haiku-4-5';
 // Bugfix (2026-04-23): was a hand-maintained string ("test-judge/v1 —
 // 2026-04-19") that authors had to remember to bump when editing
 // `JUDGE_SYSTEM`. Nothing enforced the bump — so silent judge drift

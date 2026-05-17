@@ -77,9 +77,15 @@ import {
   isBuildModeEnabled,
   buildModeDisabledReason,
   resolveStudioOpenAiModel,
+  resolveStudioReasoningEffort,
   isStudioDebugTraceEnabled,
 } from './config';
-import { runWithAiTrace } from '../services/observability.service';
+import {
+  runWithAiTrace,
+  logAgentGeneration,
+  buildPerRoundGenerationParams,
+  startAiSpan,
+} from '../services/observability.service';
 import {
   coerceSnapshot,
   computeTurnEndSnapshot,
@@ -466,6 +472,19 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
         output_tokens?: number;
       }
     | null = null;
+  // 2026-05-17: per-round usage accumulator. Studio agent token spend
+  // was completely invisible — no AiApiLog rows, no Langfuse traces.
+  // Now we track each round so end-of-turn can (a) persist one AiApiLog
+  // row with aggregate counts + system prompt + final text, and (b)
+  // emit one logAgentGeneration call per round with cache breakdown.
+  const aggregateUsage = {
+    input_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    output_tokens: 0,
+    reasoning_tokens: 0,
+  };
+  let roundCount = 0;
   let aggregateFinalText = '';
   let previousResponseId: string | null = null;
   let runError: string | null = null;
@@ -477,6 +496,11 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
         conversationId: input.conversationId,
         agentName: 'tuning-agent-openai',
         messageId: input.assistantMessageId,
+        // 2026-05-17: thread system prompt + user message onto the trace
+        // root so the Langfuse UI shows them at the top of the trace —
+        // no drilling into a child generation to see what the agent saw.
+        systemPrompt: assembledSystemPrompt,
+        userInput: input.userMessage,
       },
       async () => {
         await runResponsesLoop({
@@ -494,8 +518,30 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
           emitDataPart,
           toolCallsInvoked,
           toolCallsSucceeded,
-          onUsage: (u) => {
+          onUsage: (u, ctx) => {
             lastUsage = u;
+            roundCount += 1;
+            aggregateUsage.input_tokens += u.input_tokens ?? 0;
+            aggregateUsage.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
+            aggregateUsage.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
+            aggregateUsage.output_tokens += u.output_tokens ?? 0;
+            aggregateUsage.reasoning_tokens += (u as any).reasoning_tokens ?? 0;
+            // Per-round Langfuse generation — gives us a 50-step timeline
+            // of every Responses API call with cache hit % per round.
+            try {
+              logAgentGeneration(
+                buildPerRoundGenerationParams({
+                  model,
+                  roundIndex: roundCount,
+                  usage: u,
+                  toolNamesInRound: ctx?.toolCallsInRound ?? [],
+                  tenantId: input.tenantId,
+                  conversationId: input.conversationId,
+                }),
+              );
+            } catch (err) {
+              console.warn('[openai-runner] per-round Langfuse emit failed:', err);
+            }
           },
           onFinalText: (t) => {
             aggregateFinalText += t;
@@ -589,6 +635,27 @@ export async function runOpenAiTurn(input: RunTurnInput): Promise<RunTurnResult>
     emitDataPart,
   });
 
+  // ─── Durable token-usage persistence (2026-05-17) ───────────────────────
+  // Studio agent on the OpenAI path had ZERO observability before this —
+  // no AiApiLog rows, no Langfuse rollup (only per-round generations from
+  // logAgentGeneration above). One AiApiLog row per turn lets the dump
+  // script + cache-hit-report show "this turn cost X, cache hit rate Y%,
+  // reasoning tokens Z". The per-round Langfuse generations stay too —
+  // they're the timeline; this is the rollup.
+  void persistTurnAiApiLog({
+    prisma: input.prisma,
+    tenantId: input.tenantId,
+    conversationId: input.conversationId,
+    turnNumber,
+    model,
+    assembledSystemPrompt,
+    userMessage: input.userMessage,
+    finalText: aggregateFinalText,
+    aggregateUsage,
+    roundCount,
+    error: runError,
+  });
+
   // ─── Output-linter ──────────────────────────────────────────────────────
   try {
     const findings = lintAgentOutput({
@@ -673,12 +740,16 @@ interface ResponsesLoopArgs {
   }) => void;
   toolCallsInvoked: string[];
   toolCallsSucceeded: string[];
-  onUsage: (u: {
-    input_tokens?: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-    output_tokens?: number;
-  }) => void;
+  onUsage: (
+    u: {
+      input_tokens?: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+      output_tokens?: number;
+      reasoning_tokens?: number;
+    },
+    ctx?: { toolCallsInRound?: string[] },
+  ) => void;
   onFinalText: (t: string) => void;
   onPreviousResponseIdSet: (id: string) => void;
 }
@@ -707,15 +778,17 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       tools,
       tool_choice: 'auto',
       parallel_tool_calls: false,
-      // 2026-05-15: high reasoning for Studio. The agent has to read SOPs,
-      // FAQs, evidence bundles, plan edits, validate diffs, plan transitions,
-      // and verify — each step benefits from deeper reasoning. The cache
-      // hit rate is already 93–98%, so the input-token cost is dominated
-      // by reasoning tokens; bumping effort from low → high typically
-      // ~doubles latency and 2-3x's reasoning tokens but produces
-      // markedly better edits, fewer redundant reads, and tighter close-of-
-      // turn summaries.
-      reasoning: { effort: 'high' },
+      // 2026-05-17: reasoning effort dropped from 'high' → 'medium'. With
+      // the cache hit rate already 93–98%, input-token cost is dominated
+      // by reasoning tokens (billed at output rate). 'high' was burning
+      // 3K–8K reasoning tokens per round, ~80% of the per-round cost.
+      // Empirically a ~27-message session cost $2.50 at 'high'; dropping
+      // to 'medium' is expected to halve that without meaningfully
+      // degrading edit quality (the harder thinking happens at write
+      // time, gated by sanction discipline + state-machine — not by
+      // reasoning depth on read turns). Override via
+      // STUDIO_REASONING_EFFORT env if needed.
+      reasoning: { effort: resolveStudioReasoningEffort() },
       prompt_cache_key: args.systemBundle.promptCacheKey,
       // 2026-05-16: explicit 24h retention. Without this OpenAI uses
       // the default 5–10 min TTL — a Studio session with any pause
@@ -751,12 +824,20 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       previousResponseId = response.id;
       args.onPreviousResponseIdSet(response.id);
     }
-    if (response?.usage) {
-      args.onUsage(normaliseUsage(response.usage));
-    }
-
     const outputItems: any[] = Array.isArray(response?.output) ? response.output : [];
     const functionCalls = outputItems.filter((o) => o?.type === 'function_call');
+
+    if (response?.usage) {
+      // 2026-05-17: pass the tools fired this round so per-round
+      // Langfuse generations get a `toolCallsInRound` metadata tag —
+      // makes it trivial to see "round 7 of 12, fired test_pipeline,
+      // 12K cached / 800 reasoning / 0.04s" in the trace timeline.
+      args.onUsage(normaliseUsage(response.usage), {
+        toolCallsInRound: functionCalls
+          .map((fc: any) => (typeof fc?.name === 'string' ? fc.name : null))
+          .filter((n: string | null): n is string => n !== null),
+      });
+    }
 
     if (functionCalls.length === 0) {
       // No more tool calls — emit final text + finish.
@@ -866,6 +947,16 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
       let result: unknown;
       let success = true;
       let errorMessage: string | null = null;
+      // 2026-05-17: wrap each tool invocation in a Langfuse span so
+      // input + output land on the trace. Previously only BuildToolCallLog
+      // captured tool names + paramsHash — no actual inputs or outputs.
+      // For debugging "why did the agent do X?" the Langfuse timeline now
+      // shows the literal tool args and result content.
+      const toolSpan = startAiSpan(`studio.tool.${rawName}`, parsedArgs, {
+        tenantId: args.input.tenantId,
+        conversationId: args.input.conversationId,
+        innerState: args.middleware.innerState,
+      });
       try {
         result = await handler(parsedArgs);
         // Treat handler-returned {isError:true} payloads as failures even
@@ -881,6 +972,17 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
         success = false;
         errorMessage = err instanceof Error ? err.message : String(err);
         result = { isError: true, content: [{ type: 'text', text: `ERROR: ${errorMessage}` }] };
+      }
+      // Truncate the output before sending to Langfuse — full artifact
+      // dumps can be 30 KiB+ and pollute the trace UI / billing.
+      try {
+        const outStr = JSON.stringify(result);
+        toolSpan.end(outStr.length > 4000 ? outStr.slice(0, 4000) + '…[truncated]' : outStr, {
+          success,
+          errorMessage: errorMessage ?? undefined,
+        });
+      } catch {
+        toolSpan.end('[unserialisable]', { success });
       }
       if (success) {
         args.toolCallsSucceeded.push(prefixedName);
@@ -945,6 +1047,97 @@ async function runResponsesLoop(args: ResponsesLoopArgs): Promise<void> {
   emitFinalText(fallbackText, args.bridgeState, args.filteredWrite);
   args.onFinalText(fallbackText);
   finalizeOpenAiBridge(args.bridgeState, args.filteredWrite, 'stop');
+}
+
+// 2026-05-17 — per-turn rollup persistence into AiApiLog. One row per
+// assistant turn (NOT per round; round-level lives in Langfuse). Includes
+// the full system prompt + user message + final text so the dump script
+// and any later forensic query can reconstruct what the agent saw and
+// said. Tool-use detail still lives in TuningMessage.parts +
+// BuildToolCallLog — this row is the cost / cache rollup.
+//
+// gpt-5.4 indicative pricing (per OpenAI public pricing as of 2026-05):
+//   input          $2.50  / 1M
+//   cached input   $0.625 / 1M  (75% discount)
+//   output         $10.00 / 1M  (reasoning tokens billed at this rate)
+//
+// If pricing drifts, edit the constants here OR move them to a
+// centralised model-pricing service.
+const GPT54_INPUT_PER_M = 2.5;
+const GPT54_CACHED_INPUT_PER_M = 0.625;
+const GPT54_OUTPUT_PER_M = 10.0;
+
+function estimateOpenAiTurnCostUsd(usage: {
+  input_tokens: number;
+  cache_read_input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+}): number {
+  // OpenAI reports input_tokens as TOTAL (cached + uncached). Cached is
+  // billed at the cached rate, the remainder at the full input rate.
+  const cached = Math.min(usage.cache_read_input_tokens, usage.input_tokens);
+  const uncached = Math.max(0, usage.input_tokens - cached);
+  // output_tokens already INCLUDES reasoning_tokens per OpenAI's docs —
+  // do not double-count.
+  return (
+    (uncached * GPT54_INPUT_PER_M +
+      cached * GPT54_CACHED_INPUT_PER_M +
+      usage.output_tokens * GPT54_OUTPUT_PER_M) /
+    1_000_000
+  );
+}
+
+async function persistTurnAiApiLog(args: {
+  prisma: RunTurnInput['prisma'];
+  tenantId: string;
+  conversationId: string;
+  turnNumber: number;
+  model: string;
+  assembledSystemPrompt: string;
+  userMessage: string;
+  finalText: string;
+  aggregateUsage: {
+    input_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+    output_tokens: number;
+    reasoning_tokens: number;
+  };
+  roundCount: number;
+  error: string | null;
+}): Promise<void> {
+  try {
+    const costUsd = args.model.startsWith('gpt-5.4')
+      ? estimateOpenAiTurnCostUsd(args.aggregateUsage)
+      : 0;
+    await args.prisma.aiApiLog.create({
+      data: {
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        agentName: 'studio',
+        model: args.model,
+        systemPrompt: args.assembledSystemPrompt,
+        userContent: args.userMessage,
+        responseText: args.finalText,
+        inputTokens: args.aggregateUsage.input_tokens,
+        cachedInputTokens: args.aggregateUsage.cache_read_input_tokens,
+        reasoningTokens: args.aggregateUsage.reasoning_tokens,
+        outputTokens: args.aggregateUsage.output_tokens,
+        costUsd,
+        ragContext: {
+          turnNumber: args.turnNumber,
+          roundCount: args.roundCount,
+          cacheCreationInputTokens: args.aggregateUsage.cache_creation_input_tokens,
+        } as any,
+        error: args.error,
+      },
+    });
+  } catch (err) {
+    // Never crash the turn over an observability write. The per-round
+    // Langfuse generations + the data-cache-stats SSE still surface the
+    // numbers even if this persist fails.
+    console.warn('[openai-runner] AiApiLog persist failed (non-fatal):', err);
+  }
 }
 
 function collectTextFromOutput(outputItems: any[]): string {

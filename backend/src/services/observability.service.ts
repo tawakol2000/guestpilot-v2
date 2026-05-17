@@ -68,6 +68,13 @@ export interface AiTraceContext {
   // Identifies which persona / agent is replying (coordinator | screening).
   agentName?: string;
   mode?: 'autopilot' | 'copilot' | 'shadow-preview';
+  // 2026-05-17: optional turn input — when provided, attached as the
+  // trace's `input` so the Langfuse UI shows the literal system prompt
+  // + user message at the top of the trace, without needing to dig
+  // through every nested generation. Studio uses this; main pipeline
+  // doesn't need to (its prompts are captured in traceAiCall).
+  systemPrompt?: string;
+  userInput?: string;
 }
 
 // Minimal surface of a Langfuse trace we use. Kept as `any` because the SDK
@@ -128,11 +135,23 @@ export async function runWithAiTrace<T>(ctx: AiTraceContext, fn: () => Promise<T
   let trace: LangfuseTrace | null = null;
   if (lf) {
     try {
+      // 2026-05-17: when the caller threads through systemPrompt + userInput,
+      // attach them as the trace's `input` so the literal prompt + user
+      // message are visible in the Langfuse UI without drilling into a
+      // generation. Studio (openai-runner) uses this.
+      const traceInput =
+        ctx.systemPrompt || ctx.userInput
+          ? [
+              ...(ctx.systemPrompt ? [{ role: 'system', content: ctx.systemPrompt }] : []),
+              ...(ctx.userInput ? [{ role: 'user', content: ctx.userInput }] : []),
+            ]
+          : undefined;
       trace = lf.trace({
         name: `ai-reply:${ctx.agentName || 'main'}`,
         userId: ctx.tenantId,
         sessionId: ctx.conversationId,
         metadata: buildRootMetadata(ctx),
+        ...(traceInput ? { input: traceInput } : {}),
       });
     } catch (err) {
       console.warn('[Observability] Failed to create root trace (non-fatal):', err);
