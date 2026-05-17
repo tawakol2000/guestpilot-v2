@@ -268,6 +268,71 @@ async function checkCooldown(
   return latest?.appliedAt ?? null;
 }
 
+// ─── Pre-diagnostic cooldown probe ──────────────────────────────────────────
+// 2026-05-17: cheap (single index-backed query) check used BEFORE running
+// the full gpt-5.4 k=3 diagnostic. Returns the most recent ACCEPTED
+// suggestion in a high-cooldown category within the 48h window, or null.
+//
+// Why: the existing checkCooldown() runs AFTER the diagnostic — meaning
+// every cooldown-suppressed edit still burns ~$0.21 + 2 minutes on a
+// gpt-5.4 run whose output is immediately thrown away. A pre-check lets
+// us short-circuit the analyzer for the common case (operator polishes
+// the same artifact twice in a day).
+//
+// What this probe DOESN'T do: predict the exact category the diagnostic
+// would produce. We use it as a coarse signal — combined with an edit-
+// similarity check at the call site (only skip on SMALL edits where the
+// model is likely to pick the same cooldown category), the false-skip
+// risk is acceptable. Wholesale rewrites (similarity < 0.5) bypass this
+// gate entirely and always run.
+const HIGH_COOLDOWN_CATEGORIES: readonly TuningDiagnosticCategory[] = [
+  'SYSTEM_PROMPT',
+  'SOP_CONTENT',
+  'SOP_ROUTING',
+  'FAQ',
+  'PROPERTY_OVERRIDE',
+] as const;
+
+export interface RecentAcceptanceProbeResult {
+  category: TuningDiagnosticCategory;
+  appliedAt: Date;
+  targetLabel: string;
+}
+
+export async function probeRecentHighCooldownAcceptance(
+  prisma: PrismaClient,
+  tenantId: string,
+): Promise<RecentAcceptanceProbeResult | null> {
+  const since = new Date(Date.now() - COOLDOWN_WINDOW_MS);
+  const hit = await prisma.tuningSuggestion.findFirst({
+    where: {
+      tenantId,
+      status: 'ACCEPTED',
+      diagnosticCategory: { in: HIGH_COOLDOWN_CATEGORIES as TuningDiagnosticCategory[] },
+      appliedAt: { gte: since },
+    },
+    orderBy: { appliedAt: 'desc' },
+    select: {
+      diagnosticCategory: true,
+      appliedAt: true,
+      systemPromptVariant: true,
+      sopCategory: true,
+      faqEntryId: true,
+    },
+  });
+  if (!hit || !hit.diagnosticCategory || !hit.appliedAt) return null;
+  const targetLabel =
+    hit.systemPromptVariant ??
+    hit.sopCategory ??
+    hit.faqEntryId ??
+    '(unspecified)';
+  return {
+    category: hit.diagnosticCategory,
+    appliedAt: hit.appliedAt,
+    targetLabel,
+  };
+}
+
 // ─── Category → legacy action type mapping ───────────────────────────────────
 // The existing `TuningActionType` enum is preserved (old-branch compatibility).
 // New taxonomy categories map to the closest existing action type so the

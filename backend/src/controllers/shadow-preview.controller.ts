@@ -21,7 +21,10 @@ import { broadcastCritical } from '../services/socket.service';
 // two-step analyzer removed in sprint 01. Edited preview sends fire
 // runDiagnostic + writeSuggestionFromDiagnostic as a fire-and-forget.
 import { runDiagnostic } from '../services/tuning/diagnostic.service';
-import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
+import {
+  writeSuggestionFromDiagnostic,
+  probeRecentHighCooldownAcceptance,
+} from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
@@ -196,6 +199,30 @@ export function makeShadowPreviewController(prisma: PrismaClient) {
               // swallowed — CLAUDE.md critical rule #2.
               void (async () => {
                 try {
+                  // 2026-05-17: pre-diagnostic cooldown probe. The full
+                  // gpt-5.4 k=3 self-consistency diagnostic burns ~$0.21 +
+                  // 120s; if the resulting suggestion would just be dropped
+                  // by the 48h cooldown in writeSuggestionFromDiagnostic,
+                  // skip the run entirely. Only applies to EDIT_TRIGGERED
+                  // with similarity ≥ 0.5 — wholesale rewrites (similarity
+                  // < 0.5) are too strong a signal to suppress on the
+                  // chance of a cooldown.
+                  if (triggerType === 'EDIT_TRIGGERED' && similarity >= 0.5) {
+                    const probe = await probeRecentHighCooldownAcceptance(
+                      prisma,
+                      tenantId,
+                    );
+                    if (probe) {
+                      console.log(
+                        `[ShadowPreview] [${messageId}] diagnostic pre-suppressed — ` +
+                          `${probe.category}/${probe.targetLabel} accepted at ` +
+                          `${probe.appliedAt.toISOString()} (within 48h cooldown). ` +
+                          `Saved ~$0.21 + ~120s. Similarity=${similarity.toFixed(2)}.`,
+                      );
+                      return;
+                    }
+                  }
+
                   const result = await runDiagnostic(
                     {
                       triggerType,

@@ -13,7 +13,10 @@ import { syncConversationMessages } from '../services/message-sync.service';
 // lost every EDIT/REJECT signal. Sprint-048 Session A wired Path A via
 // messages.controller#send; this closes the Path B half.
 import { runDiagnostic } from '../services/tuning/diagnostic.service';
-import { writeSuggestionFromDiagnostic } from '../services/tuning/suggestion-writer.service';
+import {
+  writeSuggestionFromDiagnostic,
+  probeRecentHighCooldownAcceptance,
+} from '../services/tuning/suggestion-writer.service';
 import { semanticSimilarity } from '../services/tuning/diff.service';
 import { shouldProcessTrigger } from '../services/tuning/trigger-dedup.service';
 import { logTuningDiagnosticFailure } from '../services/tuning/diagnostic-failure-log';
@@ -773,6 +776,27 @@ export function makeConversationsController(prisma: PrismaClient) {
           if (shouldProcessTrigger(triggerType, msg.id)) {
             void (async () => {
               try {
+                // 2026-05-17: pre-diagnostic cooldown probe. See
+                // shadow-preview.controller.ts for full rationale. Only
+                // suppresses small edits (similarity ≥ 0.5) when a
+                // high-cooldown category was recently accepted —
+                // wholesale rewrites always run.
+                if (triggerType === 'EDIT_TRIGGERED' && similarity >= 0.5) {
+                  const probe = await probeRecentHighCooldownAcceptance(
+                    prisma,
+                    tenantId,
+                  );
+                  if (probe) {
+                    console.log(
+                      `[Conversations] [${msg.id}] copilot diagnostic pre-suppressed — ` +
+                        `${probe.category}/${probe.targetLabel} accepted at ` +
+                        `${probe.appliedAt.toISOString()} (within 48h cooldown). ` +
+                        `Saved ~$0.21 + ~120s. Similarity=${similarity.toFixed(2)}.`,
+                    );
+                    return;
+                  }
+                }
+
                 const result = await runDiagnostic(
                   {
                     triggerType,
