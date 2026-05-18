@@ -2282,8 +2282,15 @@ export async function generateAndSendAiReply(
       // autopilot sends below and surfaced to the inbox UI via ragContext.
       let confidence: number | null = null;
       try {
+        // 2026-05-18: gpt-5.4-mini occasionally emits multiple back-to-back
+        // JSON objects (empty stubs + a real answer concatenated). The
+        // shared stripCodeFences helper already splits those and returns
+        // the last object containing a guest message — route the parse
+        // through it so we no longer fail on that pattern. See
+        // /tmp/parse-out.txt for an example response in the wild.
+        const cleanedResponse = stripCodeFences(rawResponse);
         if (isInquiry) {
-          const parsed = JSON.parse(rawResponse) as {
+          const parsed = JSON.parse(cleanedResponse) as {
             'guest message': string;
             manager?: { needed: boolean; title: string; note: string };
             confidence?: number;
@@ -2312,7 +2319,7 @@ export async function generateAndSendAiReply(
             });
           }
         } else {
-          const parsed = JSON.parse(rawResponse) as {
+          const parsed = JSON.parse(cleanedResponse) as {
             guest_message: string;
             resolveTaskId?: string | null;
             updateTaskId?: string | null;
